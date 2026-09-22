@@ -6,6 +6,11 @@ pub struct StyleSelector {
     pub(super) id: Option<String>,
     pub(super) classes: Vec<String>,
     pub(super) pseudos: Vec<PseudoClass>,
+    /// Set when the selector text contained an unknown pseudo-class
+    /// (`:foobar`). Python rejects such selectors; the Rust parser keeps the
+    /// rule but the selector never matches (PR-09) instead of widening to
+    /// the bare selector.
+    pub(super) impossible: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +40,14 @@ impl StyleSelector {
             id: None,
             classes: Vec::new(),
             pseudos: Vec::new(),
+            impossible: false,
         }
+    }
+
+    /// Mark the selector impossible (unknown pseudo-class in source).
+    pub fn impossible(mut self) -> Self {
+        self.impossible = true;
+        self
     }
 
     pub fn id(mut self, id: impl Into<String>) -> Self {

@@ -1,8 +1,27 @@
 use super::ast::{Combinator, SelectorMeta, StyleRule, StyleSelector};
 use super::context::SELECTOR_STACK;
 
+/// CSS specificity as an `(ids, classes + pseudos, types)` triple, compared
+/// lexicographically — Python's `_total_specificity` (`parse.py`,
+/// `model.py`). Never flattened to a scalar: flattening misorders (e.g. ten
+/// classes outrank one id) and any fixed width clamps or overflows on long
+/// chains (PR-09).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct Specificity(pub u32, pub u32, pub u32);
+
+impl std::fmt::Display for Specificity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({},{},{})", self.0, self.1, self.2)
+    }
+}
+
 impl StyleSelector {
     pub(crate) fn matches(&self, meta: &SelectorMeta) -> bool {
+        // Unknown pseudo-class in source: never match (PR-09), instead of
+        // widening to the bare selector.
+        if self.impossible {
+            return false;
+        }
         if let Some(type_name) = &self.type_name {
             // Component-class phantoms are Python's typeless virtual DOMNodes:
             // NO type selector matches them — not the widget's own type, and
@@ -51,11 +70,14 @@ impl StyleSelector {
                     super::ast::PseudoClass::Ansi => meta.states.ansi,
                     super::ast::PseudoClass::NoColor => meta.states.nocolor,
                     super::ast::PseudoClass::CanFocus => meta.states.can_focus,
+                    // Python parity (`widget.is_odd`: 0-based `index % 2 == 0`
+                    // is ODD; `is_even` is its negation). The old arms were
+                    // swapped (PR-09).
                     super::ast::PseudoClass::Even => {
-                        meta.states.child_index.is_some_and(|i| i % 2 == 0)
+                        meta.states.child_index.is_some_and(|i| i % 2 == 1)
                     }
                     super::ast::PseudoClass::Odd => {
-                        meta.states.child_index.is_some_and(|i| i % 2 == 1)
+                        meta.states.child_index.is_some_and(|i| i % 2 == 0)
                     }
                     super::ast::PseudoClass::FirstChild => meta.states.child_index == Some(0),
                     super::ast::PseudoClass::LastChild => {
@@ -73,21 +95,16 @@ impl StyleSelector {
         true
     }
 
-    pub(super) fn specificity(&self) -> u8 {
-        let mut score = 0u8;
-        if self.type_name.is_some() {
-            score += 1;
-        }
-        score = score.saturating_add(self.classes.len().saturating_mul(10) as u8);
-        score = score.saturating_add(self.pseudos.len().saturating_mul(10) as u8);
-        if self.id.is_some() {
-            score = score.saturating_add(100);
-        }
-        score
+    pub(super) fn specificity(&self) -> Specificity {
+        Specificity(
+            u32::from(self.id.is_some()),
+            self.classes.len() as u32 + self.pseudos.len() as u32,
+            u32::from(self.type_name.is_some()),
+        )
     }
 }
 
-pub(super) fn rule_specificity(rule: &StyleRule, meta: &SelectorMeta) -> Option<u8> {
+pub(super) fn rule_specificity(rule: &StyleRule, meta: &SelectorMeta) -> Option<Specificity> {
     if rule.selector_chain.parts.is_empty() {
         return None;
     }
@@ -137,13 +154,22 @@ pub(super) fn rule_specificity(rule: &StyleRule, meta: &SelectorMeta) -> Option<
         }
     }
 
-    let score = parts.iter().map(|part| part.specificity()).sum();
-    Some(score)
+    // Component-wise sum (Python `_add_specificity`); the triple comparison
+    // stays lexicographic no matter how long the chain gets.
+    let mut total = Specificity::default();
+    for part in parts {
+        let Specificity(a, b, c) = part.specificity();
+        total.0 += a;
+        total.1 += b;
+        total.2 += c;
+    }
+    Some(total)
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::ast::{PseudoClass, SelectorMeta, SelectorStates, StyleSelector};
+    use super::Specificity;
 
     fn meta_with_states(states: SelectorStates) -> SelectorMeta {
         SelectorMeta {
@@ -289,9 +315,10 @@ mod tests {
     }
 
     #[test]
-    fn even_matches_indices_0_2_4() {
+    fn even_matches_indices_1_3_5() {
+        // Python parity (`widget.is_even` = NOT 0-based `index % 2 == 0`).
         let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Even);
-        for idx in [0, 2, 4] {
+        for idx in [1, 3, 5] {
             let meta = meta_with_states(SelectorStates {
                 child_index: Some(idx),
                 sibling_count: Some(5),
@@ -304,7 +331,7 @@ mod tests {
     #[test]
     fn even_does_not_match_odd_indices() {
         let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Even);
-        for idx in [1, 3, 5] {
+        for idx in [0, 2, 4] {
             let meta = meta_with_states(SelectorStates {
                 child_index: Some(idx),
                 sibling_count: Some(6),
@@ -325,9 +352,9 @@ mod tests {
     }
 
     #[test]
-    fn odd_matches_indices_1_3_5() {
+    fn odd_matches_indices_0_2_4() {
         let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Odd);
-        for idx in [1, 3, 5] {
+        for idx in [0, 2, 4] {
             let meta = meta_with_states(SelectorStates {
                 child_index: Some(idx),
                 sibling_count: Some(6),
@@ -340,7 +367,7 @@ mod tests {
     #[test]
     fn odd_does_not_match_even_indices() {
         let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Odd);
-        for idx in [0, 2, 4] {
+        for idx in [1, 3, 5] {
             let meta = meta_with_states(SelectorStates {
                 child_index: Some(idx),
                 sibling_count: Some(5),
@@ -447,7 +474,9 @@ mod tests {
         let ansi = StyleSelector::new("Widget").pseudo(PseudoClass::Ansi);
         let nocolor = StyleSelector::new("Widget").pseudo(PseudoClass::NoColor);
 
+        // Widget + one pseudo = (0 ids, 1 class/pseudo, 1 type).
         let base = existing.specificity();
+        assert_eq!(base, Specificity(0, 1, 1));
         assert_eq!(dark.specificity(), base);
         assert_eq!(even.specificity(), base);
         assert_eq!(first.specificity(), base);
@@ -457,11 +486,31 @@ mod tests {
         assert_eq!(ansi.specificity(), base);
         assert_eq!(nocolor.specificity(), base);
 
-        // Two pseudos should have double the pseudo weight
+        // Two pseudos add two class-column units.
         let two = StyleSelector::new("Widget")
             .pseudo(PseudoClass::Dark)
             .pseudo(PseudoClass::Even);
-        assert_eq!(two.specificity(), base + 10);
+        assert_eq!(two.specificity(), Specificity(0, 2, 1));
+    }
+
+    #[test]
+    fn specificity_compares_lexicographically_not_flat() {
+        // PR-09: flattening misordered these. Ten classes must NOT outrank
+        // one id; ids always dominate regardless of the other columns.
+        let ten_classes = StyleSelector {
+            type_name: None,
+            id: None,
+            classes: vec!["c".to_string(); 10],
+            pseudos: Vec::new(),
+            impossible: false,
+        };
+        let one_id = StyleSelector::new("Widget").id("x");
+        assert!(ten_classes.specificity() < one_id.specificity());
+
+        // Long id chains never clamp or overflow: (#a #b #c) = (3,0,0).
+        let triple_id = Specificity(3, 0, 0);
+        assert!(triple_id > Specificity(0, u32::MAX, u32::MAX));
+        assert!(triple_id > one_id.specificity());
     }
 
     #[test]

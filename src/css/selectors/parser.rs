@@ -396,6 +396,10 @@ fn parse_selector(selector: &str) -> Option<StyleSelector> {
     let mut id: Option<String> = None;
     let mut classes: Vec<String> = Vec::new();
     let mut pseudos: Vec<PseudoClass> = Vec::new();
+    // Unknown `:pseudo` in source: Python rejects the selector; the Rust
+    // parser keeps the rule but marks it never-matching (PR-09) instead of
+    // widening to the bare selector.
+    let mut impossible = false;
 
     let chars = selector.chars().peekable();
     let mut current = String::new();
@@ -441,6 +445,8 @@ fn parse_selector(selector: &str) -> Option<StyleSelector> {
                 };
                 if let Some(pseudo) = pseudo {
                     pseudos.push(pseudo);
+                } else {
+                    impossible = true;
                 }
             }
             _ => {}
@@ -475,6 +481,9 @@ fn parse_selector(selector: &str) -> Option<StyleSelector> {
     }
     for pseudo in pseudos {
         selector = selector.pseudo(pseudo);
+    }
+    if impossible {
+        selector = selector.impossible();
     }
     Some(selector)
 }
@@ -3011,6 +3020,24 @@ mod tests {
     }
 
     // -- Full cascade (StyleSheet) importance tests --
+
+    #[test]
+    fn unknown_pseudo_class_rule_never_applies() {
+        use super::super::ast::{SelectorMeta, SelectorStates, StyleSheet};
+        // PR-09: `Button:foobar` must not widen to `Button`. The bare rule
+        // comes first, so a widening bug would let the later red rule win.
+        let sheet = StyleSheet::parse("Button { color: green; } Button:foobar { color: red; }");
+        let meta = SelectorMeta {
+            type_name: "Button".to_string(),
+            type_aliases: Vec::new(),
+            id: None,
+            classes: Vec::new(),
+            states: SelectorStates::default(),
+            component_phantom: false,
+        };
+        let style = sheet.style_for_meta(&meta);
+        assert_eq!(style.fg, Some(crate::style::Color::parse("green").unwrap()));
+    }
 
     #[test]
     fn cascade_important_wins_over_higher_specificity_normal() {

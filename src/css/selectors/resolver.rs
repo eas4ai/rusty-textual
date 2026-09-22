@@ -58,7 +58,7 @@ impl StyleSheet {
     pub(super) fn style_for_meta(&self, meta: &SelectorMeta) -> Style {
         // Cascade key mirrors Python `Styles.extract_rules`: user CSS outranks
         // widget DEFAULT_CSS before specificity is even considered.
-        let mut matches: Vec<((u8, u8, usize), Style)> = Vec::new();
+        let mut matches: Vec<((u8, super::matching::Specificity, usize), Style)> = Vec::new();
         let debug_style_meta = style_debug_matches(meta);
         for (idx, rule) in self.rules.iter().enumerate() {
             if let Some(score) = rule_specificity(rule, meta) {
