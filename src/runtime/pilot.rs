@@ -83,6 +83,15 @@ impl<'a> Pilot<'a> {
         self.press(&[key])
     }
 
+    /// Simulate a bracketed-paste of `text`, then advance to idle.
+    ///
+    /// Mirrors a terminal delivering DECSET-2004 paste bytes (enabled at
+    /// driver start): the payload dispatches as one [`Event::Paste`] to
+    /// focus, not as raw keystrokes. Mirrors `pilot.press` for paste.
+    pub fn paste(&mut self, text: &str) -> Result<()> {
+        self.app.headless_inject_paste(self.root, text.to_string())
+    }
+
     /// Simulate a left-click on the widget matched by `selector`, at the centre
     /// of its rendered region. Mirrors `pilot.click(selector)`.
     pub fn click(&mut self, selector: &str) -> Result<()> {
