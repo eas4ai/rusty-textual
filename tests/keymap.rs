@@ -743,7 +743,10 @@ fn keymap_clash_under_active_screen_reports_app_root_source() {
             calls,
         },
         |pilot| {
-            pilot.app_mut().push_screen(Box::new(PlainScreen));
+            pilot
+                .app_mut()
+                .push_screen(Box::new(PlainScreen))
+                .expect("test screen push succeeds");
             pilot.pause()?;
             pilot.press(&["d"])?;
 

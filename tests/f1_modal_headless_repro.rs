@@ -107,7 +107,8 @@ impl TextualApp for ReproApp {
     fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut WidgetCtx) {
         if action == "add" {
             let centered = self.centered;
-            app.push_screen_with_callback(Box::new(ModalScreen { centered }), Box::new(|_| {}));
+            app.push_screen_with_callback(Box::new(ModalScreen { centered }), Box::new(|_| {}))
+                .expect("test screen push succeeds");
             ctx.set_handled();
         }
     }

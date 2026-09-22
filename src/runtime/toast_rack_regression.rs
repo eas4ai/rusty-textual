@@ -170,7 +170,10 @@ fn rack_len(tree: &crate::widget_tree::WidgetTree) -> usize {
 fn toast_over_modal_mounts_on_modal_rack_and_dismisses() {
     crate::run_test(NotifyApp, |pilot| {
         pilot.pause()?;
-        pilot.app_mut().push_screen(Box::new(BlankScreen));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(BlankScreen))
+            .expect("test screen push succeeds");
         pilot.pause()?;
 
         pilot.app_mut().notify(
@@ -248,7 +251,10 @@ fn notifications_follow_screen_transitions() {
         );
 
         // Push: the still-live notification re-syncs onto the new screen's rack.
-        pilot.app_mut().push_screen(Box::new(BlankScreen));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(BlankScreen))
+            .expect("test screen push succeeds");
         pilot.pause()?;
         {
             let app = pilot.app();

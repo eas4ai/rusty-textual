@@ -4993,7 +4993,7 @@ Parent.show > Child { display: block; }
             crate::widgets::AppRoot::new().with_child(crate::widgets::Label::new("BASE_VISIBLE"));
         app.build_widget_tree(&mut root);
         if let Some(screen) = screen {
-            app.push_screen(screen);
+            app.push_screen(screen).expect("test screen push succeeds");
         }
         app.render_widget(&mut root).expect("render should succeed");
         app.frame.as_plain_lines().join("\n")
@@ -5091,7 +5091,7 @@ Parent.show > Child { display: block; }
             .expect("baseline render should succeed");
         let baseline = app.frame.get(0, 0).style.clone().unwrap_or_default();
 
-        app.push_screen(Box::new(ModalOverlayScreen));
+        app.push_screen(Box::new(ModalOverlayScreen)).expect("test screen push succeeds");
         app.render_widget(&mut root)
             .expect("modal render should succeed");
         let modal = app.frame.get(0, 0).style.clone().unwrap_or_default();

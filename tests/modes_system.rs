@@ -96,7 +96,7 @@ fn mode_switch_pops_old_and_pushes_new() {
 
     // Simulate switching to mode "help"
     let help_screen = NamedScreen::boxed("HelpScreen");
-    stack.push(help_screen);
+    stack.push(help_screen).expect("test screen push succeeds");
     assert_eq!(stack.len(), 1);
 
     // Verify we can pop the help screen
@@ -105,7 +105,9 @@ fn mode_switch_pops_old_and_pushes_new() {
 
     // Push settings screen
     let settings_screen = NamedScreen::boxed("SettingsScreen");
-    stack.push(settings_screen);
+    stack
+        .push(settings_screen)
+        .expect("test screen push succeeds");
     assert_eq!(stack.len(), 1);
 
     // Verify settings screen is on top
@@ -119,17 +121,23 @@ fn mode_switch_preserves_base_screens() {
     let mut stack = ScreenStack::new();
 
     // Push a base screen (not a mode screen).
-    stack.push(NamedScreen::boxed("BaseScreen"));
+    stack
+        .push(NamedScreen::boxed("BaseScreen"))
+        .expect("test screen push succeeds");
     assert_eq!(stack.len(), 1);
 
     // Push a mode screen on top.
-    stack.push(NamedScreen::boxed("ModeA"));
+    stack
+        .push(NamedScreen::boxed("ModeA"))
+        .expect("test screen push succeeds");
     assert_eq!(stack.len(), 2);
 
     // Switch mode: pop ModeA, push ModeB
     let (popped, _, _) = stack.pop().unwrap();
     assert_eq!(popped.lock().unwrap().name(), "ModeA");
-    stack.push(NamedScreen::boxed("ModeB"));
+    stack
+        .push(NamedScreen::boxed("ModeB"))
+        .expect("test screen push succeeds");
     assert_eq!(stack.len(), 2);
 
     // Pop ModeB, base screen should still be there.
@@ -152,7 +160,7 @@ fn same_mode_noop() {
     // First switch
     assert_ne!(current_mode.as_deref(), Some(mode_name));
     let screen = NamedScreen::boxed("HelpScreen");
-    stack.push(screen);
+    stack.push(screen).expect("test screen push succeeds");
     current_mode = Some(mode_name.to_string());
     assert_eq!(stack.len(), 1);
 
@@ -232,7 +240,9 @@ fn system_modal_screen_no_inherit_css() {
 #[test]
 fn command_palette_screen_on_stack() {
     let mut stack = ScreenStack::new();
-    stack.push(Box::new(CommandPaletteScreen::new(Vec::new())));
+    stack
+        .push(Box::new(CommandPaletteScreen::new(Vec::new())))
+        .expect("test screen push succeeds");
     assert_eq!(stack.len(), 1);
 
     let (popped, _, _) = stack.pop().unwrap();
@@ -243,8 +253,12 @@ fn command_palette_screen_on_stack() {
 #[test]
 fn command_palette_screen_push_pop() {
     let mut stack = ScreenStack::new();
-    stack.push(NamedScreen::boxed("Base"));
-    stack.push(Box::new(CommandPaletteScreen::new(Vec::new())));
+    stack
+        .push(NamedScreen::boxed("Base"))
+        .expect("test screen push succeeds");
+    stack
+        .push(Box::new(CommandPaletteScreen::new(Vec::new())))
+        .expect("test screen push succeeds");
     assert_eq!(stack.len(), 2);
 
     let (screen, _result, _) = stack.pop().unwrap();

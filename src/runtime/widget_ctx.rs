@@ -528,7 +528,7 @@ mod tests {
         let handle_a = crate::handle::Handle::<Probe>::resolve(&tree_a, root_a).unwrap();
         let mut app = test_app_with_tree(tree_a);
 
-        app.push_screen(Box::new(ModalScreenStub));
+        app.push_screen(Box::new(ModalScreenStub)).expect("test screen push succeeds");
         // Screen build may enqueue its own commands; flush them first.
         flush_commands(&mut app);
         assert_ne!(

@@ -493,7 +493,8 @@ Horizontal { width: auto; height: auto; }
                 .app_mut()
                 .push_screen(Box::new(AutoFocusScreen {
                     selector: Some("#second"),
-                }));
+                }))
+                .expect("test screen push succeeds");
             pilot.pause()?;
 
             let second = pilot.app().query_one("#second").expect("#second exists");
@@ -521,7 +522,8 @@ Horizontal { width: auto; height: auto; }
         crate::run_test(RgbApp, |pilot| {
             pilot
                 .app_mut()
-                .push_screen(Box::new(AutoFocusScreen { selector: None }));
+                .push_screen(Box::new(AutoFocusScreen { selector: None }))
+                .expect("test screen push succeeds");
             pilot.pause()?;
 
             let first = pilot.app().query_one("#first").expect("#first exists");
@@ -544,7 +546,8 @@ Horizontal { width: auto; height: auto; }
                 .app_mut()
                 .push_screen(Box::new(AutoFocusScreen {
                     selector: Some("#does-not-exist"),
-                }));
+                }))
+                .expect("test screen push succeeds");
             pilot.pause()?;
 
             let first = pilot.app().query_one("#first").expect("#first exists");
@@ -687,10 +690,13 @@ Horizontal { width: auto; height: auto; }
                     help: String::new(),
                 },
             ];
-            pilot.app_mut().push_screen(Box::new(SnapshotScreen {
-                snapshot,
-                observed: observed.clone(),
-            }));
+            pilot
+                .app_mut()
+                .push_screen(Box::new(SnapshotScreen {
+                    snapshot,
+                    observed: observed.clone(),
+                }))
+                .expect("test screen push succeeds");
             pilot.pause()?;
             assert_eq!(
                 *observed.lock().unwrap(),
@@ -762,7 +768,10 @@ Horizontal { width: auto; height: auto; }
                 "the app underlay must own the corner cell before the modal is pushed"
             );
 
-            pilot.app_mut().push_screen(Box::new(DimModalScreen));
+            pilot
+                .app_mut()
+                .push_screen(Box::new(DimModalScreen))
+                .expect("test screen push succeeds");
             pilot.pause()?;
 
             let active = pilot.app().active_widget_tree().expect("active screen tree");

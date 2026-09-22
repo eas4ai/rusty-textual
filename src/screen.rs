@@ -51,6 +51,11 @@ pub trait Screen: Send + Sync {
     fn compose(&self) -> Box<dyn Widget>;
 
     /// CSS stylesheet for this screen (optional).
+    ///
+    /// Either inline CSS text or a filesystem path. A value containing a
+    /// newline or a rule brace is treated as inline CSS; anything else must
+    /// name a readable file, and a missing/unreadable path fails the screen
+    /// push with [`crate::error::Error::StylesheetError`] (PR-11).
     fn css(&self) -> Option<&str> {
         None
     }
@@ -427,6 +432,22 @@ pub struct ScreenStack {
     screens: Vec<ScreenEntry>,
 }
 
+/// Resolve a screen `css()` value to stylesheet text (PR-11).
+///
+/// A value containing a newline or a rule brace is inline CSS and is used
+/// as-is. Anything else names a filesystem file (Python `Screen.CSS_PATH`
+/// parity): a missing/unreadable file returns [`crate::error::Error::StylesheetError`]
+/// instead of silently parsing the path string as (empty) CSS.
+fn resolve_screen_css(css: &str) -> crate::error::Result<String> {
+    if css.contains('\n') || css.contains('{') {
+        return Ok(css.to_string());
+    }
+    fs::read_to_string(css).map_err(|e| crate::error::Error::StylesheetError {
+        path: css.to_string(),
+        message: e.to_string(),
+    })
+}
+
 impl ScreenStack {
     /// Create an empty screen stack.
     pub fn new() -> Self {
@@ -441,24 +462,32 @@ impl ScreenStack {
     /// - Builds the widget tree from `screen.compose()`.
     /// - Parses the screen's CSS (if any).
     /// - Calls `on_mount` on the new screen.
-    pub fn push(&mut self, screen: Box<dyn Screen>) {
-        self.push_inner(screen, None, None);
+    pub fn push(&mut self, screen: Box<dyn Screen>) -> crate::error::Result<()> {
+        self.push_inner(screen, None, None)
     }
 
     /// Push a screen onto the stack with a result callback.
     ///
     /// The callback is invoked with the `ScreenResult` when the screen is
     /// popped (either via `pop()` or via `dismiss()`).
-    pub fn push_with_callback(&mut self, screen: Box<dyn Screen>, callback: ScreenResultCallback) {
-        self.push_inner(screen, Some(callback), None);
+    pub fn push_with_callback(
+        &mut self,
+        screen: Box<dyn Screen>,
+        callback: ScreenResultCallback,
+    ) -> crate::error::Result<()> {
+        self.push_inner(screen, Some(callback), None)
     }
 
     /// Push a mode screen onto the stack.
     ///
     /// The mode name is stored in the entry so that `pop_mode()` can identify
     /// and remove the correct screen even if transient screens are on top.
-    pub fn push_mode(&mut self, screen: Box<dyn Screen>, mode_name: String) {
-        self.push_inner(screen, None, Some(mode_name));
+    pub fn push_mode(
+        &mut self,
+        screen: Box<dyn Screen>,
+        mode_name: String,
+    ) -> crate::error::Result<()> {
+        self.push_inner(screen, None, Some(mode_name))
     }
 
     /// Pop the screen associated with the given mode name.
@@ -529,7 +558,11 @@ impl ScreenStack {
         screen: Box<dyn Screen>,
         callback: Option<ScreenResultCallback>,
         mode_name: Option<String>,
-    ) {
+    ) -> crate::error::Result<()> {
+        // Resolve the screen's CSS before touching the stack (PR-11): a
+        // missing/unreadable path fails here, before any suspend/mount side
+        // effects, instead of silently rendering unstyled.
+        let css_text = screen.css().map(resolve_screen_css).transpose()?;
         // Suspend the currently active screen.
         if let Some(top) = self.screens.last_mut() {
             top.with_screen(|s| s.on_suspend());
@@ -568,14 +601,7 @@ impl ScreenStack {
         let _ = widget_tree.drain_lifecycle();
 
         // Parse the screen's CSS stylesheet (if provided).
-        // Accept either inline CSS text or a filesystem path.
-        let stylesheet = {
-            let guard = shared.lock().expect("screen lock");
-            guard.css().map(|css| {
-                let css_text = fs::read_to_string(css).unwrap_or_else(|_| css.to_string());
-                StyleSheet::parse(&css_text)
-            })
-        };
+        let stylesheet = css_text.map(|css_text| StyleSheet::parse(&css_text));
 
         // Mount the new screen.
         if let Ok(mut guard) = shared.lock() {
@@ -591,6 +617,7 @@ impl ScreenStack {
             dismiss_slot,
             mode_name,
         });
+        Ok(())
     }
 
     /// Set a pending dismiss result on the topmost screen.
@@ -873,15 +900,43 @@ mod tests {
         let mut stack = ScreenStack::new();
         let log = LifecycleLog::new();
 
-        stack.push(TestScreen::boxed("A", log.clone()));
+        stack
+            .push(TestScreen::boxed("A", log.clone()))
+            .expect("test screen push succeeds");
         assert_eq!(stack.len(), 1);
         assert!(!stack.is_empty());
 
-        stack.push(TestScreen::boxed("B", log.clone()));
+        stack
+            .push(TestScreen::boxed("B", log.clone()))
+            .expect("test screen push succeeds");
         assert_eq!(stack.len(), 2);
 
-        stack.push(TestScreen::boxed("C", log.clone()));
+        stack
+            .push(TestScreen::boxed("C", log.clone()))
+            .expect("test screen push succeeds");
         assert_eq!(stack.len(), 3);
+    }
+
+    // -- ScreenStack: missing CSS path fails the push ------------------------
+
+    #[test]
+    fn push_missing_css_path_returns_stylesheet_error() {
+        // PR-11: a path-like `css()` value naming no file fails with
+        // `StylesheetError` (Python parity) instead of silently rendering
+        // unstyled, and the failed push leaves the stack untouched.
+        let mut stack = ScreenStack::new();
+        let log = LifecycleLog::new();
+
+        let screen =
+            TestScreen::new("BadCss", log).with_css("pr11-definitely-missing/missing.tcss");
+        let err = stack
+            .push(Box::new(screen))
+            .expect_err("missing CSS path must fail");
+        assert!(
+            matches!(err, crate::error::Error::StylesheetError { .. }),
+            "unexpected error: {err}"
+        );
+        assert!(stack.is_empty());
     }
 
     // -- ScreenStack: pop returns screen + calls lifecycle -------------------
@@ -891,7 +946,9 @@ mod tests {
         let mut stack = ScreenStack::new();
         let log = LifecycleLog::new();
 
-        stack.push(TestScreen::boxed("Main", log.clone()));
+        stack
+            .push(TestScreen::boxed("Main", log.clone()))
+            .expect("test screen push succeeds");
         let result = stack.pop();
         assert!(result.is_some());
 
@@ -908,10 +965,14 @@ mod tests {
         let mut stack = ScreenStack::new();
         let log = LifecycleLog::new();
 
-        stack.push(TestScreen::boxed("First", log.clone()));
+        stack
+            .push(TestScreen::boxed("First", log.clone()))
+            .expect("test screen push succeeds");
         assert_eq!(log.events(), vec!["First:mount"]);
 
-        stack.push(TestScreen::boxed("Second", log.clone()));
+        stack
+            .push(TestScreen::boxed("Second", log.clone()))
+            .expect("test screen push succeeds");
         assert_eq!(
             log.events(),
             vec!["First:mount", "First:suspend", "Second:mount"]
@@ -925,8 +986,12 @@ mod tests {
         let mut stack = ScreenStack::new();
         let log = LifecycleLog::new();
 
-        stack.push(TestScreen::boxed("Base", log.clone()));
-        stack.push(TestScreen::boxed("Overlay", log.clone()));
+        stack
+            .push(TestScreen::boxed("Base", log.clone()))
+            .expect("test screen push succeeds");
+        stack
+            .push(TestScreen::boxed("Overlay", log.clone()))
+            .expect("test screen push succeeds");
 
         // Clear log to focus on pop behavior.
         log.events.lock().unwrap().clear();
@@ -950,8 +1015,12 @@ mod tests {
         let mut stack = ScreenStack::new();
         let log = LifecycleLog::new();
 
-        stack.push(TestScreen::boxed("Bottom", log.clone()));
-        stack.push(TestScreen::boxed("Top", log.clone()));
+        stack
+            .push(TestScreen::boxed("Bottom", log.clone()))
+            .expect("test screen push succeeds");
+        stack
+            .push(TestScreen::boxed("Top", log.clone()))
+            .expect("test screen push succeeds");
 
         assert_eq!(stack.top().unwrap().screen.lock().unwrap().name(), "Top");
     }
@@ -961,8 +1030,12 @@ mod tests {
         let mut stack = ScreenStack::new();
         let log = LifecycleLog::new();
 
-        stack.push(TestScreen::boxed("Bottom", log.clone()));
-        stack.push(TestScreen::boxed("Top", log.clone()));
+        stack
+            .push(TestScreen::boxed("Bottom", log.clone()))
+            .expect("test screen push succeeds");
+        stack
+            .push(TestScreen::boxed("Top", log.clone()))
+            .expect("test screen push succeeds");
 
         assert_eq!(
             stack.top_mut().unwrap().screen.lock().unwrap().name(),
@@ -1026,11 +1099,17 @@ mod tests {
         let log = LifecycleLog::new();
 
         // Push screen A.
-        stack.push(TestScreen::boxed("A", log.clone()));
+        stack
+            .push(TestScreen::boxed("A", log.clone()))
+            .expect("test screen push succeeds");
         // Push screen B (suspends A).
-        stack.push(TestScreen::boxed("B", log.clone()));
+        stack
+            .push(TestScreen::boxed("B", log.clone()))
+            .expect("test screen push succeeds");
         // Push screen C (suspends B).
-        stack.push(TestScreen::boxed("C", log.clone()));
+        stack
+            .push(TestScreen::boxed("C", log.clone()))
+            .expect("test screen push succeeds");
 
         // Pop C (unmounts C, resumes B).
         stack.pop();
@@ -1063,7 +1142,9 @@ mod tests {
         let mut stack = ScreenStack::new();
         let log = LifecycleLog::new();
 
-        stack.push(TestScreen::boxed("test", log));
+        stack
+            .push(TestScreen::boxed("test", log))
+            .expect("test screen push succeeds");
 
         let entry = stack.top().unwrap();
         // The widget tree should have a root node (from compose).
@@ -1080,7 +1161,9 @@ mod tests {
         let log = LifecycleLog::new();
 
         let screen = TestScreen::new("styled", log).with_css("Button { color: red; }");
-        stack.push(Box::new(screen));
+        stack
+            .push(Box::new(screen))
+            .expect("test screen push succeeds");
 
         let entry = stack.top().unwrap();
         assert!(entry.stylesheet.is_some());
@@ -1091,7 +1174,9 @@ mod tests {
         let mut stack = ScreenStack::new();
         let log = LifecycleLog::new();
 
-        stack.push(TestScreen::boxed("plain", log));
+        stack
+            .push(TestScreen::boxed("plain", log))
+            .expect("test screen push succeeds");
 
         let entry = stack.top().unwrap();
         assert!(entry.stylesheet.is_none());
@@ -1125,7 +1210,9 @@ mod tests {
         let mut stack = ScreenStack::new();
         let log = LifecycleLog::new();
 
-        stack.push(TestScreen::boxed("Only", log.clone()));
+        stack
+            .push(TestScreen::boxed("Only", log.clone()))
+            .expect("test screen push succeeds");
         log.events.lock().unwrap().clear();
 
         stack.pop();
@@ -1140,10 +1227,18 @@ mod tests {
         let mut stack = ScreenStack::new();
         let log = LifecycleLog::new();
 
-        stack.push(TestScreen::boxed("A", log.clone()));
-        stack.push(TestScreen::boxed("B", log.clone()));
-        stack.push(TestScreen::boxed("C", log.clone()));
-        stack.push(TestScreen::boxed("D", log.clone()));
+        stack
+            .push(TestScreen::boxed("A", log.clone()))
+            .expect("test screen push succeeds");
+        stack
+            .push(TestScreen::boxed("B", log.clone()))
+            .expect("test screen push succeeds");
+        stack
+            .push(TestScreen::boxed("C", log.clone()))
+            .expect("test screen push succeeds");
+        stack
+            .push(TestScreen::boxed("D", log.clone()))
+            .expect("test screen push succeeds");
 
         assert_eq!(
             log.events(),
@@ -1171,18 +1266,20 @@ mod tests {
         let callback_log = Arc::new(Mutex::new(Vec::<String>::new()));
         let cb_log = callback_log.clone();
 
-        stack.push_with_callback(
-            TestScreen::boxed("Dialog", log.clone()),
-            Box::new(move |result| {
-                let msg = match result {
-                    ScreenResult::Dismissed => "dismissed".to_string(),
-                    ScreenResult::Value(v) => {
-                        format!("value:{}", v.downcast_ref::<i32>().unwrap())
-                    }
-                };
-                cb_log.lock().unwrap().push(msg);
-            }),
-        );
+        stack
+            .push_with_callback(
+                TestScreen::boxed("Dialog", log.clone()),
+                Box::new(move |result| {
+                    let msg = match result {
+                        ScreenResult::Dismissed => "dismissed".to_string(),
+                        ScreenResult::Value(v) => {
+                            format!("value:{}", v.downcast_ref::<i32>().unwrap())
+                        }
+                    };
+                    cb_log.lock().unwrap().push(msg);
+                }),
+            )
+            .expect("test screen push succeeds");
 
         // Pop without dismiss — should get Dismissed.
         stack.pop();
@@ -1196,18 +1293,20 @@ mod tests {
         let callback_log = Arc::new(Mutex::new(Vec::<String>::new()));
         let cb_log = callback_log.clone();
 
-        stack.push_with_callback(
-            TestScreen::boxed("Dialog", log.clone()),
-            Box::new(move |result| {
-                let msg = match result {
-                    ScreenResult::Dismissed => "dismissed".to_string(),
-                    ScreenResult::Value(v) => {
-                        format!("value:{}", v.downcast_ref::<String>().unwrap())
-                    }
-                };
-                cb_log.lock().unwrap().push(msg);
-            }),
-        );
+        stack
+            .push_with_callback(
+                TestScreen::boxed("Dialog", log.clone()),
+                Box::new(move |result| {
+                    let msg = match result {
+                        ScreenResult::Dismissed => "dismissed".to_string(),
+                        ScreenResult::Value(v) => {
+                            format!("value:{}", v.downcast_ref::<String>().unwrap())
+                        }
+                    };
+                    cb_log.lock().unwrap().push(msg);
+                }),
+            )
+            .expect("test screen push succeeds");
 
         // Dismiss with a value, then pop.
         stack.dismiss(ScreenResult::Value(Box::new("confirmed".to_string())));
@@ -1223,7 +1322,9 @@ mod tests {
         let mut stack = ScreenStack::new();
         let log = LifecycleLog::new();
 
-        stack.push(TestScreen::boxed("Dialog", log.clone()));
+        stack
+            .push(TestScreen::boxed("Dialog", log.clone()))
+            .expect("test screen push succeeds");
         stack.dismiss(ScreenResult::Value(Box::new(42i32)));
 
         let (_, result, _) = stack.pop().unwrap();
@@ -1246,12 +1347,14 @@ mod tests {
         let received = Arc::new(Mutex::new(false));
         let received_clone = received.clone();
 
-        stack.push_with_callback(
-            TestScreen::boxed("X", log.clone()),
-            Box::new(move |result| {
-                *received_clone.lock().unwrap() = matches!(result, ScreenResult::Dismissed);
-            }),
-        );
+        stack
+            .push_with_callback(
+                TestScreen::boxed("X", log.clone()),
+                Box::new(move |result| {
+                    *received_clone.lock().unwrap() = matches!(result, ScreenResult::Dismissed);
+                }),
+            )
+            .expect("test screen push succeeds");
 
         stack.pop();
         assert!(*received.lock().unwrap());
@@ -1289,14 +1392,18 @@ mod tests {
         assert!(stack.active_sub_title().is_none());
 
         // Push screen without title.
-        stack.push(TestScreen::boxed("Base", log.clone()));
+        stack
+            .push(TestScreen::boxed("Base", log.clone()))
+            .expect("test screen push succeeds");
         assert!(stack.active_title().is_none());
 
         // Push screen with title.
         let titled = TestScreen::new("Settings", log.clone())
             .with_title("Settings")
             .with_sub_title("General");
-        stack.push(Box::new(titled));
+        stack
+            .push(Box::new(titled))
+            .expect("test screen push succeeds");
         assert_eq!(stack.active_title().as_deref(), Some("Settings"));
         assert_eq!(stack.active_sub_title().as_deref(), Some("General"));
 
@@ -1329,7 +1436,9 @@ mod tests {
         }
 
         let mut stack = ScreenStack::new();
-        stack.push(Box::new(ModalBodyScreen));
+        stack
+            .push(Box::new(ModalBodyScreen))
+            .expect("test screen push succeeds");
 
         let entry = stack.top().expect("top screen should exist");
         let root_id = entry
@@ -1401,7 +1510,9 @@ mod tests {
         ));
 
         let mut stack = ScreenStack::new();
-        stack.push(Box::new(GotoScreen));
+        stack
+            .push(Box::new(GotoScreen))
+            .expect("test screen push succeeds");
         {
             let entry = stack.top().expect("top screen should exist");
             let root_id = entry.widget_tree.root().expect("screen tree root");
@@ -1422,7 +1533,9 @@ mod tests {
             );
         }
 
-        stack.push(Box::new(HelpScreen));
+        stack
+            .push(Box::new(HelpScreen))
+            .expect("test screen push succeeds");
         {
             let entry = stack.top().expect("top screen should exist");
             let root_id = entry.widget_tree.root().expect("screen tree root");
@@ -1490,7 +1603,9 @@ mod tests {
     #[test]
     fn screen_bindings_surface_on_screen_tree_root() {
         let mut stack = ScreenStack::new();
-        stack.push(Box::new(QuitScreen));
+        stack
+            .push(Box::new(QuitScreen))
+            .expect("test screen push succeeds");
 
         let entry = stack.top().expect("top screen");
         let root_id = entry.widget_tree.root().expect("screen tree root");
@@ -1511,19 +1626,21 @@ mod tests {
         let cb = received.clone();
 
         // Push QuitScreen with a callback that records the dismiss value.
-        stack.push_with_callback(
-            Box::new(QuitScreen),
-            Box::new(move |result| {
-                let msg = match result {
-                    ScreenResult::Dismissed => "dismissed".to_string(),
-                    ScreenResult::Value(v) => match v.downcast::<bool>() {
-                        Ok(b) => format!("value:{}", *b),
-                        Err(_) => "value:?".to_string(),
-                    },
-                };
-                cb.lock().unwrap().push(msg);
-            }),
-        );
+        stack
+            .push_with_callback(
+                Box::new(QuitScreen),
+                Box::new(move |result| {
+                    let msg = match result {
+                        ScreenResult::Dismissed => "dismissed".to_string(),
+                        ScreenResult::Value(v) => match v.downcast::<bool>() {
+                            Ok(b) => format!("value:{}", *b),
+                            Err(_) => "value:?".to_string(),
+                        },
+                    };
+                    cb.lock().unwrap().push(msg);
+                }),
+            )
+            .expect("test screen push succeeds");
 
         // Build a ButtonPressed message from a #quit button and bubble it
         // through the real screen tree to the screen-tree root, which delegates
@@ -1565,16 +1682,18 @@ mod tests {
         let received = Arc::new(Mutex::new(Vec::<String>::new()));
         let cb = received.clone();
 
-        stack.push_with_callback(
-            Box::new(QuitScreen),
-            Box::new(move |result| {
-                if let ScreenResult::Value(v) = result {
-                    if let Ok(b) = v.downcast::<bool>() {
-                        cb.lock().unwrap().push(format!("value:{}", *b));
+        stack
+            .push_with_callback(
+                Box::new(QuitScreen),
+                Box::new(move |result| {
+                    if let ScreenResult::Value(v) = result {
+                        if let Ok(b) = v.downcast::<bool>() {
+                            cb.lock().unwrap().push(format!("value:{}", *b));
+                        }
                     }
-                }
-            }),
-        );
+                }),
+            )
+            .expect("test screen push succeeds");
 
         let sender = crate::node_id::node_id_from_ffi(99);
         let message = MessageEvent::new(
@@ -1619,7 +1738,9 @@ mod tests {
         }
 
         let mut stack = ScreenStack::new();
-        stack.push(Box::new(EventScreen));
+        stack
+            .push(Box::new(EventScreen))
+            .expect("test screen push succeeds");
 
         let esc = crate::keys::KeyEventData::from_crossterm(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Esc,
