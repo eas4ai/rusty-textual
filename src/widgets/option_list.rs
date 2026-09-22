@@ -36,14 +36,12 @@ fn tag_segment_no_style(seg: &mut Segment) {
     seg.meta = Some(meta);
 }
 
-/// Python `DIM_FACTOR` (textual/constants.py): how much of the foreground
-/// survives when a `dim` attribute is converted to a colour blend (0 = pure
-/// background, 1 = unchanged foreground).
-const DIM_FACTOR: f64 = 0.66;
-
 /// Replace a `dim` attribute with a foreground pre-blended toward `bg`
 /// (Python `textual/filter.py` `dim_color`: `bg + (fg - bg) * DIM_FACTOR`,
 /// truncated per channel like rich's `Color.from_rgb`).
+///
+/// The factor is [`crate::style::dim_factor`] (`TEXTUAL_DIM_FACTOR`, default
+/// 0.66); it rides as an explicit parameter so tests stay parallel-safe.
 ///
 /// Python's ALWAYS-ON `ANSIToTruecolor` line filter performs this conversion
 /// on every rendered line and strips the `dim` attribute, so a dim glyph
@@ -51,11 +49,16 @@ const DIM_FACTOR: f64 = 0.66;
 /// colour against the segment's own (composed) background. Rust forwards SGR
 /// dim to the terminal, which is wrong over the opaque block-cursor fill: the
 /// cursor fg would paint at full strength (terminals rarely dim truecolor).
-fn dim_fg_toward_bg(fg: rich_rs::SimpleColor, bg: rich_rs::SimpleColor) -> rich_rs::SimpleColor {
+fn dim_fg_toward_bg(
+    fg: rich_rs::SimpleColor,
+    bg: rich_rs::SimpleColor,
+    dim_factor: f64,
+) -> rich_rs::SimpleColor {
     let f = crate::style::color_from_simple(fg);
     let b = crate::style::color_from_simple(bg);
-    let blend =
-        |bc: u8, fc: u8| -> u8 { (f64::from(bc) + (f64::from(fc) - f64::from(bc)) * DIM_FACTOR) as u8 };
+    let blend = |bc: u8, fc: u8| -> u8 {
+        (f64::from(bc) + (f64::from(fc) - f64::from(bc)) * dim_factor) as u8
+    };
     rich_rs::SimpleColor::Rgb {
         r: blend(b.r, f.r),
         g: blend(b.g, f.g),
@@ -96,7 +99,7 @@ fn finalize_highlight_line(line: &[Segment], width: usize, fill: rich_rs::Style)
         if style.dim == Some(true) {
             if let (Some(fg), Some(bg)) = (style.color, style.bgcolor) {
                 if fg != rich_rs::SimpleColor::Default && bg != rich_rs::SimpleColor::Default {
-                    style.color = Some(dim_fg_toward_bg(fg, bg));
+                    style.color = Some(dim_fg_toward_bg(fg, bg, crate::style::dim_factor()));
                     style.dim = None;
                 }
             }
@@ -1570,6 +1573,33 @@ mod tests {
         )];
         let out = finalize_highlight_line(&plain, 10, fill);
         assert_eq!(out[0].style.expect("styled").color, fill.color);
+    }
+
+    /// The highlight-line blend honors an explicit factor
+    /// (`TEXTUAL_DIM_FACTOR` wiring): factor 0.5 over #0178d4 keeps half of
+    /// #ddedf9, factor 0.0 collapses to the background.
+    #[test]
+    fn dim_fg_toward_bg_honors_explicit_factor() {
+        let fg = rich_rs::SimpleColor::Rgb {
+            r: 0xdd,
+            g: 0xed,
+            b: 0xf9,
+        };
+        let bg = rich_rs::SimpleColor::Rgb {
+            r: 0x01,
+            g: 0x78,
+            b: 0xd4,
+        };
+        assert_eq!(
+            dim_fg_toward_bg(fg, bg, 0.5),
+            rich_rs::SimpleColor::Rgb {
+                r: 0x6f,
+                g: 0xb2,
+                b: 0xe6
+            }
+        );
+        assert_eq!(dim_fg_toward_bg(fg, bg, 0.0), bg);
+        assert_eq!(dim_fg_toward_bg(fg, bg, 1.0), fg);
     }
 
     #[test]

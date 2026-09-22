@@ -209,13 +209,22 @@ impl FrameBuffer {
     /// Mirrors Python Textual's global `ANSIToTruecolor` line filter
     /// (`filter.py::dim_style`): a segment styled `dim` never reaches the
     /// terminal as SGR 2 — its foreground is replaced with
-    /// `bg + (fg - bg) * DIM_FACTOR` (0.66, per channel, truncated like rich's
+    /// `bg + (fg - bg) * DIM_FACTOR` (per channel, truncated like rich's
     /// `Color.from_rgb(int(...))`) blended toward the segment's own background
     /// (falling back to the frame's base background), and the `dim` attribute
     /// is stripped. Cells without a foreground colour keep their `dim` flag,
     /// exactly as Python's filter only rewrites styles with a `color` set.
+    ///
+    /// The factor is [`crate::style::dim_factor`] (`TEXTUAL_DIM_FACTOR`,
+    /// default 0.66); see [`FrameBuffer::preblend_dim_with`] for the
+    /// testable seam.
     pub(crate) fn preblend_dim(&mut self) {
-        const DIM_FACTOR: f32 = 0.66;
+        self.preblend_dim_with(crate::style::dim_factor() as f32);
+    }
+
+    /// [`FrameBuffer::preblend_dim`] with an explicit factor (unit-test seam;
+    /// production passes [`crate::style::dim_factor`]).
+    pub(crate) fn preblend_dim_with(&mut self, dim_factor: f32) {
         fn rgb_of(color: rich_rs::SimpleColor) -> Option<(u8, u8, u8)> {
             match color {
                 rich_rs::SimpleColor::Rgb { r, g, b } => Some((r, g, b)),
@@ -237,7 +246,7 @@ impl FrameBuffer {
                 continue;
             };
             let blend = |b: u8, f: u8| -> u8 {
-                (b as f32 + (f as f32 - b as f32) * DIM_FACTOR) as u8
+                (b as f32 + (f as f32 - b as f32) * dim_factor) as u8
             };
             style.color = Some(rich_rs::SimpleColor::Rgb {
                 r: blend(bg.0, fg.0),
@@ -595,6 +604,37 @@ mod tests {
 
         let kept = frame.get(1, 0).style.unwrap();
         assert_eq!(kept.dim, Some(true), "fg-less dim cells keep the flag");
+    }
+
+    /// The blend honors an explicit factor (`TEXTUAL_DIM_FACTOR` wiring):
+    /// factor 0.5 keeps half the foreground, factor 1.0 is the identity.
+    #[test]
+    fn preblend_dim_honors_explicit_factor() {
+        let cell = || Cell {
+            text: "x".to_string(),
+            style: Some(
+                Style::new()
+                    .with_color(rich_rs::SimpleColor::Rgb { r: 200, g: 100, b: 0 })
+                    .with_bgcolor(rich_rs::SimpleColor::Rgb { r: 0, g: 0, b: 0 })
+                    .with_dim(true),
+            ),
+            meta: None,
+            continuation: false,
+        };
+        let mut half = FrameBuffer::new(1, 1, None);
+        half.set_cell(0, 0, cell());
+        half.preblend_dim_with(0.5);
+        assert_eq!(
+            half.get(0, 0).style.unwrap().color,
+            Some(rich_rs::SimpleColor::Rgb { r: 100, g: 50, b: 0 })
+        );
+        let mut full = FrameBuffer::new(1, 1, None);
+        full.set_cell(0, 0, cell());
+        full.preblend_dim_with(1.0);
+        assert_eq!(
+            full.get(0, 0).style.unwrap().color,
+            Some(rich_rs::SimpleColor::Rgb { r: 200, g: 100, b: 0 })
+        );
     }
 
     #[test]
