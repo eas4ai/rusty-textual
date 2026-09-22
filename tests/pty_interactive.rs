@@ -850,17 +850,11 @@ fn dynamic_watch_increment_value_and_bar_colour() {
          py_bar_blue={py_bar_blue} rust_bar_blue={rust_bar_blue}"
     );
 
-    // The harness must tell the apps apart on at least one flagged axis.
-    let value_differs = py_value != rust_value;
-    let colour_differs = py_bar != rust_bar;
-    assert!(
-        value_differs || colour_differs,
-        "HARNESS BLIND: dynamic_watch looks identical on both value and colour axes.\n\
-         Python should reach 30 and fill a blue bar.\n{}\n\nBG palette (py):{:?}\nBG palette (rust):{:?}",
-        text_diff(pf, rf),
-        pf.bg_palette(),
-        rf.bg_palette(),
-    );
+    // NOTE (review §1.7): the previous assert here required the apps to DIFFER,
+    // so landing the parity fix turned the suite red. Correct behavior is value
+    // 30 with a blue bar on both sides — rewrite as a parity assert when
+    // dynamic_watch is fixed; until then this axis is uncovered (beyond
+    // crash-catching).
 }
 
 /// screens/modes01: Python shows a Footer row with the app's `switch_mode` key
@@ -1001,11 +995,11 @@ fn weather05_no_event_leak_structural() {
         "Python weather05 leaked internal event text onto the screen — harness misread:\n{}",
         pf.text()
     );
-    assert!(
-        rust_leaks == false || py_leaks != rust_leaks,
-        "HARNESS BLIND: weather05 leak axis indeterminate.\nrust_leaks={rust_leaks}\n{}",
-        text_diff(pf, rf),
-    );
+    // NOTE (review §1.7): the previous assert here
+    // (`rust_leaks == false || py_leaks != rust_leaks`) was a tautology given
+    // the `!py_leaks` assert above, so the Rust-side leak axis was uncovered.
+    // Re-add a real `!rust_leaks` assert with the worker-leak fix; until then
+    // this axis is uncovered (beyond crash-catching).
     // Echo must agree so we know the input actually drove both apps.
     assert!(
         py_echo && rust_echo,
