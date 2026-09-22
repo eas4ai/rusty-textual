@@ -114,6 +114,19 @@ Non-blocking items noted during the 1.1.0 release:
 - **CI `visual_parity`:** the styled per-cell harness needs the Python reference repo (`../textual`),
   absent on CI, so it runs only locally; a `TEXTUAL_PY_REF` harness override would let CI check out
   the reference and run it. `pty_parity` (committed goldens) is already a blocking CI job.
+- **OS-level SIGCONT → resume wiring (PR-14 follow-up):** `App::suspend` (upstream #16) covers the
+  in-process context-manager path only. Python also resumes via the `Driver.SignalResume` event
+  the driver posts on foreground return after `SIGTSTP`; our driver has no signal handling, so a
+  `suspend_process` round-trip never publishes `app_resume_signal`. Needs real signal handling in
+  `src/driver` (untestable headless — requires a live-terminal proof like PR-15b), not silently
+  claimed until then.
+- **`Event::Unmount` delivery to already-removed nodes (PR-14 follow-up):** per-node unmount
+  delivery today is the synchronous `on_unmount` hooks inside `WidgetTree::remove` (PR-03, pinned by
+  `remove_subtree_fires_on_unmount_per_node`); the loop drain additionally dispatches
+  `Event::Unmount` via `dispatch_event_to_target_tree` against the active tree, which no longer
+  contains pruned nodes. PR-14 deliberately left this path unchanged. If a future parity probe shows
+  removed nodes missing `Event::Unmount` deliveries Python makes, either retain pruned widgets until
+  dispatch or drop the dead dispatch — verify first, then decide.
 
 ## Interactive divergence classes (the 3 `pty_interactive` `#[ignore]`s)
 
