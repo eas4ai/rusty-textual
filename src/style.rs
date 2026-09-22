@@ -1860,10 +1860,12 @@ fn cascade_opt<T: Clone>(
     other_val: &Option<T>,
     self_imp: bool,
     other_imp: bool,
+    respect_earlier: bool,
 ) -> (Option<T>, bool) {
     match (other_val.is_some(), self_val.is_some()) {
-        // Both have the value; self is important, other is not → self wins
-        (true, true) if self_imp && !other_imp => (self_val.clone(), true),
+        // Both have the value; self is important, other is not → self wins.
+        // Skipped at layer boundaries (PR-10): the higher layer always wins.
+        (true, true) if respect_earlier && self_imp && !other_imp => (self_val.clone(), true),
         // Other has a value and self doesn't block it → other wins
         (true, _) => (other_val.clone(), other_imp),
         // Other has no value → keep self
@@ -1872,15 +1874,19 @@ fn cascade_opt<T: Clone>(
 }
 
 /// Cascade two [`BorderEdge`] values respecting `!important` flags.
+///
+/// When `respect_earlier` is false (layer boundary, PR-10), the keep-earlier
+/// rule is skipped and the later value always wins.
 fn cascade_border(
     self_val: BorderEdge,
     other_val: BorderEdge,
     self_imp: bool,
     other_imp: bool,
+    respect_earlier: bool,
 ) -> (BorderEdge, bool) {
     let other_set = other_val != BorderEdge::Unset;
     let self_set = self_val != BorderEdge::Unset;
-    if other_set && self_set && self_imp && !other_imp {
+    if other_set && self_set && respect_earlier && self_imp && !other_imp {
         (self_val, true)
     } else if other_set {
         (other_val, other_imp)
@@ -1890,12 +1896,13 @@ fn cascade_border(
 }
 
 macro_rules! cascade_field {
-    ($self:expr, $other:expr, $imp:ident, $field:ident, $prop:expr) => {{
+    ($self:expr, $other:expr, $imp:ident, $field:ident, $prop:expr, $respect:expr) => {{
         let (val, is_imp) = cascade_opt(
             &$self.$field,
             &$other.$field,
             $self.importance.get($prop),
             $other.importance.get($prop),
+            $respect,
         );
         if is_imp {
             $imp.set($prop);
@@ -1905,12 +1912,13 @@ macro_rules! cascade_field {
 }
 
 macro_rules! cascade_border_field {
-    ($self:expr, $other:expr, $imp:ident, $field:ident, $prop:expr) => {{
+    ($self:expr, $other:expr, $imp:ident, $field:ident, $prop:expr, $respect:expr) => {{
         let (val, is_imp) = cascade_border(
             $self.$field,
             $other.$field,
             $self.importance.get($prop),
             $other.importance.get($prop),
+            $respect,
         );
         if is_imp {
             $imp.set($prop);
@@ -2122,6 +2130,21 @@ impl Style {
     //     unless `self` has `!important` and `other` does not. ---
 
     pub fn combine(&self, other: &Style) -> Style {
+        self.combine_inner(other, true)
+    }
+
+    /// Merge `other` over `self` with the higher layer always winning every
+    /// value conflict (PR-10).
+    ///
+    /// Mirrors Python's `extract_rules` outermost key: the whole user layer
+    /// outranks the whole default layer, so default `!important` loses to
+    /// user normal. Importance bits follow the winning values, so surviving
+    /// default `!important` bits still outrank later inline styles.
+    pub fn combine_override(&self, other: &Style) -> Style {
+        self.combine_inner(other, false)
+    }
+
+    fn combine_inner(&self, other: &Style, respect_earlier_important: bool) -> Style {
         let mut imp = ImportanceBitset::new();
 
         // fg / fg_auto are a linked pair representing one "foreground color" property.
@@ -2130,7 +2153,12 @@ impl Style {
         let other_has_fg = other.fg.is_some() || other.fg_auto.is_some();
         let self_has_fg = self.fg.is_some() || self.fg_auto.is_some();
 
-        let (fg, fg_auto) = if other_has_fg && self_has_fg && self_fg_imp && !other_fg_imp {
+        let (fg, fg_auto) = if other_has_fg
+            && self_has_fg
+            && respect_earlier_important
+            && self_fg_imp
+            && !other_fg_imp
+        {
             imp.set(StyleProperty::Fg);
             (self.fg, self.fg_auto)
         } else if other_has_fg {
@@ -2154,363 +2182,695 @@ impl Style {
         Style {
             fg,
             fg_auto,
-            bg: cascade_field!(self, other, imp, bg, StyleProperty::Bg),
+            bg: cascade_field!(
+                self,
+                other,
+                imp,
+                bg,
+                StyleProperty::Bg,
+                respect_earlier_important
+            ),
             text_opacity: cascade_field!(
                 self,
                 other,
                 imp,
                 text_opacity,
-                StyleProperty::TextOpacity
+                StyleProperty::TextOpacity,
+                respect_earlier_important
             ),
-            opacity: cascade_field!(self, other, imp, opacity, StyleProperty::Opacity),
-            bold: cascade_field!(self, other, imp, bold, StyleProperty::Bold),
-            dim: cascade_field!(self, other, imp, dim, StyleProperty::Dim),
-            italic: cascade_field!(self, other, imp, italic, StyleProperty::Italic),
-            underline: cascade_field!(self, other, imp, underline, StyleProperty::Underline),
-            reverse: cascade_field!(self, other, imp, reverse, StyleProperty::Reverse),
-            strike: cascade_field!(self, other, imp, strike, StyleProperty::Strike),
-            border: cascade_field!(self, other, imp, border, StyleProperty::Border),
+            opacity: cascade_field!(
+                self,
+                other,
+                imp,
+                opacity,
+                StyleProperty::Opacity,
+                respect_earlier_important
+            ),
+            bold: cascade_field!(
+                self,
+                other,
+                imp,
+                bold,
+                StyleProperty::Bold,
+                respect_earlier_important
+            ),
+            dim: cascade_field!(
+                self,
+                other,
+                imp,
+                dim,
+                StyleProperty::Dim,
+                respect_earlier_important
+            ),
+            italic: cascade_field!(
+                self,
+                other,
+                imp,
+                italic,
+                StyleProperty::Italic,
+                respect_earlier_important
+            ),
+            underline: cascade_field!(
+                self,
+                other,
+                imp,
+                underline,
+                StyleProperty::Underline,
+                respect_earlier_important
+            ),
+            reverse: cascade_field!(
+                self,
+                other,
+                imp,
+                reverse,
+                StyleProperty::Reverse,
+                respect_earlier_important
+            ),
+            strike: cascade_field!(
+                self,
+                other,
+                imp,
+                strike,
+                StyleProperty::Strike,
+                respect_earlier_important
+            ),
+            border: cascade_field!(
+                self,
+                other,
+                imp,
+                border,
+                StyleProperty::Border,
+                respect_earlier_important
+            ),
             border_top: cascade_border_field!(
                 self,
                 other,
                 imp,
                 border_top,
-                StyleProperty::BorderTop
+                StyleProperty::BorderTop,
+                respect_earlier_important
             ),
             border_right: cascade_border_field!(
                 self,
                 other,
                 imp,
                 border_right,
-                StyleProperty::BorderRight
+                StyleProperty::BorderRight,
+                respect_earlier_important
             ),
             border_bottom: cascade_border_field!(
                 self,
                 other,
                 imp,
                 border_bottom,
-                StyleProperty::BorderBottom
+                StyleProperty::BorderBottom,
+                respect_earlier_important
             ),
             border_left: cascade_border_field!(
                 self,
                 other,
                 imp,
                 border_left,
-                StyleProperty::BorderLeft
+                StyleProperty::BorderLeft,
+                respect_earlier_important
             ),
-            tint: cascade_field!(self, other, imp, tint, StyleProperty::Tint),
+            tint: cascade_field!(
+                self,
+                other,
+                imp,
+                tint,
+                StyleProperty::Tint,
+                respect_earlier_important
+            ),
             background_tint: cascade_field!(
                 self,
                 other,
                 imp,
                 background_tint,
-                StyleProperty::BackgroundTint
+                StyleProperty::BackgroundTint,
+                respect_earlier_important
             ),
-            margin: cascade_field!(self, other, imp, margin, StyleProperty::Margin),
-            padding: cascade_field!(self, other, imp, padding, StyleProperty::Padding),
-            width: cascade_field!(self, other, imp, width, StyleProperty::Width),
-            height: cascade_field!(self, other, imp, height, StyleProperty::Height),
-            min_width: cascade_field!(self, other, imp, min_width, StyleProperty::MinWidth),
-            max_width: cascade_field!(self, other, imp, max_width, StyleProperty::MaxWidth),
-            min_height: cascade_field!(self, other, imp, min_height, StyleProperty::MinHeight),
-            max_height: cascade_field!(self, other, imp, max_height, StyleProperty::MaxHeight),
-            layout: cascade_field!(self, other, imp, layout, StyleProperty::Layout),
-            display: cascade_field!(self, other, imp, display, StyleProperty::Display),
-            visibility: cascade_field!(self, other, imp, visibility, StyleProperty::Visibility),
-            overflow: cascade_field!(self, other, imp, overflow, StyleProperty::Overflow),
-            overflow_x: cascade_field!(self, other, imp, overflow_x, StyleProperty::OverflowX),
-            overflow_y: cascade_field!(self, other, imp, overflow_y, StyleProperty::OverflowY),
-            dock: cascade_field!(self, other, imp, dock, StyleProperty::Dock),
-            text_align: cascade_field!(self, other, imp, text_align, StyleProperty::TextAlign),
+            margin: cascade_field!(
+                self,
+                other,
+                imp,
+                margin,
+                StyleProperty::Margin,
+                respect_earlier_important
+            ),
+            padding: cascade_field!(
+                self,
+                other,
+                imp,
+                padding,
+                StyleProperty::Padding,
+                respect_earlier_important
+            ),
+            width: cascade_field!(
+                self,
+                other,
+                imp,
+                width,
+                StyleProperty::Width,
+                respect_earlier_important
+            ),
+            height: cascade_field!(
+                self,
+                other,
+                imp,
+                height,
+                StyleProperty::Height,
+                respect_earlier_important
+            ),
+            min_width: cascade_field!(
+                self,
+                other,
+                imp,
+                min_width,
+                StyleProperty::MinWidth,
+                respect_earlier_important
+            ),
+            max_width: cascade_field!(
+                self,
+                other,
+                imp,
+                max_width,
+                StyleProperty::MaxWidth,
+                respect_earlier_important
+            ),
+            min_height: cascade_field!(
+                self,
+                other,
+                imp,
+                min_height,
+                StyleProperty::MinHeight,
+                respect_earlier_important
+            ),
+            max_height: cascade_field!(
+                self,
+                other,
+                imp,
+                max_height,
+                StyleProperty::MaxHeight,
+                respect_earlier_important
+            ),
+            layout: cascade_field!(
+                self,
+                other,
+                imp,
+                layout,
+                StyleProperty::Layout,
+                respect_earlier_important
+            ),
+            display: cascade_field!(
+                self,
+                other,
+                imp,
+                display,
+                StyleProperty::Display,
+                respect_earlier_important
+            ),
+            visibility: cascade_field!(
+                self,
+                other,
+                imp,
+                visibility,
+                StyleProperty::Visibility,
+                respect_earlier_important
+            ),
+            overflow: cascade_field!(
+                self,
+                other,
+                imp,
+                overflow,
+                StyleProperty::Overflow,
+                respect_earlier_important
+            ),
+            overflow_x: cascade_field!(
+                self,
+                other,
+                imp,
+                overflow_x,
+                StyleProperty::OverflowX,
+                respect_earlier_important
+            ),
+            overflow_y: cascade_field!(
+                self,
+                other,
+                imp,
+                overflow_y,
+                StyleProperty::OverflowY,
+                respect_earlier_important
+            ),
+            dock: cascade_field!(
+                self,
+                other,
+                imp,
+                dock,
+                StyleProperty::Dock,
+                respect_earlier_important
+            ),
+            text_align: cascade_field!(
+                self,
+                other,
+                imp,
+                text_align,
+                StyleProperty::TextAlign,
+                respect_earlier_important
+            ),
             content_align: cascade_field!(
                 self,
                 other,
                 imp,
                 content_align,
-                StyleProperty::ContentAlign
+                StyleProperty::ContentAlign,
+                respect_earlier_important
             ),
-            align: cascade_field!(self, other, imp, align, StyleProperty::Align),
-            offset: cascade_field!(self, other, imp, offset, StyleProperty::Offset),
-            pointer: cascade_field!(self, other, imp, pointer, StyleProperty::Pointer),
-            constrain: cascade_field!(self, other, imp, constrain, StyleProperty::Constrain),
+            align: cascade_field!(
+                self,
+                other,
+                imp,
+                align,
+                StyleProperty::Align,
+                respect_earlier_important
+            ),
+            offset: cascade_field!(
+                self,
+                other,
+                imp,
+                offset,
+                StyleProperty::Offset,
+                respect_earlier_important
+            ),
+            pointer: cascade_field!(
+                self,
+                other,
+                imp,
+                pointer,
+                StyleProperty::Pointer,
+                respect_earlier_important
+            ),
+            constrain: cascade_field!(
+                self,
+                other,
+                imp,
+                constrain,
+                StyleProperty::Constrain,
+                respect_earlier_important
+            ),
             grid_size_columns: cascade_field!(
                 self,
                 other,
                 imp,
                 grid_size_columns,
-                StyleProperty::GridSizeColumns
+                StyleProperty::GridSizeColumns,
+                respect_earlier_important
             ),
             grid_size_rows: cascade_field!(
                 self,
                 other,
                 imp,
                 grid_size_rows,
-                StyleProperty::GridSizeRows
+                StyleProperty::GridSizeRows,
+                respect_earlier_important
             ),
             grid_columns: cascade_field!(
                 self,
                 other,
                 imp,
                 grid_columns,
-                StyleProperty::GridColumns
+                StyleProperty::GridColumns,
+                respect_earlier_important
             ),
-            grid_rows: cascade_field!(self, other, imp, grid_rows, StyleProperty::GridRows),
+            grid_rows: cascade_field!(
+                self,
+                other,
+                imp,
+                grid_rows,
+                StyleProperty::GridRows,
+                respect_earlier_important
+            ),
             grid_gutter_horizontal: cascade_field!(
                 self,
                 other,
                 imp,
                 grid_gutter_horizontal,
-                StyleProperty::GridGutterHorizontal
+                StyleProperty::GridGutterHorizontal,
+                respect_earlier_important
             ),
             grid_gutter_vertical: cascade_field!(
                 self,
                 other,
                 imp,
                 grid_gutter_vertical,
-                StyleProperty::GridGutterVertical
+                StyleProperty::GridGutterVertical,
+                respect_earlier_important
             ),
-            layer: cascade_field!(self, other, imp, layer, StyleProperty::Layer),
-            layers: cascade_field!(self, other, imp, layers, StyleProperty::Layers),
+            layer: cascade_field!(
+                self,
+                other,
+                imp,
+                layer,
+                StyleProperty::Layer,
+                respect_earlier_important
+            ),
+            layers: cascade_field!(
+                self,
+                other,
+                imp,
+                layers,
+                StyleProperty::Layers,
+                respect_earlier_important
+            ),
             transition_duration: cascade_field!(
                 self,
                 other,
                 imp,
                 transition_duration,
-                StyleProperty::TransitionDuration
+                StyleProperty::TransitionDuration,
+                respect_earlier_important
             ),
             transition_delay: cascade_field!(
                 self,
                 other,
                 imp,
                 transition_delay,
-                StyleProperty::TransitionDelay
+                StyleProperty::TransitionDelay,
+                respect_earlier_important
             ),
             transition_timing: cascade_field!(
                 self,
                 other,
                 imp,
                 transition_timing,
-                StyleProperty::TransitionTiming
+                StyleProperty::TransitionTiming,
+                respect_earlier_important
             ),
             // --- P2 CSS gap cascade ---
-            position: cascade_field!(self, other, imp, position, StyleProperty::Position),
-            box_sizing: cascade_field!(self, other, imp, box_sizing, StyleProperty::BoxSizing),
-            split: cascade_field!(self, other, imp, split, StyleProperty::Split),
-            padding_top: cascade_field!(self, other, imp, padding_top, StyleProperty::PaddingTop),
+            position: cascade_field!(
+                self,
+                other,
+                imp,
+                position,
+                StyleProperty::Position,
+                respect_earlier_important
+            ),
+            box_sizing: cascade_field!(
+                self,
+                other,
+                imp,
+                box_sizing,
+                StyleProperty::BoxSizing,
+                respect_earlier_important
+            ),
+            split: cascade_field!(
+                self,
+                other,
+                imp,
+                split,
+                StyleProperty::Split,
+                respect_earlier_important
+            ),
+            padding_top: cascade_field!(
+                self,
+                other,
+                imp,
+                padding_top,
+                StyleProperty::PaddingTop,
+                respect_earlier_important
+            ),
             padding_right: cascade_field!(
                 self,
                 other,
                 imp,
                 padding_right,
-                StyleProperty::PaddingRight
+                StyleProperty::PaddingRight,
+                respect_earlier_important
             ),
             padding_bottom: cascade_field!(
                 self,
                 other,
                 imp,
                 padding_bottom,
-                StyleProperty::PaddingBottom
+                StyleProperty::PaddingBottom,
+                respect_earlier_important
             ),
             padding_left: cascade_field!(
                 self,
                 other,
                 imp,
                 padding_left,
-                StyleProperty::PaddingLeft
+                StyleProperty::PaddingLeft,
+                respect_earlier_important
             ),
-            margin_top: cascade_field!(self, other, imp, margin_top, StyleProperty::MarginTop),
+            margin_top: cascade_field!(
+                self,
+                other,
+                imp,
+                margin_top,
+                StyleProperty::MarginTop,
+                respect_earlier_important
+            ),
             margin_right: cascade_field!(
                 self,
                 other,
                 imp,
                 margin_right,
-                StyleProperty::MarginRight
+                StyleProperty::MarginRight,
+                respect_earlier_important
             ),
             margin_bottom: cascade_field!(
                 self,
                 other,
                 imp,
                 margin_bottom,
-                StyleProperty::MarginBottom
+                StyleProperty::MarginBottom,
+                respect_earlier_important
             ),
-            margin_left: cascade_field!(self, other, imp, margin_left, StyleProperty::MarginLeft),
+            margin_left: cascade_field!(
+                self,
+                other,
+                imp,
+                margin_left,
+                StyleProperty::MarginLeft,
+                respect_earlier_important
+            ),
             outline_top: cascade_border_field!(
                 self,
                 other,
                 imp,
                 outline_top,
-                StyleProperty::OutlineTop
+                StyleProperty::OutlineTop,
+                respect_earlier_important
             ),
             outline_right: cascade_border_field!(
                 self,
                 other,
                 imp,
                 outline_right,
-                StyleProperty::OutlineRight
+                StyleProperty::OutlineRight,
+                respect_earlier_important
             ),
             outline_bottom: cascade_border_field!(
                 self,
                 other,
                 imp,
                 outline_bottom,
-                StyleProperty::OutlineBottom
+                StyleProperty::OutlineBottom,
+                respect_earlier_important
             ),
             outline_left: cascade_border_field!(
                 self,
                 other,
                 imp,
                 outline_left,
-                StyleProperty::OutlineLeft
+                StyleProperty::OutlineLeft,
+                respect_earlier_important
             ),
             border_title_align: cascade_field!(
                 self,
                 other,
                 imp,
                 border_title_align,
-                StyleProperty::BorderTitleAlign
+                StyleProperty::BorderTitleAlign,
+                respect_earlier_important
             ),
             border_subtitle_align: cascade_field!(
                 self,
                 other,
                 imp,
                 border_subtitle_align,
-                StyleProperty::BorderSubtitleAlign
+                StyleProperty::BorderSubtitleAlign,
+                respect_earlier_important
             ),
             border_title_color: cascade_field!(
                 self,
                 other,
                 imp,
                 border_title_color,
-                StyleProperty::BorderTitleColor
+                StyleProperty::BorderTitleColor,
+                respect_earlier_important
             ),
             border_title_background: cascade_field!(
                 self,
                 other,
                 imp,
                 border_title_background,
-                StyleProperty::BorderTitleBackground
+                StyleProperty::BorderTitleBackground,
+                respect_earlier_important
             ),
             border_title_style: cascade_field!(
                 self,
                 other,
                 imp,
                 border_title_style,
-                StyleProperty::BorderTitleStyle
+                StyleProperty::BorderTitleStyle,
+                respect_earlier_important
             ),
             border_subtitle_color: cascade_field!(
                 self,
                 other,
                 imp,
                 border_subtitle_color,
-                StyleProperty::BorderSubtitleColor
+                StyleProperty::BorderSubtitleColor,
+                respect_earlier_important
             ),
             border_subtitle_background: cascade_field!(
                 self,
                 other,
                 imp,
                 border_subtitle_background,
-                StyleProperty::BorderSubtitleBackground
+                StyleProperty::BorderSubtitleBackground,
+                respect_earlier_important
             ),
             border_subtitle_style: cascade_field!(
                 self,
                 other,
                 imp,
                 border_subtitle_style,
-                StyleProperty::BorderSubtitleStyle
+                StyleProperty::BorderSubtitleStyle,
+                respect_earlier_important
             ),
             scrollbar_color: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_color,
-                StyleProperty::ScrollbarColor
+                StyleProperty::ScrollbarColor,
+                respect_earlier_important
             ),
             scrollbar_color_hover: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_color_hover,
-                StyleProperty::ScrollbarColorHover
+                StyleProperty::ScrollbarColorHover,
+                respect_earlier_important
             ),
             scrollbar_color_active: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_color_active,
-                StyleProperty::ScrollbarColorActive
+                StyleProperty::ScrollbarColorActive,
+                respect_earlier_important
             ),
             scrollbar_background: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_background,
-                StyleProperty::ScrollbarBackground
+                StyleProperty::ScrollbarBackground,
+                respect_earlier_important
             ),
             scrollbar_background_hover: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_background_hover,
-                StyleProperty::ScrollbarBackgroundHover
+                StyleProperty::ScrollbarBackgroundHover,
+                respect_earlier_important
             ),
             scrollbar_background_active: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_background_active,
-                StyleProperty::ScrollbarBackgroundActive
+                StyleProperty::ScrollbarBackgroundActive,
+                respect_earlier_important
             ),
             scrollbar_corner_color: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_corner_color,
-                StyleProperty::ScrollbarCornerColor
+                StyleProperty::ScrollbarCornerColor,
+                respect_earlier_important
             ),
             scrollbar_gutter: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_gutter,
-                StyleProperty::ScrollbarGutter
+                StyleProperty::ScrollbarGutter,
+                respect_earlier_important
             ),
             scrollbar_size: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_size,
-                StyleProperty::ScrollbarSize
+                StyleProperty::ScrollbarSize,
+                respect_earlier_important
             ),
             scrollbar_size_horizontal: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_size_horizontal,
-                StyleProperty::ScrollbarSizeHorizontal
+                StyleProperty::ScrollbarSizeHorizontal,
+                respect_earlier_important
             ),
             scrollbar_size_vertical: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_size_vertical,
-                StyleProperty::ScrollbarSizeVertical
+                StyleProperty::ScrollbarSizeVertical,
+                respect_earlier_important
             ),
             scrollbar_visibility: cascade_field!(
                 self,
                 other,
                 imp,
                 scrollbar_visibility,
-                StyleProperty::ScrollbarVisibility
+                StyleProperty::ScrollbarVisibility,
+                respect_earlier_important
             ),
-            text_wrap: cascade_field!(self, other, imp, text_wrap, StyleProperty::TextWrapProp),
+            text_wrap: cascade_field!(
+                self,
+                other,
+                imp,
+                text_wrap,
+                StyleProperty::TextWrapProp,
+                respect_earlier_important
+            ),
             text_overflow: cascade_field!(
                 self,
                 other,
                 imp,
                 text_overflow,
-                StyleProperty::TextOverflowProp
+                StyleProperty::TextOverflowProp,
+                respect_earlier_important
             ),
-            link_color: cascade_field!(self, other, imp, link_color, StyleProperty::LinkColor),
+            link_color: cascade_field!(
+                self,
+                other,
+                imp,
+                link_color,
+                StyleProperty::LinkColor,
+                respect_earlier_important
+            ),
             // `link_color_auto` pairs with `link_color`: the style that wins the
             // link-color slot also provides its auto marker.
             link_color_auto: if other.link_color.is_some() || other.link_color_auto.is_some() {
@@ -2523,15 +2883,24 @@ impl Style {
                 other,
                 imp,
                 link_background,
-                StyleProperty::LinkBackground
+                StyleProperty::LinkBackground,
+                respect_earlier_important
             ),
-            link_style: cascade_field!(self, other, imp, link_style, StyleProperty::LinkStyleProp),
+            link_style: cascade_field!(
+                self,
+                other,
+                imp,
+                link_style,
+                StyleProperty::LinkStyleProp,
+                respect_earlier_important
+            ),
             link_color_hover: cascade_field!(
                 self,
                 other,
                 imp,
                 link_color_hover,
-                StyleProperty::LinkColorHover
+                StyleProperty::LinkColorHover,
+                respect_earlier_important
             ),
             link_color_hover_auto: if other.link_color_hover.is_some()
                 || other.link_color_hover_auto.is_some()
@@ -2545,31 +2914,97 @@ impl Style {
                 other,
                 imp,
                 link_background_hover,
-                StyleProperty::LinkBackgroundHover
+                StyleProperty::LinkBackgroundHover,
+                respect_earlier_important
             ),
             link_style_hover: cascade_field!(
                 self,
                 other,
                 imp,
                 link_style_hover,
-                StyleProperty::LinkStyleHover
+                StyleProperty::LinkStyleHover,
+                respect_earlier_important
             ),
-            row_span: cascade_field!(self, other, imp, row_span, StyleProperty::RowSpan),
-            column_span: cascade_field!(self, other, imp, column_span, StyleProperty::ColumnSpan),
-            hatch: cascade_field!(self, other, imp, hatch, StyleProperty::HatchProp),
-            overlay: cascade_field!(self, other, imp, overlay, StyleProperty::OverlayProp),
-            keyline: cascade_field!(self, other, imp, keyline, StyleProperty::KeylineProp),
-            constrain_x: cascade_field!(self, other, imp, constrain_x, StyleProperty::ConstrainX),
-            constrain_y: cascade_field!(self, other, imp, constrain_y, StyleProperty::ConstrainY),
-            expand: cascade_field!(self, other, imp, expand, StyleProperty::ExpandProp),
+            row_span: cascade_field!(
+                self,
+                other,
+                imp,
+                row_span,
+                StyleProperty::RowSpan,
+                respect_earlier_important
+            ),
+            column_span: cascade_field!(
+                self,
+                other,
+                imp,
+                column_span,
+                StyleProperty::ColumnSpan,
+                respect_earlier_important
+            ),
+            hatch: cascade_field!(
+                self,
+                other,
+                imp,
+                hatch,
+                StyleProperty::HatchProp,
+                respect_earlier_important
+            ),
+            overlay: cascade_field!(
+                self,
+                other,
+                imp,
+                overlay,
+                StyleProperty::OverlayProp,
+                respect_earlier_important
+            ),
+            keyline: cascade_field!(
+                self,
+                other,
+                imp,
+                keyline,
+                StyleProperty::KeylineProp,
+                respect_earlier_important
+            ),
+            constrain_x: cascade_field!(
+                self,
+                other,
+                imp,
+                constrain_x,
+                StyleProperty::ConstrainX,
+                respect_earlier_important
+            ),
+            constrain_y: cascade_field!(
+                self,
+                other,
+                imp,
+                constrain_y,
+                StyleProperty::ConstrainY,
+                respect_earlier_important
+            ),
+            expand: cascade_field!(
+                self,
+                other,
+                imp,
+                expand,
+                StyleProperty::ExpandProp,
+                respect_earlier_important
+            ),
             transitions: cascade_field!(
                 self,
                 other,
                 imp,
                 transitions,
-                StyleProperty::TransitionsProp
+                StyleProperty::TransitionsProp,
+                respect_earlier_important
             ),
-            line_pad: cascade_field!(self, other, imp, line_pad, StyleProperty::LinePad),
+            line_pad: cascade_field!(
+                self,
+                other,
+                imp,
+                line_pad,
+                StyleProperty::LinePad,
+                respect_earlier_important
+            ),
             importance: imp,
         }
     }

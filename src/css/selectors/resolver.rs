@@ -76,10 +76,21 @@ impl StyleSheet {
             }
         }
         matches.sort_by(|a, b| a.0.cmp(&b.0));
-        let mut out = Style::new();
-        for (_, style) in matches {
-            out = out.combine(&style);
+        // Python parity (`extract_rules` outermost key): the whole user
+        // layer outranks the whole default layer. Fold each layer with
+        // importance, then merge layers with the higher layer winning every
+        // conflict (PR-10) — so default `!important` loses to user normal,
+        // while surviving default bits still outrank later inline styles.
+        let mut default_base = Style::new();
+        let mut user_base = Style::new();
+        for ((layer, _, _), style) in matches {
+            if layer == 0 {
+                default_base = default_base.combine(&style);
+            } else {
+                user_base = user_base.combine(&style);
+            }
         }
+        let out = default_base.combine_override(&user_base);
         if debug_style_meta {
             let stack = SELECTOR_STACK.with(|stack| {
                 stack
