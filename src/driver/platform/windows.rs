@@ -58,6 +58,15 @@ impl PlatformDriver for WindowsPlatformDriver {
                 return Err(err);
             }
         }
+        // Bracketed paste (DECSET 2004, PR-15a): without this the terminal
+        // delivers pastes as raw keystrokes instead of a single Paste event.
+        if let Err(err) = execute!(
+            std::io::stdout(),
+            crate::driver::bracketed_paste_enable_command()
+        ) {
+            restore_terminal_best_effort();
+            return Err(err);
+        }
 
         let keyboard_enhanced = if enable_keyboard {
             execute!(
@@ -94,6 +103,10 @@ impl PlatformDriver for WindowsPlatformDriver {
         if options.enable_focus_change {
             record(execute!(std::io::stdout(), DisableFocusChange));
         }
+        record(execute!(
+            std::io::stdout(),
+            crate::driver::bracketed_paste_disable_command()
+        ));
 
         record(execute!(
             std::io::stdout(),
@@ -188,6 +201,12 @@ fn detect_kitty_keyboard_support_auto() -> bool {
 }
 
 fn restore_terminal_best_effort() {
+    // Best-effort subset of stop(): leave no mode behind that start() may
+    // have enabled before failing (PR-15a adds bracketed paste here).
+    let _ = execute!(
+        std::io::stdout(),
+        crate::driver::bracketed_paste_disable_command()
+    );
     let _ = execute!(
         std::io::stdout(),
         cursor::Show,

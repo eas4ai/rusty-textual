@@ -60,12 +60,28 @@ pub struct DriverOptions {
 impl Default for DriverOptions {
     fn default() -> Self {
         Self {
-            enable_mouse: false,
+            // Python parity (`mouse=True`): capture mouse by default (PR-15a).
+            enable_mouse: true,
             enable_pointer_shapes: detect_pointer_shapes_enabled(),
             enable_focus_change: false,
             keyboard_protocol: KeyboardProtocol::Off,
         }
     }
+}
+
+/// Bracketed-paste mode commands (PR-15a).
+///
+/// Single source for the exact bytes the platform drivers emit on
+/// start/stop (DECSET/DECRST 2004), so the headless escape-sequence test
+/// pins the wire contract without a live terminal.
+pub(crate) fn bracketed_paste_enable_command() -> crossterm::event::EnableBracketedPaste {
+    crossterm::event::EnableBracketedPaste
+}
+
+/// Bracketed-paste mode commands (PR-15a): teardown half of
+/// [`bracketed_paste_enable_command`].
+pub(crate) fn bracketed_paste_disable_command() -> crossterm::event::DisableBracketedPaste {
+    crossterm::event::DisableBracketedPaste
 }
 
 pub struct TerminalDriver {
@@ -176,6 +192,29 @@ mod tests {
     // TEXTUAL_POINTER_SHAPES env-var override. They were dropped during the port into
     // textual-rs because they mutate process env via `std::env::set_var`/`remove_var`,
     // which is `unsafe` in edition 2024, and this crate sets `unsafe_code = "forbid"`.
+
+    /// PR-15a: mouse capture defaults on (Python `mouse=True`).
+    #[test]
+    fn mouse_capture_defaults_on() {
+        assert!(super::DriverOptions::default().enable_mouse);
+    }
+
+    /// PR-15a: the platform drivers emit exactly DECSET/DECRST 2004.
+    ///
+    /// Headless pin on the wire contract: the commands executed at
+    /// start/stop must encode to the bracketed-paste sequences, or live
+    /// pastes arrive as raw keystrokes instead of `PasteEvent`s.
+    #[test]
+    fn bracketed_paste_commands_encode_decset_2004() {
+        let mut enable = Vec::new();
+        crossterm::execute!(enable, super::bracketed_paste_enable_command())
+            .expect("encode enable");
+        assert_eq!(enable, b"\x1b[?2004h");
+        let mut disable = Vec::new();
+        crossterm::execute!(disable, super::bracketed_paste_disable_command())
+            .expect("encode disable");
+        assert_eq!(disable, b"\x1b[?2004l");
+    }
 
     #[test]
     fn capability_profile_has_required_flags() {

@@ -3937,7 +3937,19 @@ impl App {
                             break 'event_loop;
                         }
                     }
-                    _ => {}
+                    // Bracketed paste (PR-15a): the terminal wraps the payload
+                    // in DECSET 2004 markers (enabled at driver start), which
+                    // crossterm decodes to a single Paste event — dispatched
+                    // to focus like a key, not as raw keystrokes.
+                    CrosstermEvent::Paste(text) => {
+                        debug_input(&format!(
+                            "[event] Paste({} chars)",
+                            text.chars().count()
+                        ));
+                        if self.dispatch_paste_event(root, text, &mut pending_invalidation) {
+                            break 'event_loop;
+                        }
+                    }
                 }
                 if input_dispatch_us == 0 {
                     input_dispatch_us = input_started.elapsed().as_micros();
@@ -4958,6 +4970,20 @@ impl App {
         self.headless_pump(root, &mut pending)
     }
 
+    /// Inject a bracketed-paste payload through the same dispatch the live
+    /// event loop uses, then pump to idle. Mirrors `pilot.paste`.
+    pub(crate) fn headless_inject_paste(
+        &mut self,
+        root: &mut dyn Widget,
+        text: String,
+    ) -> crate::Result<()> {
+        let mut pending = PendingInvalidation::default();
+        self.with_headless_style_context(|app| {
+            app.headless_process_paste(root, text, &mut pending);
+        });
+        self.headless_pump(root, &mut pending)
+    }
+
     /// Inject a single key press through the same dispatch cascade the live
     /// event loop uses, then pump to idle. Mirrors `pilot.press`.
     pub(crate) fn headless_inject_key(
@@ -4973,6 +4999,37 @@ impl App {
             app.headless_process_key(root, key, &mut pending)
         });
         self.headless_pump(root, &mut pending)
+    }
+
+    /// Shared paste dispatch for the live `CrosstermEvent::Paste` arm and the
+    /// headless mirror (PR-15a): raw `Event::Paste` focus dispatch plus the
+    /// message-queue drain. Pastes carry no bindings or action-map entries,
+    /// so unlike keys there is no pre-dispatch cascade. Returns true when
+    /// the loop must stop.
+    fn dispatch_paste_event(
+        &mut self,
+        root: &mut dyn Widget,
+        text: String,
+        pending: &mut PendingInvalidation,
+    ) -> bool {
+        let mut outcome =
+            self.dispatch_event_auto(root, Event::Paste(crate::event::PasteEvent { text }));
+        self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
+        let mut msg_outcome =
+            self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
+        outcome.stop_requested || msg_outcome.stop_requested
+    }
+
+    /// Paste cascade headless mirror (PR-15a): same shared dispatch as the
+    /// live arm, without instrumentation, then the headless pump.
+    fn headless_process_paste(
+        &mut self,
+        root: &mut dyn Widget,
+        text: String,
+        pending: &mut PendingInvalidation,
+    ) {
+        let _ = self.dispatch_paste_event(root, text, pending);
     }
 
     /// Full key cascade (app key hook → priority action → command palette →
