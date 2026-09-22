@@ -479,7 +479,7 @@ fn registry() -> &'static Mutex<Registry> {
 
 /// Register (or replace) a named theme.
 pub fn register_theme(theme: NamedTheme) {
-    let mut reg = registry().lock().unwrap();
+    let mut reg = registry().lock().unwrap_or_else(|e| e.into_inner());
     let name = theme.name.clone();
     reg.themes.insert(name.clone(), theme);
     // If the replaced theme is currently active, regenerate its tokens.
@@ -492,7 +492,7 @@ pub fn register_theme(theme: NamedTheme) {
 
 /// Names of all registered themes, sorted.
 pub fn available_theme_names() -> Vec<String> {
-    let reg = registry().lock().unwrap();
+    let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
     let mut names: Vec<String> = reg.themes.keys().cloned().collect();
     names.sort();
     names
@@ -500,13 +500,13 @@ pub fn available_theme_names() -> Vec<String> {
 
 /// Look up a registered theme by name.
 pub fn get_theme(name: &str) -> Option<NamedTheme> {
-    let reg = registry().lock().unwrap();
+    let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
     reg.themes.get(name).cloned()
 }
 
 /// The currently active theme name (`textual-dark` if the default path is in use).
 pub fn active_theme_name() -> String {
-    let reg = registry().lock().unwrap();
+    let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
     reg.active
         .clone()
         .unwrap_or_else(|| "textual-dark".to_string())
@@ -518,7 +518,7 @@ pub fn active_theme_name() -> String {
 /// is cleared so the hand-tuned static path in `style.rs` is used (preserving
 /// the calibrated goldens).
 pub fn set_active_theme(name: &str) -> bool {
-    let mut reg = registry().lock().unwrap();
+    let mut reg = registry().lock().unwrap_or_else(|e| e.into_inner());
     let Some(theme) = reg.themes.get(name).cloned() else {
         return false;
     };
@@ -545,7 +545,7 @@ pub fn set_active_theme(name: &str) -> bool {
 /// Resolve a design token (e.g. `primary`, `text-error`) against the active
 /// non-default theme. Returns `None` when the default path should be used.
 pub(crate) fn active_token(name: &str) -> Option<Color> {
-    let reg = registry().lock().unwrap();
+    let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
     reg.active.as_ref()?;
     if let Some(color) = reg.active_tokens.get(name).copied() {
         return Some(color);

@@ -226,7 +226,10 @@ impl Log {
             }
         }
 
-        self.cache.lock().unwrap().invalidate_from(insert_from);
+        self.cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .invalidate_from(insert_from);
         self.prune_max_lines();
         if self.auto_scroll {
             self.scroll_end();
@@ -258,7 +261,10 @@ impl Log {
             return self;
         }
 
-        self.cache.lock().unwrap().invalidate_from(insert_from);
+        self.cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .invalidate_from(insert_from);
         self.prune_max_lines();
         if self.auto_scroll {
             self.scroll_end();
@@ -274,7 +280,7 @@ impl Log {
         self.offset_y = 0;
         self.content_height.store(1, Ordering::Relaxed);
         self.clear_selection();
-        self.cache.lock().unwrap().clear();
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
         self
     }
 
@@ -290,7 +296,7 @@ impl Log {
                     .map(|line| Self::processed_width(line))
                     .max()
                     .unwrap_or(0);
-                self.cache.lock().unwrap().clear();
+                self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
             }
         }
     }
@@ -396,7 +402,7 @@ impl Log {
         let content_hash = Self::line_content_hash(line);
         let cache_key = (line_index, content_hash);
         {
-            let mut cache = self.cache.lock().unwrap();
+            let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(cached) = cache.get(&cache_key) {
                 return cached.clone();
             }
@@ -406,7 +412,7 @@ impl Log {
 
         // Store in cache
         {
-            let mut cache = self.cache.lock().unwrap();
+            let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
             cache.insert(cache_key, result.clone());
         }
 
@@ -775,7 +781,7 @@ impl crate::widgets::Render for Log {
         // WP-25: invalidate cache if width changed
         let prev_width = self.cache_width.swap(width, Ordering::Relaxed);
         if prev_width != width {
-            self.cache.lock().unwrap().clear();
+            self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
         }
 
         let viewport_width = width;
@@ -934,6 +940,26 @@ mod tests {
             final_count >= 3,
             "cache should have all 3 lines after render"
         );
+    }
+
+    /// PR-13: a poisoned line cache is recovered via `into_inner` instead of
+    /// panicking every later call (review section 1.9).
+    #[test]
+    fn poisoned_cache_recovers_instead_of_panicking() {
+        let mut log = Log::new().auto_scroll(false);
+        log.write_lines(["alpha", "beta"]);
+
+        // Poison the cache mutex by panicking while holding the guard.
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = log.cache.lock().unwrap();
+            panic!("intentional poison for PR-13");
+        }));
+        assert!(poisoned.is_err());
+        assert!(log.cache.is_poisoned());
+
+        // Production paths recover: this panicked on the old `.lock().unwrap()`.
+        log.write_line("gamma");
+        let _ = log.clear();
     }
 
     #[test]
