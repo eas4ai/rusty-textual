@@ -69,6 +69,8 @@ impl Default for DriverOptions {
     }
 }
 
+pub(crate) mod negotiate;
+
 /// Bracketed-paste mode commands (PR-15a).
 ///
 /// Single source for the exact bytes the platform drivers emit on
@@ -90,6 +92,7 @@ pub struct TerminalDriver {
     options: DriverOptions,
     keyboard_enhanced: bool,
     capabilities: CapabilityProfile,
+    negotiated: negotiate::NegotiatedModes,
     platform: Box<dyn platform::PlatformDriver>,
 }
 
@@ -103,6 +106,7 @@ impl TerminalDriver {
             options,
             keyboard_enhanced: false,
             capabilities: platform::capability_profile(),
+            negotiated: negotiate::NegotiatedModes::default(),
             platform,
         })
     }
@@ -129,13 +133,22 @@ impl TerminalDriver {
         self.keyboard_enhanced
     }
 
+    /// Outcome of the startup mode negotiation (PR-15b): DECRQM answers for
+    /// SYNC (2026) and in-band resize (2048), or defaults when skipped
+    /// (piped, Apple Terminal for SYNC) or unanswered.
+    pub fn negotiated_modes(&self) -> negotiate::NegotiatedModes {
+        self.negotiated
+    }
+
     pub fn start(&mut self) -> io::Result<()> {
         if self.started {
             return Ok(());
         }
-        self.keyboard_enhanced = self
+        let (keyboard_enhanced, negotiated) = self
             .platform
             .start(self.options, self.options.keyboard_protocol)?;
+        self.keyboard_enhanced = keyboard_enhanced;
+        self.negotiated = negotiated;
         self.started = true;
         Ok(())
     }

@@ -4143,6 +4143,10 @@ impl App {
             return Ok(());
         }
         self.driver.start()?;
+        // SYNC stays off unless the startup negotiation proved support
+        // (PR-15b): the env opt-out alone no longer wraps every frame.
+        self.sync_output =
+            self.sync_output && self.driver.negotiated_modes().sync_supported;
         self.refresh_size()?;
         debug_render(&format!("[app] sync_output={}", self.sync_output));
         debug_render(&format!(
