@@ -100,8 +100,9 @@ pub mod prelude {
     // API — user apps go through `TextualApp`/`Pilot`/`run_test`. Harness-level code
     // that drives trees directly imports them via `textual::runtime::{...}`.
     pub use crate::runtime::{
-        App, BindingClash, BindingSource, CallFromThreadError, DomQuery, DomQueryMut,
-        PushScreenWaitError, ScreenRef, TimerHandle, TimerTick, WidgetQuery,
+        App, AppResumed, AppSuspended, AwaitRemove, BindingClash, BindingSource,
+        CallFromThreadError, DomQuery, DomQueryMut, PushScreenWaitError, ScreenRef, SuspendGuard,
+        TimerHandle, TimerTick, WidgetQuery,
     };
     pub use crate::screen::{
         Screen, ScreenMessageCtx, ScreenResult, ScreenResultCallback, ScreenStack,

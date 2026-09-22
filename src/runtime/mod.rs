@@ -62,6 +62,7 @@ use crate::node_id::node_id_from_ffi;
 use crate::node_id::node_id_to_ffi;
 use crate::render::FrameBuffer;
 use crate::screen::ScreenStack;
+use crate::signal::{Signal, SignalResponse};
 use crate::style::{Theme, Visibility};
 use crate::widget_tree::{QueryError, WidgetTree};
 use crate::widgets::{
@@ -573,20 +574,96 @@ impl<'a> DomQueryMut<'a> {
         }
     }
 
-    pub fn remove(self) -> Self {
+    pub fn remove(self) -> AwaitRemove {
+        let generation = self.app.lifecycle_drain_generation();
+        let mut removed = Vec::new();
         if let Some(tree) = self.app.widget_tree.as_mut() {
             for &id in &self.nodes {
                 if tree.contains(id) {
+                    removed.extend(tree.walk_depth_first(id));
                     tree.remove(id);
                 }
             }
         }
-        self
+        AwaitRemove {
+            removed,
+            drain_generation: generation,
+        }
     }
 
     pub fn refresh(self) -> Self {
         self.app.request_query_refresh(&self.nodes);
         self
+    }
+}
+
+/// Payload of [`App::app_suspend_signal`]: published before the driver stops
+/// (Python `App.app_suspend_signal`, PR-14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppSuspended;
+
+/// Payload of [`App::app_resume_signal`]: published when the driver restarts
+/// (Python `App.app_resume_signal`, PR-14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppResumed;
+
+/// RAII guard for [`App::suspend`] (PR-14).
+///
+/// Rust-native mimicry of Python's `App.suspend()` context manager: dropping
+/// the guard restarts the driver (when this guard stopped it), publishes the
+/// resume signal, and requests a full relayout so the first post-resume frame
+/// repaints everything the borrowed-terminal block may have drawn over.
+pub struct SuspendGuard<'a> {
+    app: &'a mut App,
+    restart_driver: bool,
+}
+
+impl SuspendGuard<'_> {
+    /// Whether the suspension is still active (the guard has not been dropped).
+    pub fn is_active(&self) -> bool {
+        self.app.is_suspended()
+    }
+}
+
+impl Drop for SuspendGuard<'_> {
+    fn drop(&mut self) {
+        if self.restart_driver {
+            // Drop cannot propagate: a failed restart leaves the terminal
+            // stopped rather than panicking out of user code (PR-14).
+            let _ = self.app.driver.start();
+        }
+        self.app.suspended = false;
+        self.app.app_resume_signal.emit(&AppResumed);
+        self.app.pending_force_relayout = true;
+    }
+}
+
+/// Handle for an in-flight widget removal (PR-14).
+///
+/// Rust-native mimicry of Python's `AwaitRemove`: `remove` detaches the
+/// subtree synchronously, but the event loop still has to drain that
+/// removal's unmount work (event dispatch, timer purge, worker cancel).
+/// The handle completes once a later lifecycle drain has run — poll with
+/// [`AwaitRemove::is_complete`] after pumping the loop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwaitRemove {
+    removed: Vec<NodeId>,
+    drain_generation: u64,
+}
+
+impl AwaitRemove {
+    /// The ids detached by the removal, parents before children.
+    pub fn removed(&self) -> &[NodeId] {
+        &self.removed
+    }
+
+    /// Whether the event loop has processed this removal's unmount work.
+    ///
+    /// True once a lifecycle drain ran after the removal was captured; an
+    /// idle pump (no events dispatched) never completes a handle whose work
+    /// is still queued.
+    pub fn is_complete(&self, app: &App) -> bool {
+        app.lifecycle_drain_generation() > self.drain_generation
     }
 }
 
@@ -799,6 +876,23 @@ pub struct App {
     /// headless instead of suspending — giving exit/suspend-on-interaction demos
     /// an observable signal via [`App::headless_suspend_count`].
     headless_suspend_count: u32,
+    /// Suspended-state flag for the [`App::suspend`] context guard (PR-14).
+    ///
+    /// Set when a [`SuspendGuard`] is live, cleared when it drops. Mirrors the
+    /// window during which Python lends the terminal to the `with` block.
+    suspended: bool,
+    /// Subscribers to the suspend signal, published *before* the driver stops
+    /// (Python `App.app_suspend_signal`, `app.py`).
+    app_suspend_signal: Signal<AppSuspended>,
+    /// Subscribers to the resume signal, published when the driver restarts
+    /// (Python `App.app_resume_signal`, `app.py`).
+    app_resume_signal: Signal<AppResumed>,
+    /// Lifecycle-drain generation backing [`AwaitRemove`] (PR-14).
+    ///
+    /// Bumped once per event-loop lifecycle drain that dispatched events, so
+    /// an [`AwaitRemove`] captured at removal completes exactly when the loop
+    /// has processed that removal's unmount work.
+    lifecycle_drain_generation: u64,
     /// Monotonic tick counter delivered to `root.on_tick(tick)` by the headless
     /// [`Pilot::advance_ticks`]. The live loop keeps this counter loop-local; the
     /// headless harness keeps it on the `App` so successive `advance_ticks` /
@@ -943,6 +1037,10 @@ impl App {
             dynamic_watchers: Vec::new(),
             suspend_process_impl: suspend_process_default,
             headless_suspend_count: 0,
+            suspended: false,
+            app_suspend_signal: Signal::new(),
+            app_resume_signal: Signal::new(),
+            lifecycle_drain_generation: 0,
             headless_tick: 0,
             headless_ui_thread_registered: false,
             tick_inactive_screens: env_flag("TEXTUAL_TICK_INACTIVE_SCREENS"),
@@ -1805,7 +1903,13 @@ impl App {
     /// `Err(QueryError::NoMatch)` if nothing matches, or
     /// `Err(QueryError::TooManyMatches)` if the selector is ambiguous; use
     /// [`remove_node`](Self::remove_node) to remove a specific `NodeId`.
-    pub fn remove(&mut self, selector: &str) -> std::result::Result<(), QueryError> {
+    ///
+    /// The returned [`AwaitRemove`] completes once the event loop has drained
+    /// this removal's unmount work (PR-14).
+    pub fn remove(
+        &mut self,
+        selector: &str,
+    ) -> std::result::Result<AwaitRemove, QueryError> {
         let node_id = self.query_one(selector)?;
         self.remove_node(node_id)
     }
@@ -1815,27 +1919,38 @@ impl App {
     /// Clears focus from any removed node, tears down the subtree (emitting
     /// `Unmount` lifecycle events drained by the event loop), and requests a
     /// relayout + repaint of the former parent.
-    pub fn remove_node(&mut self, node_id: NodeId) -> std::result::Result<(), QueryError> {
-        let parent = {
+    ///
+    /// The returned [`AwaitRemove`] completes once the event loop has drained
+    /// this removal's unmount work (PR-14).
+    pub fn remove_node(
+        &mut self,
+        node_id: NodeId,
+    ) -> std::result::Result<AwaitRemove, QueryError> {
+        let generation = self.lifecycle_drain_generation();
+        let (parent, removed) = {
             let tree = self.active_widget_tree_mut().ok_or(QueryError::NoMatch)?;
             if !tree.contains(node_id) {
                 return Err(QueryError::Unmounted);
             }
             let parent = tree.parent(node_id);
+            let removed: Vec<NodeId> = tree.walk_depth_first(node_id);
             // Drop focus from the subtree before removal so the loop's
             // focus-transition pass re-derives a valid focus target.
-            for id in tree.walk_depth_first(node_id) {
-                tree.set_focus_state(id, false);
+            for id in &removed {
+                tree.set_focus_state(*id, false);
             }
             tree.remove(node_id);
-            parent
+            (parent, removed)
         };
         if let Some(parent) = parent {
             self.after_structural_mutation(parent);
         } else {
             self.clear_on_next_render = true;
         }
-        Ok(())
+        Ok(AwaitRemove {
+            removed,
+            drain_generation: generation,
+        })
     }
 
     /// Shared post-mount/remove bookkeeping: force a clear + relayout/repaint
@@ -2445,6 +2560,80 @@ impl App {
                 true
             }
         }
+    }
+
+    /// Temporarily suspend the app, lending the terminal to the caller's block.
+    ///
+    /// Rust-native mimicry of Python's `App.suspend()` context manager
+    /// (`app.py`): publishes the suspend signal *before* touching the driver,
+    /// stops the driver's application mode (restoring the terminal to its
+    /// pre-app state), and returns a [`SuspendGuard`] that restarts the driver,
+    /// publishes the resume signal, and requests a full relayout when dropped.
+    ///
+    /// Headless ([`Pilot`]) runs skip the driver transition (there is no live
+    /// terminal) but still publish both signals, so suspend-aware logic stays
+    /// testable. Nested guards compose: only the outermost guard restarts the
+    /// driver, since [`TerminalDriver::stop`] clears the started flag.
+    ///
+    /// This is distinct from [`App::action_suspend_process`], which performs
+    /// Unix job control (`SIGTSTP`) instead of lending the terminal in-process.
+    pub fn suspend(&mut self) -> Result<SuspendGuard<'_>> {
+        self.app_suspend_signal.emit(&AppSuspended);
+        // Mirror `action_suspend_process`: never touch a real terminal from
+        // the headless harness; `started()` is already false there, but the
+        // explicit guard keeps a half-started headless driver safe too.
+        let restart_driver = !self.headless && self.driver.started();
+        if restart_driver {
+            self.driver.stop()?;
+        }
+        self.suspended = true;
+        Ok(SuspendGuard {
+            app: self,
+            restart_driver,
+        })
+    }
+
+    /// Whether a [`SuspendGuard`] from [`App::suspend`] is currently live.
+    pub fn is_suspended(&self) -> bool {
+        self.suspended
+    }
+
+    /// Subscribe `node` to the suspend signal (PR-14).
+    ///
+    /// The handler runs synchronously inside [`App::suspend`], before the
+    /// driver stops — mirroring Python's `app_suspend_signal` subscribers.
+    pub fn subscribe_suspend(
+        &mut self,
+        node: NodeId,
+        handler: fn(&AppSuspended) -> SignalResponse,
+    ) {
+        self.app_suspend_signal.subscribe(node, handler);
+    }
+
+    /// Subscribe `node` to the resume signal (PR-14).
+    ///
+    /// The handler runs synchronously when the [`SuspendGuard`] drops, after
+    /// the driver restarts — mirroring Python's `app_resume_signal`
+    /// subscribers.
+    pub fn subscribe_resume(&mut self, node: NodeId, handler: fn(&AppResumed) -> SignalResponse) {
+        self.app_resume_signal.subscribe(node, handler);
+    }
+
+    /// Current lifecycle-drain generation (PR-14).
+    ///
+    /// Backs [`AwaitRemove::is_complete`]: removals capture this counter and
+    /// complete once the event loop has run a later lifecycle drain.
+    pub fn lifecycle_drain_generation(&self) -> u64 {
+        self.lifecycle_drain_generation
+    }
+
+    /// Record one event-loop lifecycle drain (PR-14).
+    ///
+    /// Called by the shared mount/unmount drain in `event_loop`; bumped only
+    /// when the drain actually dispatched events so idle pumps never complete
+    /// an [`AwaitRemove`] whose unmount work is still queued.
+    pub(super) fn note_lifecycle_drain(&mut self) {
+        self.lifecycle_drain_generation += 1;
     }
 
     pub fn action_screenshot(&mut self, filename: Option<&str>, path: Option<&str>) -> bool {
