@@ -4016,8 +4016,11 @@ impl App {
             // Shared with the headless pump so a subtree mounted via dynamic
             // recompose registers its timers identically in both loops.
             let phase_started = Instant::now();
-            let lifecycle_outcome =
-                self.drain_tree_lifecycle_events(root, &mut pending_invalidation);
+            let lifecycle_outcome = self.drain_tree_lifecycle_events(
+                root,
+                &mut pending_invalidation,
+                Some(&mut worker_registry),
+            );
             lifecycle_us = Some(
                 lifecycle_us
                     .unwrap_or(0)
@@ -4733,8 +4736,21 @@ impl App {
             // iterates again, letting the just-registered timer fire on the next
             // `advance_clock`. `absorb_outcome` records the sticky headless stop
             // flag internally, so an exit-on-mount handler is still observed.
-            if self.drain_tree_lifecycle_events(root, pending).progressed {
+            // Cancel workers owned by unmounted nodes against the headless
+            // registry (PR-04; the live loop passes its own registry above).
+            // Take/restore mirrors `headless_process_workers`: keep the
+            // registry only while it still tracks active workers.
+            let mut headless_registry = self.headless_worker_registry.take();
+            if self
+                .drain_tree_lifecycle_events(root, pending, headless_registry.as_mut())
+                .progressed
+            {
                 progressed = true;
+            }
+            if let Some(registry) = headless_registry {
+                if !registry.active_workers().is_empty() {
+                    self.headless_worker_registry = Some(registry);
+                }
             }
 
             self.absorb_pending_query_refreshes(pending);
@@ -6026,6 +6042,7 @@ impl App {
         &mut self,
         root: &mut dyn Widget,
         pending: &mut PendingInvalidation,
+        mut workers: Option<&mut WorkerRegistry>,
     ) -> LifecycleDrainOutcome {
         let lifecycle_events: Vec<(NodeId, bool)> = self
             .active_widget_tree_mut()
@@ -6060,6 +6077,12 @@ impl App {
                 self.run_on_node_widget(node_id, |w, ctx| w.on_mount(ctx), pending);
             } else {
                 self.purge_node_widget_timers(node_id);
+                // PR-04: Python cancels a node's workers on unmount. The
+                // registry is loop-local (live) or headless-owned, so it
+                // arrives as a parameter — see both call sites.
+                if let Some(registry) = workers.as_mut() {
+                    registry.cancel_by_owner(node_id);
+                }
             }
             if outcome.stop_requested || msg_outcome.stop_requested {
                 // Match the live loop's early-out: stop processing further
