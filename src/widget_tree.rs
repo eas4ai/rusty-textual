@@ -377,8 +377,10 @@ impl WidgetTree {
     ///
     /// Emits a `Mount` lifecycle event for the new node.
     ///
-    /// If the tree is empty (no root), the widget becomes the root and `parent`
-    /// is ignored — though callers should prefer `set_root` for clarity.
+    /// # Panics
+    ///
+    /// Panics if `parent` is not in the tree (removed or never added).
+    /// Use [`set_root`](Self::set_root) for an empty tree.
     /// Internal helper: build a `WidgetNode` from a boxed widget, consuming its seed.
     fn make_node_from_seed(widget: Box<dyn Widget>, seed: NodeSeed) -> WidgetNode {
         let initial_disabled = widget.is_initially_disabled();
@@ -395,6 +397,14 @@ impl WidgetTree {
     }
 
     pub fn mount(&mut self, parent: NodeId, mut widget: Box<dyn Widget>) -> NodeId {
+        // PR-05: mounting under a removed (or never-added) parent used to
+        // insert a detached orphan and still emit Mount. That is always a
+        // caller bug (Python raises out of mount-to-removed) — fail loudly
+        // before mutating anything.
+        assert!(
+            self.arena.get(parent).is_some(),
+            "WidgetTree::mount: parent {parent:?} is not in the tree"
+        );
         let seed = widget.take_node_seed();
         let mut node = Self::make_node_from_seed(widget, seed);
         node.parent = Some(parent);
@@ -422,6 +432,11 @@ impl WidgetTree {
     /// `mounted` flag, and `Mount` lifecycle event) but lets callers insert
     /// before/after an existing sibling (Python's `mount(..., before=/after=)`).
     pub fn mount_at(&mut self, parent: NodeId, index: usize, mut widget: Box<dyn Widget>) -> NodeId {
+        // Same gate as `mount` (PR-05): no orphans, no Mount for dead parents.
+        assert!(
+            self.arena.get(parent).is_some(),
+            "WidgetTree::mount_at: parent {parent:?} is not in the tree"
+        );
         let seed = widget.take_node_seed();
         let mut node = Self::make_node_from_seed(widget, seed);
         node.parent = Some(parent);
@@ -1732,6 +1747,30 @@ mod tests {
             3,
             "every pruned node (children before parent) must see on_unmount"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "not in the tree")]
+    fn mount_on_removed_parent_panics() {
+        // Review §2 (PR-05): mounting under a dead parent must be loud, not
+        // a silent orphan with a Mount event.
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(TestWidget::boxed("Root"));
+        let a = tree.mount(root, TestWidget::boxed("A"));
+        tree.remove(a);
+        tree.drain_lifecycle();
+        let _ = tree.mount(a, TestWidget::boxed("Orphan"));
+    }
+
+    #[test]
+    #[should_panic(expected = "not in the tree")]
+    fn mount_at_on_removed_parent_panics() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(TestWidget::boxed("Root"));
+        let a = tree.mount(root, TestWidget::boxed("A"));
+        tree.remove(a);
+        tree.drain_lifecycle();
+        let _ = tree.mount_at(a, 0, TestWidget::boxed("Orphan"));
     }
 
     #[test]
