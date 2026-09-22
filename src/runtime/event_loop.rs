@@ -6062,6 +6062,12 @@ impl App {
                     .collect()
             })
             .unwrap_or_default();
+        // Back `AwaitRemove` (PR-14): this drain is about to dispatch the
+        // events above, so any removal captured earlier completes now. Idle
+        // pumps (nothing drained) leave the generation untouched.
+        if !lifecycle_events.is_empty() {
+            self.note_lifecycle_drain();
+        }
         let mut drain = LifecycleDrainOutcome::default();
         for (node_id, is_mount) in lifecycle_events {
             drain.progressed = true;
