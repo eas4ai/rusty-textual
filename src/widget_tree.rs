@@ -1046,10 +1046,17 @@ impl WidgetTree {
                 to_remove.push(id);
             }
         }
-        // Reverse: children before parent.
+        // Reverse: children before parent. Fire `on_unmount()` per pruned
+        // node while it is still in the arena — Python dispatches `Unmount()`
+        // to each removed widget, and by the time the runtime drains the
+        // queued `Unmount` events the nodes are gone, so no dispatch path can
+        // reach them anymore.
         for &id in to_remove.iter().rev() {
             self.pending_lifecycle
                 .push(LifecycleEvent::Unmount { node: id });
+            if let Some(node) = self.arena.get_mut(id) {
+                node.widget.on_unmount();
+            }
         }
         for id in to_remove {
             self.arena.remove(id);
@@ -1683,6 +1690,48 @@ mod tests {
         assert_eq!(events[0], LifecycleEvent::Unmount { node: child });
         assert_eq!(events[1], LifecycleEvent::Unmount { node: old });
         assert_eq!(events[2], LifecycleEvent::Mount { node: new });
+    }
+
+    /// Probe widget that counts `on_unmount()` deliveries.
+    struct UnmountProbe {
+        unmounts: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl Widget for UnmountProbe {
+        fn render(&self, _console: &Console, _options: &ConsoleOptions) -> Segments {
+            Segments::new()
+        }
+
+        fn on_unmount(&mut self) {
+            self.unmounts
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn remove_subtree_fires_on_unmount_per_node() {
+        // Review §2 (PR-03): Python dispatches Unmount() to every pruned
+        // widget. The queued Unmount events alone reach nobody — nodes are
+        // already out of the arena when the runtime drains them.
+        let unmounts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let probe = || {
+            Box::new(UnmountProbe {
+                unmounts: unmounts.clone(),
+            }) as Box<dyn Widget>
+        };
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(TestWidget::boxed("Root"));
+        let a = tree.mount(root, probe());
+        tree.mount(a, probe());
+        tree.mount(a, probe());
+        tree.drain_lifecycle();
+
+        tree.remove(a);
+        assert_eq!(
+            unmounts.load(std::sync::atomic::Ordering::Relaxed),
+            3,
+            "every pruned node (children before parent) must see on_unmount"
+        );
     }
 
     #[test]
