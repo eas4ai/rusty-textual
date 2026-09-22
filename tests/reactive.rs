@@ -1203,6 +1203,59 @@ fn bindings_flag_reaches_phase_result() {
     );
 }
 
+// ── PR-08b: watcher arity flags (Python `invoke_watcher` parity) ──
+
+#[derive(Reactive)]
+struct ArityWidget {
+    #[reactive(watch1)]
+    one: i32,
+
+    #[reactive(watch0)]
+    zero: i32,
+
+    log: Vec<String>,
+}
+
+impl ArityWidget {
+    fn watch_one(&mut self, new: &i32, _ctx: &mut ReactiveCtx) {
+        self.log.push(format!("one:{new}"));
+    }
+
+    fn watch_zero(&mut self) {
+        self.log.push("zero".to_string());
+    }
+}
+
+#[test]
+fn watch1_receives_new_only() {
+    let mut w = ArityWidget {
+        one: 0,
+        zero: 0,
+        log: Vec::new(),
+    };
+    let mut ctx = make_ctx();
+
+    w.set_one(5, &mut ctx);
+    let changes = ctx.take_changes();
+    w.reactive_dispatch(&changes, &mut ctx);
+    assert_eq!(w.log, vec!["one:5".to_string()]);
+}
+
+#[test]
+fn watch0_receives_no_args() {
+    let mut w = ArityWidget {
+        one: 0,
+        zero: 0,
+        log: Vec::new(),
+    };
+    let mut ctx = make_ctx();
+
+    w.set_zero(9, &mut ctx);
+    let changes = ctx.take_changes();
+    w.reactive_dispatch(&changes, &mut ctx);
+    assert_eq!(w.log, vec!["zero".to_string()]);
+}
+
 #[test]
 fn computed_private_watch_fires_on_recompute() {
     let mut w = PrivateComputedWidget {
