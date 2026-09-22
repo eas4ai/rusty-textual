@@ -100,7 +100,10 @@ fn background_trees_do_not_tick_by_default() {
         );
 
         // A pushed screen makes the app-root tree inactive: no more ticks.
-        pilot.app_mut().push_screen(Box::new(CoverScreen));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(CoverScreen))
+            .expect("test screen push succeeds");
         pilot.pause()?;
         let before = root_ticks.load(Ordering::Relaxed);
         pilot.advance_ticks(3)?;
@@ -122,11 +125,17 @@ fn opt_in_ticks_reach_approot_and_mid_stack_screens() {
     let screen_probe = screen_ticks.clone();
     run_test(ProbeApp { ticks: root_probe }, |pilot| {
         // Stack: app root (background), probe screen (background), cover (active).
-        pilot.app_mut().push_screen(Box::new(ProbeScreen {
-            ticks: screen_probe.clone(),
-        }));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(ProbeScreen {
+                ticks: screen_probe.clone(),
+            }))
+            .expect("test screen push succeeds");
         pilot.pause()?;
-        pilot.app_mut().push_screen(Box::new(CoverScreen));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(CoverScreen))
+            .expect("test screen push succeeds");
         pilot.pause()?;
 
         pilot.app_mut().set_tick_inactive_screens(true);

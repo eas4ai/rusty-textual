@@ -2301,8 +2301,10 @@ impl App {
         let Some(factory) = self.modes.get(screen) else {
             return false;
         };
-        self.push_screen(factory());
-        true
+        // `false` covers both "nothing pushed" outcomes: stylesheet failure
+        // (PR-11) behaves like an unpushed screen rather than silently
+        // rendering unstyled.
+        self.push_screen(factory()).is_ok()
     }
 
     pub fn action_pop_screen(&mut self) -> bool {
@@ -2315,8 +2317,7 @@ impl App {
         };
         let screen = factory();
         let _ = self.pop_screen();
-        self.push_screen(screen);
-        true
+        self.push_screen(screen).is_ok()
     }
 
     pub fn action_hide_help_panel(&mut self) -> std::result::Result<bool, QueryError> {
@@ -3978,14 +3979,22 @@ impl App {
     /// Push a screen onto the screen stack.
     ///
     /// Suspends the currently active screen (if any) and mounts the new one.
-    pub fn push_screen(&mut self, screen: Box<dyn crate::screen::Screen>) {
+    ///
+    /// Returns `Err` and pushes nothing when the screen's stylesheet path
+    /// is missing/unreadable ([`Error::StylesheetError`], PR-11) instead of
+    /// silently rendering unstyled.
+    pub fn push_screen(
+        &mut self,
+        screen: Box<dyn crate::screen::Screen>,
+    ) -> Result<()> {
         self.dispatch_screen_lifecycle_event(Event::ScreenSuspend);
-        self.screen_stack.push(screen);
+        self.screen_stack.push(screen)?;
         self.honor_screen_auto_focus();
         // The active tree changed; force a relayout + full repaint, and re-sync
         // live notifications onto the new screen's own ToastRack.
         self.pending_force_relayout = true;
         self.mark_notifications_for_resync();
+        Ok(())
     }
 
     /// Push a system modal screen (e.g. the command palette) from the
@@ -4000,7 +4009,8 @@ impl App {
     /// `command.py:736-746`). A *different* system modal (e.g. a dialog opened
     /// from within a screen) still stacks normally.
     ///
-    /// Returns `true` if a screen was pushed, `false` if the guard suppressed it.
+    /// Returns `true` if a screen was pushed, `false` if the guard suppressed
+    /// it or the screen's stylesheet path failed to load (PR-11).
     //
     // The live `ctrl+p` consumer (constructing and pushing the real
     // `CommandPaletteScreen`) lands with the Wave 1 palette rebuild; this Wave 0
@@ -4013,8 +4023,7 @@ impl App {
         if self.screen_stack.top_screen_name().as_deref() == Some(screen.name()) {
             return false;
         }
-        self.push_screen(screen);
-        true
+        self.push_screen(screen).is_ok()
     }
 
     /// Focus the node targeted by the active screen's `auto_focus()` selector,
@@ -4075,14 +4084,15 @@ impl App {
         &mut self,
         screen: Box<dyn crate::screen::Screen>,
         callback: crate::screen::ScreenResultCallback,
-    ) {
+    ) -> Result<()> {
         self.dispatch_screen_lifecycle_event(Event::ScreenSuspend);
-        self.screen_stack.push_with_callback(screen, callback);
+        self.screen_stack.push_with_callback(screen, callback)?;
         self.honor_screen_auto_focus();
         // The active tree changed; force a relayout + full repaint, and re-sync
         // live notifications onto the new screen's own ToastRack.
         self.pending_force_relayout = true;
         self.mark_notifications_for_resync();
+        Ok(())
     }
 
     /// Dismiss the topmost screen with an optional result value.
@@ -4174,7 +4184,8 @@ impl App {
     /// screen.
     ///
     /// Returns `true` if the mode was switched, `false` if the mode name is
-    /// not registered or is already the current mode.
+    /// not registered, is already the current mode, or the new screen's
+    /// stylesheet path is missing/unreadable (PR-11: no silent unstyled push).
     pub fn switch_mode(&mut self, name: &str) -> bool {
         // No-op if already in the requested mode.
         if self.current_mode.as_deref() == Some(name) {
@@ -4200,7 +4211,16 @@ impl App {
         }
 
         // Push the new mode screen with its mode tag.
-        self.screen_stack.push_mode(new_screen, name.to_string());
+        if self
+            .screen_stack
+            .push_mode(new_screen, name.to_string())
+            .is_err()
+        {
+            // Stylesheet failure (PR-11): the old mode is already popped, so
+            // leave `current_mode` cleared instead of claiming a mode whose
+            // screen was never pushed.
+            return false;
+        }
         let _ = self.focus_first_in_active_tree();
         self.current_mode = Some(name.to_string());
         self.dispatch_screen_lifecycle_event(Event::ScreenResume);
@@ -6603,7 +6623,7 @@ mod tests {
         app.add_mode("mode-a", || Box::new(RuntimeModeScreen));
         app.add_mode("mode-b", || Box::new(RuntimeModeScreen));
 
-        app.push_screen(Box::new(RuntimeModeScreen));
+        app.push_screen(Box::new(RuntimeModeScreen)).expect("test screen push succeeds");
         app.pop_screen();
         assert_eq!(
             log.lock().expect("log lock").as_slice(),
@@ -6840,7 +6860,8 @@ mod tests {
                     }
                 }
             }),
-        );
+        )
+            .expect("test screen push succeeds");
 
         // Drive a key into the active screen tree so the screen's `on_event`
         // handler stages the dismissal (writes the dismiss slot), mirroring a

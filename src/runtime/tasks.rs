@@ -390,6 +390,11 @@ pub enum PushScreenWaitError {
     NoActiveWorker,
     /// The app shut down before the screen was dismissed.
     Disconnected,
+    /// The screen's stylesheet path was missing or unreadable, so nothing
+    /// was pushed (Python `StylesheetError`, PR-11). Carries the display
+    /// message; match `crate::error::Error::StylesheetError` at the push
+    /// site for the structured path.
+    Stylesheet(String),
 }
 
 impl std::fmt::Display for PushScreenWaitError {
@@ -401,6 +406,7 @@ impl std::fmt::Display for PushScreenWaitError {
                 "push_screen_wait must be called from a worker thread, not the app thread"
             ),
             Self::Disconnected => write!(f, "App shut down before the screen was dismissed"),
+            Self::Stylesheet(message) => write!(f, "Screen stylesheet error: {message}"),
         }
     }
 }
@@ -437,7 +443,9 @@ pub(crate) fn push_screen_wait(
 
     // Post the push onto the UI thread. `push_screen_with_callback` registers a
     // callback the runtime invokes when the screen is dismissed (popped); that
-    // callback forwards the result over our channel.
+    // callback forwards the result over our channel. A stylesheet failure
+    // (PR-11) travels back as `Stylesheet` instead of hanging the waiter on
+    // a screen that was never pushed.
     let push = move |app: &mut crate::runtime::App| {
         app.push_screen_with_callback(
             screen,
@@ -445,16 +453,18 @@ pub(crate) fn push_screen_wait(
                 // Worker may already be gone (app shutdown / detached); ignore.
                 let _ = result_tx.send(result);
             }),
-        );
+        )
+        .map_err(|e| PushScreenWaitError::Stylesheet(e.to_string()))
     };
 
     // `call_from_thread` itself blocks only until the push has run on the UI
     // thread (fast); the screen lifetime is governed by the dismissal channel.
+    // The second `?` surfaces a stylesheet failure from the push itself.
     call_from_thread(push).map_err(|err| match err {
         CallFromThreadError::NotRunning => PushScreenWaitError::NotRunning,
         CallFromThreadError::SameThread => PushScreenWaitError::NoActiveWorker,
         CallFromThreadError::Disconnected => PushScreenWaitError::Disconnected,
-    })?;
+    })??;
 
     // Suspend the worker until the screen is dismissed (the callback sends), or
     // the app shuts down (callback dropped → channel closed → Disconnected).

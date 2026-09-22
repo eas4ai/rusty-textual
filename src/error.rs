@@ -8,6 +8,13 @@ pub enum Error {
     TextAreaLanguage(String),
     #[error("app runtime stopped")]
     RuntimeStopped,
+    /// Stylesheet path missing or unreadable (Python `StylesheetError`).
+    ///
+    /// Raised instead of silently rendering unstyled (PR-11): both the
+    /// app-level `css_path` startup load and per-screen `css()` path loads
+    /// fail the operation that requested them.
+    #[error("stylesheet error in {path}: {message}")]
+    StylesheetError { path: String, message: String },
     #[error("{0}")]
     Message(String),
 }

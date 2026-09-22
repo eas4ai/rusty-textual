@@ -586,7 +586,10 @@ impl<T: TextualApp> TextualAppAdapter<T> {
         // post `CommandPaletteClosed` (which shuts providers down + resets state) —
         // mirroring the legacy widget's `execute_selected` (select before close).
         let screen = crate::widgets::CommandPaletteScreen::new(commands);
-        app.push_screen_with_callback(
+        // `CommandPaletteScreen::css()` is a static inline literal, so the
+        // stylesheet resolve never touches the filesystem (PR-11); this
+        // handler returns `()` and has nowhere to send the infallible error.
+        let _ = app.push_screen_with_callback(
             Box::new(screen),
             Box::new(move |result| {
                 use crate::runtime::commands::{WidgetCommand, enqueue_widget_command};
@@ -1361,7 +1364,15 @@ pub async fn run_with_output<T: TextualApp>(definition: T) -> Result<Option<Stri
     let mut app = App::new()?;
 
     let css_path = state.lock().unwrap_or_else(|e| e.into_inner()).css_path();
-    if let Some(path) = css_path.filter(|path| Path::new(path).exists()) {
+    if let Some(path) = css_path {
+        // PR-11: a missing `css_path` fails startup with `StylesheetError`
+        // (Python parity) instead of silently running unstyled.
+        if !Path::new(path).exists() {
+            return Err(crate::Error::StylesheetError {
+                path: path.to_string(),
+                message: "css_path does not exist".to_string(),
+            });
+        }
         let interval = state
             .lock()
             .unwrap_or_else(|e| e.into_inner())

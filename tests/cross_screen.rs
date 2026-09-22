@@ -83,14 +83,20 @@ fn static_text_on(app: &App, screen: ScreenRef<'_>, selector: &str) -> Option<St
 #[test]
 fn query_on_resolves_approot_name_and_tree_while_screens_stacked() {
     run_test(BaseApp, |pilot| {
-        pilot.app_mut().push_screen(Box::new(main_screen()));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(main_screen()))
+            .expect("test screen push succeeds");
         pilot.pause()?;
         let main_tree_id = pilot
             .app()
             .screen_tree(ScreenRef::Active)
             .expect("main screen tree")
             .tree_id();
-        pilot.app_mut().push_screen(Box::new(modal_screen()));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(modal_screen()))
+            .expect("test screen push succeeds");
         pilot.pause()?;
 
         let app = pilot.app();
@@ -141,9 +147,15 @@ fn query_on_resolves_approot_name_and_tree_while_screens_stacked() {
 #[test]
 fn with_widget_mut_on_updates_background_trees_synchronously() {
     run_test(BaseApp, |pilot| {
-        pilot.app_mut().push_screen(Box::new(main_screen()));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(main_screen()))
+            .expect("test screen push succeeds");
         pilot.pause()?;
-        pilot.app_mut().push_screen(Box::new(modal_screen()));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(modal_screen()))
+            .expect("test screen push succeeds");
         pilot.pause()?;
 
         // Synchronous cross-screen mutation, return value passed through.
@@ -218,11 +230,14 @@ fn with_widget_mut_on_updates_background_trees_synchronously() {
 #[test]
 fn name_collision_resolves_topmost_screen() {
     run_test(BaseApp, |pilot| {
-        pilot.app_mut().push_screen(Box::new(NamedScreen {
-            screen_name: "detail",
-            body_id: "tag",
-            body_text: "first-detail",
-        }));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(NamedScreen {
+                screen_name: "detail",
+                body_id: "tag",
+                body_text: "first-detail",
+            }))
+            .expect("test screen push succeeds");
         pilot.pause()?;
         let first_tree_id = pilot
             .app()
@@ -230,11 +245,14 @@ fn name_collision_resolves_topmost_screen() {
             .expect("first detail tree")
             .tree_id();
 
-        pilot.app_mut().push_screen(Box::new(NamedScreen {
-            screen_name: "detail",
-            body_id: "tag",
-            body_text: "second-detail",
-        }));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(NamedScreen {
+                screen_name: "detail",
+                body_id: "tag",
+                body_text: "second-detail",
+            }))
+            .expect("test screen push succeeds");
         pilot.pause()?;
 
         let named_tree_id = pilot
@@ -279,7 +297,10 @@ fn name_collision_resolves_topmost_screen() {
 #[test]
 fn popped_screen_tree_id_resolves_to_nothing() {
     run_test(BaseApp, |pilot| {
-        pilot.app_mut().push_screen(Box::new(modal_screen()));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(modal_screen()))
+            .expect("test screen push succeeds");
         pilot.pause()?;
         let modal_tree_id = pilot
             .app()
@@ -354,9 +375,15 @@ impl Screen for UpdaterModal {
 #[test]
 fn modal_handler_updates_named_screen_beneath_deferred() {
     run_test(BaseApp, |pilot| {
-        pilot.app_mut().push_screen(Box::new(main_screen()));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(main_screen()))
+            .expect("test screen push succeeds");
         pilot.pause()?;
-        pilot.app_mut().push_screen(Box::new(UpdaterModal));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(UpdaterModal))
+            .expect("test screen push succeeds");
         pilot.pause()?;
 
         pilot.click("#do-update")?;
@@ -436,7 +463,10 @@ impl Screen for KeyModal {
 #[test]
 fn widget_key_handler_updates_app_root_deferred() {
     run_test(BaseApp, |pilot| {
-        pilot.app_mut().push_screen(Box::new(KeyModal));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(KeyModal))
+            .expect("test screen push succeeds");
         pilot.pause()?;
 
         pilot.press(&["u"])?;
@@ -517,7 +547,10 @@ impl Screen for DimUpdaterModal {
 fn translucent_modal_underlay_repaints_without_popping() {
     run_test(OffsetLogApp, |pilot| {
         pilot.resize(40, 12)?;
-        pilot.app_mut().push_screen(Box::new(DimUpdaterModal));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(DimUpdaterModal))
+            .expect("test screen push succeeds");
         pilot.pause()?;
 
         // Precondition: the underlay text shows through the translucent modal.
@@ -591,9 +624,12 @@ impl Screen for SelfTargetModal {
 fn screen_popped_or_unknown_scope_drops_without_panic() {
     run_test(BaseApp, |pilot| {
         let own_tree = Arc::new(Mutex::new(0u64));
-        pilot.app_mut().push_screen(Box::new(SelfTargetModal {
-            own_tree: own_tree.clone(),
-        }));
+        pilot
+            .app_mut()
+            .push_screen(Box::new(SelfTargetModal {
+                own_tree: own_tree.clone(),
+            }))
+            .expect("test screen push succeeds");
         pilot.pause()?;
         *own_tree.lock().unwrap() = pilot
             .app()
