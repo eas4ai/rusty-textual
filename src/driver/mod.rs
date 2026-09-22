@@ -69,6 +69,7 @@ impl Default for DriverOptions {
     }
 }
 
+pub(crate) mod live;
 pub(crate) mod negotiate;
 
 /// Bracketed-paste mode commands (PR-15a).
