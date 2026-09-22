@@ -407,27 +407,19 @@ impl OptionList {
 
     /// Replace all items at once.
     ///
-    /// # Panics
-    ///
-    /// Panics if two items carry the same id (same policy as
-    /// [`Self::with_items`]: wholesale replacement with duplicate ids is
-    /// programmer error, mirroring Python's raise out of `__init__`).
-    pub fn set_items(&mut self, items: Vec<OptionItem>) {
-        self.id_to_index = match Self::build_registry(&items) {
-            Ok(map) => map,
-            Err(OptionListError::DuplicateId(id)) => {
-                panic!(
-                    "OptionList::set_items: duplicate option id {:?}",
-                    id.as_str()
-                )
-            }
-            Err(other) => panic!("OptionList::set_items: {other}"),
-        };
+    /// Returns `Err(OptionListError::DuplicateId)` if two items carry the same
+    /// id (Python `DuplicateID`); the list is left unmodified.
+    pub fn set_items(&mut self, items: Vec<OptionItem>) -> Result<(), OptionListError> {
+        // Build the registry before touching `self`: a duplicate fails
+        // atomically with the previous items, highlight, and scroll intact.
+        let registry = Self::build_registry(&items)?;
+        self.id_to_index = registry;
         self.items = items;
         self.cursor.set_highlighted(self.first_selectable());
         self.offset = 0;
         self.hovered_index = None;
         self.ensure_visible();
+        Ok(())
     }
 
     // ── Key-based CRUD (Python `_option_list.py` identity API) ─────────

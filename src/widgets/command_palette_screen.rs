@@ -146,7 +146,11 @@ impl PaletteCommandList {
     /// Replace the displayed options in place (cross-node deferred update path;
     /// does NOT rebuild the sibling `CommandInput`).
     fn set_rows(&mut self, rows: &[CommandRow]) {
-        self.inner.set_items(Self::items(rows));
+        // The deferred-update closure returns `()` and has nowhere to send
+        // this. Command ids come from providers and are unique by contract;
+        // a duplicate (provider bug) leaves the previously displayed rows in
+        // place instead of panicking the keystroke handler (PR-12).
+        let _ = self.inner.set_items(Self::items(rows));
     }
 
     /// Build one rich `OptionItem` per command row: a title line (with bold +

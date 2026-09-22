@@ -200,7 +200,8 @@ fn options_are_available_soon() {
 #[test]
 fn set_options() {
     let mut list = create_fixture();
-    list.set_items(vec![OptionItem::new("foo"), OptionItem::new("bar")]);
+    list.set_items(vec![OptionItem::new("foo"), OptionItem::new("bar")])
+        .expect("unique ids");
     assert_eq!(list.option_count(), 2);
     assert_eq!(list.get_option_at_index(0).unwrap().prompt(), Some("foo"));
     assert_eq!(list.get_option_at_index(1).unwrap().prompt(), Some("bar"));
@@ -219,14 +220,22 @@ fn with_items_panics_on_duplicate_ids() {
     ]);
 }
 
+/// PR-12: `set_items` returns `DuplicateId` (Python `DuplicateID`) instead
+/// of panicking, and the failed replacement leaves the list unmodified.
 #[test]
-#[should_panic(expected = "duplicate option id")]
-fn set_items_panics_on_duplicate_ids() {
-    let mut list = OptionList::new();
-    list.set_items(vec![
-        OptionItem::with_id("a", "dup"),
-        OptionItem::with_id("b", "dup"),
-    ]);
+fn set_items_duplicate_id_errors() {
+    let mut list = create_fixture();
+    assert_eq!(
+        list.set_items(vec![
+            OptionItem::with_id("a", "dup"),
+            OptionItem::with_id("b", "dup"),
+        ]),
+        Err(OptionListError::DuplicateId(OptionId::new("dup")))
+    );
+    // Atomicity: previous items, registry, and highlight are intact.
+    assert_eq!(list.option_count(), 5);
+    assert_eq!(list.get_option_by_id("3").unwrap().prompt(), Some("3"));
+    assert_eq!(list.highlighted(), Some(0));
 }
 
 // ── test_option_removal.py ───────────────────────────────────────────────
