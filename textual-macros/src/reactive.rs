@@ -3,9 +3,12 @@
 //! Generates getters, setters (with change detection), watcher dispatch,
 //! and computed field caching for fields annotated with `#[reactive]`,
 //! `#[reactive(layout)]`, `#[reactive(watch)]`, `#[reactive(watch_with_app)]`,
-//! `#[reactive(init = false)]`, `#[reactive(always_update)]`, `#[var]`,
+//! `#[reactive(init = false)]`, `#[reactive(always_update)]`,
+//! `#[reactive(private_watch)]`, `#[reactive(private_validate)]`, `#[var]`,
 //! `#[var(watch)]`, `#[var(watch_with_app)]`, `#[var(init = false)]`,
-//! `#[var(always_update)]`, or `#[computed(depends_on = "field1, field2")]`.
+//! `#[var(always_update)]`, `#[var(private_watch)]`, `#[var(private_validate)]`,
+//! or `#[computed(depends_on = "field1, field2")]` (plus `watch`,
+//! `watch_with_app`, `private_watch` on computed).
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -32,6 +35,12 @@ struct ReactiveField {
     recompose: bool,
     /// Whether `validate` was specified (call `validate_<field>` before store).
     validate: bool,
+    /// Whether `private_watch` was specified (call `_watch_<field>` before
+    /// `watch_<field>` on dispatch; Python `_check_watchers` order).
+    private_watch: bool,
+    /// Whether `private_validate` was specified (call `_validate_<field>`
+    /// before `validate_<field>` in the setter; Python `_set` order).
+    private_validate: bool,
     /// Whether `always_update` was specified (Python `always_update=True`):
     /// the setter records the change and fires watchers even when the new
     /// value equals the old one.
@@ -53,6 +62,9 @@ struct ComputedField {
     /// Whether `watch_with_app` was specified — call
     /// `watch_<field>(app, old, new, ctx)` when the recomputed value changes.
     watch_with_app: bool,
+    /// Whether `private_watch` was specified — call `_watch_<field>` before
+    /// `watch_<field>` (same plain signature; Python `_check_watchers` order).
+    private_watch: bool,
 }
 
 /// Parse reactive/var/computed attributes from a field's attributes.
@@ -79,8 +91,10 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
             let mut init_false = false;
             let mut validate = false;
             let mut always_update = false;
+            let mut private_watch = false;
+            let mut private_validate = false;
 
-            // Parse optional args: watch, watch_with_app, validate, always_update, init = false
+            // Parse optional args: watch, watch_with_app, validate, always_update, private_watch, private_validate, init = false
             if let Meta::List(meta_list) = &attr.meta {
                 let nested = meta_list.parse_args_with(
                     syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
@@ -97,11 +111,15 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                 validate = true;
                             } else if path.is_ident("always_update") {
                                 always_update = true;
+                            } else if path.is_ident("private_watch") {
+                                private_watch = true;
+                            } else if path.is_ident("private_validate") {
+                                private_validate = true;
                             } else {
                                 return Err(syn::Error::new_spanned(
                                     path,
                                     format!(
-                                        "unknown var attribute `{}`; expected `watch`, `watch_with_app`, `validate`, `always_update`, or `init = false` (note: `recompose` is only valid on `#[reactive]`, not `#[var]`)",
+                                        "unknown var attribute `{}`; expected `watch`, `watch_with_app`, `validate`, `always_update`, `private_watch`, `private_validate`, or `init = false` (note: `recompose` is only valid on `#[reactive]`, not `#[var]`)",
                                         path.get_ident().map(|i| i.to_string()).unwrap_or_default()
                                     ),
                                 ));
@@ -160,14 +178,17 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                 recompose: false,
                 validate,
                 always_update,
+                private_watch,
+                private_validate,
             })));
         }
 
-        // Check for #[computed(depends_on = "field1, field2"[, watch | watch_with_app])]
+        // Check for #[computed(depends_on = "field1, field2"[, watch | watch_with_app | private_watch])]
         if attr.path().is_ident("computed") {
             let mut depends_on = Vec::new();
             let mut watch = false;
             let mut watch_with_app = false;
+            let mut private_watch = false;
 
             if let Meta::List(meta_list) = &attr.meta {
                 let nested = meta_list.parse_args_with(
@@ -176,6 +197,9 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
 
                 for nested_meta in &nested {
                     match nested_meta {
+                        Meta::Path(path) if path.is_ident("private_watch") => {
+                            private_watch = true;
+                        }
                         Meta::NameValue(nv) if nv.path.is_ident("depends_on") => {
                             if let Expr::Lit(expr_lit) = &nv.value {
                                 if let Lit::Str(lit_str) = &expr_lit.lit {
@@ -207,7 +231,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                         _ => {
                             return Err(syn::Error::new_spanned(
                                 nested_meta,
-                                "expected `depends_on = \"field1, field2\"`, `watch`, or `watch_with_app`",
+                                "expected `depends_on = \"field1, field2\"`, `watch`, `watch_with_app`, or `private_watch`",
                             ));
                         }
                     }
@@ -232,6 +256,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                 depends_on,
                 watch,
                 watch_with_app,
+                private_watch,
             })));
         }
 
@@ -244,9 +269,11 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
             let mut recompose = false;
             let mut validate = false;
             let mut always_update = false;
+            let mut private_watch = false;
+            let mut private_validate = false;
 
             // Parse arguments if present:
-            // #[reactive(layout, watch, watch_with_app, recompose, validate, always_update, init = false)]
+            // #[reactive(layout, watch, watch_with_app, recompose, validate, always_update, private_watch, private_validate, init = false)]
             if let Meta::List(meta_list) = &attr.meta {
                 let nested = meta_list.parse_args_with(
                     syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
@@ -267,11 +294,15 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                 validate = true;
                             } else if path.is_ident("always_update") {
                                 always_update = true;
+                            } else if path.is_ident("private_watch") {
+                                private_watch = true;
+                            } else if path.is_ident("private_validate") {
+                                private_validate = true;
                             } else {
                                 return Err(syn::Error::new_spanned(
                                     path,
                                     format!(
-                                        "unknown reactive attribute `{}`; expected `layout`, `watch`, `watch_with_app`, `recompose`, `validate`, `always_update`, or `init = false`",
+                                        "unknown reactive attribute `{}`; expected `layout`, `watch`, `watch_with_app`, `recompose`, `validate`, `always_update`, `private_watch`, `private_validate`, or `init = false`",
                                         path.get_ident().map(|i| i.to_string()).unwrap_or_default()
                                     ),
                                 ));
@@ -332,6 +363,8 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                 recompose,
                 validate,
                 always_update,
+                private_watch,
+                private_validate,
             })));
         }
     }
@@ -367,6 +400,38 @@ fn flags_expr(field: &ReactiveField) -> TokenStream {
         quote! { #base.with_always_update() }
     } else {
         base
+    }
+}
+
+/// One watcher match arm: `_watch_<field>` first when `private_watch` is set,
+/// then `watch_<field>` when `watch` is set (Python `_check_watchers` order).
+/// Plain (no-app) signature; with-app dispatch reuses these arms for the
+/// non-app section, matching how public plain watchers already fire there.
+fn watcher_arm(
+    ident: &syn::Ident,
+    ty: &syn::Type,
+    watch: bool,
+    private_watch: bool,
+) -> TokenStream {
+    let field_name_str = ident.to_string();
+    let mut calls: Vec<TokenStream> = Vec::new();
+    if private_watch {
+        let watcher_name = format_ident!("_watch_{}", ident);
+        calls.push(quote! { self.#watcher_name(old, new, ctx); });
+    }
+    if watch {
+        let watcher_name = format_ident!("watch_{}", ident);
+        calls.push(quote! { self.#watcher_name(old, new, ctx); });
+    }
+    quote! {
+        #field_name_str => {
+            if let (Some(old), Some(new)) = (
+                change.old_value.downcast_ref::<#ty>(),
+                change.new_value.downcast_ref::<#ty>(),
+            ) {
+                #(#calls)*
+            }
+        }
     }
 }
 
@@ -424,18 +489,23 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
         let field_name_str = field_ident.to_string();
         let f_flags_expr = flags_expr(field);
 
-        // Validation hook (Python `validate_<field>`): when `validate` is set,
-        // the incoming value is passed through `self.validate_<field>(value)`
-        // before the equality check and store, exactly as Python's `_set` does
-        // (reactive.py: public `validate_*` runs before the change is applied).
-        let validate_stmt = if field.validate {
+        // Validation hooks (Python `_set` order): `_validate_<field>` first
+        // when `private_validate` is set, then `validate_<field>` when
+        // `validate` is set — each runs before the equality check and store.
+        let mut validate_stmts: Vec<TokenStream> = Vec::new();
+        if field.private_validate {
+            let private_validate_fn = format_ident!("_validate_{}", field_ident);
+            validate_stmts.push(quote! {
+                let value = self.#private_validate_fn(value);
+            });
+        }
+        if field.validate {
             let validate_fn = format_ident!("validate_{}", field_ident);
-            quote! {
+            validate_stmts.push(quote! {
                 let value = self.#validate_fn(value);
-            }
-        } else {
-            quote! {}
-        };
+            });
+        }
+        let validate_stmt = quote! { #(#validate_stmts)* };
 
         // `always_update` (Python `reactive(..., always_update=True)`) bypasses
         // the equality gate: the change is recorded (and watchers fire) even
@@ -550,11 +620,11 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
         });
     }
 
-    // Plain-watch fields: watch=true, watch_with_app=false.
+    // Plain-watch fields: watch=true and/or private_watch=true, watch_with_app=false.
     // These go into reactive_dispatch (no app access).
     let plain_watch_fields: Vec<&ReactiveField> = reactive_fields
         .iter()
-        .filter(|f| f.watch && !f.watch_with_app)
+        .filter(|f| (f.watch || f.private_watch) && !f.watch_with_app)
         .collect();
 
     // watch_with_app fields: watch_with_app=true (may or may not also have watch=true).
@@ -568,7 +638,7 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
     // re-iterates through dispatch; these arms invoke the matching `watch_*`.
     let computed_plain_watch: Vec<&ComputedField> = computed_fields
         .iter()
-        .filter(|c| c.watch && !c.watch_with_app)
+        .filter(|c| (c.watch || c.private_watch) && !c.watch_with_app)
         .collect();
     let computed_app_watch: Vec<&ComputedField> = computed_fields
         .iter()
@@ -588,38 +658,11 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
         let watcher_block = if has_plain_watch {
             let mut match_arms: Vec<TokenStream> = plain_watch_fields
                 .iter()
-                .map(|field| {
-                    let field_name_str = field.ident.to_string();
-                    let field_ty = &field.ty;
-                    let watcher_name = format_ident!("watch_{}", field.ident);
-
-                    quote! {
-                        #field_name_str => {
-                            if let (Some(old), Some(new)) = (
-                                change.old_value.downcast_ref::<#field_ty>(),
-                                change.new_value.downcast_ref::<#field_ty>(),
-                            ) {
-                                self.#watcher_name(old, new, ctx);
-                            }
-                        }
-                    }
-                })
+                .map(|field| watcher_arm(&field.ident, &field.ty, field.watch, field.private_watch))
                 .collect();
             // Computed-field plain watchers (fire when the recomputed value changes).
             for cf in &computed_plain_watch {
-                let field_name_str = cf.ident.to_string();
-                let field_ty = &cf.ty;
-                let watcher_name = format_ident!("watch_{}", cf.ident);
-                match_arms.push(quote! {
-                    #field_name_str => {
-                        if let (Some(old), Some(new)) = (
-                            change.old_value.downcast_ref::<#field_ty>(),
-                            change.new_value.downcast_ref::<#field_ty>(),
-                        ) {
-                            self.#watcher_name(old, new, ctx);
-                        }
-                    }
-                });
+                match_arms.push(watcher_arm(&cf.ident, &cf.ty, cf.watch, cf.private_watch));
             }
 
             quote! {
@@ -654,39 +697,13 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
         // All watcher arms for the with-app override: plain-watch first, then app-watch.
         let plain_arms: Vec<TokenStream> = plain_watch_fields
             .iter()
-            .map(|field| {
-                let field_name_str = field.ident.to_string();
-                let field_ty = &field.ty;
-                let watcher_name = format_ident!("watch_{}", field.ident);
-                quote! {
-                    #field_name_str => {
-                        if let (Some(old), Some(new)) = (
-                            change.old_value.downcast_ref::<#field_ty>(),
-                            change.new_value.downcast_ref::<#field_ty>(),
-                        ) {
-                            self.#watcher_name(old, new, ctx);
-                        }
-                    }
-                }
-            })
+            .map(|field| watcher_arm(&field.ident, &field.ty, field.watch, field.private_watch))
             .collect();
 
         let mut plain_arms = plain_arms;
         // Computed-field plain watchers also fire in the with-app dispatch.
         for cf in &computed_plain_watch {
-            let field_name_str = cf.ident.to_string();
-            let field_ty = &cf.ty;
-            let watcher_name = format_ident!("watch_{}", cf.ident);
-            plain_arms.push(quote! {
-                #field_name_str => {
-                    if let (Some(old), Some(new)) = (
-                        change.old_value.downcast_ref::<#field_ty>(),
-                        change.new_value.downcast_ref::<#field_ty>(),
-                    ) {
-                        self.#watcher_name(old, new, ctx);
-                    }
-                }
-            });
+            plain_arms.push(watcher_arm(&cf.ident, &cf.ty, cf.watch, cf.private_watch));
         }
 
         let mut app_arms: Vec<TokenStream> = app_watch_fields

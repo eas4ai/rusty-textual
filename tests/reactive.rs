@@ -1013,3 +1013,131 @@ fn var_always_update_fires_watcher_on_equal_set() {
     w.reactive_dispatch(&changes, &mut ctx);
     assert_eq!(w.hits, 1);
 }
+
+// ── PR-07: private `_watch_` / `_validate_` hooks (Python parity) ────
+
+#[derive(Reactive)]
+struct PrivateHookWidget {
+    #[reactive(validate, private_validate)]
+    name: String,
+
+    #[reactive(watch, private_watch)]
+    level: i32,
+
+    #[reactive(private_watch)]
+    solo: i32,
+
+    log: Vec<String>,
+}
+
+impl PrivateHookWidget {
+    fn _validate_name(&self, value: String) -> String {
+        format!("{value}-P")
+    }
+
+    fn validate_name(&self, value: String) -> String {
+        format!("{value}-U")
+    }
+
+    fn _watch_level(&mut self, _old: &i32, _new: &i32, _ctx: &mut ReactiveCtx) {
+        self.log.push("private".to_string());
+    }
+
+    fn watch_level(&mut self, _old: &i32, _new: &i32, _ctx: &mut ReactiveCtx) {
+        self.log.push("public".to_string());
+    }
+
+    fn _watch_solo(&mut self, _old: &i32, new: &i32, _ctx: &mut ReactiveCtx) {
+        self.log.push(format!("solo:{new}"));
+    }
+}
+
+#[test]
+fn private_validate_runs_before_public_validate() {
+    let mut w = PrivateHookWidget {
+        name: String::new(),
+        level: 0,
+        solo: 0,
+        log: Vec::new(),
+    };
+    let mut ctx = make_ctx();
+
+    // Python `_set` order: `_validate_*` first, then `validate_*`.
+    w.set_name("x".to_string(), &mut ctx);
+    assert_eq!(w.name(), "x-P-U");
+}
+
+#[test]
+fn private_watch_runs_before_public_watch() {
+    let mut w = PrivateHookWidget {
+        name: String::new(),
+        level: 0,
+        solo: 0,
+        log: Vec::new(),
+    };
+    let mut ctx = make_ctx();
+
+    // Python `_check_watchers` order: `_watch_*` first, then `watch_*`.
+    w.set_level(3, &mut ctx);
+    let changes = ctx.take_changes();
+    w.reactive_dispatch(&changes, &mut ctx);
+    assert_eq!(w.log, vec!["private".to_string(), "public".to_string()]);
+}
+
+#[test]
+fn private_watch_only_fires_without_public_hook() {
+    let mut w = PrivateHookWidget {
+        name: String::new(),
+        level: 0,
+        solo: 0,
+        log: Vec::new(),
+    };
+    let mut ctx = make_ctx();
+
+    // No `watch_solo` method exists — the private hook alone must fire.
+    w.set_solo(7, &mut ctx);
+    let changes = ctx.take_changes();
+    w.reactive_dispatch(&changes, &mut ctx);
+    assert_eq!(w.log, vec!["solo:7".to_string()]);
+}
+
+#[derive(Reactive)]
+struct PrivateComputedWidget {
+    #[reactive]
+    count: i32,
+
+    #[computed(depends_on = "count", private_watch)]
+    doubled: i32,
+
+    log: Vec<String>,
+}
+
+impl PrivateComputedWidget {
+    fn compute_doubled(&self) -> i32 {
+        self.count * 2
+    }
+
+    fn _watch_doubled(&mut self, _old: &i32, new: &i32, _ctx: &mut ReactiveCtx) {
+        self.log.push(format!("doubled:{new}"));
+    }
+}
+
+#[test]
+fn computed_private_watch_fires_on_recompute() {
+    let mut w = PrivateComputedWidget {
+        count: 1,
+        doubled: 2,
+        log: Vec::new(),
+    };
+    let mut ctx = make_ctx();
+
+    w.set_count(5, &mut ctx);
+    let changes = ctx.take_changes();
+    ctx.clear_flags();
+    w.reactive_dispatch(&changes, &mut ctx);
+
+    assert_eq!(*w.doubled(), 10);
+    let recompute_changes = ctx.take_changes();
+    w.reactive_dispatch(&recompute_changes, &mut ctx);
+    assert_eq!(w.log, vec!["doubled:10".to_string()]);
+}
