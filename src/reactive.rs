@@ -56,6 +56,12 @@ pub struct ReactiveFlags {
     /// remounted. Recorded changes carrying this flag drive the runtime
     /// recompose pipeline (`EventCtx::request_recompose_node`).
     pub recompose: bool,
+    /// Refresh key bindings when the field changes.
+    ///
+    /// Matches Python's `reactive(bindings=True)` (`_set` calls
+    /// `obj.refresh_bindings()`): the runtime recomputes active bindings
+    /// after the reactive phase. Composed via `with_bindings()`.
+    pub bindings: bool,
 }
 
 impl Default for ReactiveFlags {
@@ -66,6 +72,7 @@ impl Default for ReactiveFlags {
             init: true,
             always_update: false,
             recompose: false,
+            bindings: false,
         }
     }
 }
@@ -79,6 +86,7 @@ impl ReactiveFlags {
             init: true,
             always_update: false,
             recompose: false,
+            bindings: false,
         }
     }
 
@@ -90,6 +98,7 @@ impl ReactiveFlags {
             init: true,
             always_update: false,
             recompose: false,
+            bindings: false,
         }
     }
 
@@ -101,6 +110,7 @@ impl ReactiveFlags {
             init: false,
             always_update: false,
             recompose: false,
+            bindings: false,
         }
     }
 
@@ -112,6 +122,7 @@ impl ReactiveFlags {
             init: false,
             always_update: false,
             recompose: false,
+            bindings: false,
         }
     }
 
@@ -126,6 +137,7 @@ impl ReactiveFlags {
             init: true,
             always_update: false,
             recompose: false,
+            bindings: false,
         }
     }
 
@@ -140,6 +152,7 @@ impl ReactiveFlags {
             init: false,
             always_update: false,
             recompose: false,
+            bindings: false,
         }
     }
 
@@ -154,6 +167,7 @@ impl ReactiveFlags {
             init: true,
             always_update: true,
             recompose: false,
+            bindings: false,
         }
     }
 
@@ -169,6 +183,7 @@ impl ReactiveFlags {
             init: true,
             always_update: false,
             recompose: true,
+            bindings: false,
         }
     }
 
@@ -181,6 +196,7 @@ impl ReactiveFlags {
             init: false,
             always_update: false,
             recompose: true,
+            bindings: false,
         }
     }
 
@@ -207,6 +223,15 @@ impl ReactiveFlags {
     /// (firing watchers) even when the new value equals the old one.
     pub const fn with_always_update(mut self) -> Self {
         self.always_update = true;
+        self
+    }
+
+    /// Return a copy of these flags with `bindings` set.
+    ///
+    /// Used by `#[derive(Reactive)]` to compose Python's
+    /// `reactive(..., bindings=True)` with any base flag preset.
+    pub const fn with_bindings(mut self) -> Self {
+        self.bindings = true;
         self
     }
 }
@@ -249,6 +274,7 @@ pub struct ReactiveCtx {
     repaint_requested: bool,
     layout_requested: bool,
     recompose_requested: bool,
+    bindings_refresh_requested: bool,
     class_ops: Vec<(NodeId, crate::event::ClassOp)>,
     styles_requested: bool,
     /// Messages posted by watcher callbacks (Python watchers calling
@@ -278,6 +304,7 @@ impl ReactiveCtx {
             repaint_requested: false,
             layout_requested: false,
             recompose_requested: false,
+            bindings_refresh_requested: false,
             class_ops: Vec::new(),
             styles_requested: false,
             messages: Vec::new(),
@@ -317,6 +344,9 @@ impl ReactiveCtx {
         if flags.recompose {
             self.recompose_requested = true;
         }
+        if flags.bindings {
+            self.bindings_refresh_requested = true;
+        }
         self.changes.push(ReactiveChange {
             field_name,
             flags,
@@ -354,6 +384,11 @@ impl ReactiveCtx {
     /// Whether any change requested a recompose of the owner's subtree.
     pub fn needs_recompose(&self) -> bool {
         self.recompose_requested
+    }
+
+    /// Whether any change requested a key-bindings refresh.
+    pub fn needs_bindings_refresh(&self) -> bool {
+        self.bindings_refresh_requested
     }
 
     /// Request a recompose without recording a field change (watcher side effect).
@@ -396,6 +431,7 @@ impl ReactiveCtx {
         self.layout_requested = false;
         self.recompose_requested = false;
         self.styles_requested = false;
+        self.bindings_refresh_requested = false;
     }
 
     /// Reset the repaint/layout flags (e.g. after the runtime processes them).
@@ -404,6 +440,7 @@ impl ReactiveCtx {
         self.layout_requested = false;
         self.recompose_requested = false;
         self.styles_requested = false;
+        self.bindings_refresh_requested = false;
     }
 
     /// Queue an `Add` class op on this widget's own node.
@@ -593,6 +630,8 @@ pub struct ReactivePhaseResult {
     pub needs_layout: bool,
     /// Whether any change requested a recompose of the owner's subtree.
     pub needs_recompose: bool,
+    /// Whether any change requested a key-bindings refresh.
+    pub needs_bindings_refresh: bool,
     /// Number of iterations executed.
     pub iterations: usize,
     /// Whether the iteration limit was hit (potential cycle).
@@ -659,6 +698,9 @@ pub fn run_reactive_phase_with_dispatch(
         if ctx.needs_recompose() {
             result.needs_recompose = true;
         }
+        if ctx.needs_bindings_refresh() {
+            result.needs_bindings_refresh = true;
+        }
 
         let changes = ctx.take_changes();
         ctx.clear_flags();
@@ -688,6 +730,9 @@ pub fn run_reactive_phase_with_dispatch(
     }
     if ctx.needs_recompose() {
         result.needs_recompose = true;
+    }
+    if ctx.needs_bindings_refresh() {
+        result.needs_bindings_refresh = true;
     }
 
     // Drain any class ops and messages queued by watcher callbacks.

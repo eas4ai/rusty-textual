@@ -1122,6 +1122,87 @@ impl PrivateComputedWidget {
     }
 }
 
+// ── PR-08: `bindings` + `toggle_class` set flags (Python parity) ───
+
+#[derive(Reactive)]
+struct FlagWidget {
+    #[reactive(toggle_class = "on air")]
+    active: bool,
+
+    #[reactive(bindings)]
+    mode: String,
+}
+
+#[test]
+fn toggle_class_applies_set_class_per_class_before_gate() {
+    use textual::event::ClassOp;
+    use textual::reactive::run_reactive_phase;
+
+    let mut w = FlagWidget {
+        active: false,
+        mode: String::new(),
+    };
+    let mut ctx = make_ctx();
+
+    // Python `_set`: set_class(bool(value)) per class, before the check.
+    w.set_active(true, &mut ctx);
+    let result = run_reactive_phase(&mut w, &mut ctx);
+    let ops: Vec<String> = result
+        .class_ops
+        .iter()
+        .map(|(_, op)| match op {
+            ClassOp::Add(c) => format!("+{c}"),
+            ClassOp::Remove(c) => format!("-{c}"),
+        })
+        .collect();
+    assert_eq!(ops, vec!["+on".to_string(), "+air".to_string()]);
+
+    // Equal set: no change recorded, but classes still re-applied.
+    w.set_active(true, &mut ctx);
+    assert!(
+        ctx.changes().is_empty(),
+        "equal set records no change (equality gate intact)"
+    );
+    let result = run_reactive_phase(&mut w, &mut ctx);
+    assert_eq!(result.class_ops.len(), 2, "toggle re-applies on equal set");
+
+    // False flips to Remove.
+    w.set_active(false, &mut ctx);
+    let result = run_reactive_phase(&mut w, &mut ctx);
+    let ops: Vec<String> = result
+        .class_ops
+        .iter()
+        .map(|(_, op)| match op {
+            ClassOp::Add(c) => format!("+{c}"),
+            ClassOp::Remove(c) => format!("-{c}"),
+        })
+        .collect();
+    assert_eq!(ops, vec!["-on".to_string(), "-air".to_string()]);
+}
+
+#[test]
+fn bindings_flag_reaches_phase_result() {
+    use textual::reactive::run_reactive_phase;
+
+    let mut w = FlagWidget {
+        active: false,
+        mode: String::new(),
+    };
+    let mut ctx = make_ctx();
+
+    w.set_mode("x".to_string(), &mut ctx);
+    assert!(
+        ctx.changes()[0].flags.bindings,
+        "bindings flag must ride the recorded change"
+    );
+    assert!(ctx.needs_bindings_refresh());
+    let result = run_reactive_phase(&mut w, &mut ctx);
+    assert!(
+        result.needs_bindings_refresh,
+        "phase result must carry the bindings request to the runtime"
+    );
+}
+
 #[test]
 fn computed_private_watch_fires_on_recompute() {
     let mut w = PrivateComputedWidget {

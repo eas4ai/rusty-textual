@@ -41,6 +41,14 @@ struct ReactiveField {
     /// Whether `private_validate` was specified (call `_validate_<field>`
     /// before `validate_<field>` in the setter; Python `_set` order).
     private_validate: bool,
+    /// Whether `bindings` was specified (refresh key bindings on change;
+    /// Python `reactive(bindings=True)`).
+    bindings: bool,
+    /// Class names from `toggle_class = "..."` (space-separated in the
+    /// attribute; stored split). The setter applies `set_class(bool(value))`
+    /// per class before the equality gate (Python `_set` order). Bool
+    /// fields only.
+    toggle_classes: Vec<String>,
     /// Whether `always_update` was specified (Python `always_update=True`):
     /// the setter records the change and fires watchers even when the new
     /// value equals the old one.
@@ -93,8 +101,10 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
             let mut always_update = false;
             let mut private_watch = false;
             let mut private_validate = false;
+            let mut bindings = false;
+            let mut toggle_classes: Vec<String> = Vec::new();
 
-            // Parse optional args: watch, watch_with_app, validate, always_update, private_watch, private_validate, init = false
+            // Parse optional args: watch, watch_with_app, validate, always_update, private_watch, private_validate, bindings, toggle_class = "...", init = false
             if let Meta::List(meta_list) = &attr.meta {
                 let nested = meta_list.parse_args_with(
                     syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
@@ -115,18 +125,40 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                 private_watch = true;
                             } else if path.is_ident("private_validate") {
                                 private_validate = true;
+                            } else if path.is_ident("bindings") {
+                                bindings = true;
                             } else {
                                 return Err(syn::Error::new_spanned(
                                     path,
                                     format!(
-                                        "unknown var attribute `{}`; expected `watch`, `watch_with_app`, `validate`, `always_update`, `private_watch`, `private_validate`, or `init = false` (note: `recompose` is only valid on `#[reactive]`, not `#[var]`)",
+                                        "unknown var attribute `{}`; expected `watch`, `watch_with_app`, `validate`, `always_update`, `private_watch`, `private_validate`, `bindings`, `toggle_class = \"...\"`, or `init = false` (note: `recompose` is only valid on `#[reactive]`, not `#[var]`)",
                                         path.get_ident().map(|i| i.to_string()).unwrap_or_default()
                                     ),
                                 ));
                             }
                         }
                         Meta::NameValue(nv) => {
-                            if nv.path.is_ident("init") {
+                            if nv.path.is_ident("toggle_class") {
+                                if let Expr::Lit(expr_lit) = &nv.value {
+                                    if let Lit::Str(lit_str) = &expr_lit.lit {
+                                        toggle_classes = lit_str
+                                            .value()
+                                            .split_whitespace()
+                                            .map(|s| s.to_string())
+                                            .collect();
+                                    } else {
+                                        return Err(syn::Error::new_spanned(
+                                            &nv.value,
+                                            "expected string literal for `toggle_class`",
+                                        ));
+                                    }
+                                } else {
+                                    return Err(syn::Error::new_spanned(
+                                        &nv.value,
+                                        "expected string literal for `toggle_class`",
+                                    ));
+                                }
+                            } else if nv.path.is_ident("init") {
                                 if let Expr::Lit(expr_lit) = &nv.value {
                                     if let Lit::Bool(lit_bool) = &expr_lit.lit {
                                         if !lit_bool.value {
@@ -148,7 +180,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                 return Err(syn::Error::new_spanned(
                                     &nv.path,
                                     format!(
-                                        "unknown var attribute `{}`; expected `watch`, `watch_with_app`, or `init`",
+                                        "unknown var attribute `{}`; expected `toggle_class = \"...\"` or `init`",
                                         nv.path
                                             .get_ident()
                                             .map(|i| i.to_string())
@@ -180,6 +212,8 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                 always_update,
                 private_watch,
                 private_validate,
+                bindings,
+                toggle_classes,
             })));
         }
 
@@ -271,9 +305,11 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
             let mut always_update = false;
             let mut private_watch = false;
             let mut private_validate = false;
+            let mut bindings = false;
+            let mut toggle_classes: Vec<String> = Vec::new();
 
             // Parse arguments if present:
-            // #[reactive(layout, watch, watch_with_app, recompose, validate, always_update, private_watch, private_validate, init = false)]
+            // #[reactive(layout, watch, watch_with_app, recompose, validate, always_update, private_watch, private_validate, bindings, toggle_class = "...", init = false)]
             if let Meta::List(meta_list) = &attr.meta {
                 let nested = meta_list.parse_args_with(
                     syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
@@ -298,18 +334,41 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                 private_watch = true;
                             } else if path.is_ident("private_validate") {
                                 private_validate = true;
+                            } else if path.is_ident("bindings") {
+                                bindings = true;
                             } else {
                                 return Err(syn::Error::new_spanned(
                                     path,
                                     format!(
-                                        "unknown reactive attribute `{}`; expected `layout`, `watch`, `watch_with_app`, `recompose`, `validate`, `always_update`, `private_watch`, `private_validate`, or `init = false`",
+                                        "unknown reactive attribute `{}`; expected `layout`, `watch`, `watch_with_app`, `recompose`, `validate`, `always_update`, `private_watch`, `private_validate`, `bindings`, `toggle_class = \"...\"`, or `init = false`",
                                         path.get_ident().map(|i| i.to_string()).unwrap_or_default()
                                     ),
                                 ));
                             }
                         }
                         Meta::NameValue(nv) => {
-                            if nv.path.is_ident("init") {
+                            if nv.path.is_ident("toggle_class") {
+                                // Parse `toggle_class = "active highlighted"` (space-separated).
+                                if let Expr::Lit(expr_lit) = &nv.value {
+                                    if let Lit::Str(lit_str) = &expr_lit.lit {
+                                        toggle_classes = lit_str
+                                            .value()
+                                            .split_whitespace()
+                                            .map(|s| s.to_string())
+                                            .collect();
+                                    } else {
+                                        return Err(syn::Error::new_spanned(
+                                            &nv.value,
+                                            "expected string literal for `toggle_class`",
+                                        ));
+                                    }
+                                } else {
+                                    return Err(syn::Error::new_spanned(
+                                        &nv.value,
+                                        "expected string literal for `toggle_class`",
+                                    ));
+                                }
+                            } else if nv.path.is_ident("init") {
                                 // Parse `init = false`
                                 if let Expr::Lit(expr_lit) = &nv.value {
                                     if let Lit::Bool(lit_bool) = &expr_lit.lit {
@@ -333,7 +392,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                 return Err(syn::Error::new_spanned(
                                     &nv.path,
                                     format!(
-                                        "unknown reactive attribute `{}`; expected `layout`, `watch`, `watch_with_app`, or `init`",
+                                        "unknown reactive attribute `{}`; expected `toggle_class = \"...\"` or `init`",
                                         nv.path
                                             .get_ident()
                                             .map(|i| i.to_string())
@@ -365,6 +424,8 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                 always_update,
                 private_watch,
                 private_validate,
+                bindings,
+                toggle_classes,
             })));
         }
     }
@@ -396,11 +457,14 @@ fn flags_expr(field: &ReactiveField) -> TokenStream {
     } else {
         quote! { textual::reactive::ReactiveFlags::reactive() }
     };
+    let mut expr = base;
     if field.always_update {
-        quote! { #base.with_always_update() }
-    } else {
-        base
+        expr = quote! { #expr.with_always_update() };
     }
+    if field.bindings {
+        expr = quote! { #expr.with_bindings() };
+    }
+    expr
 }
 
 /// One watcher match arm: `_watch_<field>` first when `private_watch` is set,
@@ -507,6 +571,19 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
         }
         let validate_stmt = quote! { #(#validate_stmts)* };
 
+        // Class toggles (Python `_set`: `obj.set_class(bool(value), *classes)`
+        // runs after validation, before the equality gate — so an equal set
+        // still re-applies classes). Bool fields only: any other field type
+        // fails to compile here, loudly.
+        let toggle_stmts: Vec<TokenStream> = field
+            .toggle_classes
+            .iter()
+            .map(|class| {
+                quote! { ctx.set_class(value, #class); }
+            })
+            .collect();
+        let toggle_stmt = quote! { #(#toggle_stmts)* };
+
         // `always_update` (Python `reactive(..., always_update=True)`) bypasses
         // the equality gate: the change is recorded (and watchers fire) even
         // when the new value equals the old one.
@@ -552,6 +629,7 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
                 #field_ty: PartialEq + Clone + Send + 'static,
             {
                 #validate_stmt
+                #toggle_stmt
                 #set_body
             }
 

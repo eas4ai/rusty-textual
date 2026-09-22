@@ -6346,6 +6346,10 @@ impl App {
             repaint_requested |= result.needs_repaint;
             layout_requested |= result.needs_layout;
             recompose_requested |= result.needs_recompose;
+            // Python `reactive(bindings=True)`: `_set` refreshes bindings.
+            if result.needs_bindings_refresh {
+                self.refresh_bindings();
+            }
             if !result.class_ops.is_empty() {
                 all_class_ops.append(&mut result.class_ops);
             }
