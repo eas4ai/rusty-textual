@@ -466,6 +466,39 @@ impl ReactiveCtx {
         }
     }
 
+    /// Queue an async-watcher's future on the worker pool (PR-08c).
+    ///
+    /// The future must be `'static` (it runs on a worker thread, never
+    /// borrowing the widget) and is driven to completion by a dedicated
+    /// current-thread runtime — workers spawn on plain threads, so no
+    /// ambient runtime ever nests inside. Ownership is the reactive owner's
+    /// node, so unmount cancels it like any other worker. Errors from
+    /// runtime construction surface as the worker's `Err`.
+    pub fn request_async_watcher_task(
+        &mut self,
+        name: &str,
+        future: impl std::future::Future<Output = ()> + Send + 'static,
+    ) {
+        let job = move |_cancel: crate::worker::CancellationToken| {
+            match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => {
+                    runtime.block_on(future);
+                    Ok(())
+                }
+                Err(err) => Err(err.to_string()),
+            }
+        };
+        crate::runtime::accumulate_worker_request(crate::worker::WorkerRequest {
+            owner: self.node_id,
+            exclusive_key: None,
+            name: Some(name.to_string()),
+            payload: crate::worker::WorkerRequestPayload::task(job),
+        });
+    }
+
     /// Queue an `Add` class op on an arbitrary node.
     pub fn add_class_to(&mut self, node: NodeId, class: &str) {
         self.class_ops

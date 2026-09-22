@@ -32,6 +32,7 @@ mod timers;
 mod types;
 
 // Public re-exports for integration testing via `textual::runtime::*`.
+pub(crate) use event_loop::accumulate_worker_request;
 pub use event_loop::resolve_transition_for_property;
 #[doc(hidden)]
 pub use event_loop::take_unhandled_binding_reports;

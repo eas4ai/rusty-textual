@@ -75,6 +75,12 @@ impl Drop for CallFromThreadGuard {
     }
 }
 
+/// Push one worker request into the thread-local accumulator (PR-08c:
+/// async-watcher futures ride the same pool as every other worker).
+pub(crate) fn accumulate_worker_request(request: WorkerRequest) {
+    WORKER_REQUEST_ACC.with(|cell| cell.borrow_mut().push(request));
+}
+
 /// Push worker requests from an outcome into the thread-local accumulator.
 fn accumulate_worker_requests(outcome: &mut DispatchOutcome) {
     let requests = std::mem::take(&mut outcome.worker_requests);
