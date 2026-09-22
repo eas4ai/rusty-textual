@@ -24,20 +24,13 @@ struct Case {
     bin: &'static str,
     py_rel: &'static str,
     keys: &'static str,
-    /// `true` = known divergence (the harness CATCHES it; the fix is tracked, not
-    /// yet landed). Reported, not asserted, so the suite stays green.
-    pending: bool,
 }
 
 // Interactive cases. keys are sent after the initial frame stabilizes.
-const CASES: &[Case] = &[
-    // Tab focuses the first Button -> exercises the `:focus` text-style (b reverse).
-    // The reverse-band width is now FIXED (button render applies `line-pad: 1` as
-    // styled label spaces when the label fits, matching Python; band spans " Default ").
-    // PENDING only on the residual surface/blend bg delta (#282828 vs #272727) — the
-    // color-workstream cluster, not button-specific. Flips to PASS once that lands.
-    Case { name: "button_focus", bin: "button", py_rel: "widgets/button.py", keys: "\t", pending: true },
-];
+// NOTE (review §1.7): the sole case (button_focus) was pending:true, so the
+// suite could never fail. Removed rather than carried as a silent pass —
+// re-add it as a real asserting case with the dim-blend fix (PR-16).
+const CASES: &[Case] = &[];
 
 fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -179,12 +172,8 @@ fn interactive_parity() {
                     if g != a { eprintln!("  py  : {g}\n  rust: {a}"); shown += 1; if shown >= 14 { break; } }
                 }
             }
-            if case.pending {
-                eprintln!("PENDING {} (known divergence — harness catches it; fix tracked)", case.name);
-            } else {
-                eprintln!("FAIL {}", case.name);
-                failures.push(case.name);
-            }
+            eprintln!("FAIL {}", case.name);
+            failures.push(case.name);
         }
     }
     assert!(failures.is_empty(), "interactive styled parity FAILED: {failures:?}");
