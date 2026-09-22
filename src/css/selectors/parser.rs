@@ -3040,6 +3040,28 @@ mod tests {
     }
 
     #[test]
+    fn cascade_user_normal_beats_default_important() {
+        use super::super::ast::{SelectorMeta, SelectorStates, StyleSheet};
+        // PR-10: Python's extract_rules outermost key makes the whole user
+        // layer outrank the whole default layer — even default !important
+        // loses to user normal.
+        let mut default_sheet = StyleSheet::parse("Foo { color: red !important; }");
+        default_sheet.mark_default();
+        let mut sheet = default_sheet;
+        sheet.extend(&StyleSheet::parse("Foo { color: green; }"));
+        let meta = SelectorMeta {
+            type_name: "Foo".to_string(),
+            type_aliases: Vec::new(),
+            id: None,
+            classes: Vec::new(),
+            states: SelectorStates::default(),
+            component_phantom: false,
+        };
+        let style = sheet.style_for_meta(&meta);
+        assert_eq!(style.fg, Some(crate::style::Color::parse("green").unwrap()));
+    }
+
+    #[test]
     fn cascade_important_wins_over_higher_specificity_normal() {
         use super::super::ast::{SelectorMeta, SelectorStates, StyleSheet};
         // .foo has lower specificity (10) but !important.
