@@ -2,7 +2,7 @@ use std::io::{self, Write};
 
 use crossterm::event::{
     DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture,
-    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    PopKeyboardEnhancementFlags,
 };
 use crossterm::{cursor, execute, terminal};
 
@@ -21,7 +21,7 @@ impl PlatformDriver for WindowsPlatformDriver {
         &mut self,
         options: DriverOptions,
         keyboard_protocol: KeyboardProtocol,
-    ) -> io::Result<bool> {
+    ) -> io::Result<(bool, crate::driver::negotiate::NegotiatedModes)> {
         let enable_keyboard = detect_kitty_keyboard_support(keyboard_protocol);
 
         #[cfg(feature = "trace")]
@@ -69,16 +69,28 @@ impl PlatformDriver for WindowsPlatformDriver {
         }
 
         let keyboard_enhanced = if enable_keyboard {
-            execute!(
+            // Full flag set, Python parity (DISAMBIGUATE | REPORT_ALL_KEYS |
+            // REPORT_ASSOCIATED_TEXT = 25). Emitted raw: crossterm omits flag
+            // 16, and non-supporting terminals ignore the sequence
+            // (progressive enhancement). Pop on stop mirrors Python.
+            write!(
                 std::io::stdout(),
-                PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+                "\x1b[>{}u",
+                crate::driver::negotiate::KITTY_FLAGS
             )
+            .and_then(|_| std::io::stdout().flush())
             .is_ok()
         } else {
             false
         };
 
-        Ok(keyboard_enhanced)
+        // Synchronous mode negotiation (PR-15b): bounded DECRQM round-trips
+        // before the input loop owns stdin. Never enables in-band resize
+        // (its reports are unparseable through crossterm) — records support
+        // only. Skipped entirely when piped or on Apple Terminal (SYNC).
+        let negotiated = crate::driver::negotiate::negotiate_live();
+
+        Ok((keyboard_enhanced, negotiated))
     }
 
     fn stop(&mut self, options: DriverOptions, keyboard_enhanced: bool) -> io::Result<()> {
@@ -180,24 +192,30 @@ pub(crate) fn detect_pointer_shapes_enabled() -> bool {
 }
 
 pub(crate) fn detect_kitty_keyboard_support(protocol: KeyboardProtocol) -> bool {
-    match protocol {
-        KeyboardProtocol::Off => false,
-        KeyboardProtocol::On => true,
-        KeyboardProtocol::Auto => detect_kitty_keyboard_support_auto(),
-    }
-}
-
-fn detect_kitty_keyboard_support_auto() -> bool {
-    if let Ok(value) = std::env::var("TEXTUAL_KEYBOARD_PROTOCOL") {
-        let v = value.to_lowercase();
-        match v.as_str() {
-            "off" | "0" | "false" => return false,
-            "on" | "1" | "true" => return true,
-            _ => {}
-        }
-    }
-    // Auto mode is probe-first: attempt enable and rely on command success/failure.
-    true
+    // Explicit `TEXTUAL_DISABLE_KITTY_KEY=1` wins over everything, including
+    // forced `On` (Python `constants.DISABLE_KITTY_KEY` exact semantics: only
+    // `"1"` disables — the operator opt-out beats the API request).
+    let disabled_by_env = crate::driver::negotiate::kitty_disabled_by_env(
+        std::env::var("TEXTUAL_DISABLE_KITTY_KEY").ok().as_deref(),
+    );
+    let explicit = match protocol {
+        KeyboardProtocol::Off => Some(false),
+        KeyboardProtocol::On => Some(true),
+        KeyboardProtocol::Auto => match std::env::var("TEXTUAL_KEYBOARD_PROTOCOL")
+            .ok()
+            .as_deref()
+            .map(str::to_lowercase)
+            .as_deref()
+        {
+            Some("off") | Some("0") | Some("false") => Some(false),
+            Some("on") | Some("1") | Some("true") => Some(true),
+            _ => None,
+        },
+    };
+    // `Auto` with no explicit override additionally requires a tty stdin, so
+    // piped runs never emit enhancement sequences into a file (PR-15b).
+    let stdin_is_tty = std::io::IsTerminal::is_terminal(&std::io::stdin());
+    crate::driver::negotiate::resolve_kitty_support(explicit, disabled_by_env, stdin_is_tty)
 }
 
 fn restore_terminal_best_effort() {
