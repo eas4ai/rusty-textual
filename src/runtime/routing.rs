@@ -507,16 +507,10 @@ pub fn dispatch_message_queue_tree(
 
     coalesce_message_queue(&mut queue);
 
-    const LIMIT: usize = 1024;
-    let mut processed = 0usize;
-
+    // Deliberately no cap: Python's pump drains until empty, and a limit here
+    // silently drops messages under load (review §1.1). Handlers that post
+    // unbounded messages are a caller bug, not a pump concern.
     while let Some(mut envelope) = queue.pop_front() {
-        processed += 1;
-        if processed > LIMIT {
-            debug_message("[dispatch_message_queue_tree] limit reached, dropping remaining");
-            break;
-        }
-
         let mut ctx = EventCtx::default();
         {
             // Re-activate the prevent-set snapshot riding on the message for
@@ -2110,6 +2104,38 @@ mod envelope_tests {
             root_count.load(Ordering::Relaxed),
             0,
             "root should NOT see message after stop"
+        );
+    }
+
+    #[test]
+    fn pump_has_no_message_cap() {
+        // Review §1.1 (PR-02): the pump previously dropped everything past a
+        // 1024-message cap with only a debug log. Python drains until empty.
+        let count = Arc::new(AtomicUsize::new(0));
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(MessageCounter::new(count.clone())));
+        let leaf_id = tree.mount(root_id, Box::new(MessageCounter::new(count.clone())));
+
+        const N: usize = 3000;
+        let messages: Vec<MessageEvent> = (0..N)
+            .map(|i| {
+                MessageEvent::new(
+                    leaf_id,
+                    crate::message::ButtonPressed {
+                        description: format!("flood-{i}"),
+                        button_id: None,
+                    },
+                )
+            })
+            .collect();
+        let _ = dispatch_message_queue_tree(&mut tree, messages);
+
+        // ButtonPressed is not replaceable, so nothing may fold: each message
+        // bubbles leaf → root, two deliveries apiece, none dropped.
+        assert_eq!(
+            count.load(Ordering::Relaxed),
+            2 * N,
+            "pump dropped messages past the old 1024 cap"
         );
     }
 
