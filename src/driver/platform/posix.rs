@@ -86,7 +86,7 @@ impl PlatformDriver for PosixPlatformDriver {
         // before the input loop owns stdin. Never enables in-band resize
         // (its reports are unparseable through crossterm) — records support
         // only. Skipped entirely when piped or on Apple Terminal (SYNC).
-        let negotiated = crate::driver::negotiate::negotiate_live();
+        let negotiated = crate::driver::live::negotiate_live();
 
         Ok((keyboard_enhanced, negotiated))
     }

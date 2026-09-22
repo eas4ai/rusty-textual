@@ -5,15 +5,12 @@
 //! file, so the bytes the probe sends and parses are byte-identical to the
 //! driver's — no reimplementation drift between proof and product.
 //!
-//! Why a synchronous round-trip at startup instead of async parsing:
-//! crossterm 0.28 has no DECRQM (`?$y`) arm, so a query reply reaching its
-//! input parser returns `Ok(None)` and pollutes the *next* parse. The driver
-//! therefore performs exactly one bounded round-trip per mode inside
-//! `start()` — before the input loop owns stdin — and never enables a mode
-//! whose reports it cannot consume (in-band resize reports are `CSI-u` with
-//! code 48, which crossterm would misread as key events).
+//! This file owns the dependency-free half only: query bytes, reply parsing,
+//! and send-gates, plus [`negotiate_with`] which runs the handshake over an
+//! injected transport. The live stdin transport lives in
+//! `crate::driver::live` (poll-bounded, thread-free — a timed-out query must
+//! never leave a reader behind to steal later input bytes).
 
-use std::io::Read;
 use std::time::Duration;
 
 /// Synchronized-output mode (DECSET 2026).
@@ -110,75 +107,6 @@ pub fn resolve_kitty_support(
         Some(on) => on,
         None => stdin_is_tty,
     }
-}
-
-/// Run one synchronous query round-trip: `write(query)` then wait for reply
-/// bytes up to [`QUERY_TIMEOUT`].
-///
-/// The reply reader runs on a helper thread so the wait is bounded; a leaked
-/// thread on timeout exits at the next stdin byte/EOF. Call only before the
-/// input loop owns stdin.
-pub fn query_round_trip(
-    query: &[u8],
-    write: impl FnOnce(&[u8]) -> std::io::Result<()>,
-    read_stdin: impl FnOnce() -> Option<Vec<u8>> + Send + 'static,
-) -> Option<Vec<u8>> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(read_stdin());
-    });
-    write(query).ok()?;
-    rx.recv_timeout(QUERY_TIMEOUT).ok()?
-}
-
-/// Blocking stdin read for a DECRQM reply: bytes up to and including the
-/// first `y` (DECRQM terminator), capped, `None` on EOF/empty.
-///
-/// Single-byte locked reads, deliberately unbuffered: a `BufReader` could
-/// over-read past the reply and steal input bytes from the loop that owns
-/// stdin next.
-pub fn read_decrqm_reply() -> Option<Vec<u8>> {
-    let stdin = std::io::stdin();
-    let mut locked = stdin.lock();
-    let mut buf = Vec::with_capacity(32);
-    let mut one = [0u8; 1];
-    loop {
-        match locked.read(&mut one) {
-            Ok(0) => break,
-            Ok(_) => {
-                buf.push(one[0]);
-                if one[0] == b'y' || buf.len() >= 64 {
-                    break;
-                }
-            }
-            Err(_) => break,
-        }
-    }
-    if buf.is_empty() {
-        None
-    } else {
-        Some(buf)
-    }
-}
-
-/// Production negotiation against the real terminal (PR-15b).
-///
-/// Reads `TERM_PROGRAM`/tty state from the environment and performs one
-/// bounded round-trip per mode. Call only from driver `start()`, before the
-/// input loop owns stdin.
-pub fn negotiate_live() -> NegotiatedModes {
-    use std::io::IsTerminal;
-    use std::io::Write;
-    let is_tty = std::io::stdin().is_terminal();
-    let term_program = std::env::var("TERM_PROGRAM").unwrap_or_default();
-    let mut stdout = std::io::stdout();
-    negotiate_with(is_tty, &term_program, |mode| {
-        query_round_trip(
-            &decrqm_query(mode),
-            |q| stdout.write_all(q).and_then(|_| stdout.flush()),
-            read_decrqm_reply,
-        )
-    })
 }
 
 /// Negotiate with an injected transport (unit tests + live probe share this).
