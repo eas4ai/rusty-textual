@@ -109,7 +109,7 @@ pub struct InputChanged {
     pub value: String,
     pub validation: ValidationResult,
 }
-crate::impl_message!(InputChanged, replaceable);
+crate::impl_message!(InputChanged);
 
 #[derive(Debug, Clone)]
 pub struct InputSubmitted {
@@ -127,14 +127,14 @@ crate::impl_message!(InputBlurred);
 pub struct TextAreaChanged {
     pub value: String,
 }
-crate::impl_message!(TextAreaChanged, replaceable);
+crate::impl_message!(TextAreaChanged);
 
 #[derive(Debug, Clone)]
 pub struct TextAreaSelectionChanged {
     pub start: (usize, usize),
     pub end: (usize, usize),
 }
-crate::impl_message!(TextAreaSelectionChanged, replaceable);
+crate::impl_message!(TextAreaSelectionChanged);
 
 #[derive(Debug, Clone)]
 pub struct TextEditClipboardCopyRequested {
@@ -258,7 +258,7 @@ pub struct OptionHighlighted {
     /// `OptionMessage.option_id`).
     pub option_id: Option<crate::widgets::OptionId>,
 }
-crate::impl_message!(OptionHighlighted, replaceable);
+crate::impl_message!(OptionHighlighted);
 
 #[derive(Debug, Clone)]
 pub struct OptionSelected {
@@ -312,7 +312,7 @@ pub struct SelectionListHighlighted {
     /// Stable id of the highlighted selection, if it has one.
     pub option_id: Option<crate::widgets::OptionId>,
 }
-crate::impl_message!(SelectionListHighlighted, replaceable);
+crate::impl_message!(SelectionListHighlighted);
 
 // ---------------------------------------------------------------------------
 // Per-message structs — tabs
@@ -473,7 +473,7 @@ pub struct TreeNodeHighlighted {
     /// Stable id of the highlighted node.
     pub node_id: crate::widgets::TreeNodeId,
 }
-crate::impl_message!(TreeNodeHighlighted, replaceable);
+crate::impl_message!(TreeNodeHighlighted);
 
 // ---------------------------------------------------------------------------
 // Per-message structs — MarkdownViewer
@@ -776,7 +776,7 @@ pub struct DataTableCellHighlighted {
     pub row: usize,
     pub column: usize,
 }
-crate::impl_message!(DataTableCellHighlighted, replaceable);
+crate::impl_message!(DataTableCellHighlighted);
 
 /// Posted when the highlighted cell is activated by enter/space or a click on
 /// the cursor position (Python `DataTable.CellSelected`).
@@ -793,7 +793,7 @@ crate::impl_message!(DataTableCellSelected);
 pub struct DataTableRowHighlighted {
     pub row: usize,
 }
-crate::impl_message!(DataTableRowHighlighted, replaceable);
+crate::impl_message!(DataTableRowHighlighted);
 
 /// Posted when the highlighted row is activated (Python
 /// `DataTable.RowSelected`).
@@ -809,7 +809,7 @@ crate::impl_message!(DataTableRowSelected);
 pub struct DataTableColumnHighlighted {
     pub column: usize,
 }
-crate::impl_message!(DataTableColumnHighlighted, replaceable);
+crate::impl_message!(DataTableColumnHighlighted);
 
 /// Posted when the highlighted column is activated (Python
 /// `DataTable.ColumnSelected`).
@@ -858,14 +858,14 @@ pub struct KeyPanelScrolled {
     pub offset: usize,
     pub max_offset: usize,
 }
-crate::impl_message!(KeyPanelScrolled, replaceable);
+crate::impl_message!(KeyPanelScrolled);
 
 #[derive(Debug, Clone)]
 pub struct RichLogScrolled {
     pub offset: usize,
     pub max_offset: usize,
 }
-crate::impl_message!(RichLogScrolled, replaceable);
+crate::impl_message!(RichLogScrolled);
 
 // ---------------------------------------------------------------------------
 // Per-message structs — async tasks / timers
@@ -1529,7 +1529,11 @@ mod tests {
     // --- Message trait can_replace ---
 
     #[test]
-    fn replaceable_trait_impl_returns_true_for_same_type() {
+    fn builtin_messages_are_not_replaceable() {
+        // Python parity: no built-in widget message folds. The `replaceable`
+        // arm survives only for third-party `impl_message!(T, replaceable)`
+        // types (pinned by tests/open_messages.rs), so InputChanged — now a
+        // plain `impl_message!` — must NOT replace.
         let a = InputChanged {
             value: "a".into(),
             validation: ValidationResult::success(),
@@ -1538,8 +1542,7 @@ mod tests {
             value: "ab".into(),
             validation: ValidationResult::success(),
         };
-        // b can replace a because InputChanged is impl_message!(_, replaceable)
-        assert!(b.can_replace(&a));
+        assert!(!b.can_replace(&a));
     }
 
     #[test]

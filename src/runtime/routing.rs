@@ -425,9 +425,11 @@ pub(crate) fn dispatch_mouse_scroll_to_target_tree(
 
 /// Coalesce replaceable messages in the queue.
 ///
-/// For each older/newer envelope pair with the same sender:
-/// - if the newer envelope has `set_replaceable(true)`, it replaces older
-///   envelopes of the same message variant;
+/// Python parity (`message_pump.py` folding loop): only the head message folds
+/// against the NEXT queued message — never across non-adjacent pairs. For each
+/// adjacent older/newer pair from the same sender:
+/// - if the newer envelope has `set_replaceable(true)`, it replaces the older
+///   envelope of the same message variant;
 /// - otherwise replacement is delegated to the payload's `can_replace` trait method.
 ///
 /// This keeps envelope-level override support while making replacement
@@ -444,29 +446,15 @@ pub(crate) fn coalesce_message_queue(queue: &mut std::collections::VecDeque<Mess
         newer.message().can_replace(older.message())
     }
 
-    let mut keep = vec![true; queue.len()];
-
-    // Walk backwards so later messages survive.
-    for i in (0..queue.len()).rev() {
-        for j in ((i + 1)..queue.len()).rev() {
-            let older = &queue[i];
-            let newer = &queue[j];
-            if older.sender() != newer.sender() {
-                continue;
-            }
-            if envelope_replaces_pending(newer, older) {
-                keep[i] = false;
-                break;
-            }
-        }
-    }
-
-    // Remove dropped envelopes (drain back-to-front to preserve indices).
-    let mut idx = queue.len();
-    while idx > 0 {
-        idx -= 1;
-        if !keep[idx] {
-            queue.remove(idx);
+    // Front-to-back; when the newer entry replaces the older, drop the older
+    // and re-check the same index (the following entry is now adjacent).
+    let mut i = 0;
+    while i + 1 < queue.len() {
+        let same_sender = queue[i].sender() == queue[i + 1].sender();
+        if same_sender && envelope_replaces_pending(&queue[i + 1], &queue[i]) {
+            queue.remove(i);
+        } else {
+            i += 1;
         }
     }
 }
@@ -2332,15 +2320,74 @@ mod envelope_tests {
         queue.push_back(env3);
         coalesce_message_queue(&mut queue);
 
-        // Two InputChanged coalesce to one, ButtonPressed survives.
-        assert_eq!(queue.len(), 2, "InputChanged pair → 1, ButtonPressed → 1");
-        // First remaining should be ButtonPressed (index 0 InputChanged was removed).
-        assert!(queue[0].is::<crate::message::ButtonPressed>());
-        // Second should be the latest InputChanged.
+        // Python parity: folding is head-vs-next only, so the two InputChanged
+        // separated by ButtonPressed must NOT fold across it — all three stay,
+        // in order.
+        assert_eq!(
+            queue.len(),
+            3,
+            "non-adjacent InputChanged must not fold across ButtonPressed"
+        );
         assert!(
-            queue[1]
+            queue[0]
+                .downcast_ref::<crate::message::InputChanged>()
+                .is_some_and(|m| m.value == "a")
+        );
+        assert!(queue[1].is::<crate::message::ButtonPressed>());
+        assert!(
+            queue[2]
                 .downcast_ref::<crate::message::InputChanged>()
                 .is_some_and(|m| m.value == "ab")
+        );
+    }
+
+    #[test]
+    fn coalesce_non_adjacent_envelope_replaceable_survives() {
+        // Same-sender, both envelope-replaceable, but separated: Python folds
+        // head-vs-next only (`message_pump.py`), so all three survive.
+        let sender = node_id_from_ffi(1);
+        let mut queue: VecDeque<MessageEnvelope> = VecDeque::new();
+        for value in ["a", "b", "c"] {
+            let mut env = MessageEnvelope::new(MessageEvent::new(
+                sender,
+                crate::message::InputChanged {
+                    value: value.into(),
+                    validation: crate::validation::ValidationResult::success(),
+                },
+            ));
+            env.set_replaceable(true);
+            queue.push_back(env);
+        }
+        // Break adjacency with a non-replaceable message in the middle.
+        queue.insert(
+            1,
+            MessageEnvelope::new(MessageEvent::new(
+                sender,
+                crate::message::ButtonPressed {
+                    description: "x".into(),
+                    button_id: None,
+                },
+            )),
+        );
+        coalesce_message_queue(&mut queue);
+
+        // Xa and Xb are separated by ButtonPressed → both survive; Xb and Xc
+        // are adjacent and replaceable → Xc wins. Order preserved.
+        assert_eq!(
+            queue.len(),
+            3,
+            "separated pair must not fold, adjacent pair must"
+        );
+        assert!(
+            queue[0]
+                .downcast_ref::<crate::message::InputChanged>()
+                .is_some_and(|m| m.value == "a")
+        );
+        assert!(queue[1].is::<crate::message::ButtonPressed>());
+        assert!(
+            queue[2]
+                .downcast_ref::<crate::message::InputChanged>()
+                .is_some_and(|m| m.value == "c")
         );
     }
 
@@ -2368,48 +2415,45 @@ mod envelope_tests {
     }
 
     #[test]
-    fn dispatch_coalesces_messages_via_message_can_replace() {
+    fn dispatch_delivers_unmarked_input_changed_without_folding() {
+        // Python parity: InputChanged is NOT in Python's can_replace set
+        // (`message.py`), so three adjacent same-sender InputChanged must all
+        // dispatch — no type-level folding.
         let sender = node_id_from_ffi(1);
-        let _count = Arc::new(AtomicUsize::new(0));
 
         let mut tree = WidgetTree::new();
         let _root_id = tree.set_root(Box::new(Label::new("x")));
 
-        // Three InputChanged from the same sender — should coalesce to one
-        // via the replaceable can_replace trait impl.
-        let messages = vec![
-            MessageEvent::new(
+        let mut queue: VecDeque<MessageEnvelope> = VecDeque::new();
+        for value in ["a", "ab", "abc"] {
+            queue.push_back(MessageEnvelope::new(MessageEvent::new(
                 sender,
                 crate::message::InputChanged {
-                    value: "a".into(),
+                    value: value.into(),
                     validation: crate::validation::ValidationResult::success(),
                 },
-            ),
-            MessageEvent::new(
-                sender,
-                crate::message::InputChanged {
-                    value: "ab".into(),
-                    validation: crate::validation::ValidationResult::success(),
-                },
-            ),
-            MessageEvent::new(
-                sender,
-                crate::message::InputChanged {
-                    value: "abc".into(),
-                    validation: crate::validation::ValidationResult::success(),
-                },
-            ),
-        ];
+            )));
+        }
+        coalesce_message_queue(&mut queue);
+        assert_eq!(
+            queue.len(),
+            3,
+            "unmarked InputChanged must never fold (Python has no such rule)"
+        );
 
         // No panic and dispatch succeeds.
+        let messages: Vec<MessageEvent> = queue.into_iter().map(|env| env.event).collect();
         let _outcome = dispatch_message_queue_tree(&mut tree, messages);
     }
 
     #[test]
     fn message_can_replace_covers_known_variants() {
-        // Spot-check that known rapid-fire message types are replaceable.
+        // Python parity (`message.py`, `messages.py`, `events.py`): only
+        // Update/Layout/UpdateScroll/Prompt/Resize fold. None of the
+        // widget-level types below are replaceable — the old marks were
+        // invented, so these assert NOT replaceable.
         assert!(
-            crate::message::InputChanged {
+            !crate::message::InputChanged {
                 value: "x".into(),
                 validation: crate::validation::ValidationResult::success(),
             }
@@ -2419,15 +2463,15 @@ mod envelope_tests {
             })
         );
         assert!(
-            crate::message::TextAreaChanged { value: "x".into() }
+            !crate::message::TextAreaChanged { value: "x".into() }
                 .can_replace(&crate::message::TextAreaChanged { value: "y".into() })
         );
         assert!(
-            crate::message::DataTableCellHighlighted { row: 0, column: 0 }
+            !crate::message::DataTableCellHighlighted { row: 0, column: 0 }
                 .can_replace(&crate::message::DataTableCellHighlighted { row: 1, column: 1 })
         );
         assert!(
-            crate::message::OptionHighlighted { index: 0, option_id: None }
+            !crate::message::OptionHighlighted { index: 0, option_id: None }
                 .can_replace(&crate::message::OptionHighlighted { index: 1, option_id: None })
         );
         // Non-replaceable variants.
