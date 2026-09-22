@@ -997,6 +997,27 @@ pub(crate) fn blend_channels_trunc(a: u8, b: u8, t: f32) -> u8 {
     (a as f32 + (b as f32 - a as f32) * t).clamp(0.0, 255.0) as u8
 }
 
+/// Python `DIM_FACTOR` (`textual/constants.py`): how much of the foreground
+/// survives when a `dim` attribute is pre-blended into a colour
+/// (`bg + (fg - bg) * DIM_FACTOR`, truncated per channel like rich's
+/// `Color.from_rgb`). Tunable via `TEXTUAL_DIM_FACTOR` (integer percent,
+/// default 66); read per call so tests and long-lived processes see updates.
+pub(crate) fn dim_factor() -> f64 {
+    parse_dim_factor(std::env::var("TEXTUAL_DIM_FACTOR").ok().as_deref())
+}
+
+/// Pure parse half of [`dim_factor`] (unit-test seam, keeping env mutation
+/// out of parallel tests). Mirrors `_get_environ_int(..., 66, 0, 100) / 100`:
+/// missing or unparseable input yields the default; the result is clamped.
+pub(crate) fn parse_dim_factor(raw: Option<&str>) -> f64 {
+    let percent = raw
+        .map(str::trim)
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(66)
+        .clamp(0, 100);
+    percent as f64 / 100.0
+}
+
 // ---------------------------------------------------------------------------
 // P2 CSS types: Scalar, Spacing, layout/alignment/pointer enums
 // ---------------------------------------------------------------------------
@@ -3861,6 +3882,22 @@ impl Default for Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `TEXTUAL_DIM_FACTOR` parsing mirrors `_get_environ_int(..., 66, 0, 100)`:
+    /// missing/garbage yields the 0.66 default; values clamp to [0, 1].
+    #[test]
+    fn dim_factor_parsing_matches_python_env_semantics() {
+        assert_eq!(parse_dim_factor(None), 0.66);
+        assert_eq!(parse_dim_factor(Some("")), 0.66);
+        assert_eq!(parse_dim_factor(Some("66")), 0.66);
+        assert_eq!(parse_dim_factor(Some(" 50 ")), 0.5);
+        assert_eq!(parse_dim_factor(Some("0")), 0.0);
+        assert_eq!(parse_dim_factor(Some("100")), 1.0);
+        assert_eq!(parse_dim_factor(Some("140")), 1.0);
+        assert_eq!(parse_dim_factor(Some("-3")), 0.0);
+        assert_eq!(parse_dim_factor(Some("half")), 0.66);
+        assert_eq!(parse_dim_factor(Some("0.5")), 0.66);
+    }
 
     /// Byte-exact LAB lighten/darken parity with Python Textual
     /// (`textual.color.Color.lighten/.darken`, easyrgb f64 form).
