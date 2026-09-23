@@ -111,14 +111,13 @@ impl TextualApp for TabsApp {
                     .with_query_one_mut_as::<Tabs, _>("Tabs", |tabs| tabs.active())
                     .ok()
                     .flatten();
-                if let Some(id) = active_id {
-                    if let Ok(tabs) = app.query_one_typed::<Tabs>("Tabs") {
+                if let Some(id) = active_id
+                    && let Ok(tabs) = app.query_one_typed::<Tabs>("Tabs") {
                         let _ = tabs.update(app, |tabs, ctx| {
                             tabs.remove_tab(&id);
                             ctx.request_recompose();
                         });
                     }
-                }
                 ctx.set_handled();
                 ctx.request_repaint();
             }

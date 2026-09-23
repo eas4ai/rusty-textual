@@ -106,8 +106,8 @@ impl TextualApp for DictionaryApp {
         message: &MessageEvent,
         ctx: &mut textual::event::WidgetCtx,
     ) {
-        if let Some(w) = message.downcast_ref::<WorkerStateChanged>() {
-            if matches!(w.state, WorkerState::Success) {
+        if let Some(w) = message.downcast_ref::<WorkerStateChanged>()
+            && matches!(w.state, WorkerState::Success) {
                 let text = {
                     let mut guard = self.result.lock().unwrap();
                     guard.take()
@@ -120,7 +120,6 @@ impl TextualApp for DictionaryApp {
                 });
                 ctx.request_repaint();
             }
-        }
     }
 }
 

@@ -108,11 +108,11 @@ impl TextualApp for ClockApp {
             Duration::from_secs(1),
             None,
             false,
-            Box::new(|app, ctx| update_time(app, ctx)),
+            Box::new(update_time),
         );
     }
 }
 
 fn main() -> textual::Result<()> {
-    run_sync(ClockApp::default())
+    run_sync(ClockApp)
 }

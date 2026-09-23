@@ -67,6 +67,8 @@ impl Greeter {
         }
     }
 
+    // `&String` is framework-dictated: the derive passes `&FieldTy` directly.
+    #[allow(clippy::ptr_arg)]
     fn watch_greeting(&mut self, app: &mut App, _old: &String, new: &String, ctx: &mut ReactiveCtx) {
         let new = new.clone();
         let _ = app.with_query_one_mut_as::<Label, _>("#greeting", |label| {
@@ -77,6 +79,8 @@ impl Greeter {
         ctx.request_layout();
     }
 
+    // `&String` is framework-dictated: the derive passes `&FieldTy` directly.
+    #[allow(clippy::ptr_arg)]
     fn watch_who(&mut self, app: &mut App, _old: &String, new: &String, ctx: &mut ReactiveCtx) {
         let new = new.clone();
         let _ = app.with_query_one_mut_as::<Label, _>("#who", |label| {

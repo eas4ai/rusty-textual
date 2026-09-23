@@ -42,7 +42,7 @@ fn main() -> Result<()> {
     if cfg!(test) {
         return Ok(());
     }
-    run_sync(InputApp::default())
+    run_sync(InputApp)
 }
 
 #[cfg(test)]

@@ -65,7 +65,7 @@ impl Widget for CheckerBoard {
 
     /// Render the full widget by assembling all lines.
     fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
-        let height = options.size.1.max(1) as usize;
+        let height = options.size.1.max(1);
         let mut out = Segments::new();
         for y in 0..height {
             let line = self.render_line(y, console, options);
@@ -87,7 +87,7 @@ impl Widget for CheckerBoard {
     ///   segments  = [Segment(" " * 8, black if (col + is_odd) % 2 else white)
     ///                for col in range(8)]
     fn render_line(&self, y: usize, _console: &Console, options: &ConsoleOptions) -> Segments {
-        let width = options.size.0.max(1) as usize;
+        let width = options.size.0.max(1);
 
         let row_index = y / 4; // four terminal lines per logical row
         if row_index >= 8 {
@@ -109,7 +109,7 @@ impl Widget for CheckerBoard {
 
         let mut out = Segments::new();
         for col in 0..8usize {
-            let style = if (col + is_odd) % 2 == 0 {
+            let style = if (col + is_odd).is_multiple_of(2) {
                 white_style
             } else {
                 black_style

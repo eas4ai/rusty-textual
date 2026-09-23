@@ -892,8 +892,12 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         // `style_type` with the `style_type = "..."` attr emits a literal.
-        if spec.name == "style_type" && args.style_type.is_some() && !overridden {
-            let lit = args.style_type.as_ref().unwrap();
+        let style_lit = if spec.name == "style_type" && !overridden {
+            args.style_type.as_ref()
+        } else {
+            None
+        };
+        if let Some(lit) = style_lit {
             methods.push(quote! {
                 fn style_type(&self) -> &'static str { #lit }
             });
@@ -1004,11 +1008,14 @@ fn own_widget_impl(item_struct: &ItemStruct, args: &WidgetArgs, table: &[MethodS
 
         // `style_type = "..."` attr emits a literal (else Render group forwards,
         // which yields the concrete type name — same as the trait default).
-        if spec.name == "style_type" {
-            if let Some(lit) = args.style_type.as_ref() {
-                methods.push(quote! { fn style_type(&self) -> &'static str { #lit } });
-                continue;
-            }
+        let style_lit = if spec.name == "style_type" {
+            args.style_type.as_ref()
+        } else {
+            None
+        };
+        if let Some(lit) = style_lit {
+            methods.push(quote! { fn style_type(&self) -> &'static str { #lit } });
+            continue;
         }
 
         match group {

@@ -87,7 +87,7 @@ fn main() -> Result<()> {
     if cfg!(test) {
         return Ok(());
     }
-    run_sync(RichLogApp::default())
+    run_sync(RichLogApp)
 }
 
 #[cfg(test)]

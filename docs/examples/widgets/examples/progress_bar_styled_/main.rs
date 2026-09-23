@@ -84,18 +84,15 @@ impl TextualApp for StyledProgressBar {
     }
 
     fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
-        match key.key.as_str() {
-            "u" => {
-                // Jump to 100% complete.
-                if let Ok(handle) = app.query_one_typed::<ProgressBar>("ProgressBar") {
-                    let _ = handle.update(app, |bar, rctx| {
-                        bar.update(Some(Some(100.0)), Some(100.0), None, rctx);
-                    });
-                }
-                ctx.request_repaint();
-                ctx.set_handled();
+        if key.key.as_str() == "u" {
+            // Jump to 100% complete.
+            if let Ok(handle) = app.query_one_typed::<ProgressBar>("ProgressBar") {
+                let _ = handle.update(app, |bar, rctx| {
+                    bar.update(Some(Some(100.0)), Some(100.0), None, rctx);
+                });
             }
-            _ => {}
+            ctx.request_repaint();
+            ctx.set_handled();
         }
     }
 
@@ -107,7 +104,7 @@ impl TextualApp for StyledProgressBar {
         self.tick_count += 1;
         // Advance at ~10 steps per second. The runtime tick is typically ~30 fps,
         // so advance every 3 ticks ≈ 10 Hz.
-        if self.tick_count % 3 == 0 {
+        if self.tick_count.is_multiple_of(3) {
             let mut stop = false;
             if let Ok(handle) = app.query_one_typed::<ProgressBar>("ProgressBar") {
                 let done = handle.update(app, |bar, rctx| {

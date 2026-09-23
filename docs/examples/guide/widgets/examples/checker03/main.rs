@@ -102,7 +102,7 @@ impl Widget for CheckerBoardContent {
         // Each square is 8 columns wide; alternate color per column index.
         let segments: Vec<Segment> = (0..self.board_size)
             .map(|column| {
-                let style = if (column + is_odd) % 2 == 0 {
+                let style = if (column + is_odd).is_multiple_of(2) {
                     white_style
                 } else {
                     black_style

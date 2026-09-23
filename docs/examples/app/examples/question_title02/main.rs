@@ -70,7 +70,7 @@ impl TextualApp for MyApp {
 
     fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, _ctx: &mut textual::event::WidgetCtx) {
         let key_name = key.name().to_string();
-        app.set_title(format!("{}", key_name));
+        app.set_title(key_name.to_string());
         app.set_sub_title(format!("You just pressed {}!", key_name));
     }
 

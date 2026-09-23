@@ -61,7 +61,7 @@ impl Widget for Counter {
         use rich_rs::{Segment, Segments};
         let text = format!("Count: {}", self.count);
         // Pad to widget width so the background fills the whole row.
-        let width = options.size.0 as usize;
+        let width = options.size.0;
         let padded = format!("{:<width$}", text, width = width);
         Segments::from(vec![Segment::new(padded)])
     }

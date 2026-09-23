@@ -19,7 +19,7 @@ impl Widget for CheckerBoard {
     }
 
     fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
-        let width = options.size.0.max(1) as usize;
+        let width = options.size.0.max(1);
 
         // Python: `Style.parse("on white")` / `Style.parse("on black")` —
         // rich ANSI STANDARD colours (7 / 0), NOT CSS truecolor. Textual's
@@ -49,9 +49,9 @@ impl Widget for CheckerBoard {
             // 8 columns of 8 spaces each with alternating colours.
             for column in 0..8usize {
                 let style = if (column + is_odd) % 2 == 0 {
-                    white_bg.clone()
+                    white_bg
                 } else {
-                    black_bg.clone()
+                    black_bg
                 };
                 all_segments.push(Segment::styled(" ".repeat(8), style));
             }

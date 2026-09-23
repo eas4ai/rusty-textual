@@ -214,7 +214,7 @@ fn main() -> Result<()> {
     if cfg!(test) {
         return Ok(());
     }
-    run_sync(KeysApp::default())
+    run_sync(KeysApp)
 }
 
 #[cfg(test)]

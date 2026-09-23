@@ -93,7 +93,7 @@ impl TextualApp for SparklineColorsApp {
     fn compose(&mut self) -> AppRoot {
         let nums: Vec<f64> = (0..360 * 6)
             .step_by(20)
-            .map(|x| (x as f64 / 3.14_f64).sin().abs())
+            .map(|x| (x as f64 / std::f64::consts::PI).sin().abs())
             .collect();
 
         AppRoot::new().with_compose(vec![

@@ -31,11 +31,10 @@ impl TextualApp for EventApp {
     }
 
     fn on_mount_with_app(&mut self, app: &mut App, ctx: &mut textual::event::WidgetCtx) {
-        if let Some(color) = color_for_name("darkblue") {
-            if let Ok(q) = app.query_mut("Screen") {
+        if let Some(color) = color_for_name("darkblue")
+            && let Ok(q) = app.query_mut("Screen") {
                 q.set_styles(|styles| styles.set_bg(color));
             }
-        }
         ctx.request_repaint();
     }
 
@@ -45,15 +44,14 @@ impl TextualApp for EventApp {
             let ch = name.chars().next().unwrap();
             if ch.is_ascii_digit() {
                 let idx = (ch as u8 - b'0') as usize;
-                if idx < COLORS.len() {
-                    if let Some(color) = color_for_name(COLORS[idx]) {
+                if idx < COLORS.len()
+                    && let Some(color) = color_for_name(COLORS[idx]) {
                         if let Ok(q) = app.query_mut("Screen") {
                             q.set_styles(|styles| styles.set_bg(color));
                         }
                         ctx.set_handled();
                         ctx.request_repaint();
                     }
-                }
             }
         }
     }

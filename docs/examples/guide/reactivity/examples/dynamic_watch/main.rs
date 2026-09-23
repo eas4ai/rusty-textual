@@ -87,8 +87,8 @@ impl Widget for Counter {
 
     // Python `on_button_pressed`: self.counter += 10.
     fn on_message(&mut self, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
-        if let Some(bp) = message.downcast_ref::<ButtonPressed>() {
-            if bp.button_id.as_deref() == Some("plus-btn") {
+        if let Some(bp) = message.downcast_ref::<ButtonPressed>()
+            && bp.button_id.as_deref() == Some("plus-btn") {
                 let node_id = self.node_id();
                 let mut rctx = ReactiveCtx::new(node_id);
                 self.set_counter(self.counter + 10, &mut rctx);
@@ -97,7 +97,6 @@ impl Widget for Counter {
                 }
                 ctx.set_handled();
             }
-        }
     }
 }
 

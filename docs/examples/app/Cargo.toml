@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-textual = { path = "../../.." }
+textual = { package = "rusty-textual", path = "../../.." }
 rich-rs = "1.1.1"
 crossterm = "0.28"
 tree-sitter-java = "0.23"

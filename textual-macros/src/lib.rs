@@ -5,6 +5,8 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 
+mod crate_path;
+
 mod reactive;
 
 /// Derive macro for the reactive field system.
@@ -14,7 +16,7 @@ mod reactive;
 /// change detection, and watcher dispatch.
 #[proc_macro_derive(Reactive, attributes(reactive, var, computed))]
 pub fn derive_reactive(input: TokenStream) -> TokenStream {
-    reactive::derive_reactive_impl(input.into()).into()
+    crate_path::retarget_crate_path(reactive::derive_reactive_impl(input.into())).into()
 }
 
 mod widget;
@@ -50,7 +52,7 @@ mod widget;
 ///   inherent method of the same name/signature instead.
 #[proc_macro_attribute]
 pub fn widget(attr: TokenStream, item: TokenStream) -> TokenStream {
-    widget::widget_impl(attr.into(), item.into()).into()
+    crate_path::retarget_crate_path(widget::widget_impl(attr.into(), item.into())).into()
 }
 
 mod on_handler;
@@ -87,5 +89,5 @@ mod on_handler;
 /// via the base-forward.
 #[proc_macro_attribute]
 pub fn on(attr: TokenStream, item: TokenStream) -> TokenStream {
-    on_handler::on_handler_impl(attr.into(), item.into()).into()
+    crate_path::retarget_crate_path(on_handler::on_handler_impl(attr.into(), item.into())).into()
 }

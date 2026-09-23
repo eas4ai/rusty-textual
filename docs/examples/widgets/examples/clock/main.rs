@@ -68,13 +68,13 @@ impl TextualApp for ClockApp {
             std::time::Duration::from_secs(1),
             None,
             false,
-            Box::new(|app, ctx| update_clock(app, ctx)),
+            Box::new(update_clock),
         );
     }
 }
 
 fn main() -> textual::Result<()> {
-    run_sync(ClockApp::default())
+    run_sync(ClockApp)
 }
 
 #[cfg(test)]

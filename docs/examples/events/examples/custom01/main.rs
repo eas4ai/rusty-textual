@@ -40,6 +40,8 @@ textual::impl_message!(ColorSelected);
 
 struct ColorButton {
     color: Color,
+    // Read only by the `color_button_parses_hex` test (dead in a plain build).
+    #[allow(dead_code)]
     label: String,
 }
 

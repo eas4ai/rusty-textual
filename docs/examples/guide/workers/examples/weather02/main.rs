@@ -89,8 +89,8 @@ impl TextualApp for WeatherApp {
         message: &MessageEvent,
         ctx: &mut textual::event::WidgetCtx,
     ) {
-        if let Some(w) = message.downcast_ref::<WorkerStateChanged>() {
-            if matches!(w.state, WorkerState::Success) {
+        if let Some(w) = message.downcast_ref::<WorkerStateChanged>()
+            && matches!(w.state, WorkerState::Success) {
                 // Take the result produced by the worker thread.
                 let weather = {
                     let mut guard =
@@ -106,7 +106,6 @@ impl TextualApp for WeatherApp {
                 });
                 ctx.request_repaint();
             }
-        }
     }
 }
 

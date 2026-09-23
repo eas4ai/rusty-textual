@@ -9,5 +9,5 @@ name = "coldapp_stream"
 path = "src/main.rs"
 
 [dependencies]
-textual = { path = "../../.." }
+textual = { package = "rusty-textual", path = "../../.." }
 rich-rs = "1.1.1"

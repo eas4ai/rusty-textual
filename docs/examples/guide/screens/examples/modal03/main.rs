@@ -97,17 +97,16 @@ impl TextualApp for ModalApp {
         }
         if app.screen_count() == 0 {
             let should_quit = self.should_quit.clone();
-            app.push_screen_with_callback(
+            // `push_screen` errors only on a full screen stack; unreachable here.
+            let _ = app.push_screen_with_callback(
                 Box::new(QuitScreen),
                 Box::new(move |result| {
                     // Python: def check_quit(quit): if quit: self.exit()
-                    if let ScreenResult::Value(value) = result {
-                        if let Ok(quit) = value.downcast::<bool>() {
-                            if *quit {
+                    if let ScreenResult::Value(value) = result
+                        && let Ok(quit) = value.downcast::<bool>()
+                            && *quit {
                                 should_quit.store(true, Ordering::SeqCst);
                             }
-                        }
-                    }
                 }),
             );
         }

@@ -265,7 +265,7 @@ fn main() -> Result<()> {
     if cfg!(test) {
         return Ok(());
     }
-    run_sync(MouseApp::default())
+    run_sync(MouseApp)
 }
 
 #[cfg(test)]

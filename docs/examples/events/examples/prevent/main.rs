@@ -52,8 +52,8 @@ impl TextualApp for PreventApp {
         message: &MessageEvent,
         ctx: &mut textual::event::WidgetCtx,
     ) {
-        if let Some(bp) = message.downcast_ref::<ButtonPressed>() {
-            if bp.button_id.as_deref() == Some("clear") {
+        if let Some(bp) = message.downcast_ref::<ButtonPressed>()
+            && bp.button_id.as_deref() == Some("clear") {
                 // Suppress InputChanged for the duration of the clear, exactly
                 // like Python's `with input.prevent(Input.Changed):`. Any
                 // InputChanged posted while clearing is dropped, so the
@@ -72,7 +72,6 @@ impl TextualApp for PreventApp {
                 ctx.request_repaint();
                 ctx.set_handled();
             }
-        }
     }
 }
 

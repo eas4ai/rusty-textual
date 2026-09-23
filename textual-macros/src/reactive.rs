@@ -1011,12 +1011,9 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
     let init_fields: Vec<&ReactiveField> = reactive_fields
         .iter()
         .filter(|f| {
-            // Determine if this field has init=true
-            if f.is_var {
-                !f.init_false // var() has init=true; var_no_init() has init=false
-            } else {
-                !f.init_false // reactive() / reactive_layout() have init=true
-            }
+            // `var()` / `reactive()` / `reactive_layout()` all default to
+            // init=true; their `*_no_init()` forms set `init_false`.
+            !f.init_false
         })
         .collect();
 

@@ -130,13 +130,12 @@ impl Widget for Hello {
     /// Python Textual fires `on_click` on `MouseUp` for the target widget,
     /// so we mirror that here.
     fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
-        if let Event::MouseUp(mouse) = event {
-            if mouse.target == Some(self.node_id()) {
+        if let Event::MouseUp(mouse) = event
+            && mouse.target == Some(self.node_id()) {
                 self.next_word();
                 ctx.request_repaint();
                 ctx.set_handled();
             }
-        }
         self.inner.on_event(event, ctx);
     }
 

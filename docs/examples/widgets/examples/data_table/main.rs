@@ -10,8 +10,8 @@ impl TextualApp for TableApp {
 
     fn compose(&mut self) -> AppRoot {
         let mut table = DataTable::empty();
-        table.add_columns(&["lane", "swimmer", "country", "time"]);
-        table.add_rows(&[
+        table.add_columns(["lane", "swimmer", "country", "time"]);
+        table.add_rows([
             &["4", "Joseph Schooling", "Singapore", "50.39"],
             &["2", "Michael Phelps", "United States", "51.14"],
             &["5", "Chad le Clos", "South Africa", "51.14"],

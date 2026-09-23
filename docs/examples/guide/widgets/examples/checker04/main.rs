@@ -87,7 +87,7 @@ impl CheckerBoard {
             "checkerboard--cursor-square"
         } else {
             let is_odd = row % 2;
-            if (col + is_odd) % 2 == 0 {
+            if (col + is_odd).is_multiple_of(2) {
                 "checkerboard--white-square"
             } else {
                 "checkerboard--black-square"

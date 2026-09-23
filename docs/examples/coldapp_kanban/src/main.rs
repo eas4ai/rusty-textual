@@ -469,7 +469,8 @@ impl Board {
 
     fn open_add_dialog(&mut self, app: &mut App) {
         let sink = self.pending.clone();
-        app.push_screen_with_callback(
+        // `push_screen` errors only on a full screen stack; unreachable here.
+        let _ = app.push_screen_with_callback(
             Box::new(AddTaskScreen::new()),
             Box::new(move |result| {
                 if let ScreenResult::Value(value) = result

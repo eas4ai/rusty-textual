@@ -113,13 +113,12 @@ impl TextualApp for ContentSwitcherApp {
 
     fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, _ctx: &mut textual::event::WidgetCtx) {
         // Mirror Python: `self.query_one(ContentSwitcher).current = event.button.id`
-        if let Some(ev) = message.downcast_ref::<ButtonPressed>() {
-            if let Some(ref id) = ev.button_id {
+        if let Some(ev) = message.downcast_ref::<ButtonPressed>()
+            && let Some(ref id) = ev.button_id {
                 let _ = app.with_query_one_mut_as::<ContentSwitcher, _>("ContentSwitcher", |cs| {
                     cs.set_current(Some(id.clone()))
                 });
             }
-        }
     }
 }
 
