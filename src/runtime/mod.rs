@@ -861,6 +861,16 @@ pub struct App {
     ///
     /// Drained in `dispatch_background_runtime_messages()`.
     pending_app_messages: Vec<MessageEvent>,
+    /// Last known pointer position in screen cells (Python
+    /// `App.mouse_position`, default `(0, 0)`). Updated on every mouse
+    /// down/up/move in both live and headless paths; read when queueing
+    /// capture/release notices.
+    mouse_position: (u16, u16),
+    /// Targeted events enqueued by [`App::capture_mouse`] to be dispatched
+    /// on the next event loop pass (single-node, no bubble).
+    ///
+    /// Drained alongside [`App::pending_app_messages`].
+    pending_app_events: Vec<(NodeId, Event)>,
     /// Arena-based widget tree built from `compose()` declarations.
     ///
     /// Populated during app startup by `build_widget_tree()`. Runtime dispatch,
@@ -996,6 +1006,8 @@ impl App {
             hovered: None,
             tooltip_cooldown_until: None,
             click_tracker: ClickTracker::new(),
+            mouse_position: (0, 0),
+            pending_app_events: Vec::new(),
             last_render_at: Instant::now(),
             resized_since_last_render: false,
             clear_on_next_render: false,
@@ -4280,10 +4292,43 @@ impl App {
 
     /// Send all mouse events to `target`, or release capture with `None`.
     /// Python `App.capture_mouse`: while captured, mouse down/up target the
-    /// captured widget regardless of pointer position. Routing only — no
-    /// synthetic `MouseCapture` / `MouseRelease` messages (follow-up).
+    /// captured widget regardless of pointer position. Re-capturing the
+    /// current holder is a no-op; otherwise the previous holder is queued a
+    /// `MouseRelease` and the new holder a `MouseCapture` (both carrying the
+    /// pointer position at call time), dispatched on the next event loop
+    /// pass — single-node, no bubble, mirroring `post_message` ordering
+    /// (release before capture on a direct switch).
     pub fn capture_mouse(&mut self, target: Option<NodeId>) {
+        let previous = self.click_tracker.capture_target();
+        if previous == target {
+            return;
+        }
+        let (screen_x, screen_y) = self.mouse_position;
+        if let Some(old) = previous {
+            self.pending_app_events.push((
+                old,
+                Event::MouseRelease(crate::event::MouseReleaseEvent { screen_x, screen_y }),
+            ));
+        }
         self.click_tracker.set_capture(target);
+        if let Some(new) = target {
+            self.pending_app_events.push((
+                new,
+                Event::MouseCapture(crate::event::MouseCaptureEvent { screen_x, screen_y }),
+            ));
+        }
+    }
+
+    /// Drain events enqueued by [`App::capture_mouse`].
+    ///
+    /// Called wherever [`App::drain_pending_app_messages`] is drained.
+    pub(super) fn drain_pending_app_events(&mut self) -> Vec<(NodeId, Event)> {
+        std::mem::take(&mut self.pending_app_events)
+    }
+
+    /// Whether [`App::capture_mouse`] notices are waiting for dispatch.
+    pub(super) fn has_pending_app_events(&self) -> bool {
+        !self.pending_app_events.is_empty()
     }
 
     /// Explicit mouse-capture target, if any (see [`App::capture_mouse`]).

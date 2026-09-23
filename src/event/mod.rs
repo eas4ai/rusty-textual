@@ -141,6 +141,26 @@ pub struct DescendantBlurEvent {
     pub node: NodeId,
 }
 
+/// Sent to a widget when it captures the mouse (Python `MouseCapture`,
+/// `bubble=False`). Position is the pointer's screen position when
+/// [`crate::App::capture_mouse`] ran. Delivered to the capturer only —
+/// never to ancestors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MouseCaptureEvent {
+    pub screen_x: u16,
+    pub screen_y: u16,
+}
+
+/// Sent to the previously capturing widget when mouse capture ends or moves
+/// to another widget (Python `MouseRelease`, `bubble=False`). Position is
+/// the pointer's screen position when [`crate::App::capture_mouse`] ran.
+/// Delivered to the released widget only — never to ancestors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MouseReleaseEvent {
+    pub screen_x: u16,
+    pub screen_y: u16,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnimationLevel {
     None,
@@ -331,6 +351,8 @@ pub enum Event {
     Blur(BlurEvent),
     DescendantFocus(DescendantFocusEvent),
     DescendantBlur(DescendantBlurEvent),
+    MouseCapture(MouseCaptureEvent),
+    MouseRelease(MouseReleaseEvent),
     AnimationValue(AnimationValueEvent),
     AppFocus(bool),
     Tick(u64),
