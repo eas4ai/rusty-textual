@@ -4,6 +4,8 @@
 /// equivalent keys. State machine mirrors the Python original
 /// (`left`/`right`/`value`/`operator`); `f64` stands in for `Decimal`
 /// (no decimal dependency — display rounds to 10 significant digits).
+/// Both AC and C always show (the Python original swaps them via
+/// `compute_show_ac`).
 ///
 /// Run with:
 ///
@@ -106,16 +108,15 @@ impl CalcState {
         }
         // Round to 10 significant digits to hide f64 noise (Python's
         // Decimal is exact; this is the documented f64 trade-off).
-        let rounded = format!("{:.10}", n).trim_end_matches('0').trim_end_matches('.').to_string();
+        let rounded = format!("{:.10}", n)
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string();
         if rounded.is_empty() || rounded == "-0" {
             "0".to_string()
         } else {
             rounded
         }
-    }
-
-    fn show_ac(&self) -> bool {
-        (self.value.is_empty() || self.value == "0") && self.numbers == "0"
     }
 
     /// LEFT OPERATOR RIGHT (Python `_do_math`).
@@ -142,7 +143,15 @@ impl CalcState {
 
     fn press_point(&mut self) {
         if !self.value.contains('.') {
-            self.value = format!("{}{}", if self.value.is_empty() { "0" } else { &self.value }, ".");
+            self.value = format!(
+                "{}{}",
+                if self.value.is_empty() {
+                    "0"
+                } else {
+                    &self.value
+                },
+                "."
+            );
             // Reborrow-safe rebuild (value borrowed above).
             let v = self.value.clone();
             self.numbers = v;
@@ -255,6 +264,12 @@ pub struct CalculatorApp {
     state: CalcState,
 }
 
+impl Default for CalculatorApp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CalculatorApp {
     pub fn new() -> Self {
         Self {
@@ -355,6 +370,36 @@ impl TextualApp for CalculatorApp {
 
 fn main() -> rusty_textual::Result<()> {
     run_sync(CalculatorApp::new())
+}
+
+#[cfg(test)]
+mod smoke {
+    use super::*;
+
+    fn display(pilot: &mut Pilot) -> String {
+        let node = pilot.app().query_one("#numbers").expect("display node");
+        pilot
+            .app_mut()
+            .with_widget_mut_as::<Static, _>(node, |d| d.text().to_string())
+            .expect("display text")
+    }
+
+    /// End-to-end through the real key path: 9 - 3 = 6 on the display.
+    /// (`+` is the press-spec modifier joiner, so subtraction exercises the
+    /// same operator path headlessly; `+` works live from a real terminal.)
+    #[test]
+    fn headless_subtraction_updates_display() {
+        run_test(CalculatorApp::new(), |pilot| {
+            pilot.pause()?;
+            assert_eq!(display(pilot), "0");
+            for key in ["9", "-", "3", "="] {
+                pilot.press_key(key)?;
+            }
+            assert_eq!(display(pilot), "6");
+            Ok(())
+        })
+        .expect("run_test");
+    }
 }
 
 // ---------------------------------------------------------------------------
