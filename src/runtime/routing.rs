@@ -2262,6 +2262,124 @@ mod envelope_tests {
         );
     }
 
+    // P-D: descendant focus notifications (Python DescendantFocus /
+    // DescendantBlur, bubble=True). Dispatched at the focused/blurred node,
+    // they bubble to ancestors carrying the node — and never touch focus
+    // state (unlike Focus/Blur).
+    struct DescendantProbe {
+        seen_focus: Arc<AtomicUsize>,
+        seen_blur: Arc<AtomicUsize>,
+        seen_node: Arc<std::sync::Mutex<Option<NodeId>>>,
+    }
+
+    impl Widget for DescendantProbe {
+        fn render(&self, _console: &Console, _options: &ConsoleOptions) -> Segments {
+            Segments::new()
+        }
+
+        fn on_event(&mut self, event: &Event, _ctx: &mut crate::event::WidgetCtx) {
+            match event {
+                Event::DescendantFocus(e) => {
+                    self.seen_focus.fetch_add(1, Ordering::Relaxed);
+                    *self.seen_node.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.node);
+                }
+                Event::DescendantBlur(e) => {
+                    self.seen_blur.fetch_add(1, Ordering::Relaxed);
+                    *self.seen_node.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.node);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn descendant_focus_bubbles_to_ancestors_without_touching_state() {
+        // Tree: root(probe) → mid(probe) → leaf(probe). A DescendantFocus
+        // dispatched at the leaf reaches every ancestor carrying the leaf —
+        // and no node's focus state flips.
+        let (root_seen, mid_seen, leaf_seen) = (
+            Arc::new(AtomicUsize::new(0)),
+            Arc::new(AtomicUsize::new(0)),
+            Arc::new(AtomicUsize::new(0)),
+        );
+        let seen_node = Arc::new(std::sync::Mutex::new(None));
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(DescendantProbe {
+            seen_focus: root_seen.clone(),
+            seen_blur: Arc::new(AtomicUsize::new(0)),
+            seen_node: seen_node.clone(),
+        }));
+        let mid_id = tree.mount(
+            root_id,
+            Box::new(DescendantProbe {
+                seen_focus: mid_seen.clone(),
+                seen_blur: Arc::new(AtomicUsize::new(0)),
+                seen_node: seen_node.clone(),
+            }),
+        );
+        let leaf_id = tree.mount(
+            mid_id,
+            Box::new(DescendantProbe {
+                seen_focus: leaf_seen.clone(),
+                seen_blur: Arc::new(AtomicUsize::new(0)),
+                seen_node: seen_node.clone(),
+            }),
+        );
+        let _ = dispatch_event_to_target_tree(
+            &mut tree,
+            leaf_id,
+            &Event::DescendantFocus(crate::event::DescendantFocusEvent { node: leaf_id }),
+        );
+        assert_eq!(leaf_seen.load(Ordering::Relaxed), 1, "target sees it");
+        assert_eq!(mid_seen.load(Ordering::Relaxed), 1, "bubbles to mid");
+        assert_eq!(root_seen.load(Ordering::Relaxed), 1, "bubbles to root");
+        assert_eq!(
+            *seen_node.lock().unwrap_or_else(|e| e.into_inner()),
+            Some(leaf_id),
+            "carries the focused node"
+        );
+        assert_eq!(
+            focused_node_id_tree(&tree),
+            None,
+            "DescendantFocus must not flip focus state"
+        );
+    }
+
+    #[test]
+    fn descendant_blur_bubbles_to_ancestors_without_touching_state() {
+        let seen = Arc::new(AtomicUsize::new(0));
+        let seen_node = Arc::new(std::sync::Mutex::new(None));
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(DescendantProbe {
+            seen_focus: Arc::new(AtomicUsize::new(0)),
+            seen_blur: seen.clone(),
+            seen_node: seen_node.clone(),
+        }));
+        let leaf_id = tree.mount(
+            root_id,
+            Box::new(DescendantProbe {
+                seen_focus: Arc::new(AtomicUsize::new(0)),
+                seen_blur: seen.clone(),
+                seen_node: seen_node.clone(),
+            }),
+        );
+        let _ = dispatch_event_to_target_tree(
+            &mut tree,
+            leaf_id,
+            &Event::DescendantBlur(crate::event::DescendantBlurEvent { node: leaf_id }),
+        );
+        assert_eq!(seen.load(Ordering::Relaxed), 2, "leaf + root see it");
+        assert_eq!(
+            *seen_node.lock().unwrap_or_else(|e| e.into_inner()),
+            Some(leaf_id)
+        );
+        assert_eq!(
+            focused_node_id_tree(&tree),
+            None,
+            "DescendantBlur must not flip focus state"
+        );
+    }
+
     #[test]
     fn no_bubble_message_with_unknown_sender_delivers_nowhere() {
         let (mut tree, root_count, mid_count, leaf_count, _) = ping_tree();

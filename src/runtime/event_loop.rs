@@ -1,9 +1,10 @@
 use crate::css::{AppRuntimePseudos, set_app_active, set_app_runtime_pseudos, set_style_context};
 use crate::debug::{debug_input, debug_render, debug_timing, timing_enabled};
 use crate::event::{
-    Action, AnimationEase, AnimationRequest, AnimationValueEvent, BlurEvent, ClassOp, Event,
-    EventCtx, FocusEvent, MountEvent, MouseDownEvent, MouseScrollEvent, MouseUpEvent, ReadyEvent,
-    StyleAnimationRequest, StyleValue, UnmountEvent, WidgetCtx,
+    Action, AnimationEase, AnimationRequest, AnimationValueEvent, BlurEvent, ClassOp,
+    DescendantBlurEvent, DescendantFocusEvent, Event, EventCtx, FocusEvent, MountEvent,
+    MouseDownEvent, MouseScrollEvent, MouseUpEvent, ReadyEvent, StyleAnimationRequest, StyleValue,
+    UnmountEvent, WidgetCtx,
 };
 use crate::keys::KeyEventData;
 use crate::message::MessageEvent;
@@ -23,9 +24,9 @@ use super::App;
 use super::devtools::DevtoolsCommand;
 use super::dispatch_ctx::set_dispatch_recipient;
 use super::helpers::{
-    any_widget_active_tree, call_on_mouse_move_tree, collect_focus_chain_tree,
-    collect_focus_chain_tree_sorted, generate_enter_leave_events, mouse_scroll_deltas,
-    pointer_shape_for_hover_tree, should_quit_key, tree_content_local_coords, widget_at_tree_layout,
+    any_widget_active_tree, call_on_mouse_move_tree, collect_focus_chain_tree_sorted,
+    generate_enter_leave_events, mouse_scroll_deltas, pointer_shape_for_hover_tree, should_quit_key,
+    tree_content_local_coords, widget_at_tree_layout,
 };
 use super::render::apply_layout_info_tree_from_layout_rects;
 use super::routing::{
@@ -4079,46 +4080,43 @@ impl App {
                 self.active_widget_tree().and_then(focused_node_id_tree);
             if current_focus != previous_focus {
                 if let Some(old_id) = previous_focus {
-                    let mut blur_outcome = self.dispatch_event_to_target_auto(
+                    if self.dispatch_focus_transition_event(
                         root,
+                        &mut pending_invalidation,
                         old_id,
                         &Event::Blur(BlurEvent { node: old_id }),
-                    );
-                    self.absorb_outcome(
-                        &mut blur_outcome,
+                    ) {
+                        break 'event_loop;
+                    }
+                    // P-D (Python `DescendantBlur`, `bubble=True`):
+                    // notify ancestors of the blurred node through the
+                    // normal bubbling event path. Carries the node but
+                    // never touches focus state (unlike `Blur`).
+                    if self.dispatch_focus_transition_event(
+                        root,
                         &mut pending_invalidation,
-                        InvalidationScope::Global,
-                    );
-                    let mut msg_outcome =
-                        self.dispatch_message_queue_with_runtime(root, blur_outcome.messages);
-                    self.absorb_outcome(
-                        &mut msg_outcome,
-                        &mut pending_invalidation,
-                        InvalidationScope::Global,
-                    );
-                    if blur_outcome.stop_requested || msg_outcome.stop_requested {
+                        old_id,
+                        &Event::DescendantBlur(DescendantBlurEvent { node: old_id }),
+                    ) {
                         break 'event_loop;
                     }
                 }
                 if let Some(new_id) = current_focus {
-                    let mut focus_outcome = self.dispatch_event_to_target_auto(
+                    if self.dispatch_focus_transition_event(
                         root,
+                        &mut pending_invalidation,
                         new_id,
                         &Event::Focus(FocusEvent { node: new_id }),
-                    );
-                    self.absorb_outcome(
-                        &mut focus_outcome,
+                    ) {
+                        break 'event_loop;
+                    }
+                    // P-D (Python `DescendantFocus`, `bubble=True`).
+                    if self.dispatch_focus_transition_event(
+                        root,
                         &mut pending_invalidation,
-                        InvalidationScope::Global,
-                    );
-                    let mut msg_outcome =
-                        self.dispatch_message_queue_with_runtime(root, focus_outcome.messages);
-                    self.absorb_outcome(
-                        &mut msg_outcome,
-                        &mut pending_invalidation,
-                        InvalidationScope::Global,
-                    );
-                    if focus_outcome.stop_requested || msg_outcome.stop_requested {
+                        new_id,
+                        &Event::DescendantFocus(DescendantFocusEvent { node: new_id }),
+                    ) {
                         break 'event_loop;
                     }
                 }
@@ -6631,6 +6629,31 @@ impl App {
             return true;
         }
         false
+    }
+
+    /// Dispatch one focus-transition event to `target`, absorb invalidation,
+    /// and drain any messages handlers post. Returns true when the event
+    /// loop must break (a stop was requested).
+    fn dispatch_focus_transition_event(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        target: NodeId,
+        event: &Event,
+    ) -> bool {
+        let mut outcome = self.dispatch_event_to_target_auto(root, target, event);
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        outcome.stop_requested || msg_outcome.stop_requested
     }
 
     fn ensure_runtime_tree(&mut self, root: &mut dyn Widget) {
