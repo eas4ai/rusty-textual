@@ -657,7 +657,28 @@ pub(crate) fn generate_enter_leave_events(
 pub(crate) struct ClickTracker {
     /// The widget that received the most recent mousedown, plus coordinates.
     down: Option<ClickDownState>,
+    /// Explicit mouse capture (`App::capture_mouse`): mouse down/up target
+    /// this widget regardless of pointer position. Routing only — no
+    /// synthetic capture/release messages (Python posts `MouseCapture` /
+    /// `MouseRelease`; that half is a follow-up).
+    captured: Option<NodeId>,
+    /// Last emitted click, for chain counting (Python `Click.chain`).
+    last_click: Option<LastClick>,
 }
+
+/// A previously emitted click, used to extend the click chain.
+#[derive(Debug, Clone, Copy)]
+struct LastClick {
+    target: NodeId,
+    at: std::time::Instant,
+    screen_x: u16,
+    screen_y: u16,
+    chain: u16,
+}
+
+/// Maximum gap between two clicks on the same spot to extend the chain.
+/// Python `App.CLICK_CHAIN_TIME_THRESHOLD` (0.5s).
+const CLICK_CHAIN_THRESHOLD: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Coordinates are stored for future drag-distance thresholds / long-press detection.
 #[derive(Debug, Clone, Copy)]
@@ -701,8 +722,25 @@ impl ClickTracker {
         self.down.map(|down| down.target)
     }
 
+    /// Set or release explicit mouse capture (Python `App.capture_mouse`).
+    /// While set, mouse down/up target this widget regardless of pointer
+    /// position. `None` releases.
+    pub fn set_capture(&mut self, target: Option<NodeId>) {
+        self.captured = target;
+    }
+
+    /// Explicit capture target, if any.
+    pub fn capture_target(&self) -> Option<NodeId> {
+        self.captured
+    }
+
     /// Record a mouseup. If the target matches the previous mousedown target,
     /// returns a `(NodeId, Event::Click)` pair.
+    ///
+    /// `now` timestamps the release for click-chain counting (Python
+    /// `Click.chain`): a click on the same target at the same screen offset
+    /// within [`CLICK_CHAIN_THRESHOLD`] of the previous click extends the
+    /// chain, otherwise the chain restarts at 1.
     pub fn on_mouse_up(
         &mut self,
         target: Option<NodeId>,
@@ -710,10 +748,29 @@ impl ClickTracker {
         y: u16,
         screen_x: u16,
         screen_y: u16,
+        now: std::time::Instant,
     ) -> Option<(NodeId, Event)> {
         let down = self.down.take()?;
         let up_target = target?;
         if up_target == down.target {
+            let chain = match self.last_click {
+                Some(last)
+                    if last.target == up_target
+                        && last.screen_x == screen_x
+                        && last.screen_y == screen_y
+                        && now.duration_since(last.at) <= CLICK_CHAIN_THRESHOLD =>
+                {
+                    last.chain.saturating_add(1)
+                }
+                _ => 1,
+            };
+            self.last_click = Some(LastClick {
+                target: up_target,
+                at: now,
+                screen_x,
+                screen_y,
+                chain,
+            });
             Some((
                 up_target,
                 Event::Click(ClickEvent {
@@ -722,6 +779,7 @@ impl ClickTracker {
                     screen_x,
                     screen_y,
                     button: down.button,
+                    chain,
                 }),
             ))
         } else {
@@ -733,6 +791,7 @@ impl ClickTracker {
 #[cfg(test)]
 mod tests {
     use std::any::Any;
+    use std::time::{Duration, Instant};
 
     use super::*;
     use crate::css::{default_widget_stylesheet, set_style_context};
@@ -953,7 +1012,7 @@ mod tests {
         let mut tracker = ClickTracker::new();
         let id = node_id_from_ffi(10);
         tracker.on_mouse_down(id, 5, 5, 50, 50, 0);
-        let result = tracker.on_mouse_up(Some(id), 5, 5, 50, 50);
+        let result = tracker.on_mouse_up(Some(id), 5, 5, 50, 50, Instant::now());
         assert!(result.is_some());
         let (target, ev) = result.unwrap();
         assert_eq!(target, id);
@@ -974,7 +1033,7 @@ mod tests {
         let a = node_id_from_ffi(1);
         let b = node_id_from_ffi(2);
         tracker.on_mouse_down(a, 0, 0, 0, 0, 0);
-        let result = tracker.on_mouse_up(Some(b), 0, 0, 0, 0);
+        let result = tracker.on_mouse_up(Some(b), 0, 0, 0, 0, Instant::now());
         assert!(result.is_none());
     }
 
@@ -982,7 +1041,7 @@ mod tests {
     fn click_tracker_no_click_without_mousedown() {
         let mut tracker = ClickTracker::new();
         let id = node_id_from_ffi(1);
-        let result = tracker.on_mouse_up(Some(id), 0, 0, 0, 0);
+        let result = tracker.on_mouse_up(Some(id), 0, 0, 0, 0, Instant::now());
         assert!(result.is_none());
     }
 
@@ -991,7 +1050,7 @@ mod tests {
         let mut tracker = ClickTracker::new();
         let id = node_id_from_ffi(1);
         tracker.on_mouse_down(id, 0, 0, 0, 0, 0);
-        let result = tracker.on_mouse_up(None, 0, 0, 0, 0);
+        let result = tracker.on_mouse_up(None, 0, 0, 0, 0, Instant::now());
         assert!(result.is_none());
     }
 
@@ -1000,7 +1059,7 @@ mod tests {
         let mut tracker = ClickTracker::new();
         let id = node_id_from_ffi(1);
         tracker.on_mouse_down(id, 0, 0, 0, 0, 2); // right click
-        let result = tracker.on_mouse_up(Some(id), 0, 0, 0, 0);
+        let result = tracker.on_mouse_up(Some(id), 0, 0, 0, 0, Instant::now());
         assert!(result.is_some());
         let (_, ev) = result.unwrap();
         assert!(matches!(ev, Event::Click(ClickEvent { button: 2, .. })));
@@ -1011,10 +1070,87 @@ mod tests {
         let mut tracker = ClickTracker::new();
         let id = node_id_from_ffi(1);
         tracker.on_mouse_down(id, 0, 0, 0, 0, 0);
-        let _ = tracker.on_mouse_up(Some(id), 0, 0, 0, 0);
+        let _ = tracker.on_mouse_up(Some(id), 0, 0, 0, 0, Instant::now());
         // Second mouseup without new mousedown → no click
-        let result = tracker.on_mouse_up(Some(id), 0, 0, 0, 0);
+        let result = tracker.on_mouse_up(Some(id), 0, 0, 0, 0, Instant::now());
         assert!(result.is_none());
+    }
+
+    fn click_at(
+        tracker: &mut ClickTracker,
+        id: crate::node_id::NodeId,
+        x: u16,
+        y: u16,
+        at: Instant,
+    ) -> u16 {
+        tracker.on_mouse_down(id, x, y, x, y, 0);
+        let (_, ev) = tracker
+            .on_mouse_up(Some(id), x, y, x, y, at)
+            .expect("down+up on same target clicks");
+        match ev {
+            Event::Click(click) => click.chain,
+            _ => panic!("expected Click"),
+        }
+    }
+
+    /// P-E: rapid clicks on the same spot extend `Click.chain` (Python
+    /// `CLICK_CHAIN_TIME_THRESHOLD` = 500ms).
+    #[test]
+    fn click_tracker_extends_chain_on_rapid_same_spot_clicks() {
+        let mut tracker = ClickTracker::new();
+        let id = node_id_from_ffi(1);
+        let t0 = Instant::now();
+        assert_eq!(click_at(&mut tracker, id, 5, 5, t0), 1);
+        assert_eq!(
+            click_at(&mut tracker, id, 5, 5, t0 + Duration::from_millis(100)),
+            2
+        );
+        assert_eq!(
+            click_at(&mut tracker, id, 5, 5, t0 + Duration::from_millis(200)),
+            3
+        );
+    }
+
+    /// P-E: moving the pointer or waiting out the threshold restarts the
+    /// chain at 1 (Python: same screen offset + within time, else reset).
+    #[test]
+    fn click_tracker_resets_chain_on_move_or_timeout() {
+        let mut tracker = ClickTracker::new();
+        let id = node_id_from_ffi(1);
+        let t0 = Instant::now();
+        assert_eq!(click_at(&mut tracker, id, 5, 5, t0), 1);
+        assert_eq!(
+            click_at(&mut tracker, id, 5, 5, t0 + Duration::from_millis(10)),
+            2
+        );
+        // Different screen offset → back to 1.
+        assert_eq!(
+            click_at(&mut tracker, id, 9, 9, t0 + Duration::from_millis(20)),
+            1
+        );
+        // Same spot but past the 500ms threshold → back to 1.
+        assert_eq!(
+            click_at(&mut tracker, id, 9, 9, t0 + Duration::from_millis(700)),
+            1
+        );
+        // Different target → back to 1.
+        let other = node_id_from_ffi(2);
+        assert_eq!(
+            click_at(&mut tracker, other, 9, 9, t0 + Duration::from_millis(710)),
+            1
+        );
+    }
+
+    /// P-E: explicit capture retargets; release restores hit-testing.
+    #[test]
+    fn click_tracker_capture_roundtrip() {
+        let mut tracker = ClickTracker::new();
+        assert_eq!(tracker.capture_target(), None);
+        let id = node_id_from_ffi(3);
+        tracker.set_capture(Some(id));
+        assert_eq!(tracker.capture_target(), Some(id));
+        tracker.set_capture(None);
+        assert_eq!(tracker.capture_target(), None);
     }
 
     #[test]

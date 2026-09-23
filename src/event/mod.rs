@@ -84,6 +84,10 @@ pub struct ClickEvent {
     pub y: u16,
     /// 0=left, 1=middle, 2=right.
     pub button: u8,
+    /// Number of clicks in the chain (Python `Click.chain`): 1 for a single
+    /// click, 2 for a double click, and so on. Counted from consecutive
+    /// clicks on the same target at the same screen offset within 500ms.
+    pub chain: u16,
 }
 
 /// Fired when the terminal delivers a bracketed-paste payload.
@@ -1610,6 +1614,7 @@ mod tests {
             screen_x: 50,
             screen_y: 60,
             button: 0,
+            chain: 1,
         };
         assert_eq!(e.button, 0);
         let ev = Event::Click(e);
@@ -1624,6 +1629,7 @@ mod tests {
             screen_x: 0,
             screen_y: 0,
             button: 2,
+            chain: 1,
         };
         assert_eq!(e.button, 2);
     }
