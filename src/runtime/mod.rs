@@ -92,10 +92,7 @@ use types::{
     StylesheetReload, StylesheetWatcher,
 };
 
-use helpers::{
-    ClickTracker, apply_size, collect_focus_chain_tree, collect_focus_chain_tree_sorted,
-    default_action_map,
-};
+use helpers::{ClickTracker, apply_size, collect_focus_chain_tree_sorted, default_action_map};
 
 /// Opaque handle to an app-level timer scheduled via [`App::set_interval`] /
 /// [`App::set_timer`]. Pass it to [`App::stop_timer`], [`App::pause_timer`],
@@ -4279,6 +4276,19 @@ impl App {
     /// [`Pilot::wait_for_animation`](crate::runtime::Pilot::wait_for_animation).
     pub fn animator_is_idle(&self) -> bool {
         !self.animator.has_animations()
+    }
+
+    /// Send all mouse events to `target`, or release capture with `None`.
+    /// Python `App.capture_mouse`: while captured, mouse down/up target the
+    /// captured widget regardless of pointer position. Routing only — no
+    /// synthetic `MouseCapture` / `MouseRelease` messages (follow-up).
+    pub fn capture_mouse(&mut self, target: Option<NodeId>) {
+        self.click_tracker.set_capture(target);
+    }
+
+    /// Explicit mouse-capture target, if any (see [`App::capture_mouse`]).
+    pub fn mouse_captured(&self) -> Option<NodeId> {
+        self.click_tracker.capture_target()
     }
 
     /// Push a screen onto the screen stack.
