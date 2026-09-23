@@ -743,6 +743,16 @@ pub struct App {
     notifications: Vec<AppNotification>,
     /// Monotonic id source for notifications (mirrors Python `Notification.identity`).
     notification_id_counter: u64,
+    /// Exit payload from [`App::exit`] (Python `App.exit(result,
+    /// return_code, message)`): the value `run` hands back, the process
+    /// return code, and an optional message printed after shutdown.
+    return_value: Option<String>,
+    return_code: i32,
+    exit_message: Option<String>,
+    /// Last URL passed to [`App::open_url`] while headless. A headless test
+    /// has no browser to open, so the URL is recorded instead of launched —
+    /// this is the observable seam for tests.
+    last_opened_url: Option<String>,
     /// Set when `notifications` changes (a `notify`/expiry/dismiss); consumed by
     /// the event loop to re-sync the docked `ToastRack` node from the store.
     notifications_dirty: bool,
@@ -1009,6 +1019,10 @@ impl App {
             animation_level: animation_level_from_env(),
             notifications: Vec::new(),
             notification_id_counter: 0,
+            return_value: None,
+            return_code: 0,
+            exit_message: None,
+            last_opened_url: None,
             notifications_dirty: false,
             clipboard: None,
             active_selection_owner: None,
@@ -4162,11 +4176,94 @@ impl App {
         if self.headless {
             return Ok(());
         }
-        Ok(self.driver.stop()?)
+        self.driver.stop()?;
+        // Python `App.exit(message=...)`: the shutdown message is displayed
+        // on exit, after the driver releases the terminal.
+        if let Some(message) = self.exit_message.take() {
+            println!("{message}");
+        }
+        Ok(())
     }
 
     pub fn stop(&mut self) {
         self.running = false;
+    }
+
+    /// Exit the app, carrying a result value, return code, and optional
+    /// shutdown message. Python `App.exit(result, return_code, message)`.
+    ///
+    /// Records the payload for [`App::return_value`] / [`App::return_code`] /
+    /// [`App::exit_message`], marks the headless stop flag so Pilot tests can
+    /// observe the request, and stops the live loop. The message (if any) is
+    /// printed after the driver shuts down (see [`App::finish`]).
+    pub fn exit(
+        &mut self,
+        result: Option<String>,
+        return_code: i32,
+        message: Option<String>,
+    ) {
+        self.return_value = result;
+        self.return_code = return_code;
+        self.exit_message = message;
+        self.headless_stop_requested = true;
+        self.stop();
+    }
+
+    /// The value passed to [`App::exit`] (Python `App.return_value`).
+    pub fn return_value(&self) -> Option<&str> {
+        self.return_value.as_deref()
+    }
+
+    /// The code passed to [`App::exit`] (Python `App.return_code`).
+    pub fn return_code(&self) -> i32 {
+        self.return_code
+    }
+
+    /// The shutdown message passed to [`App::exit`], if any.
+    pub fn exit_message(&self) -> Option<&str> {
+        self.exit_message.as_deref()
+    }
+
+    /// Ring the terminal bell. Python `App.bell`: a no-op while headless,
+    /// otherwise writes `\x07` to stdout.
+    pub fn bell(&self) -> Result<()> {
+        if self.headless {
+            return Ok(());
+        }
+        use std::io::Write;
+        let stdout = std::io::stdout();
+        let mut handle = stdout.lock();
+        handle.write_all(b"\x07")?;
+        handle.flush()?;
+        Ok(())
+    }
+
+    /// Open `url` in the default web browser. Python
+    /// `App.open_url(url, new_tab=True)`.
+    ///
+    /// `new_tab` is accepted for API parity but is advisory: tab handling
+    /// follows the browser's own settings (the underlying opener exposes no
+    /// tab control). While headless there is no browser to open, so the URL
+    /// is recorded instead — assert on [`App::last_opened_url`].
+    pub fn open_url(&mut self, url: &str, new_tab: bool) -> Result<()> {
+        let _ = new_tab;
+        if self.headless {
+            self.last_opened_url = Some(url.to_string());
+            return Ok(());
+        }
+        open::that(url).map_err(|err| Error::Message(format!("open_url {url:?}: {err}")))?;
+        Ok(())
+    }
+
+    /// The last URL passed to [`App::open_url`] while headless, if any.
+    pub fn last_opened_url(&self) -> Option<&str> {
+        self.last_opened_url.as_deref()
+    }
+
+    /// True while no animation is running. Test/Pilot helper backing
+    /// [`Pilot::wait_for_animation`](crate::runtime::Pilot::wait_for_animation).
+    pub fn animator_is_idle(&self) -> bool {
+        !self.animator.has_animations()
     }
 
     /// Push a screen onto the screen stack.

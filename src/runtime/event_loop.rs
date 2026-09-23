@@ -5290,6 +5290,39 @@ impl App {
         self.headless_pump(root, &mut pending)
     }
 
+    /// Headless: inject a lone mouse-button press (no release). Mirrors
+    /// `pilot.mouse_down`. The matching release must come from
+    /// [`App::headless_inject_mouse_up`].
+    pub(crate) fn headless_inject_mouse_down(
+        &mut self,
+        root: &mut dyn Widget,
+        screen_x: u16,
+        screen_y: u16,
+    ) -> crate::Result<()> {
+        let mut pending = PendingInvalidation::default();
+        self.with_headless_style_context(|app| {
+            app.headless_process_mouse_down(root, screen_x, screen_y, &mut pending);
+        });
+        self.headless_pump(root, &mut pending)
+    }
+
+    /// Headless: inject a lone mouse-button release. Mirrors
+    /// `pilot.mouse_up`. Pairs with a prior
+    /// [`App::headless_inject_mouse_down`] through the [`ClickTracker`],
+    /// which emits the `Click` event when the targets match.
+    pub(crate) fn headless_inject_mouse_up(
+        &mut self,
+        root: &mut dyn Widget,
+        screen_x: u16,
+        screen_y: u16,
+    ) -> crate::Result<()> {
+        let mut pending = PendingInvalidation::default();
+        self.with_headless_style_context(|app| {
+            app.headless_process_mouse_up(root, screen_x, screen_y, &mut pending);
+        });
+        self.headless_pump(root, &mut pending)
+    }
+
     fn headless_process_mouse_down(
         &mut self,
         root: &mut dyn Widget,
@@ -5587,6 +5620,60 @@ impl App {
     ///
     /// [`frame_fingerprint`]: Self::frame_fingerprint
     pub fn save_frame_svg(&self, path: &str, title: &str) -> crate::Result<()> {
+        let mut console = self.frame_record_console()?;
+        console.save_svg(path, title, None, true, 0.61, None)?;
+        Ok(())
+    }
+
+    /// Export the current frame as an SVG screenshot string. Python
+    /// `App.export_screenshot(title=...)`. `title` defaults to the app title.
+    pub fn export_screenshot(&self, title: Option<&str>) -> crate::Result<String> {
+        let mut console = self.frame_record_console()?;
+        let title = title
+            .map(str::to_string)
+            .unwrap_or_else(|| self.app_title.clone());
+        Ok(console.export_svg(&title, None, true, None, 0.61, None))
+    }
+
+    /// Save an SVG screenshot of the current frame. Python
+    /// `App.save_screenshot(filename=None, ...)`: with no filename one is
+    /// generated from the app title and current epoch time. Returns the path
+    /// written.
+    pub fn save_screenshot(
+        &self,
+        filename: Option<&str>,
+        title: Option<&str>,
+    ) -> crate::Result<String> {
+        let path = match filename {
+            Some(name) => name.to_string(),
+            None => {
+                let slug: String = self
+                    .app_title
+                    .chars()
+                    .map(|c| {
+                        if c.is_alphanumeric() {
+                            c.to_ascii_lowercase()
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect();
+                let slug = slug.trim_matches('_');
+                let slug = if slug.is_empty() { "screenshot" } else { slug };
+                let epoch = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                format!("{slug}-{epoch}.svg")
+            }
+        };
+        self.save_frame_svg(&path, title.unwrap_or(&self.app_title))?;
+        Ok(path)
+    }
+
+    /// Build the recording [`rich_rs::Console`] for the current frame,
+    /// shared by [`App::save_frame_svg`] and [`App::export_screenshot`].
+    fn frame_record_console(&self) -> crate::Result<rich_rs::Console> {
         struct FrameSegments(rich_rs::Segments);
         impl rich_rs::Renderable for FrameSegments {
             fn render(
@@ -5628,8 +5715,7 @@ impl App {
             console.sync_from_options();
         }
         console.print(&FrameSegments(merged), None, None, None, false, "")?;
-        console.save_svg(path, title, None, true, 0.61, None)?;
-        Ok(())
+        Ok(console)
     }
 
     /// The explicit inline background color of a tree node, if any.
