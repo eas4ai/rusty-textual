@@ -1109,20 +1109,22 @@ impl crate::widgets::Focus for Tabs {
     fn bindings(&self) -> Vec<BindingDecl> {
         // Nav bindings are hidden from the footer (Python declares them with
         // show=False); they remain functional, just not shown as hints.
+        // Python `Tabs.BINDINGS`: left/right only, `previous_tab` /
+        // `next_tab` actions, show=False.
         vec![
-            BindingDecl::new("left,h", "previous", "Previous tab").hidden(),
-            BindingDecl::new("right,l", "next", "Next tab").hidden(),
+            BindingDecl::new("left", "previous_tab", "Previous tab").hidden(),
+            BindingDecl::new("right", "next_tab", "Next tab").hidden(),
         ]
     }
 
     fn execute_action(&mut self, action: &ParsedAction, ctx: &mut crate::event::WidgetCtx) -> bool {
         match action.name.as_str() {
-            "previous" => {
+            "previous_tab" => {
                 self.activate_prev_with_ctx(Some(ctx));
                 ctx.set_handled();
                 true
             }
-            "next" => {
+            "next_tab" => {
                 self.activate_next_with_ctx(Some(ctx));
                 ctx.set_handled();
                 true
@@ -1239,16 +1241,7 @@ impl crate::widgets::Interactive for Tabs {
                         ctx.set_handled();
                         return;
                     }
-                    KeyCode::Char('h') => {
-                        self.activate_prev_with_ctx(Some(ctx));
-                        ctx.set_handled();
-                        return;
-                    }
-                    KeyCode::Char('l') => {
-                        self.activate_next_with_ctx(Some(ctx));
-                        ctx.set_handled();
-                        return;
-                    }
+                    // Python parity: no h/l extras (left/right only).
                     _ => {}
                 }
             }
@@ -1407,6 +1400,61 @@ mod tests {
         assert!(ctx.repaint_requested());
         let messages = ctx.take_messages();
         assert!(messages.iter().any(|m| m.is::<TabActivated>()));
+    }
+
+    /// Python parity (`Tabs.BINDINGS`): left/right only, `previous_tab` /
+    /// `next_tab` actions, hidden. No h/l extras.
+    #[test]
+    fn nav_bindings_match_python() {
+        use crate::widgets::Widget;
+        let tabs = Tabs::new().with_tab("One").with_tab("Two");
+        let bindings = tabs.bindings();
+        assert_eq!(bindings.len(), 2);
+        let prev = bindings.iter().find(|b| b.action == "previous_tab").expect("prev");
+        let next = bindings.iter().find(|b| b.action == "next_tab").expect("next");
+        assert_eq!(prev.key, "left");
+        assert_eq!(next.key, "right");
+        assert!(!prev.show && !next.show);
+    }
+
+    /// Python parity: `previous_tab` / `next_tab` actions dispatch; `h`
+    /// does nothing on a focused Tabs.
+    #[test]
+    fn previous_next_tab_actions_dispatch_without_hl_extras() {
+        use crate::action::ParsedAction;
+        use crate::widgets::Widget;
+        let mut tabs = Tabs::new()
+            .with_tab_id("one", "One")
+            .with_tab_id("two", "Two");
+        let mut ctx = EventCtx::default();
+        let next = ParsedAction {
+            namespace: None,
+            name: "next_tab".to_string(),
+            arguments: vec![],
+        };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            assert!(tabs.execute_action(&next, &mut __w));
+        }
+        assert!(tabs.is_active("two"));
+
+        tabs.on_node_state_changed(
+            crate::widgets::NodeState::default(),
+            crate::widgets::NodeState {
+                focused: true,
+                ..Default::default()
+            },
+        );
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            tabs.on_event(
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                KeyCode::Char('h'),
+                KeyModifiers::NONE,
+            ))),
+            &mut __w);
+        }
+        assert!(tabs.is_active("two"), "h must not navigate (no vim extras)");
     }
 
     #[test]

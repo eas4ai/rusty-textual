@@ -267,6 +267,11 @@ pub struct DataTable {
     show_header: bool,
     show_row_labels: bool,
     zebra_stripes: bool,
+    /// Python `show_cursor` (default true): cursor navigation and selection
+    /// are suppressed while false.
+    show_cursor: bool,
+    /// Python `header_height` (default 1): height of the header in rows.
+    header_height: usize,
     seed: NodeSeed,
 }
 
@@ -304,6 +309,8 @@ impl DataTable {
             show_header: true,
             show_row_labels: true,
             zebra_stripes: false,
+            show_cursor: true,
+            header_height: 1,
             seed: NodeSeed::default(),
         };
         for header in headers {
@@ -525,6 +532,17 @@ impl DataTable {
         self.show_header
     }
 
+    /// Python `show_cursor`: cursor navigation and selection are suppressed
+    /// while false (default true).
+    pub fn show_cursor(&self) -> bool {
+        self.show_cursor
+    }
+
+    /// Python `header_height`: height of the header in rows (default 1).
+    pub fn header_height(&self) -> usize {
+        self.header_height
+    }
+
     pub fn show_row_labels(&self) -> bool {
         self.show_row_labels
     }
@@ -663,6 +681,35 @@ impl DataTable {
         }
     }
 
+    /// Reactive setter for `show_cursor`.
+    pub fn set_show_cursor(&mut self, show: bool, ctx: &mut ReactiveCtx) {
+        if self.show_cursor != show {
+            let old = self.show_cursor;
+            self.show_cursor = show;
+            ctx.record_change(
+                "show_cursor",
+                ReactiveFlags::reactive(),
+                Box::new(old),
+                Box::new(show),
+            );
+        }
+    }
+
+    /// Reactive setter for `header_height` (minimum 1).
+    pub fn set_header_height(&mut self, height: usize, ctx: &mut ReactiveCtx) {
+        let height = height.max(1);
+        if self.header_height != height {
+            let old = self.header_height;
+            self.header_height = height;
+            ctx.record_change(
+                "header_height",
+                ReactiveFlags::reactive_layout(),
+                Box::new(old),
+                Box::new(height),
+            );
+        }
+    }
+
     /// Reactive setter for `show_row_labels`.
     pub fn set_show_row_labels(&mut self, show: bool, ctx: &mut ReactiveCtx) {
         if self.show_row_labels != show {
@@ -698,6 +745,15 @@ impl DataTable {
     }
 
     fn watch_show_header(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
+        // Visible row count changes — recompute scroll offsets.
+        self.ensure_visible(self.visible_rows());
+    }
+
+    fn watch_show_cursor(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
+        // Visual change only — repaint is handled by ReactiveFlags.
+    }
+
+    fn watch_header_height(&mut self, _old: &usize, _new: &usize, _ctx: &mut ReactiveCtx) {
         // Visible row count changes — recompute scroll offsets.
         self.ensure_visible(self.visible_rows());
     }
@@ -1256,7 +1312,9 @@ impl DataTable {
     /// The fine-grained selection message for the current cursor position,
     /// matching the cursor type (Python `_post_selected_message`).
     fn selected_message(&self) -> Option<Box<dyn crate::message::Message>> {
-        if self.rows.is_empty() || self.headers.is_empty() {
+        // Python `_post_selected_message`: nothing posts while the cursor is
+        // hidden (covers action, Enter, and mouse paths in one place).
+        if !self.show_cursor || self.rows.is_empty() || self.headers.is_empty() {
             return None;
         }
         Some(match self.cursor_type {
@@ -1313,9 +1371,27 @@ impl DataTable {
         );
     }
 
+    /// Header rows consumed from the viewport (Python `header_height`).
+    fn header_rows(&self) -> usize {
+        if self.show_header {
+            self.header_height.max(1)
+        } else {
+            0
+        }
+    }
+
     fn visible_rows_for_viewport(&self, height: usize) -> usize {
-        let header_rows = if self.show_header { 1 } else { 0 };
-        height.saturating_sub(header_rows)
+        height.saturating_sub(self.header_rows())
+    }
+
+    /// Scroll the viewport vertically by `delta` lines without moving the
+    /// cursor (Python `scroll_up`/`scroll_down` fallback and `super().page_*`
+    /// when the cursor is hidden).
+    fn scroll_by_lines(&mut self, delta: isize) {
+        let height = (self.content_height as usize).max(1);
+        let visible = self.scrollable_visible_rows(height).max(1);
+        let max = self.scrollable_row_count().saturating_sub(visible) as isize;
+        self.offset = (self.offset as isize + delta).clamp(0, max.max(0)) as usize;
     }
 
     fn visible_rows(&self) -> usize {
@@ -1349,7 +1425,7 @@ impl DataTable {
     }
 
     fn row_index_from_y(&self, y: usize, visible_rows: usize) -> Option<usize> {
-        let header_rows = if self.show_header { 1 } else { 0 };
+        let header_rows = self.header_rows();
         if y < header_rows {
             return None;
         }
@@ -1394,6 +1470,8 @@ impl Default for DataTable {
             show_header: true,
             show_row_labels: true,
             zebra_stripes: false,
+            show_cursor: true,
+            header_height: 1,
             seed: NodeSeed::default(),
         };
         out.recompute_column_widths();
@@ -1419,6 +1497,22 @@ impl ReactiveWidget for DataTable {
                         change.new_value.downcast_ref::<bool>(),
                     ) {
                         self.watch_show_header(old, new, ctx);
+                    }
+                }
+                "show_cursor" => {
+                    if let (Some(old), Some(new)) = (
+                        change.old_value.downcast_ref::<bool>(),
+                        change.new_value.downcast_ref::<bool>(),
+                    ) {
+                        self.watch_show_cursor(old, new, ctx);
+                    }
+                }
+                "header_height" => {
+                    if let (Some(old), Some(new)) = (
+                        change.old_value.downcast_ref::<usize>(),
+                        change.new_value.downcast_ref::<usize>(),
+                    ) {
+                        self.watch_header_height(old, new, ctx);
                     }
                 }
                 "zebra_stripes" => {
@@ -1456,13 +1550,14 @@ impl crate::widgets::Focus for DataTable {
             BindingDecl::new("down", "cursor_down", "Move cursor down").hidden(),
             BindingDecl::new("left", "cursor_left", "Move cursor left").hidden(),
             BindingDecl::new("right", "cursor_right", "Move cursor right").hidden(),
-            BindingDecl::new("pageup", "scroll_up", "Page up").hidden(),
-            BindingDecl::new("pagedown", "scroll_down", "Page down").hidden(),
+            BindingDecl::new("pageup", "page_up", "Page up").hidden(),
+            BindingDecl::new("pagedown", "page_down", "Page down").hidden(),
             BindingDecl::new("home", "scroll_home", "Move to start").hidden(),
             BindingDecl::new("end", "scroll_end", "Move to end").hidden(),
             BindingDecl::new("ctrl+home", "scroll_top", "Move to first row").hidden(),
             BindingDecl::new("ctrl+end", "scroll_bottom", "Move to last row").hidden(),
-            BindingDecl::new("enter,space", "select_cursor", "Activate cell").hidden(),
+            // Python `Binding("enter", "select_cursor", ...)`: enter-only.
+            BindingDecl::new("enter", "select_cursor", "Activate cell").hidden(),
         ]
     }
 
@@ -1474,61 +1569,93 @@ impl crate::widgets::Focus for DataTable {
         let mut cursor_changed = false;
 
         let handled = match action.name.as_str() {
+            // Python parity: cursor moves apply only while the cursor is
+            // shown; otherwise the matching scroll runs (cursor-fallback).
             "cursor_up" => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
-                    && self.selected > 0
-                {
-                    self.selected -= 1;
-                    selection_changed = true;
+                if self.show_cursor {
+                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
+                        && self.selected > 0
+                    {
+                        self.selected -= 1;
+                        selection_changed = true;
+                    }
+                } else {
+                    self.scroll_by_lines(-1);
+                    ctx.request_repaint();
                 }
                 true
             }
             "cursor_down" => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
-                    && self.selected + 1 < self.rows.len()
-                {
-                    self.selected += 1;
-                    selection_changed = true;
+                if self.show_cursor {
+                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
+                        && self.selected + 1 < self.rows.len()
+                    {
+                        self.selected += 1;
+                        selection_changed = true;
+                    }
+                } else {
+                    self.scroll_by_lines(1);
+                    ctx.request_repaint();
                 }
                 true
             }
             "cursor_left" => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                    && self.cursor_column > 0
-                {
-                    self.cursor_column -= 1;
-                    cursor_changed = true;
+                if self.show_cursor {
+                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
+                        && self.cursor_column > 0
+                    {
+                        self.cursor_column -= 1;
+                        cursor_changed = true;
+                    }
+                } else if self.horizontal_offset > 0 {
+                    self.horizontal_offset -= 1;
+                    ctx.request_repaint();
                 }
                 true
             }
             "cursor_right" => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                    && self.cursor_column + 1 < self.headers.len()
-                {
-                    self.cursor_column += 1;
-                    cursor_changed = true;
+                if self.show_cursor {
+                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
+                        && self.cursor_column + 1 < self.headers.len()
+                    {
+                        self.cursor_column += 1;
+                        cursor_changed = true;
+                    }
+                } else {
+                    let max_offset = self.scrollable_column_count().saturating_sub(1);
+                    if self.horizontal_offset < max_offset {
+                        self.horizontal_offset += 1;
+                        ctx.request_repaint();
+                    }
                 }
                 true
             }
-            "scroll_up" => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
-                    && self.selected > 0
-                {
-                    let step = visible_rows.max(1).min(self.selected);
-                    self.selected -= step;
-                    selection_changed = true;
+            // Python `page_up` / `page_down`: move the cursor a page and
+            // scroll with it; with a hidden cursor only the viewport moves
+            // (`super().page_up()` / `super().page_down()`).
+            "page_up" => {
+                if self.show_cursor {
+                    if self.selected > 0 {
+                        self.selected -= visible_rows.max(1).min(self.selected);
+                        selection_changed = true;
+                    }
+                } else {
+                    self.scroll_by_lines(-(visible_rows.max(1) as isize));
+                    ctx.request_repaint();
                 }
                 true
             }
-            "scroll_down" => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
-                    && self.selected + 1 < self.rows.len()
-                {
-                    let step = visible_rows
-                        .max(1)
-                        .min(self.rows.len().saturating_sub(1) - self.selected);
-                    self.selected += step;
-                    selection_changed = true;
+            "page_down" => {
+                if self.show_cursor {
+                    let last = self.rows.len().saturating_sub(1);
+                    if self.selected < last {
+                        let step = visible_rows.max(1).min(last - self.selected);
+                        self.selected += step;
+                        selection_changed = true;
+                    }
+                } else {
+                    self.scroll_by_lines(visible_rows.max(1) as isize);
+                    ctx.request_repaint();
                 }
                 true
             }
@@ -1986,7 +2113,9 @@ impl crate::widgets::Interactive for DataTable {
                     }
                     handled = true;
                 }
-                KeyCode::Enter | KeyCode::Char(' ')
+                // Python parity: enter-only (`Binding("enter", "select_cursor")`).
+                // The `show_cursor` gate lives in `selected_message`.
+                KeyCode::Enter
                     if !self.rows.is_empty() && !self.headers.is_empty() => {
                         if let Some(message) = self.selected_message() {
                             ctx.post_message_boxed(message);
@@ -3385,6 +3514,124 @@ mod tests {
         assert_eq!((m.row, m.column), (1, 1));
     }
 
+    /// Python parity (`Binding("enter", "select_cursor")`): space never
+    /// selects a cell.
+    #[test]
+    fn space_does_not_select_cell() {
+        let mut table = DataTable::new(
+            vec!["A".into(), "B".into()],
+            vec![vec!["r0".into(), "c0".into()]],
+        );
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        let mut ctx = EventCtx::default();
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            table.on_event(
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                KeyCode::Char(' '),
+                KeyModifiers::NONE,
+            ))),
+            &mut __w);
+        }
+        let messages = ctx.take_messages();
+        assert!(
+            !messages.iter().any(|m| m.is::<DataTableCellSelected>()),
+            "space must not select (enter-only parity)"
+        );
+    }
+
+    /// Python parity (`show_cursor=False`): selection is suppressed and
+    /// cursor keys scroll the viewport instead of moving the cursor.
+    #[test]
+    fn hidden_cursor_suppresses_select_and_scrolls_viewport() {
+        let mut table = DataTable::new(
+            vec!["A".into(), "B".into(), "C".into()],
+            (0..30)
+                .map(|r| vec![format!("r{r}"), "c".into(), "d".into()])
+                .collect(),
+        );
+        table.content_height = 12;
+        table.show_cursor = false;
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        let mut ctx = EventCtx::default();
+        // Enter posts nothing while the cursor is hidden.
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            table.on_event(
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            ))),
+            &mut __w);
+        }
+        assert!(
+            ctx.take_messages().is_empty(),
+            "hidden cursor must suppress selection"
+        );
+        // cursor_down scrolls instead of moving the selection.
+        table.selected = 5;
+        table.offset = 0;
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let action = crate::action::ParsedAction {
+                namespace: None,
+                name: "cursor_down".to_string(),
+                arguments: vec![],
+            };
+            assert!(table.execute_action(&action, &mut __w));
+        }
+        assert_eq!(table.selected, 5, "selection must not move");
+        assert_eq!(table.offset, 1, "viewport must scroll one line");
+        // cursor_right scrolls columns instead of moving the cursor column.
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let action = crate::action::ParsedAction {
+                namespace: None,
+                name: "cursor_right".to_string(),
+                arguments: vec![],
+            };
+            assert!(table.execute_action(&action, &mut __w));
+        }
+        assert_eq!(table.cursor_column, 0, "cursor column must not move");
+        assert_eq!(table.horizontal_offset, 1, "columns must scroll");
+    }
+
+    /// Python parity (`page_up` / `page_down`): the cursor moves a viewport
+    /// page and scrolls with it.
+    #[test]
+    fn page_up_down_move_cursor_a_page() {
+        let mut table = DataTable::new(
+            vec!["A".into()],
+            (0..30).map(|r| vec![format!("r{r}")]).collect(),
+        );
+        table.content_height = 12;
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        let mut ctx = EventCtx::default();
+        table.selected = 15;
+        for (name, expect) in [("page_down", 26), ("page_up", 15)] {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let action = crate::action::ParsedAction {
+                namespace: None,
+                name: name.to_string(),
+                arguments: vec![],
+            };
+            assert!(table.execute_action(&action, &mut __w), "{name} must dispatch");
+            assert_eq!(table.selected, expect, "{name} moves one page");
+        }
+    }
+
+    /// Python parity (`header_height`): the header consumes its row count
+    /// from the viewport.
+    #[test]
+    fn header_height_counts_in_viewport_rows() {
+        let mut table = DataTable::new(vec!["A".into()], vec![vec!["r0".into()]]);
+        assert_eq!(table.visible_rows_for_viewport(12), 11);
+        table.header_height = 2;
+        assert_eq!(table.visible_rows_for_viewport(12), 10);
+        table.show_header = false;
+        assert_eq!(table.visible_rows_for_viewport(12), 12);
+    }
+
     #[test]
     fn enter_posts_row_selected_for_row_cursor() {
         let mut table = DataTable::new(
@@ -3690,6 +3937,16 @@ mod tests {
         assert!(bindings.iter().any(|b| b.action == "cursor_up"));
         assert!(bindings.iter().any(|b| b.action == "cursor_down"));
         assert!(bindings.iter().any(|b| b.action == "select_cursor"));
+        // Python parity: enter-only select plus page_up/page_down actions.
+        let select = bindings
+            .iter()
+            .find(|b| b.action == "select_cursor")
+            .expect("select binding");
+        assert_eq!(select.key, "enter");
+        assert!(bindings.iter().any(|b| b.action == "page_up"));
+        assert!(bindings.iter().any(|b| b.action == "page_down"));
+        assert!(!bindings.iter().any(|b| b.action == "scroll_up"));
+        assert!(!bindings.iter().any(|b| b.action == "scroll_down"));
     }
 
     #[test]
