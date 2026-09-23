@@ -206,6 +206,17 @@ pub struct SwitchChanged {
 }
 crate::impl_message!(SwitchChanged);
 
+/// Posted when a [`crate::widgets::DateInput`] commits a new date (typed,
+/// stepped, or picked from the spinner strip). Carries the full date so
+/// handlers never re-query the widget.
+#[derive(Debug, Clone)]
+pub struct DateChanged {
+    pub year: i32,
+    pub month: u8,
+    pub day: u8,
+}
+crate::impl_message!(DateChanged);
+
 #[derive(Debug, Clone)]
 pub struct RadioButtonChanged {
     pub value: bool,

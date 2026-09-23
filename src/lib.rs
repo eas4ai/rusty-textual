@@ -143,7 +143,7 @@ pub mod prelude {
         AppRoot, BindingDecl, BindingsTable, Button, ButtonVariant,
         Cell as DataTableCell, CellJustify, Center,
         CenterMiddle, Checkbox, Collapsible, CollapsibleTitle,
-        Constrained,
+        Constrained, DateInput, DateOrder,
         Container, ContentSwitcher, CursorType, DataTable, Digits, DirectoryTree, Dock, Footer,
         FooterBinding, Frame, FuzzyMatcher, Grid, Header, HeaderClock, HeaderClockSpace,
         HeaderIcon, HeaderTitle, HelpPanel, Horizontal, HorizontalGroup, HorizontalScroll, Input,

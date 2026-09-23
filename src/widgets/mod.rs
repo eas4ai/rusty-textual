@@ -9,6 +9,7 @@ mod containers;
 mod content_switcher;
 mod core;
 mod data_table;
+pub(crate) mod date_input;
 pub(crate) mod delegate;
 mod directory_tree;
 mod footer;
@@ -63,6 +64,7 @@ pub use capabilities::{
 pub use button::{Button, ButtonVariant};
 pub use checkbox::Checkbox;
 pub use collapsible::{Collapsible, CollapsibleTitle};
+pub use date_input::{DateInput, DateOrder, days_in_month, is_leap_year};
 pub use command_palette::{
     CommandInput, FuzzyMatcher, PaletteCommand, Provider, ProviderResult, SearchIcon,
     SystemCommandsProvider, SystemModalScreen,
