@@ -92,7 +92,10 @@ use types::{
     StylesheetReload, StylesheetWatcher,
 };
 
-use helpers::{ClickTracker, apply_size, collect_focus_chain_tree, default_action_map};
+use helpers::{
+    ClickTracker, apply_size, collect_focus_chain_tree, collect_focus_chain_tree_sorted,
+    default_action_map,
+};
 
 /// Opaque handle to an app-level timer scheduled via [`App::set_interval`] /
 /// [`App::set_timer`]. Pass it to [`App::stop_timer`], [`App::pause_timer`],
@@ -2144,10 +2147,16 @@ impl App {
     }
 
     fn focus_first_in_active_tree(&mut self) -> bool {
+        // Snapshot geometry first: the chain closure borrows this snapshot,
+        // not `self`, so the tree can stay mutably borrowed below.
+        let bounds = self.hit_test.bounds.clone();
         let Some(tree) = self.active_widget_tree_mut() else {
             return false;
         };
-        let mut focus_chain = collect_focus_chain_tree(tree);
+        let current = routing::focused_node_id_tree(tree);
+        let mut focus_chain = collect_focus_chain_tree_sorted(tree, current, &|id| {
+            bounds.get(&id).map(|r| (r.y0, r.x0))
+        });
         if focus_chain.is_empty()
             && let Some(root) = tree.root()
         {
@@ -2189,14 +2198,17 @@ impl App {
     }
 
     pub fn action_focus_next(&mut self) -> bool {
+        let bounds = self.hit_test.bounds.clone();
         let Some(tree) = self.active_widget_tree_mut() else {
             return false;
         };
-        let focus_chain = collect_focus_chain_tree(tree);
+        let current = routing::focused_node_id_tree(tree);
+        let focus_chain = collect_focus_chain_tree_sorted(tree, current, &|id| {
+            bounds.get(&id).map(|r| (r.y0, r.x0))
+        });
         if focus_chain.is_empty() {
             return false;
         }
-        let current = routing::focused_node_id_tree(tree);
         let current_index =
             current.and_then(|id| focus_chain.iter().position(|candidate| *candidate == id));
         let next_index = match current_index {
@@ -2207,14 +2219,17 @@ impl App {
     }
 
     pub fn action_focus_previous(&mut self) -> bool {
+        let bounds = self.hit_test.bounds.clone();
         let Some(tree) = self.active_widget_tree_mut() else {
             return false;
         };
-        let focus_chain = collect_focus_chain_tree(tree);
+        let current = routing::focused_node_id_tree(tree);
+        let focus_chain = collect_focus_chain_tree_sorted(tree, current, &|id| {
+            bounds.get(&id).map(|r| (r.y0, r.x0))
+        });
         if focus_chain.is_empty() {
             return false;
         }
-        let current = routing::focused_node_id_tree(tree);
         let current_index =
             current.and_then(|id| focus_chain.iter().position(|candidate| *candidate == id));
         let next_index = match current_index {

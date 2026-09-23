@@ -248,6 +248,11 @@ fn method_table() -> Vec<MethodSpec> {
             quote! { can_focus_children() }
         ),
         m!(
+            "traps_focus",
+            quote! { fn traps_focus(&self) -> bool },
+            quote! { traps_focus() }
+        ),
+        m!(
             "on_node_state_changed",
             quote! { fn on_node_state_changed(&mut self, old: textual::widgets::NodeState, new: textual::widgets::NodeState) },
             quote! { on_node_state_changed(old, new) }
@@ -634,7 +639,7 @@ fn method_group(name: &str) -> Group {
         | "clips_descendants_to_content" | "style" => Group::Layout,
         "scroll_offset" | "scroll_offset_f32" | "scroll_viewport_size"
         | "scroll_virtual_content_size" | "on_mouse_scroll" => Group::Scrollable,
-        "focusable" | "can_focus" | "can_focus_children" | "mouse_interactive" | "is_active"
+        "focusable" | "can_focus" | "can_focus_children" | "traps_focus" | "mouse_interactive" | "is_active"
         | "is_initially_disabled" | "is_initially_focused" | "bindings" | "binding_hints"
         | "action_namespace" | "action_registry" | "execute_action" | "check_action"
         | "help_markup" => Group::Focus,

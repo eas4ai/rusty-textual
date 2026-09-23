@@ -139,10 +139,40 @@ pub(crate) fn default_action_map() -> ActionMap {
 
 /// Collect the focus chain: all focusable, visible nodes in depth-first order.
 pub(crate) fn collect_focus_chain_tree(tree: &WidgetTree) -> Vec<NodeId> {
-    let root = match tree.root() {
+    collect_focus_chain_tree_sorted(tree, None, &|_| None)
+}
+
+/// Focus chain with Python `Screen.focus_chain` ordering (P-C).
+///
+/// Siblings are visited in `(y, x)` screen order (Python `_focus_sort_key`),
+/// disabled nodes are skipped, and traversal is scoped to the nearest
+/// `traps_focus` ancestor of `focused` (Python `_trap_focus`), when focus is
+/// inside one. `origin` maps a node to its `(y, x)` screen origin; the
+/// position sort applies per sibling group only when every sibling has a
+/// known position, otherwise document order is kept.
+pub(crate) fn collect_focus_chain_tree_sorted(
+    tree: &WidgetTree,
+    focused: Option<NodeId>,
+    origin: &dyn Fn(NodeId) -> Option<(u16, u16)>,
+) -> Vec<NodeId> {
+    // Trap scope: nearest trapping ancestor of the focused widget (or the
+    // focused widget itself), mirroring `ancestors_with_self` in Python.
+    let mut root = match tree.root() {
         Some(r) => r,
         None => return Vec::new(),
     };
+    if let Some(mut id) = focused {
+        while let Some(node) = tree.get(id) {
+            if node.widget.traps_focus() {
+                root = id;
+                break;
+            }
+            match tree.parent(id) {
+                Some(parent) => id = parent,
+                None => break,
+            }
+        }
+    }
     let mut focus_chain = Vec::new();
     let mut stack = vec![root];
     while let Some(id) = stack.pop() {
@@ -152,13 +182,25 @@ pub(crate) fn collect_focus_chain_tree(tree: &WidgetTree) -> Vec<NodeId> {
         if !node.display || node.visibility != crate::style::Visibility::Visible {
             continue;
         }
+        // Python skips disabled widgets when building the focus chain.
+        if node.state.disabled {
+            continue;
+        }
 
         if node.widget.focusable() {
             focus_chain.push(id);
         }
 
         if node.widget.can_focus_children() {
-            for &child in tree.children(id).iter().rev() {
+            let mut children: Vec<NodeId> = tree.children(id).to_vec();
+            // Stable (y, x) sort, applied only when every sibling has a
+            // known position: mixing positioned and unpositioned siblings
+            // would order the unknowns arbitrarily (`None` sorts first),
+            // so partial geometry keeps document order instead.
+            if children.iter().all(|&child| origin(child).is_some()) {
+                children.sort_by_key(|&child| origin(child));
+            }
+            for &child in children.iter().rev() {
                 stack.push(child);
             }
         }
@@ -1017,6 +1059,91 @@ mod tests {
             !root_scroll_applies_to_subtree(&tree, footer),
             "docked root children should ignore root scroll translation"
         );
+    }
+
+    // P-C: a container that traps focus traversal in its subtree
+    // (Python `trap_focus`). Plain `core::Widget` impl: only `render` plus
+    // the trap flag; everything else takes the trait defaults.
+    struct TrapZone;
+    impl Widget for TrapZone {
+        fn render(
+            &self,
+            _console: &rich_rs::Console,
+            _options: &ConsoleOptions,
+        ) -> rich_rs::Segments {
+            rich_rs::Segments::new()
+        }
+
+        fn traps_focus(&self) -> bool {
+            true
+        }
+    }
+
+    use std::collections::HashMap;
+
+    use crate::widgets::Button;
+
+    /// Two focusable buttons mounted in document order b-then-a, with
+    /// positions putting a left of b. Returns the tree and ids (a, b).
+    fn two_button_tree(
+        positions: &mut HashMap<crate::node_id::NodeId, (u16, u16)>,
+    ) -> (WidgetTree, crate::node_id::NodeId, crate::node_id::NodeId) {
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Label::new("root")));
+        let b_id = tree.mount(root_id, Box::new(Button::new("b")));
+        let a_id = tree.mount(root_id, Box::new(Button::new("a")));
+        positions.insert(a_id, (0, 0));
+        positions.insert(b_id, (0, 10));
+        (tree, a_id, b_id)
+    }
+
+    #[test]
+    fn focus_chain_sorts_siblings_by_position() {
+        // P-C: Python `_focus_sort_key` — visual (y, x) order beats document
+        // order, so `a` (left) comes before `b` though mounted second.
+        let mut positions = HashMap::new();
+        let (tree, a_id, b_id) = two_button_tree(&mut positions);
+        let chain = collect_focus_chain_tree_sorted(&tree, None, &|id| positions.get(&id).copied());
+        assert_eq!(chain, vec![a_id, b_id]);
+    }
+
+    #[test]
+    fn focus_chain_without_positions_keeps_document_order() {
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Label::new("root")));
+        let b_id = tree.mount(root_id, Box::new(Button::new("b")));
+        let a_id = tree.mount(root_id, Box::new(Button::new("a")));
+        let chain = collect_focus_chain_tree_sorted(&tree, None, &|_| None);
+        assert_eq!(chain, vec![b_id, a_id]);
+    }
+
+    #[test]
+    fn focus_chain_skips_disabled_nodes() {
+        // P-C: Python skips disabled widgets when building the focus chain.
+        let mut positions = HashMap::new();
+        let (mut tree, a_id, b_id) = two_button_tree(&mut positions);
+        tree.set_disabled(b_id, true);
+        let chain = collect_focus_chain_tree_sorted(&tree, None, &|id| positions.get(&id).copied());
+        assert_eq!(chain, vec![a_id]);
+        // The legacy unsorted collector skips disabled too.
+        assert_eq!(collect_focus_chain_tree(&tree), vec![a_id]);
+    }
+
+    #[test]
+    fn focus_chain_traps_in_subtree() {
+        // P-C: Python `_trap_focus` — with focus inside the trap zone, the
+        // chain never leaves it; unfocused, the whole tree is visible.
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Label::new("root")));
+        let zone_id = tree.mount(root_id, Box::new(TrapZone));
+        let inner_id = tree.mount(zone_id, Box::new(Button::new("inner")));
+        let outer_id = tree.mount(root_id, Box::new(Button::new("outer")));
+        let no_pos = &|_: crate::node_id::NodeId| None;
+        let trapped =
+            collect_focus_chain_tree_sorted(&tree, Some(inner_id), no_pos);
+        assert_eq!(trapped, vec![inner_id]);
+        let free = collect_focus_chain_tree_sorted(&tree, None, no_pos);
+        assert_eq!(free, vec![inner_id, outer_id]);
     }
 
     #[test]

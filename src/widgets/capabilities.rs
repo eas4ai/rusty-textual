@@ -245,6 +245,14 @@ pub trait Focus {
     fn can_focus_children(&self) -> bool {
         true
     }
+    /// Whether focus traversal is trapped inside this widget's subtree once
+    /// focus is within it. Python `Widget.trap_focus` (used by modal-style
+    /// containers): `focus_next`/`focus_previous` never leave the nearest
+    /// trapping ancestor of the focused widget. Default `false`; no built-in
+    /// widget opts in yet (modal screens are separate trees, not subtrees).
+    fn traps_focus(&self) -> bool {
+        false
+    }
     /// Whether the widget is interactive for mouse hover / cursor feedback.
     fn mouse_interactive(&self) -> bool {
         self.focusable()
