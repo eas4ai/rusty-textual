@@ -584,8 +584,15 @@ fn dispatch_message_bubble(
 
     let sender = envelope.sender();
     let bubble_path = build_path_to_node(tree, sender); // [root, …, parent, sender]
+    // P-A (Python `Message.bubble`): a non-bubbling payload is delivered to
+    // the sender node only — never to ancestors.
+    let bubbles = envelope.event.bubbles();
 
     if bubble_path.is_empty() {
+        if !bubbles {
+            // Sender-only delivery with an unknown sender: nowhere to deliver.
+            return;
+        }
         // Sender not in tree — fall back to depth-first broadcast so
         // globally-addressed messages (overlay commands, etc.) still work.
         let root = match tree.root() {
@@ -612,6 +619,8 @@ fn dispatch_message_bubble(
     }
 
     // Bubble: sender → parent → … → root (reverse of build_path_to_node).
+    // The sender is first in reverse order, so a non-bubbling payload stops
+    // after its single delivery.
     for &node_id in bubble_path.iter().rev() {
         if envelope.is_stopped() {
             break;
@@ -625,6 +634,9 @@ fn dispatch_message_bubble(
             if ctx.handled() {
                 envelope.stop();
             }
+        }
+        if !bubbles {
+            break;
         }
     }
 }
@@ -2093,6 +2105,86 @@ mod envelope_tests {
             0,
             "root should NOT see message after stop"
         );
+    }
+
+    // =====================================================================
+    // P-A: per-message bubble flags (Python `Message.bubble = False`)
+    // =====================================================================
+
+    #[derive(Debug, Clone)]
+    struct SenderOnlyPing;
+    crate::impl_message!(SenderOnlyPing, no_bubble);
+
+    struct PingCounter {
+        count: Arc<AtomicUsize>,
+    }
+
+    impl Widget for PingCounter {
+        fn render(&self, _console: &Console, _options: &ConsoleOptions) -> Segments {
+            Segments::new()
+        }
+
+        fn on_message(
+            &mut self,
+            message: &MessageEvent,
+            _ctx: &mut crate::event::WidgetCtx,
+        ) {
+            if message.is::<SenderOnlyPing>() {
+                self.count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn ping_tree() -> (
+        WidgetTree,
+        Arc<AtomicUsize>,
+        Arc<AtomicUsize>,
+        Arc<AtomicUsize>,
+        NodeId,
+    ) {
+        let root_count = Arc::new(AtomicUsize::new(0));
+        let mid_count = Arc::new(AtomicUsize::new(0));
+        let leaf_count = Arc::new(AtomicUsize::new(0));
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(PingCounter {
+            count: root_count.clone(),
+        }));
+        let mid_id = tree.mount(
+            root_id,
+            Box::new(PingCounter {
+                count: mid_count.clone(),
+            }),
+        );
+        let leaf_id = tree.mount(
+            mid_id,
+            Box::new(PingCounter {
+                count: leaf_count.clone(),
+            }),
+        );
+        (tree, root_count, mid_count, leaf_count, leaf_id)
+    }
+
+    #[test]
+    fn no_bubble_message_reaches_sender_only() {
+        // Tree: root → mid → leaf (sender). The `no_bubble` payload must
+        // reach the leaf and stop — ancestors never see it.
+        let (mut tree, root_count, mid_count, leaf_count, leaf_id) = ping_tree();
+        let messages = vec![MessageEvent::new(leaf_id, SenderOnlyPing)];
+        let _ = dispatch_message_queue_tree(&mut tree, messages);
+        assert_eq!(leaf_count.load(Ordering::Relaxed), 1, "sender sees message");
+        assert_eq!(mid_count.load(Ordering::Relaxed), 0, "mid must NOT see it");
+        assert_eq!(root_count.load(Ordering::Relaxed), 0, "root must NOT see it");
+    }
+
+    #[test]
+    fn no_bubble_message_with_unknown_sender_delivers_nowhere() {
+        let (mut tree, root_count, mid_count, leaf_count, _) = ping_tree();
+        let ghost = crate::node_id::node_id_from_ffi(u64::MAX);
+        let messages = vec![MessageEvent::new(ghost, SenderOnlyPing)];
+        let _ = dispatch_message_queue_tree(&mut tree, messages);
+        assert_eq!(leaf_count.load(Ordering::Relaxed), 0);
+        assert_eq!(mid_count.load(Ordering::Relaxed), 0);
+        assert_eq!(root_count.load(Ordering::Relaxed), 0);
     }
 
     #[test]
