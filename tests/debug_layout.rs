@@ -1,8 +1,8 @@
 use rich_rs::Console;
-use textual::debug::DebugLayout;
-use textual::prelude::*;
-use textual::render::FrameBuffer;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_debug};
+use rusty_textual::debug::DebugLayout;
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_debug};
 
 fn render_tree_debug(
     root: &mut dyn Widget,

@@ -1,7 +1,7 @@
 /// Widget method delegation macros.
 ///
 /// **Superseded by the `#[widget(base = ..)]` attribute derive** (see
-/// `textual_macros::widget` / re-exported as `textual::widget`). New compound
+/// `textual_macros::widget` / re-exported as `rusty_textual::widget`). New compound
 /// widgets should use `#[widget(base = <Container>)]`, which generates the same
 /// full `impl Widget` forwarding as a first-class attribute (and additionally
 /// supports `style_type = ".."`, `reactive`, and `override(..)`). The derive is

@@ -21,7 +21,7 @@
 use std::sync::{Arc, Mutex};
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 /// Base app: a single `#log` Static on the app-root tree.
 struct BaseApp;
@@ -500,7 +500,7 @@ impl TextualApp for OffsetLogApp {
         AppRoot::new().with_child(Static::new("underlay-initial").id("log"))
     }
 
-    fn configure(&mut self, app: &mut App) -> textual::Result<()> {
+    fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
         app.load_stylesheet("#log { margin-top: 6; }");
         Ok(())
     }

@@ -27,8 +27,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use textual::prelude::*;
-use textual::runtime::Pilot;
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::Pilot;
 
 // ───────────────────────────── framework ──────────────────────────────────
 
@@ -50,7 +50,7 @@ enum Assert {
 struct Entry<T: TextualApp + 'static> {
     name: &'static str,
     build: Box<dyn Fn() -> T>,
-    script: Box<dyn Fn(&mut Pilot) -> textual::Result<()>>,
+    script: Box<dyn Fn(&mut Pilot) -> rusty_textual::Result<()>>,
     assert: Assert,
 }
 
@@ -67,7 +67,7 @@ fn run_entry<T: TextualApp + 'static>(entry: Entry<T>) -> std::result::Result<()
     } = entry;
 
     let outcome = std::cell::RefCell::new(Ok::<(), String>(()));
-    textual::run_test(build(), |pilot| {
+    rusty_textual::run_test(build(), |pilot| {
         // The harness foundation: time is deterministic for the whole run.
         assert!(
             pilot.clock_is_manual(),
@@ -122,19 +122,19 @@ fn count_label(count: u32) -> String {
 }
 
 impl TextualApp for CounterApp {
-    fn configure(&mut self, app: &mut App) -> textual::Result<()> {
+    fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
         app.load_stylesheet(COUNTER_CSS);
         Ok(())
     }
 
     fn compose(&mut self) -> AppRoot {
-        AppRoot::new().with_child(Vertical::new().with_compose(textual::compose![
+        AppRoot::new().with_child(Vertical::new().with_compose(rusty_textual::compose![
             Static::new(count_label(0)).id("readout"),
             Button::new("Increment").id("inc"),
         ]))
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut rusty_textual::event::WidgetCtx) {
         if let Some(bp) = message.downcast_ref::<ButtonPressed>() {
             if bp.button_id.as_deref() == Some("inc") {
                 let next = self.count.fetch_add(1, Ordering::SeqCst) + 1;
@@ -163,7 +163,7 @@ fn tick_label(ticks: u32) -> String {
 }
 
 impl TextualApp for TickApp {
-    fn configure(&mut self, app: &mut App) -> textual::Result<()> {
+    fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
         app.load_stylesheet(TICK_CSS);
         Ok(())
     }
@@ -172,7 +172,7 @@ impl TextualApp for TickApp {
         AppRoot::new().with_child(Static::new(tick_label(0)).id("ticks"))
     }
 
-    fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut rusty_textual::event::WidgetCtx) {
         // Python: self.set_interval(1, self.tick). Each fire increments the
         // tick counter and rewrites the readout — exactly a clock's update.
         let ticks = Arc::clone(&self.ticks);
@@ -200,7 +200,7 @@ Screen { align: center middle; }
 "#;
 
 impl TextualApp for DeadApp {
-    fn configure(&mut self, app: &mut App) -> textual::Result<()> {
+    fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
         app.load_stylesheet(DEAD_CSS);
         Ok(())
     }

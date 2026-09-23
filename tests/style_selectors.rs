@@ -1,13 +1,13 @@
 use rich_rs::Console;
-use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
 
 fn render_with_sheet(
     root: &mut dyn Widget,
     width: usize,
     height: usize,
     stylesheet: StyleSheet,
-) -> textual::render::FrameBuffer {
+) -> rusty_textual::render::FrameBuffer {
     let console = Console::new();
     let mut tree = build_widget_tree_from_root(root).expect("tree should exist");
     render_tree_to_frame_with_stylesheet(&mut tree, root, &console, width, height, stylesheet)

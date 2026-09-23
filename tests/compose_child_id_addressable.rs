@@ -10,9 +10,9 @@
 //! This blocked, among others, the `checkbox` demo whose mount-time
 //! `query_mut("#initial_focus").focus()` silently found nothing.
 
-use textual::compose::ChildDecl;
-use textual::prelude::*;
-use textual::runtime::build_widget_tree_from_root;
+use rusty_textual::compose::ChildDecl;
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::build_widget_tree_from_root;
 
 /// Host that composes an id'd child directly under a `VerticalScroll`
 /// (`ScrollableContainer` -> `ScrollView` -> `Container` flatten path).
@@ -35,7 +35,7 @@ impl VScrollHost {
 }
 
 impl Widget for VScrollHost {
-    fn compose(&mut self) -> textual::compose::ComposeResult {
+    fn compose(&mut self) -> rusty_textual::compose::ComposeResult {
         self.root.compose()
     }
 
@@ -86,7 +86,7 @@ impl GridHost {
 }
 
 impl Widget for GridHost {
-    fn compose(&mut self) -> textual::compose::ComposeResult {
+    fn compose(&mut self) -> rusty_textual::compose::ComposeResult {
         self.root.compose()
     }
 

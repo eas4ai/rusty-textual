@@ -1347,7 +1347,7 @@ mod tests {
     // ── Macro codegen: #[reactive(recompose)] / (validate) / mutate_<field> ──
     //
     // These exercise the `#[derive(Reactive)]` proc-macro end-to-end (the crate
-    // aliases itself as `textual`, so the macro-emitted `textual::reactive::*`
+    // aliases itself as `textual`, so the macro-emitted `rusty_textual::reactive::*`
     // paths resolve in-crate). They lock in the Python-aligned semantics:
     //   - `recompose` -> setter records a change carrying the recompose flag,
     //   - `validate`  -> setter passes the value through `validate_<field>`

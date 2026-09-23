@@ -15,12 +15,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rich_rs::{Console, ConsoleOptions};
-use textual::message::SelectChanged;
-use textual::node_id::NodeId;
-use textual::runtime::{
+use rusty_textual::message::SelectChanged;
+use rusty_textual::node_id::NodeId;
+use rusty_textual::runtime::{
     build_widget_tree_from_root, drain_absorb_outcomes_for_test, drain_mount_posts_for_test,
 };
-use textual::widgets::{Container, Select, Widget};
+use rusty_textual::widgets::{Container, Select, Widget};
 
 // ---------------------------------------------------------------------------
 // A custom mount-time message + a minimal widget that posts it from on_mount.
@@ -30,7 +30,7 @@ use textual::widgets::{Container, Select, Widget};
 struct MountedPing {
     n: u32,
 }
-textual::impl_message!(MountedPing);
+rusty_textual::impl_message!(MountedPing);
 
 /// Minimal arena widget that posts `MountedPing` from `on_mount`.
 struct MountPoster {
@@ -50,7 +50,7 @@ impl Widget for MountPoster {
         Some(1)
     }
 
-    fn on_mount(&mut self, ctx: &mut textual::event::WidgetCtx) {
+    fn on_mount(&mut self, ctx: &mut rusty_textual::event::WidgetCtx) {
         ctx.post_message(MountedPing { n: self.n });
     }
 }
@@ -151,7 +151,7 @@ impl Widget for MountWorkRequester {
         Some(1)
     }
 
-    fn on_mount(&mut self, ctx: &mut textual::event::WidgetCtx) {
+    fn on_mount(&mut self, ctx: &mut rusty_textual::event::WidgetCtx) {
         let ran = Arc::clone(&self.ran);
         ctx.request_worker_task(Some("mount-scan"), move |_cancel| {
             ran.store(true, Ordering::SeqCst);

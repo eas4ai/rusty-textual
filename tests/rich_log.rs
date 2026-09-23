@@ -1,8 +1,8 @@
 use rich_rs::Console;
-use textual::css::{default_widget_stylesheet, set_style_context};
-use textual::prelude::*;
-use textual::render::FrameBuffer;
-use textual::widgets::NodeState;
+use rusty_textual::css::{default_widget_stylesheet, set_style_context};
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::widgets::NodeState;
 
 fn options_for(console: &Console, width: usize, height: usize) -> rich_rs::ConsoleOptions {
     let mut options = console.options().clone();
@@ -58,7 +58,7 @@ fn rich_log_scrolls_via_actions() {
     let before = FrameBuffer::from_renderable(&console, &options, &log, None);
     assert!(before.as_plain_lines()[0].starts_with("line 1"));
 
-    { let mut __e = textual::event::EventCtx::default(); let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut __e); log.on_event(&Event::Action(Action::ScrollDown), &mut __w) };
+    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); log.on_event(&Event::Action(Action::ScrollDown), &mut __w) };
 
     let after = FrameBuffer::from_renderable(&console, &options, &log, None);
     assert!(after.as_plain_lines()[0].starts_with("line 2"));
@@ -74,7 +74,7 @@ fn rich_log_preserves_view_anchor_when_trimming_max_lines() {
     log.write("line 2");
     log.write("line 3");
     let _ = FrameBuffer::from_renderable(&console, &options, &log, None);
-    { let mut __e = textual::event::EventCtx::default(); let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut __e); log.on_event(&Event::Action(Action::ScrollDown), &mut __w) };
+    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); log.on_event(&Event::Action(Action::ScrollDown), &mut __w) };
 
     let before = FrameBuffer::from_renderable(&console, &options, &log, None);
     assert!(before.as_plain_lines()[0].starts_with("line 2"));

@@ -11,9 +11,9 @@
 //! buffer drained by `runtime::take_unhandled_binding_reports()`. Default
 //! runtime behavior (fall through to raw key dispatch) is unchanged.
 
-use textual::compose;
-use textual::prelude::*;
-use textual::runtime::take_unhandled_binding_reports;
+use rusty_textual::compose;
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::take_unhandled_binding_reports;
 
 struct UnwiredBindingApp;
 
@@ -58,7 +58,7 @@ impl TextualApp for WiredBindingApp {
         &mut self,
         _app: &mut App,
         action: &str,
-        ctx: &mut textual::event::WidgetCtx,
+        ctx: &mut rusty_textual::event::WidgetCtx,
     ) {
         if action == "wired" {
             ctx.set_handled();

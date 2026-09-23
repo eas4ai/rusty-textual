@@ -19,14 +19,14 @@
 //! 3. header hover: the CSS `$accent 30%` must equal the old
 //!    `$header-hover-background` token.
 
-use textual::compose::ChildDecl;
-use textual::css::{
+use rusty_textual::compose::ChildDecl;
+use rusty_textual::css::{
     AppRuntimePseudos, default_widget_stylesheet, resolve_component_style, set_app_runtime_pseudos,
     set_style_context,
 };
-use textual::prelude::*;
-use textual::renderables::Tint;
-use textual::style::{Color, parse_color_like};
+use rusty_textual::prelude::*;
+use rusty_textual::renderables::Tint;
+use rusty_textual::style::{Color, parse_color_like};
 
 const USER_CSS_NONE: &str = "";
 
@@ -75,14 +75,14 @@ impl TextualApp for TableApp {
         ])
     }
 
-    fn configure(&mut self, app: &mut App) -> textual::Result<()> {
+    fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
         if !self.user_css.is_empty() {
             app.load_stylesheet(self.user_css);
         }
         Ok(())
     }
 
-    fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut rusty_textual::event::WidgetCtx) {
         if self.zebra {
             if let Ok(handle) = app.query_one_typed::<DataTable>("DataTable") {
                 let _ = handle.update(app, |table, rctx| {
@@ -129,7 +129,7 @@ fn token(name: &str) -> Color {
 /// flattened over the cursor background.
 #[test]
 fn focused_defaults_header_tint_and_cursor_colors() {
-    textual::run_test(TableApp::new(USER_CSS_NONE), |pilot| {
+    rusty_textual::run_test(TableApp::new(USER_CSS_NONE), |pilot| {
         // The table is the first focusable widget: it holds focus after mount.
         pilot.pause()?;
 
@@ -179,7 +179,7 @@ fn focused_defaults_header_tint_and_cursor_colors() {
 /// be equivalent to a flatten — pin both.
 #[test]
 fn blurred_cursor_keeps_raw_blurred_foreground() {
-    textual::run_test(TableApp::new(USER_CSS_NONE), |pilot| {
+    rusty_textual::run_test(TableApp::new(USER_CSS_NONE), |pilot| {
         pilot.pause()?;
         pilot.click("#the-input")?;
         pilot.pause()?;
@@ -221,7 +221,7 @@ fn blurred_cursor_keeps_raw_blurred_foreground() {
 /// holds pre- and post-migration.
 #[test]
 fn zebra_even_row_matches_pre_migration_blend() {
-    textual::run_test(TableApp::new(USER_CSS_NONE).with_zebra(), |pilot| {
+    rusty_textual::run_test(TableApp::new(USER_CSS_NONE).with_zebra(), |pilot| {
         pilot.pause()?;
 
         // Odd row (Yy, row index 1): the plain composited surface.
@@ -346,7 +346,7 @@ fn header_component_matches_legacy_tokens() {
 /// Type-qualified: `DataTable > .datatable--cursor` restyles the cursor.
 #[test]
 fn type_qualified_cursor_restyle() {
-    textual::run_test(
+    rusty_textual::run_test(
         TableApp::new("DataTable > .datatable--cursor { background: #ff0000; }"),
         |pilot| {
             pilot.pause()?;
@@ -365,7 +365,7 @@ fn type_qualified_cursor_restyle() {
 /// selector stack carries the arena id).
 #[test]
 fn id_qualified_cursor_restyle() {
-    textual::run_test(
+    rusty_textual::run_test(
         TableApp::new("#my-table > .datatable--cursor { background: #00ff00; }"),
         |pilot| {
             pilot.pause()?;
@@ -384,7 +384,7 @@ fn id_qualified_cursor_restyle() {
 /// cursor (live selector stack carries runtime classes).
 #[test]
 fn class_qualified_cursor_restyle() {
-    textual::run_test(
+    rusty_textual::run_test(
         TableApp::new("DataTable.some-class > .datatable--cursor { background: #0000ff; }"),
         |pilot| {
             pilot.pause()?;
@@ -404,7 +404,7 @@ fn class_qualified_cursor_restyle() {
 /// background.
 #[test]
 fn header_restyle_bg_and_fg() {
-    textual::run_test(
+    rusty_textual::run_test(
         TableApp::new("DataTable > .datatable--header { background: #123456; color: #654321; }"),
         |pilot| {
             pilot.pause()?;
@@ -430,7 +430,7 @@ fn header_restyle_bg_and_fg() {
 /// composited surface when semi-transparent; opaque user colours land as-is).
 #[test]
 fn zebra_even_row_restyle() {
-    textual::run_test(
+    rusty_textual::run_test(
         TableApp::new("DataTable > .datatable--even-row { background: #223344; }").with_zebra(),
         |pilot| {
             pilot.pause()?;
@@ -449,7 +449,7 @@ fn zebra_even_row_restyle() {
 /// but must be consumable from user CSS under zebra stripes.
 #[test]
 fn zebra_odd_row_restyle() {
-    textual::run_test(
+    rusty_textual::run_test(
         TableApp::new("DataTable > .datatable--odd-row { background: #443322; }").with_zebra(),
         |pilot| {
             pilot.pause()?;
@@ -467,7 +467,7 @@ fn zebra_odd_row_restyle() {
 /// The nine Python `COMPONENT_CLASSES` names are declared.
 #[test]
 fn datatable_declares_nine_component_classes() {
-    use textual::widgets::Components;
+    use rusty_textual::widgets::Components;
     let table = DataTable::empty();
     let declared = Components::component_classes(&table);
     let expected = [

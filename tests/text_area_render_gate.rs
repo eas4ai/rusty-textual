@@ -11,7 +11,7 @@
 //! intentionally changes to Python parity in Phase 4.
 
 use rich_rs::Console;
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 fn options_for(console: &Console, width: usize, height: usize) -> rich_rs::ConsoleOptions {
     let mut options = console.options().clone();
@@ -24,7 +24,7 @@ fn options_for(console: &Console, width: usize, height: usize) -> rich_rs::Conso
 fn dump_render(ta: &TextArea, width: usize, height: usize) -> String {
     let console = Console::new();
     let options = options_for(&console, width, height);
-    let segments = textual::widgets::Render::render(ta, &console, &options);
+    let segments = rusty_textual::widgets::Render::render(ta, &console, &options);
     format!("{segments:#?}\n")
 }
 
@@ -67,16 +67,16 @@ fn width0_horizontal_scroll() {
         .with_soft_wrap(false);
     ta.on_layout(20, 4);
     let end = ta.document().end();
-    ta.set_selection(textual::document::Selection::cursor(end.into()));
+    ta.set_selection(rusty_textual::document::Selection::cursor(end.into()));
     check_golden("hscroll", &dump_render(&ta, 20, 4));
 }
 
 #[test]
 fn width0_selection_spanning_lines() {
     let mut ta = TextArea::new(DOC).with_soft_wrap(false);
-    ta.set_selection(textual::document::Selection {
-        start: textual::document::Cursor { row: 0, col: 4 },
-        end: textual::document::Cursor { row: 2, col: 8 },
+    ta.set_selection(rusty_textual::document::Selection {
+        start: rusty_textual::document::Cursor { row: 0, col: 4 },
+        end: rusty_textual::document::Cursor { row: 2, col: 8 },
     });
     check_golden("selection", &dump_render(&ta, 24, 6));
 }

@@ -5,10 +5,10 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::event::{ClassOp, Event};
-use textual::keys::KeyEventData;
-use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, dispatch_event_tree};
+use rusty_textual::event::{ClassOp, Event};
+use rusty_textual::keys::KeyEventData;
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, dispatch_event_tree};
 
 // ---------------------------------------------------------------------------
 // Probe widget: records the key event and queues a class op
@@ -40,7 +40,7 @@ impl Widget for ClassOpProbe {
         }
     }
 
-    fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
+    fn on_event(&mut self, event: &Event, ctx: &mut rusty_textual::event::WidgetCtx) {
         if matches!(event, Event::Key(_)) {
             ctx.add_class("-active");
             ctx.set_handled();
@@ -82,7 +82,7 @@ fn event_ctx_class_ops_apply_to_tree() {
     let event = Event::Key(KeyEventData::from_crossterm(key_event));
 
     // Clear any stale commands left on this thread's queue by a prior test.
-    let _ = textual::runtime::drain_class_commands_for_test();
+    let _ = rusty_textual::runtime::drain_class_commands_for_test();
 
     // Dispatch through the tree with focus on the probe node
     let _outcome = dispatch_event_tree(&mut tree, Some(probe_node_id), &event);
@@ -90,7 +90,7 @@ fn event_ctx_class_ops_apply_to_tree() {
     // Post-RA2.3 the handler's `ctx.add_class` enqueues an AddClass command on
     // the deferred queue (not `outcome.class_ops`); drain it and apply to the
     // tree (mirrors what the shared flush's `apply_widget_command` does).
-    for (node, op) in textual::runtime::drain_class_commands_for_test() {
+    for (node, op) in rusty_textual::runtime::drain_class_commands_for_test() {
         match op {
             ClassOp::Add(c) => tree.add_class(node, &c),
             ClassOp::Remove(c) => tree.remove_class(node, &c),
@@ -135,7 +135,7 @@ impl Widget for SetClassProbe {
         }
     }
 
-    fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
+    fn on_event(&mut self, event: &Event, ctx: &mut rusty_textual::event::WidgetCtx) {
         if matches!(event, Event::Key(_)) {
             ctx.set_class(self.toggle, "-toggle");
             ctx.set_handled();
@@ -162,9 +162,9 @@ fn event_ctx_set_class_queues_correct_op() {
         let event = Event::Key(KeyEventData::from_crossterm(key_event));
 
         // Clear any stale commands left on this thread's queue by a prior test.
-        let _ = textual::runtime::drain_class_commands_for_test();
+        let _ = rusty_textual::runtime::drain_class_commands_for_test();
         let _outcome = dispatch_event_tree(&mut tree, Some(probe_node_id), &event);
-        for (node, op) in textual::runtime::drain_class_commands_for_test() {
+        for (node, op) in rusty_textual::runtime::drain_class_commands_for_test() {
             match op {
                 ClassOp::Add(c) => tree.add_class(node, &c),
                 ClassOp::Remove(c) => tree.remove_class(node, &c),

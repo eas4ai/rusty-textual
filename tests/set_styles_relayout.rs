@@ -11,9 +11,9 @@
 //! invalidation, so the ball repainted at its stale rect (frozen at the
 //! container origin).
 
-use textual::compose;
-use textual::prelude::*;
-use textual::style::{Offset, OffsetValue};
+use rusty_textual::compose;
+use rusty_textual::prelude::*;
+use rusty_textual::style::{Offset, OffsetValue};
 
 const CSS: &str = r##"
 Screen {
@@ -48,7 +48,7 @@ impl TextualApp for OffsetApp {
 
 #[test]
 fn set_styles_offset_moves_widget_rect() {
-    textual::run_test(OffsetApp, |pilot| {
+    rusty_textual::run_test(OffsetApp, |pilot| {
         let ball = pilot.app().query_one("#ball").unwrap();
         let before = pilot
             .app()
@@ -85,7 +85,7 @@ fn set_styles_offset_moves_widget_rect() {
 
 #[test]
 fn set_styles_paint_only_change_does_not_move_rect() {
-    textual::run_test(OffsetApp, |pilot| {
+    rusty_textual::run_test(OffsetApp, |pilot| {
         let ball = pilot.app().query_one("#ball").unwrap();
         let before = pilot.app().node_screen_rect(ball).unwrap();
 

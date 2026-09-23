@@ -1,7 +1,7 @@
 use rich_rs::Console;
-use textual::css::{StyleSheet, set_style_context};
-use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::css::{StyleSheet, set_style_context};
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
 
 fn load_button_css() -> String {
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -9,7 +9,7 @@ fn load_button_css() -> String {
     std::fs::read_to_string(css_path).expect("read button.tcss")
 }
 
-fn render_tree(root: &mut dyn Widget, width: usize, height: usize) -> textual::render::FrameBuffer {
+fn render_tree(root: &mut dyn Widget, width: usize, height: usize) -> rusty_textual::render::FrameBuffer {
     let console = Console::new();
     let mut tree = build_widget_tree_from_root(root).expect("tree should build");
     render_tree_to_frame(&mut tree, root, &console, width, height)
@@ -38,7 +38,7 @@ fn color_distance(a: (u8, u8, u8), b: (u8, u8, u8)) -> i32 {
 #[test]
 fn buttons_demo_renders_labels() {
     let css = load_button_css();
-    let mut stylesheet = textual::css::default_widget_stylesheet();
+    let mut stylesheet = rusty_textual::css::default_widget_stylesheet();
     stylesheet.extend(&StyleSheet::parse(&css));
     let _guard = set_style_context(stylesheet);
 
@@ -93,7 +93,7 @@ fn buttons_demo_renders_labels() {
 #[test]
 fn buttons_demo_header_renders_with_button_tcss_loaded() {
     let css = load_button_css();
-    let mut stylesheet = textual::css::default_widget_stylesheet();
+    let mut stylesheet = rusty_textual::css::default_widget_stylesheet();
     stylesheet.extend(&StyleSheet::parse(&css));
     let _guard = set_style_context(stylesheet);
 
@@ -111,7 +111,7 @@ fn buttons_demo_header_renders_with_button_tcss_loaded() {
 
 #[test]
 fn disabled_non_flat_primary_text_is_dimmer_than_enabled() {
-    let mut stylesheet = textual::css::default_widget_stylesheet();
+    let mut stylesheet = rusty_textual::css::default_widget_stylesheet();
     stylesheet.extend(&StyleSheet::parse(
         r#"
         Row {

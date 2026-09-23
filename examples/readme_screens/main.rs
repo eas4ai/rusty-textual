@@ -9,8 +9,8 @@
 //! ```sh
 //! cargo run --example readme_screens
 //! ```
-use textual::compose;
-use textual::prelude::*;
+use rusty_textual::compose;
+use rusty_textual::prelude::*;
 
 const HERO_CSS: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -190,7 +190,7 @@ impl TextualApp for ShotApp {
 fn snap(shot: ShotApp, file: &str, width: u16, height: u16, title: &str) -> Result<()> {
     // Activate the theme globally before the App parses any stylesheet, so
     // every token resolves against the target theme from the start.
-    textual::theme::set_active_theme(shot.theme);
+    rusty_textual::theme::set_active_theme(shot.theme);
     let path = format!("imgs/{file}");
     let title = title.to_string();
     let interact = shot.interact;

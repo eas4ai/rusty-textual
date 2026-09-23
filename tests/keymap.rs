@@ -14,9 +14,9 @@
 use std::sync::{Arc, Mutex};
 
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
-use textual::action::ParsedAction;
-use textual::compose;
-use textual::prelude::*;
+use rusty_textual::action::ParsedAction;
+use rusty_textual::compose;
+use rusty_textual::prelude::*;
 
 fn km(pairs: &[(&str, &str)]) -> Keymap {
     pairs
@@ -495,7 +495,7 @@ fn check_action_gate_still_applies_to_remapped_binding() {
         fn check_action(
             &self,
             action: &str,
-            _parameters: &[textual::action::ActionArgument],
+            _parameters: &[rusty_textual::action::ActionArgument],
         ) -> Option<bool> {
             if action == "gated" {
                 return Some(false);

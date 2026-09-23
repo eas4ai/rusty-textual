@@ -9,10 +9,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::prelude::*;
-use textual::reactive::{enqueue_runtime_reactive_entry, ReactiveCtx, RuntimeReactiveEntry};
-use textual::runtime::Pilot;
-use textual::widgets::Widget;
+use rusty_textual::prelude::*;
+use rusty_textual::reactive::{enqueue_runtime_reactive_entry, ReactiveCtx, RuntimeReactiveEntry};
+use rusty_textual::runtime::Pilot;
+use rusty_textual::widgets::Widget;
 
 // ---------------------------------------------------------------------------
 // Fixture: a worker that parks until its cancellation token fires.
@@ -71,7 +71,7 @@ impl Widget for Host {
         true
     }
 
-    fn reactive_widget(&mut self) -> Option<&mut dyn textual::reactive::ReactiveWidget> {
+    fn reactive_widget(&mut self) -> Option<&mut dyn rusty_textual::reactive::ReactiveWidget> {
         Some(self)
     }
 
@@ -123,7 +123,7 @@ fn unmount_cancels_parked_worker() {
         exited: Arc::clone(&exited),
     };
 
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.pause()?;
         assert!(
             started.load(Ordering::SeqCst),

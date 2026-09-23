@@ -5,12 +5,12 @@
 //! - Catch widget-level regressions where intrinsic hints omit required chrome.
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::layout::{Region, inspect_node_rects, resolve_layout};
-use textual::prelude::*;
-use textual::style::{BoxSizing, Scalar, Spacing, Style};
-use textual::widget_tree::WidgetTree;
-use textual::widgets::Widget;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame, run_layout_pass};
+use rusty_textual::layout::{Region, inspect_node_rects, resolve_layout};
+use rusty_textual::prelude::*;
+use rusty_textual::style::{BoxSizing, Scalar, Spacing, Style};
+use rusty_textual::widget_tree::WidgetTree;
+use rusty_textual::widgets::Widget;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame, run_layout_pass};
 
 struct IntrinsicWidget {
     style: Style,
@@ -54,7 +54,7 @@ impl Widget for IntrinsicWidget {
     }
 }
 
-fn layout_rect_wh(tree: &WidgetTree, node: textual::node_id::NodeId) -> (u16, u16) {
+fn layout_rect_wh(tree: &WidgetTree, node: rusty_textual::node_id::NodeId) -> (u16, u16) {
     let ((x0, y0, x1, y1), _) = inspect_node_rects(tree, node).expect("node rect should exist");
     (x1.saturating_sub(x0), y1.saturating_sub(y0))
 }
@@ -338,7 +338,7 @@ fn select_width_tracks_padding_delta() {
         let mut root = Container::new().with_child(select);
         let mut tree = build_widget_tree_from_root(&mut root).expect("tree should exist");
         let _css =
-            textual::css::set_style_context(textual::css::default_widget_stylesheet());
+            rusty_textual::css::set_style_context(rusty_textual::css::default_widget_stylesheet());
         run_layout_pass(&mut tree, (120, 24));
         let select_id = *tree
             .query("Select")

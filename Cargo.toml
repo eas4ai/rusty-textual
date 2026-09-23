@@ -1,12 +1,12 @@
 [package]
-name = "textual"
+name = "rusty-textual"
 version = "1.1.0"
 edition = "2024"
 rust-version = "1.85.0"
 license = "MIT"
 description = "A reactive TUI framework inspired by the Python Textual library"
-repository = "https://github.com/mrsaraiva/textual-rs"
-documentation = "https://docs.rs/textual"
+repository = "https://github.com/eas4ai/textual-rs"
+documentation = "https://docs.rs/rusty-textual"
 readme = "README.md"
 keywords = ["terminal", "tui", "textual", "ui", "widgets"]
 categories = ["command-line-interface"]

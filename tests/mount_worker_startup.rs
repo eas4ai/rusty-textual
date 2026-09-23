@@ -16,11 +16,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::message::MessageEvent;
-use textual::prelude::*;
-use textual::reactive::{ReactiveCtx, RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
-use textual::runtime::Pilot;
-use textual::widgets::Widget;
+use rusty_textual::message::MessageEvent;
+use rusty_textual::prelude::*;
+use rusty_textual::reactive::{ReactiveCtx, RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
+use rusty_textual::runtime::Pilot;
+use rusty_textual::widgets::Widget;
 
 // ---------------------------------------------------------------------------
 // Shared fixture: a widget that posts a message and requests a worker at mount.
@@ -28,7 +28,7 @@ use textual::widgets::Widget;
 
 #[derive(Debug, Clone)]
 struct StartupPing;
-textual::impl_message!(StartupPing);
+rusty_textual::impl_message!(StartupPing);
 
 struct StartupWorker {
     worker_ran: Arc<AtomicBool>,
@@ -95,7 +95,7 @@ fn initial_mount_worker_and_message_both_land_by_first_settled_frame() {
         pings: Arc::clone(&pings),
     };
 
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.pause()?;
         assert!(
             worker_ran.load(Ordering::SeqCst),
@@ -136,7 +136,7 @@ impl Widget for Host {
         true
     }
 
-    fn reactive_widget(&mut self) -> Option<&mut dyn textual::reactive::ReactiveWidget> {
+    fn reactive_widget(&mut self) -> Option<&mut dyn rusty_textual::reactive::ReactiveWidget> {
         Some(self)
     }
 
@@ -185,7 +185,7 @@ fn mount_worker_runs_when_mounted_in_initial_build() {
         initial: true,
         worker_ran: Arc::clone(&worker_ran),
     };
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.pause()?;
         assert!(
             worker_ran.load(Ordering::SeqCst),
@@ -203,7 +203,7 @@ fn mount_worker_runs_when_mounted_via_dynamic_recompose() {
         initial: false,
         worker_ran: Arc::clone(&worker_ran),
     };
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.pause()?;
         assert!(
             !worker_ran.load(Ordering::SeqCst),
@@ -254,7 +254,7 @@ impl TextualApp for StopApp {
 
 #[test]
 fn request_stop_from_build_time_mount_stops_the_app() {
-    textual::run_test(StopApp, |pilot: &mut Pilot| {
+    rusty_textual::run_test(StopApp, |pilot: &mut Pilot| {
         pilot.pause()?;
         assert!(
             pilot.app().headless_stop_requested(),

@@ -530,21 +530,21 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
 /// to `#[reactive]` fields.
 fn flags_expr(field: &ReactiveField) -> TokenStream {
     let base = if field.recompose && field.init_false {
-        quote! { textual::reactive::ReactiveFlags::reactive_recompose_no_init() }
+        quote! { rusty_textual::reactive::ReactiveFlags::reactive_recompose_no_init() }
     } else if field.recompose {
-        quote! { textual::reactive::ReactiveFlags::reactive_recompose() }
+        quote! { rusty_textual::reactive::ReactiveFlags::reactive_recompose() }
     } else if field.is_var && field.init_false {
-        quote! { textual::reactive::ReactiveFlags::var_no_init() }
+        quote! { rusty_textual::reactive::ReactiveFlags::var_no_init() }
     } else if field.is_var {
-        quote! { textual::reactive::ReactiveFlags::var() }
+        quote! { rusty_textual::reactive::ReactiveFlags::var() }
     } else if field.layout && field.init_false {
-        quote! { textual::reactive::ReactiveFlags::reactive_layout_no_init() }
+        quote! { rusty_textual::reactive::ReactiveFlags::reactive_layout_no_init() }
     } else if field.layout {
-        quote! { textual::reactive::ReactiveFlags::reactive_layout() }
+        quote! { rusty_textual::reactive::ReactiveFlags::reactive_layout() }
     } else if field.init_false {
-        quote! { textual::reactive::ReactiveFlags::reactive_no_init() }
+        quote! { rusty_textual::reactive::ReactiveFlags::reactive_no_init() }
     } else {
-        quote! { textual::reactive::ReactiveFlags::reactive() }
+        quote! { rusty_textual::reactive::ReactiveFlags::reactive() }
     };
     let mut expr = base;
     if field.always_update {
@@ -650,7 +650,7 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
     if reactive_fields.is_empty() && computed_fields.is_empty() {
         // No reactive fields — still implement the trait with a no-op.
         return quote! {
-            impl #impl_generics textual::reactive::ReactiveWidget for #name #ty_generics #where_clause {}
+            impl #impl_generics rusty_textual::reactive::ReactiveWidget for #name #ty_generics #where_clause {}
         };
     }
 
@@ -735,7 +735,7 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
             /// Generated setter for reactive field. Records the change in
             /// the provided [`ReactiveCtx`] if the value actually changed
             /// (or unconditionally for `always_update` fields).
-            pub fn #setter_name(&mut self, value: #field_ty, ctx: &mut textual::reactive::ReactiveCtx)
+            pub fn #setter_name(&mut self, value: #field_ty, ctx: &mut rusty_textual::reactive::ReactiveCtx)
             where
                 #field_ty: PartialEq + Clone + Send + 'static,
             {
@@ -748,7 +748,7 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
             /// `mutate_reactive`). Call this AFTER mutating the field in place
             /// (e.g. pushing to a `Vec`), to dispatch watchers / recompose
             /// unconditionally — the value is its own old and new value.
-            pub fn #mutate_name(&mut self, ctx: &mut textual::reactive::ReactiveCtx)
+            pub fn #mutate_name(&mut self, ctx: &mut rusty_textual::reactive::ReactiveCtx)
             where
                 #field_ty: Clone + Send + 'static,
             {
@@ -799,7 +799,7 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
                         self.#field_ident = new_val.clone();
                         ctx.record_change(
                             #field_name_str,
-                            textual::reactive::ReactiveFlags::reactive(),
+                            rusty_textual::reactive::ReactiveFlags::reactive(),
                             Box::new(old_val) as Box<dyn std::any::Any + Send>,
                             Box::new(new_val) as Box<dyn std::any::Any + Send>,
                         );
@@ -993,9 +993,9 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
         quote! {
             fn reactive_dispatch_with_app(
                 &mut self,
-                app: &mut textual::App,
-                changes: &[textual::reactive::ReactiveChange],
-                ctx: &mut textual::reactive::ReactiveCtx,
+                app: &mut rusty_textual::App,
+                changes: &[rusty_textual::reactive::ReactiveChange],
+                ctx: &mut rusty_textual::reactive::ReactiveCtx,
             ) {
                 #match_body
             }
@@ -1044,7 +1044,7 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
             .collect();
 
         quote! {
-            fn reactive_record_init(&self, ctx: &mut textual::reactive::ReactiveCtx) {
+            fn reactive_record_init(&self, ctx: &mut rusty_textual::reactive::ReactiveCtx) {
                 #(#record_stmts)*
             }
         }
@@ -1059,7 +1059,7 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
             let field_name_str = field.ident.to_string();
             let f_flags_expr = flags_expr(field);
             quote! {
-                textual::reactive::ReactiveFieldDescriptor {
+                rusty_textual::reactive::ReactiveFieldDescriptor {
                     name: #field_name_str,
                     flags: #f_flags_expr,
                 }
@@ -1072,19 +1072,19 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
             #(#accessors)*
         }
 
-        impl #impl_generics textual::reactive::ReactiveWidget for #name #ty_generics #where_clause {
+        impl #impl_generics rusty_textual::reactive::ReactiveWidget for #name #ty_generics #where_clause {
             fn reactive_dispatch(
                 &mut self,
-                changes: &[textual::reactive::ReactiveChange],
-                ctx: &mut textual::reactive::ReactiveCtx,
+                changes: &[rusty_textual::reactive::ReactiveChange],
+                ctx: &mut rusty_textual::reactive::ReactiveCtx,
             ) {
                 #dispatch_body
             }
 
             #dispatch_with_app_impl
 
-            fn reactive_field_descriptors(&self) -> &'static [textual::reactive::ReactiveFieldDescriptor] {
-                static DESCRIPTORS: &[textual::reactive::ReactiveFieldDescriptor] = &[
+            fn reactive_field_descriptors(&self) -> &'static [rusty_textual::reactive::ReactiveFieldDescriptor] {
+                static DESCRIPTORS: &[rusty_textual::reactive::ReactiveFieldDescriptor] = &[
                     #(#descriptor_entries),*
                 ];
                 DESCRIPTORS

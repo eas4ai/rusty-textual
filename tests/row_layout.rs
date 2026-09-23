@@ -1,6 +1,6 @@
 use rich_rs::Console;
-use textual::prelude::*;
-use textual::render::FrameBuffer;
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
 
 #[test]
 fn row_splits_width_across_children() {

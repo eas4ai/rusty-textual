@@ -8,7 +8,7 @@ use super::Vertical;
 /// `#[widget(base = ..)]` derive (which replaces the deprecated
 /// `delegate_widget_to!`). `style_type` intentionally keeps the trait default
 /// so this widget matches `VerticalGroup { .. }` CSS, not `Vertical`.
-#[textual::widget(base = Vertical, field = inner)]
+#[rusty_textual::widget(base = Vertical, field = inner)]
 pub struct VerticalGroup {
     inner: Vertical,
 }

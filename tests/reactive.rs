@@ -1,10 +1,10 @@
 //! Integration tests for the reactive attribute system.
 
-use textual::Reactive;
-use textual::reactive::{
+use rusty_textual::Reactive;
+use rusty_textual::reactive::{
     MAX_REACTIVE_ITERATIONS, ReactiveCtx, ReactiveFlags, ReactiveWidget, run_reactive_phase,
 };
-use textual::App;
+use rusty_textual::App;
 
 // ── Basic derive + getters/setters ──────────────────────────────────
 
@@ -25,7 +25,7 @@ struct BasicWidget {
 
 fn make_ctx() -> ReactiveCtx {
     use slotmap::SlotMap;
-    let mut sm: SlotMap<textual::NodeId, ()> = SlotMap::new();
+    let mut sm: SlotMap<rusty_textual::NodeId, ()> = SlotMap::new();
     let id = sm.insert(());
     ReactiveCtx::new(id)
 }
@@ -742,7 +742,7 @@ fn watch_with_app_dispatches_with_runtime() {
     let mut app = App::new().expect("runtime init");
 
     // Synthesize a change
-    use textual::reactive::ReactiveChange;
+    use rusty_textual::reactive::ReactiveChange;
     let changes = vec![ReactiveChange {
         field_name: "value",
         flags: ReactiveFlags::reactive(),
@@ -781,7 +781,7 @@ fn var_with_watch_with_app_parses_and_dispatches() {
     let mut app = App::new().expect("runtime init");
     let mut ctx = make_ctx();
 
-    use textual::reactive::ReactiveChange;
+    use rusty_textual::reactive::ReactiveChange;
     let changes = vec![ReactiveChange {
         field_name: "show",
         flags: ReactiveFlags::var(),
@@ -862,7 +862,7 @@ fn mixed_watch_kinds_one_dispatch_with_app() {
     let mut w = MixedWatchWidget { plain: 0, with_app: 0 };
     let mut app = App::new().expect("runtime init");
 
-    use textual::reactive::ReactiveChange;
+    use rusty_textual::reactive::ReactiveChange;
     let changes = vec![
         ReactiveChange {
             field_name: "plain",
@@ -1135,8 +1135,8 @@ struct FlagWidget {
 
 #[test]
 fn toggle_class_applies_set_class_per_class_before_gate() {
-    use textual::event::ClassOp;
-    use textual::reactive::run_reactive_phase;
+    use rusty_textual::event::ClassOp;
+    use rusty_textual::reactive::run_reactive_phase;
 
     let mut w = FlagWidget {
         active: false,
@@ -1182,7 +1182,7 @@ fn toggle_class_applies_set_class_per_class_before_gate() {
 
 #[test]
 fn bindings_flag_reaches_phase_result() {
-    use textual::reactive::run_reactive_phase;
+    use rusty_textual::reactive::run_reactive_phase;
 
     let mut w = FlagWidget {
         active: false,

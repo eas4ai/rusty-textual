@@ -8,7 +8,7 @@
 //!   focus movement).
 use rich_rs::{Console, ConsoleOptions, Segments};
 use std::sync::{Arc, Mutex};
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 /// Shared probe state: key names seen by `handle_key_name`, in order, plus
 /// actions served by `execute_action`.

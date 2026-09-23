@@ -2173,12 +2173,12 @@ mod tests {
         );
 
         let mismatch = QueryError::TypeMismatch {
-            expected: "textual::widgets::Button",
+            expected: "rusty_textual::widgets::Button",
             actual: "Input",
         };
         assert_eq!(
             mismatch.to_string(),
-            "type mismatch: expected textual::widgets::Button, found widget of type Input"
+            "type mismatch: expected rusty_textual::widgets::Button, found widget of type Input"
         );
     }
 }

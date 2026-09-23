@@ -1,9 +1,9 @@
 // DC-17..25, DC-32..34, DC-37, DC-38: Misc/presentation widget CSS default parity tests
 
-use textual::css::PseudoClass;
-use textual::css::StyleSheet;
-use textual::css::default_widget_stylesheet;
-use textual::style::{
+use rusty_textual::css::PseudoClass;
+use rusty_textual::css::StyleSheet;
+use rusty_textual::css::default_widget_stylesheet;
+use rusty_textual::style::{
     BoxSizing, Dock, HorizontalAlign, Layout, Overflow, Pointer, Scalar, Spacing, Split, TextAlign,
     VerticalAlign, Visibility,
 };
@@ -12,7 +12,7 @@ use textual::style::{
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn find_type_style(sheet: &StyleSheet, type_name: &str) -> textual::style::Style {
+fn find_type_style(sheet: &StyleSheet, type_name: &str) -> rusty_textual::style::Style {
     for rule in sheet.rules() {
         let parts = rule.selector_chain().parts();
         if parts.len() == 1 {
@@ -34,7 +34,7 @@ fn find_scoped_type_style(
     sheet: &StyleSheet,
     ancestor: &str,
     type_name: &str,
-) -> textual::style::Style {
+) -> rusty_textual::style::Style {
     for rule in sheet.rules() {
         let parts = rule.selector_chain().parts();
         if parts.len() == 2
@@ -53,7 +53,7 @@ fn find_type_class_style(
     sheet: &StyleSheet,
     type_name: &str,
     class: &str,
-) -> textual::style::Style {
+) -> rusty_textual::style::Style {
     for rule in sheet.rules() {
         let parts = rule.selector_chain().parts();
         if parts.len() == 1 {
@@ -70,7 +70,7 @@ fn find_type_pseudo_style(
     sheet: &StyleSheet,
     type_name: &str,
     pseudo: PseudoClass,
-) -> textual::style::Style {
+) -> rusty_textual::style::Style {
     for rule in sheet.rules() {
         let parts = rule.selector_chain().parts();
         if parts.len() == 1 {
@@ -90,7 +90,7 @@ fn find_child_style(
     sheet: &StyleSheet,
     parent_type: &str,
     child_class: &str,
-) -> textual::style::Style {
+) -> rusty_textual::style::Style {
     for rule in sheet.rules() {
         let parts = rule.selector_chain().parts();
         if parts.len() == 2 {

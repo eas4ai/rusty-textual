@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 /// A widget that counts every frame tick it receives.
 struct TickProbe {

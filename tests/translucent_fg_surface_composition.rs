@@ -11,9 +11,9 @@
 //! ancestor-composited background.
 
 use rich_rs::Console;
-use textual::css::{StyleSheet, default_widget_stylesheet, set_style_context};
-use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
+use rusty_textual::css::{StyleSheet, default_widget_stylesheet, set_style_context};
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
 
 const CSS: &str = r#"
 Horizontal {
@@ -30,7 +30,7 @@ Digits {
 }
 "#;
 
-fn render_case(child: impl Widget + 'static) -> textual::render::FrameBuffer {
+fn render_case(child: impl Widget + 'static) -> rusty_textual::render::FrameBuffer {
     let mut stylesheet = default_widget_stylesheet();
     stylesheet.extend(&StyleSheet::parse(CSS));
     let _guard = set_style_context(stylesheet.clone());
@@ -41,7 +41,7 @@ fn render_case(child: impl Widget + 'static) -> textual::render::FrameBuffer {
     render_tree_to_frame_with_stylesheet(&mut tree, &mut root, &console, 40, 10, stylesheet)
 }
 
-fn find_glyph(buf: &textual::render::FrameBuffer, glyph: char) -> (usize, usize) {
+fn find_glyph(buf: &rusty_textual::render::FrameBuffer, glyph: char) -> (usize, usize) {
     buf.as_plain_lines()
         .iter()
         .enumerate()

@@ -148,8 +148,8 @@ impl crate::widgets::Layout for Constrained {
         // min-ONLY or max-ONLY `Constrained` wrapping a chrome-bearing child
         // (e.g. a bordered/flat widget) still under-reports by that chrome and can
         // clip it. No such usage exists in-tree today; fully closing it needs
-        // routing these constraints into the node CSS layout (see KNOWN_GAPS
-        // `[1.x]`). The unconstrained arm defers to the recursion (returns `None`,
+        // routing these constraints into the node CSS layout (deferred to a
+        // future 1.x pass). The unconstrained arm defers to the recursion (returns `None`,
         // like `Container`) so chrome IS added — this is what un-clips a flat
         // `Button` wrapped in a bare `Constrained` inside a `Row`.
         match (constraints.min_height, constraints.max_height, child_height) {

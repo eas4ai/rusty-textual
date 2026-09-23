@@ -7,9 +7,9 @@
 //! separate side-channel drain), and the delegation macro forwards `compose`, so
 //! a `Vertical::with_compose(...)` must yield fully-formed child declarations.
 
-use textual::compose::{ChildDecl, ComposeResult};
-use textual::prelude::*;
-use textual::widgets::Widget;
+use rusty_textual::compose::{ChildDecl, ComposeResult};
+use rusty_textual::prelude::*;
+use rusty_textual::widgets::Widget;
 
 #[test]
 fn delegated_wrapper_forwards_child_decl_meta() {

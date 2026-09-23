@@ -152,7 +152,7 @@ pub trait TextualApp: Send + 'static {
     ///
     /// Apps that derive `Reactive` should override this to return `Some(self)`:
     /// ```ignore
-    /// fn reactive_widget_mut(&mut self) -> Option<&mut dyn textual::reactive::ReactiveWidget> {
+    /// fn reactive_widget_mut(&mut self) -> Option<&mut dyn rusty_textual::reactive::ReactiveWidget> {
     ///     Some(self)
     /// }
     /// ```
@@ -1409,7 +1409,7 @@ pub async fn run<T: TextualApp>(definition: T) -> Result<()> {
 /// returns, the app is unmounted cleanly.
 ///
 /// ```no_run
-/// use textual::prelude::*;
+/// use rusty_textual::prelude::*;
 ///
 /// struct MyApp;
 /// impl TextualApp for MyApp {

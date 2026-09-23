@@ -437,7 +437,7 @@ fn apply_key_name_replacements(name: &str) -> String {
 /// # Examples
 ///
 /// ```
-/// use textual::keys::key_to_identifier;
+/// use rusty_textual::keys::key_to_identifier;
 /// assert_eq!(key_to_identifier("ctrl+p"), "ctrl_p");
 /// assert_eq!(key_to_identifier("A"), "upper_a");
 /// assert_eq!(key_to_identifier("shift+left"), "shift_left");
@@ -462,7 +462,7 @@ pub fn key_to_identifier(key: &str) -> String {
 /// # Examples
 ///
 /// ```
-/// use textual::keys::format_key_display;
+/// use rusty_textual::keys::format_key_display;
 /// assert_eq!(format_key_display("ctrl+p"), "^p");
 /// assert_eq!(format_key_display("left"), "\u{2190}");
 /// assert_eq!(format_key_display("shift+left"), "shift+\u{2190}");

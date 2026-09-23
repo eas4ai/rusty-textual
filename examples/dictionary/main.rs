@@ -22,7 +22,7 @@
 /// DEFERRED: Real HTTP lookup — requires a blocking HTTP client (e.g. `reqwest` with the
 /// `blocking` feature). Simulated here with a short delay and built-in word list.
 use std::sync::{Arc, Mutex};
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 const CSS: &str = r#"
 Screen {
@@ -142,7 +142,7 @@ impl DictionaryApp {
 }
 
 impl TextualApp for DictionaryApp {
-    fn configure(&mut self, app: &mut App) -> textual::Result<()> {
+    fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
         app.load_stylesheet(CSS);
         Ok(())
     }
@@ -163,7 +163,7 @@ impl TextualApp for DictionaryApp {
             )
     }
 
-    fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut rusty_textual::event::WidgetCtx) {
         // The Markdown results widget is nested (Node > ScrollView > Markdown),
         // so use post-mount query_one_typed rather than with_child_handle.
         self.results = app.query_one_typed::<Markdown>("#results").ok();
@@ -173,7 +173,7 @@ impl TextualApp for DictionaryApp {
         &mut self,
         value: &str,
         _validation: &ValidationResult,
-        ctx: &mut textual::event::WidgetCtx,
+        ctx: &mut rusty_textual::event::WidgetCtx,
     ) {
         let word = value.trim().to_string();
         let result_holder = Arc::clone(&self.lookup_result);
@@ -201,7 +201,7 @@ impl TextualApp for DictionaryApp {
         ctx.request_repaint();
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, _ctx: &mut rusty_textual::event::WidgetCtx) {
         if let Some(w) = message.downcast_ref::<WorkerStateChanged>() {
             if matches!(w.state, WorkerState::Success) {
                 let markdown =
@@ -219,7 +219,7 @@ impl TextualApp for DictionaryApp {
     }
 }
 
-fn main() -> textual::Result<()> {
+fn main() -> rusty_textual::Result<()> {
     run_sync(DictionaryApp::new())
 }
 

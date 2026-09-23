@@ -1,7 +1,7 @@
 use rich_rs::Console;
-use textual::prelude::*;
-use textual::render::FrameBuffer;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
 
 /// Render a widget through the compose/tree path (the way the runtime renders it),
 /// applying the default widget stylesheet, into a FrameBuffer for assertions/snapshots.

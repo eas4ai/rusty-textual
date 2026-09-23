@@ -31,7 +31,7 @@ use crossterm::event::KeyCode;
 /// The pop-up option list for a [`Select`](super::Select). Wraps an
 /// [`OptionList`]; the `Select` builds it (blank row + option rows) and assigns
 /// its stable CSS id at compose time.
-#[textual::widget(base = OptionList, field = inner, style_type = "SelectOverlay",
+#[rusty_textual::widget(base = OptionList, field = inner, style_type = "SelectOverlay",
     override(on_event, style_type_aliases, layout_height))]
 pub(crate) struct SelectOverlay {
     inner: OptionList,

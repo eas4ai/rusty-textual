@@ -213,7 +213,7 @@ pub struct WidgetSelectionAnchor {
 /// The capability traits are NOT in the prelude (they share method names with
 /// `Widget`; exporting both makes direct `widget.method()` calls ambiguous).
 /// Import the ones you implement from `crate::widgets::` (e.g.
-/// `use textual::widgets::Layout;`).
+/// `use rusty_textual::widgets::Layout;`).
 ///
 /// # Delegation (wrap a container)
 ///

@@ -1,4 +1,4 @@
-use textual::style::{Color, parse_color_like};
+use rusty_textual::style::{Color, parse_color_like};
 
 fn expect_token(name: &str, expected: Color) {
     let token = format!("${name}");

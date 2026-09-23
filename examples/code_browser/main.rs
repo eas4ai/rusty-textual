@@ -18,7 +18,7 @@
 ///
 /// If no path is given, the current directory is used.
 use rich_rs::Syntax;
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 // ---------------------------------------------------------------------------
 // Embedded CSS (mirrors code_browser.tcss from the Python Textual repo)
@@ -139,7 +139,7 @@ impl CodeBrowserApp {
 }
 
 impl TextualApp for CodeBrowserApp {
-    fn configure(&mut self, app: &mut App) -> textual::Result<()> {
+    fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
         app.load_stylesheet(CSS);
         Ok(())
     }
@@ -174,7 +174,7 @@ impl TextualApp for CodeBrowserApp {
             .with_child(Footer::new())
     }
 
-    fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut rusty_textual::event::WidgetCtx) {
         // Set the header title.
         app.set_title("Code Browser");
 
@@ -192,7 +192,7 @@ impl TextualApp for CodeBrowserApp {
         // mount (init-phase watcher dispatch, G3) — no manual add_class needed.
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut rusty_textual::event::WidgetCtx) {
         // Toggle the directory-tree sidebar when the user presses "f".
         // Mirrors Python's `action_toggle_files` which flips `self.show_tree`.
         if key.name() == "f" {
@@ -206,7 +206,7 @@ impl TextualApp for CodeBrowserApp {
         &mut self,
         app: &mut App,
         message: &MessageEvent,
-        _ctx: &mut textual::event::WidgetCtx,
+        _ctx: &mut rusty_textual::event::WidgetCtx,
     ) {
         // Handle DirectoryTree.FileSelected — mirrors `on_directory_tree_file_selected`.
         if let Some(ev) = message.downcast_ref::<DirectoryTreeFileSelected>() {
@@ -219,7 +219,7 @@ impl TextualApp for CodeBrowserApp {
 // Entry point
 // ---------------------------------------------------------------------------
 
-fn main() -> textual::Result<()> {
+fn main() -> rusty_textual::Result<()> {
     let start_path = std::env::args().nth(1).unwrap_or_else(|| "./".to_string());
     run_sync(CodeBrowserApp::new(start_path))
 }

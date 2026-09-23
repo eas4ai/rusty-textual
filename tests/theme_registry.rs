@@ -7,8 +7,8 @@
 //! into other test binaries; the test restores the default `textual-dark`
 //! resolution path on exit.
 
-use textual::prelude::*;
-use textual::style::parse_color_like;
+use rusty_textual::prelude::*;
+use rusty_textual::style::parse_color_like;
 
 fn rgb(token: &str) -> (u8, u8, u8) {
     let c = parse_color_like(token).unwrap_or_else(|| panic!("token {token} did not resolve"));
@@ -48,7 +48,7 @@ fn available_themes_includes_python_builtins() {
 #[test]
 fn register_custom_theme_then_query() {
     let mut app = App::new().expect("app init");
-    let mut custom = textual::theme::get_theme("textual-dark").unwrap();
+    let mut custom = rusty_textual::theme::get_theme("textual-dark").unwrap();
     custom.name = "k-custom-theme".to_string();
     custom.primary = "#123456".to_string();
     app.register_theme(custom);

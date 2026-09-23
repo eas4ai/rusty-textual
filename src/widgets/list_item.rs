@@ -27,7 +27,7 @@ use super::{Focus, Interactive, Layout, NodeSeed, Render};
 /// # Example
 ///
 /// ```rust
-/// use textual::prelude::*;
+/// use rusty_textual::prelude::*;
 ///
 /// let item = ListItem::new(Label::new("One"));
 /// assert_eq!(item.text(), "One");

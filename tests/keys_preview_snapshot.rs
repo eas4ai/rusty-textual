@@ -1,7 +1,7 @@
 use rich_rs::{Segment, Style as RichStyle};
-use textual::css::{StyleSheet, default_widget_stylesheet, set_style_context};
-use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::css::{StyleSheet, default_widget_stylesheet, set_style_context};
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
 
 fn help_panel() -> impl Widget {
     let title = Styled::new(

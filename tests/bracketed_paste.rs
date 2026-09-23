@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 struct PasteObserver {
     pastes: Arc<Mutex<Vec<String>>>,

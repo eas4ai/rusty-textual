@@ -1,6 +1,6 @@
 use rich_rs::Console;
-use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
 
 #[test]
 fn stylesheet_applies_type_and_id_styles() {

@@ -1,6 +1,6 @@
 use rich_rs::{Console, Segment, Style as RichStyle};
-use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
 
 #[derive(Clone, Copy)]
 struct PlainText {
@@ -54,12 +54,12 @@ impl BackgroundFill {
 }
 
 impl Widget for BackgroundFill {
-    fn compose(&mut self) -> textual::compose::ComposeResult {
+    fn compose(&mut self) -> rusty_textual::compose::ComposeResult {
         if self.child_extracted {
             return Vec::new();
         }
         self.child_extracted = true;
-        vec![textual::compose::ChildDecl::new(std::mem::replace(
+        vec![rusty_textual::compose::ChildDecl::new(std::mem::replace(
             &mut self.child,
             Box::new(Spacer::new(1)),
         ))]
@@ -75,7 +75,7 @@ fn render_widget(
     root: &mut dyn Widget,
     width: usize,
     height: usize,
-) -> textual::render::FrameBuffer {
+) -> rusty_textual::render::FrameBuffer {
     let console = Console::new();
     let mut tree = build_widget_tree_from_root(root).expect("tree should exist");
     render_tree_to_frame(&mut tree, root, &console, width, height)

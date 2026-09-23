@@ -5,8 +5,8 @@
 //! `frame_cell_bg`), and it must work in headless (`run_test`/Pilot) mode
 //! where nothing is written to a real terminal.
 
-use textual::compose;
-use textual::prelude::*;
+use rusty_textual::compose;
+use rusty_textual::prelude::*;
 
 struct PlainTextApp;
 
@@ -18,7 +18,7 @@ impl TextualApp for PlainTextApp {
 
 #[test]
 fn frame_plain_text_exposes_rendered_frame() {
-    textual::run_test(PlainTextApp, |pilot| {
+    rusty_textual::run_test(PlainTextApp, |pilot| {
         pilot.pause()?;
 
         let lines = pilot.app().frame_plain_lines();

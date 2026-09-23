@@ -14,9 +14,9 @@
 //! - `tests/selection_list/test_selection_values.py`
 //! - `tests/selection_list/test_selection_list_create.py`
 
-use textual::event::{EventCtx, WidgetCtx};
-use textual::node_id::NodeId;
-use textual::widgets::{
+use rusty_textual::event::{EventCtx, WidgetCtx};
+use rusty_textual::node_id::NodeId;
+use rusty_textual::widgets::{
     OptionId, OptionItem, OptionList, OptionListError, Selection, SelectionList, Widget,
 };
 

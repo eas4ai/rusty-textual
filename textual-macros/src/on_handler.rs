@@ -8,7 +8,7 @@
 //! **Selector matching** is enforced by the generated dispatch method itself.
 //! When `selector = "..."` is specified, the dispatcher first downcasts to the
 //! message type and then matches the parsed selector against the message's
-//! [`control_meta`](textual::message::Message::control_meta) (the identity of
+//! [`control_meta`](rusty_textual::message::Message::control_meta) (the identity of
 //! the originating control), mirroring how Python's `@on(Message, selector)`
 //! matches the selector against `message.control`. A message without control
 //! metadata never satisfies a selector-filtered handler. The companion
@@ -133,17 +133,17 @@ pub fn on_handler_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         let gate = quote! {
             {
                 static __ON_SELECTOR_PARSED:
-                    ::std::sync::OnceLock<textual::routing::Selector> =
+                    ::std::sync::OnceLock<rusty_textual::routing::Selector> =
                         ::std::sync::OnceLock::new();
                 let __on_selector = __ON_SELECTOR_PARSED.get_or_init(|| {
-                    textual::routing::Selector::parse(#selector_str).unwrap_or_else(|err| {
+                    rusty_textual::routing::Selector::parse(#selector_str).unwrap_or_else(|err| {
                         panic!(
                             "#[on(..., selector = {:?})]: invalid selector: {}",
                             #selector_str, err
                         )
                     })
                 });
-                let __on_matches = textual::message::Message::control_meta(payload)
+                let __on_matches = rusty_textual::message::Message::control_meta(payload)
                     .map(|meta| __on_selector.matches(&meta))
                     .unwrap_or(false);
                 if !__on_matches {
@@ -165,8 +165,8 @@ pub fn on_handler_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[allow(non_snake_case)]
         fn #dispatch_name(
             &mut self,
-            event: &textual::message::MessageEvent,
-            ctx: &mut textual::event::WidgetCtx,
+            event: &rusty_textual::message::MessageEvent,
+            ctx: &mut rusty_textual::event::WidgetCtx,
         ) -> bool {
             if let Some(payload) = event.downcast_ref::<#msg_variant>() {
                 #selector_gate

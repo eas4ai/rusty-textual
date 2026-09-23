@@ -1,7 +1,7 @@
 use rich_rs::Console;
-use textual::node_id::NodeId;
-use textual::prelude::*;
-use textual::render::FrameBuffer;
+use rusty_textual::node_id::NodeId;
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
 
 #[test]
 fn scroll_view_renders_offset_viewport() {

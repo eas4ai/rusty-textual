@@ -1,7 +1,7 @@
 use rich_rs::Console;
-use textual::prelude::*;
-use textual::render::FrameBuffer;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
 
 fn render_tree(root: &mut dyn Widget, width: usize, height: usize) -> FrameBuffer {
     let console = Console::new();

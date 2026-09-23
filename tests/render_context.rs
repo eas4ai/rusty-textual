@@ -1,4 +1,4 @@
-//! Public render-time style seam (`textual::render_context`).
+//! Public render-time style seam (`rusty_textual::render_context`).
 //!
 //! A custom widget's `render()` reads its resolved fg/bg, the composited
 //! ancestor surface, and theme tokens through the documented public API
@@ -9,8 +9,8 @@
 use std::sync::{Arc, Mutex};
 
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
-use textual::prelude::*;
-use textual::widgets::Widget;
+use rusty_textual::prelude::*;
+use rusty_textual::widgets::Widget;
 
 /// Everything a probe widget observes through the public seam during render.
 #[derive(Clone, Debug, Default)]
@@ -102,7 +102,7 @@ fn render_can_read_resolved_style_composited_bg_and_theme_token() {
         bare: Arc::clone(&bare),
     };
 
-    textual::run_test(app, |pilot| {
+    rusty_textual::run_test(app, |pilot| {
         pilot.pause()?;
 
         // Widget with explicit color/background: resolved_style() carries both,
@@ -131,7 +131,7 @@ fn render_can_read_resolved_style_composited_bg_and_theme_token() {
         // Theme token resolution matches the CSS token path, with or without
         // the leading `$`.
         let expected_accent =
-            textual::style::parse_color_like("$accent").expect("$accent resolves");
+            rusty_textual::style::parse_color_like("$accent").expect("$accent resolves");
         assert_eq!(s.accent, Some(expected_accent), "$accent resolves in render");
         assert_eq!(
             s.accent_no_dollar,
