@@ -27,10 +27,13 @@ struct Case {
 }
 
 // Interactive cases. keys are sent after the initial frame stabilizes.
-// NOTE (review §1.7): the sole case (button_focus) was pending:true, so the
-// suite could never fail. Removed rather than carried as a silent pass —
-// re-add it as a real asserting case with the dim-blend fix (PR-16).
-const CASES: &[Case] = &[];
+// button_focus (review §1.7, PR-16): Tab focuses the first Button, exercising
+// the `:focus` text-style reverse band plus the surface/blend background. The
+// reverse-band width was fixed with the line-pad render change; this case pins
+// the residual bg parity. Real asserting case — no pending flag.
+const CASES: &[Case] = &[
+    Case { name: "button_focus", bin: "button", py_rel: "widgets/button.py", keys: "\t" },
+];
 
 fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
