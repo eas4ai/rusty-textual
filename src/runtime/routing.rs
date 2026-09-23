@@ -37,6 +37,7 @@ pub(crate) fn dispatch_event(root: &mut dyn Widget, event: Event) -> DispatchOut
         worker_requests: ctx.take_worker_requests(),
         recompose_nodes: ctx.take_recompose_nodes(),
         default_prevented: false,
+        prevented: Vec::new(),
         class_ops: ctx.take_class_ops(),
     };
     debug_message(&format!(
@@ -94,6 +95,7 @@ pub(crate) fn dispatch_mouse_scroll(
         worker_requests: ctx.take_worker_requests(),
         recompose_nodes: ctx.take_recompose_nodes(),
         default_prevented: false,
+        prevented: Vec::new(),
         class_ops: ctx.take_class_ops(),
     }
 }
@@ -222,6 +224,7 @@ pub fn dispatch_event_tree(
         worker_requests: ctx.take_worker_requests(),
         recompose_nodes: ctx.take_recompose_nodes(),
         default_prevented: false,
+        prevented: Vec::new(),
         class_ops: ctx.take_class_ops(),
     };
     debug_message(&format!(
@@ -298,6 +301,7 @@ pub fn dispatch_event_to_target_tree(
         worker_requests: ctx.take_worker_requests(),
         recompose_nodes: ctx.take_recompose_nodes(),
         default_prevented: false,
+        prevented: Vec::new(),
         class_ops: ctx.take_class_ops(),
     }
 }
@@ -336,6 +340,7 @@ pub fn dispatch_event_broadcast_tree(tree: &mut WidgetTree, event: &Event) -> Di
         worker_requests: aggregate.take_worker_requests(),
         recompose_nodes: aggregate.take_recompose_nodes(),
         default_prevented: false,
+        prevented: Vec::new(),
         class_ops: aggregate.take_class_ops(),
     }
 }
@@ -419,6 +424,7 @@ pub(crate) fn dispatch_mouse_scroll_to_target_tree(
         worker_requests: ctx.take_worker_requests(),
         recompose_nodes: ctx.take_recompose_nodes(),
         default_prevented: false,
+        prevented: Vec::new(),
         class_ops: ctx.take_class_ops(),
     }
 }
@@ -483,6 +489,7 @@ pub fn dispatch_message_queue_tree(
     let mut invalidation = crate::event::InvalidationFlags::default();
     let mut stop_requested = false;
     let mut default_prevented = false;
+    let mut prevented: Vec<(NodeId, std::any::TypeId)> = Vec::new();
     let mut emitted: Vec<MessageEvent> = Vec::new();
     let mut animation_requests: Vec<AnimationRequest> = Vec::new();
     let mut style_animation_requests: Vec<crate::event::StyleAnimationRequest> = Vec::new();
@@ -516,6 +523,9 @@ pub fn dispatch_message_queue_tree(
         invalidation.merge(ctx.invalidation());
         stop_requested |= ctx.stop_requested();
         default_prevented |= envelope.is_default_prevented();
+        if envelope.is_default_prevented() {
+            prevented.push((envelope.sender(), envelope.event.payload_type_id()));
+        }
         let next = ctx.take_messages();
         let mut next_anims = ctx.take_animation_requests();
         let mut next_style_anims = ctx.take_style_animation_requests();
@@ -561,6 +571,7 @@ pub fn dispatch_message_queue_tree(
         worker_requests,
         recompose_nodes,
         default_prevented,
+        prevented,
         class_ops,
     }
 }
@@ -615,6 +626,9 @@ fn dispatch_message_bubble(
                 }
             }
         }
+        if ctx.take_default_prevented() {
+            envelope.prevent_default();
+        }
         return;
     }
 
@@ -638,6 +652,13 @@ fn dispatch_message_bubble(
         if !bubbles {
             break;
         }
+    }
+    // A handler anywhere on the path may have called `prevent_default()`
+    // (Python `Message.prevent_default`): transfer it onto the envelope so
+    // the outcome records it and the runtime skips the default action.
+    // Consumed here so it never leaks into the next message sharing ctx.
+    if ctx.take_default_prevented() {
+        envelope.prevent_default();
     }
 }
 
@@ -2176,6 +2197,71 @@ mod envelope_tests {
         assert_eq!(root_count.load(Ordering::Relaxed), 0, "root must NOT see it");
     }
 
+    // P-B: `prevent_default()` semantics (Python `Message.prevent_default`):
+    // the message keeps bubbling, but the outcome records the prevention.
+    struct PreventingCounter {
+        count: Arc<AtomicUsize>,
+    }
+
+    impl Widget for PreventingCounter {
+        fn render(&self, _console: &Console, _options: &ConsoleOptions) -> Segments {
+            Segments::new()
+        }
+
+        fn on_message(&mut self, message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+            if message.is::<crate::message::ButtonPressed>() {
+                self.count.fetch_add(1, Ordering::Relaxed);
+                // Deliberately NOT set_handled: prevention skips the default,
+                // it does not stop bubbling.
+                ctx.prevent_default();
+            }
+        }
+    }
+
+    #[test]
+    fn prevent_default_keeps_bubbling_but_marks_outcome() {
+        // Tree: root → mid → leaf (sender). Every node sees the message
+        // (bubbling continues), yet the outcome records the prevention plus
+        // the (sender, type) entry for per-message default skipping.
+        let leaf_count = Arc::new(AtomicUsize::new(0));
+        let mid_count = Arc::new(AtomicUsize::new(0));
+        let root_count = Arc::new(AtomicUsize::new(0));
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(PreventingCounter {
+            count: root_count.clone(),
+        }));
+        let mid_id = tree.mount(
+            root_id,
+            Box::new(PreventingCounter {
+                count: mid_count.clone(),
+            }),
+        );
+        let leaf_id = tree.mount(
+            mid_id,
+            Box::new(PreventingCounter {
+                count: leaf_count.clone(),
+            }),
+        );
+        let messages = vec![MessageEvent::new(
+            leaf_id,
+            crate::message::ButtonPressed {
+                description: "prevent".into(),
+                button_id: None,
+            },
+        )];
+        let outcome = dispatch_message_queue_tree(&mut tree, messages);
+        assert_eq!(leaf_count.load(Ordering::Relaxed), 1);
+        assert_eq!(mid_count.load(Ordering::Relaxed), 1, "bubbling continues");
+        assert_eq!(root_count.load(Ordering::Relaxed), 1, "bubbling continues");
+        assert!(outcome.default_prevented);
+        assert_eq!(outcome.prevented.len(), 1);
+        assert_eq!(outcome.prevented[0].0, leaf_id);
+        assert_eq!(
+            outcome.prevented[0].1,
+            std::any::TypeId::of::<crate::message::ButtonPressed>()
+        );
+    }
+
     #[test]
     fn no_bubble_message_with_unknown_sender_delivers_nowhere() {
         let (mut tree, root_count, mid_count, leaf_count, _) = ping_tree();
@@ -2244,10 +2330,9 @@ mod envelope_tests {
 
     #[test]
     fn envelope_default_prevented_propagates_to_outcome() {
-        // Currently default_prevented tracks through the envelope. Since widgets
-        // don't have direct access to prevent_default() yet (Widget trait takes
-        // &MessageEvent, not &mut MessageEnvelope), this test verifies the
-        // field exists and defaults to false for normal dispatch.
+        // Baseline: no prevention requested, outcome records none. Widgets
+        // request prevention via `ctx.prevent_default()` (see
+        // `prevent_default_keeps_bubbling_but_marks_outcome`).
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(Label::new("x")));
 

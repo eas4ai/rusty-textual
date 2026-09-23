@@ -537,6 +537,12 @@ pub struct EventCtx {
     worker_requests: Vec<WorkerRequest>,
     recompose_nodes: Vec<NodeId>,
     class_ops: Vec<(NodeId, ClassOp)>,
+    /// Set by `prevent_default()`: the handler asks the runtime to skip the
+    /// default action for the message under dispatch (Python
+    /// `Message.prevent_default`). Consumed by the dispatch loop
+    /// (`take_default_prevented`) and transferred onto the envelope, so it
+    /// never leaks into the next message sharing this ctx.
+    default_prevented: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -595,6 +601,19 @@ impl EventCtx {
 
     pub fn set_handled(&mut self) {
         self.handled = true;
+    }
+
+    /// Skip the default action for the message under dispatch (Python
+    /// `Message.prevent_default`). Unlike `set_handled` (which stops
+    /// bubbling), the message still bubbles — only the runtime default
+    /// handling (e.g. the app `on_app_message` hook) is skipped.
+    pub fn prevent_default(&mut self) {
+        self.default_prevented = true;
+    }
+
+    /// Consume a pending `prevent_default()` request, if any.
+    pub(crate) fn take_default_prevented(&mut self) -> bool {
+        std::mem::replace(&mut self.default_prevented, false)
     }
 
     /// Request a repaint after this event dispatch finishes.
@@ -1144,6 +1163,14 @@ impl<'a> WidgetCtx<'a> {
     #[inline]
     pub fn set_handled(&mut self) {
         self.event_ctx.set_handled();
+    }
+
+    /// Skip the default action for the message under dispatch (Python
+    /// `Message.prevent_default`). Bubbling continues; only the runtime
+    /// default handling is skipped.
+    #[inline]
+    pub fn prevent_default(&mut self) {
+        self.event_ctx.prevent_default();
     }
 
     /// Request a repaint after event dispatch.
