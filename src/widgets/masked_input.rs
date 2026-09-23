@@ -3,12 +3,13 @@ use textual_macros::widget;
 use std::collections::HashSet;
 use std::time::Instant;
 
+use crate::action::ParsedAction;
 use crate::event::Event;
 use crate::message::*;
 use crate::validation::{Failure, ValidationResult, ValidatorRef};
 
 use super::{
-    NodeSeed, NodeState, Widget,
+    BindingDecl, NodeSeed, NodeState, Widget,
     helpers::adjust_line_length_no_bg,
     input_chrome::InputChrome,
     text_edit::{
@@ -808,6 +809,22 @@ impl MaskedInput {
         self.cursor = target;
     }
 
+    /// Python parity: `MaskedInput` inherits `Input.action_delete_right_all`
+    /// (no template override), deleting the cursor and everything right of
+    /// it. Separator slots are restored from the empty mask.
+    fn action_delete_right_all(&mut self) {
+        if self.cursor < self.value.len() {
+            let empty_mask = self.template.empty_mask();
+            for i in self.cursor..self.value.len() {
+                if i < empty_mask.len() {
+                    self.value[i] = empty_mask[i];
+                } else {
+                    self.value[i] = ' ';
+                }
+            }
+        }
+    }
+
     fn action_delete_left_all(&mut self) {
         if self.cursor > 0 {
             let cursor_pos = self.cursor;
@@ -835,6 +852,91 @@ impl crate::widgets::Focus for MaskedInput {
 
     fn is_active(&self) -> bool {
         self.chrome.is_active()
+    }
+
+    fn action_namespace(&self) -> &str {
+        "masked-input"
+    }
+
+    fn bindings(&self) -> Vec<BindingDecl> {
+        // Python `MaskedInput` subclasses `Input` and inherits
+        // `Input.BINDINGS` unchanged.
+        super::input::input_bindings()
+    }
+
+    fn execute_action(&mut self, action: &ParsedAction, ctx: &mut crate::event::WidgetCtx) -> bool {
+        // Template-aware dispatch mirroring the `on_event` key path above:
+        // movement/deletion skip separators, and the `(True)` select
+        // argument is ignored exactly as in direct key handling (which
+        // drops it in the `MoveLeft { unit, .. }` arms).
+        match action.name.as_str() {
+            "submit" => {
+                ctx.post_message(InputSubmitted {
+                    value: self.value_str(),
+                });
+            }
+            "cursor_left" => self.action_cursor_left(),
+            "cursor_left_word" => self.action_cursor_left_word(),
+            "cursor_right" => self.action_cursor_right(),
+            "cursor_right_word" => self.action_cursor_right_word(),
+            "home" => self.action_home(),
+            "end" => self.action_end(),
+            "delete_left" => {
+                self.action_delete_left();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "delete_left_word" => {
+                self.action_delete_left_word();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "delete_left_all" => {
+                self.action_delete_left_all();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "delete_right" => {
+                self.action_delete_right();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "delete_right_word" => {
+                self.action_delete_right_word();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "delete_right_all" => {
+                self.action_delete_right_all();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "cut" => {
+                if let Some(text) = self.copy_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
+                    self.clear();
+                    self.revalidate();
+                self.post_changed(ctx);
+                }
+            }
+            "copy" => {
+                if let Some(text) = self.copy_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
+                }
+            }
+            "paste" => {
+                ctx.post_message(TextEditClipboardPasteRequested {
+                    target: self.node_id(),
+                });
+            }
+            // No selection model: `select_all` has no selection state to
+            // set (copy already yields the full value, cut clears it).
+            _ => return false,
+        }
+        self.chrome.reset_blink();
+        ctx.request_repaint();
+        ctx.set_handled();
+        true
     }
 }
 
@@ -965,10 +1067,21 @@ impl crate::widgets::Interactive for MaskedInput {
                         self.action_end();
                         changed = true;
                     }
+                    EditCommand::DeleteToEnd => {
+                        self.action_delete_right_all();
+                        changed = true;
+                        value_changed = true;
+                    }
+                    // `SelectAll` (ctrl+shift+a) is intentionally not wired:
+                    // `MaskedInput` has no selection model — copy already
+                    // yields the full value and cut already clears it — so
+                    // there is no selection state for select-all to set.
+                    // (Python inherits `Input.action_select_all`, but its
+                    // cursor-action overrides drop the `select` parameter, so
+                    // shift-selection is broken there too.)
                     EditCommand::InsertNewline
                     | EditCommand::MoveUp { .. }
                     | EditCommand::MoveDown { .. }
-                    | EditCommand::DeleteToEnd
                     | EditCommand::DeleteLine
                     | EditCommand::SelectAll
                     | EditCommand::SelectLine => {}
@@ -1308,6 +1421,82 @@ mod tests {
     fn masked_input_style_type() {
         let mi = MaskedInput::new("999");
         assert_eq!(mi.style_type(), "MaskedInput");
+    }
+
+    /// PR-18: Python `MaskedInput` subclasses `Input`, so it inherits
+    /// `Input.BINDINGS` unchanged (23 entries, all `show=False`).
+    #[test]
+    fn masked_bindings_inherit_input_bindings() {
+        let bindings = MaskedInput::new("999").bindings();
+        assert_eq!(bindings.len(), 23);
+        assert!(bindings.iter().all(|b| !b.show));
+        let actions: Vec<&str> = bindings.iter().map(|b| b.action.as_str()).collect();
+        for expected in [
+            "submit",
+            "select_all",
+            "home",
+            "end",
+            "cursor_left_word",
+            "cursor_right_word",
+            "delete_left_word",
+            "delete_right_word",
+            "delete_left_all",
+            "delete_right_all",
+            "cut",
+            "copy",
+            "paste",
+        ] {
+            assert!(actions.contains(&expected), "missing {expected}");
+        }
+    }
+
+    fn dispatch_masked_action(
+        input: &mut MaskedInput,
+        ctx: &mut EventCtx,
+        name: &str,
+    ) -> bool {
+        let action = crate::action::ParsedAction {
+            namespace: None,
+            name: name.to_string(),
+            arguments: vec![],
+        };
+        let mut __w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), ctx);
+        input.execute_action(&action, &mut __w)
+    }
+
+    fn type_char(input: &mut MaskedInput, ctx: &mut EventCtx, ch: char) {
+        let mut __w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), ctx);
+        input.on_event(
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                KeyCode::Char(ch),
+                KeyModifiers::NONE,
+            ))),
+            &mut __w,
+        );
+    }
+
+    /// PR-18: `delete_right_all` (ctrl+k) clears the cursor and everything
+    /// right of it — Python `MaskedInput` inherits
+    /// `Input.action_delete_right_all` with no template override.
+    /// `select_all` stays unhandled: there is no selection model.
+    #[test]
+    fn masked_execute_action_delete_right_all() {
+        let mut input = MaskedInput::new("999");
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        let mut ctx = EventCtx::default();
+        type_char(&mut input, &mut ctx, '1');
+        type_char(&mut input, &mut ctx, '2');
+        type_char(&mut input, &mut ctx, '3');
+        assert_eq!(input.value_str(), "123");
+        assert!(dispatch_masked_action(&mut input, &mut ctx, "cursor_left"));
+        assert!(dispatch_masked_action(
+            &mut input,
+            &mut ctx,
+            "delete_right_all"
+        ));
+        assert_eq!(input.value_str(), "12 ");
+        assert!(!dispatch_masked_action(&mut input, &mut ctx, "select_all"));
+        assert!(!dispatch_masked_action(&mut input, &mut ctx, "no_such_action"));
     }
 
     #[test]

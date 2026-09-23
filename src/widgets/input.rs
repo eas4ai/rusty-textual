@@ -271,6 +271,12 @@ pub struct Input {
     max_length: Option<usize>,
     pending_blur: bool,
     select_on_focus: bool,
+    /// Python `valid_empty` (default false): an empty value passes
+    /// validation without running validators.
+    valid_empty: bool,
+    /// Python `compact` (default false): borderless compact style (toggles
+    /// the `-textual-compact` class).
+    compact: bool,
     validators: Vec<ValidatorRef>,
     validation_result: ValidationResult,
     chrome: InputChrome,
@@ -300,6 +306,8 @@ impl Input {
             max_length: None,
             pending_blur: false,
             select_on_focus: true,
+            valid_empty: false,
+            compact: false,
             validators: Vec::new(),
             validation_result: ValidationResult::success(),
             chrome: InputChrome::new(),
@@ -380,6 +388,60 @@ impl Input {
     pub fn with_select_on_focus(mut self, select_on_focus: bool) -> Self {
         self.select_on_focus = select_on_focus;
         self
+    }
+
+    /// Python `valid_empty`: an empty value passes validation without
+    /// running validators (default false).
+    pub fn with_valid_empty(mut self, valid_empty: bool) -> Self {
+        self.valid_empty = valid_empty;
+        self
+    }
+
+    /// Python `valid_empty` getter.
+    pub fn valid_empty(&self) -> bool {
+        self.valid_empty
+    }
+
+    /// Reactive-style setter for `valid_empty` (mirrors Python's
+    /// `_watch_valid_empty`, which re-runs validation on change).
+    pub fn set_valid_empty(&mut self, valid_empty: bool, ctx: &mut ReactiveCtx) {
+        if self.valid_empty != valid_empty {
+            self.valid_empty = valid_empty;
+            self.revalidate();
+            ctx.record_change(
+                "valid_empty",
+                ReactiveFlags::reactive(),
+                Box::new(!valid_empty),
+                Box::new(valid_empty),
+            );
+        }
+    }
+
+    /// Python `compact`: borderless compact style via the
+    /// `-textual-compact` class (default false).
+    pub fn with_compact(mut self, compact: bool) -> Self {
+        self.compact = compact;
+        self.set_class("-textual-compact", compact);
+        self
+    }
+
+    /// Python `compact` getter.
+    pub fn compact(&self) -> bool {
+        self.compact
+    }
+
+    /// Reactive-style setter for `compact` (toggles `-textual-compact`).
+    pub fn set_compact(&mut self, compact: bool, ctx: &mut ReactiveCtx) {
+        if self.compact != compact {
+            self.compact = compact;
+            ctx.set_class(compact, "-textual-compact");
+            ctx.record_change(
+                "compact",
+                ReactiveFlags::reactive(),
+                Box::new(!compact),
+                Box::new(compact),
+            );
+        }
     }
 
     pub fn with_restrict(mut self, pattern: &str) -> Self {
@@ -504,7 +566,11 @@ impl Input {
     }
 
     /// Select all text.
+    ///
+    /// Python `Input.select_all` also clears the auto-completion
+    /// suggestion.
     pub fn select_all(&mut self) {
+        self.suggestion.clear();
         if self.text.is_empty() {
             return;
         }
@@ -715,6 +781,14 @@ impl Input {
     }
 
     fn revalidate(&mut self) {
+        // Python `Input.validate`: with `valid_empty`, an empty value passes
+        // without running validators.
+        if self.valid_empty && self.text.is_empty() {
+            self.validation_result = ValidationResult::success();
+            self.set_class("-valid", true);
+            self.set_class("-invalid", false);
+            return;
+        }
         if self.validators.is_empty() {
             self.validation_result = ValidationResult::success();
             self.set_class("-valid", false);
@@ -829,22 +903,293 @@ impl crate::widgets::Focus for Input {
     }
 
     fn bindings(&self) -> Vec<BindingDecl> {
-        vec![BindingDecl::new("enter", "submit", "Submit")]
+        input_bindings()
     }
 
     fn execute_action(&mut self, action: &ParsedAction, ctx: &mut crate::event::WidgetCtx) -> bool {
-        match action.name.as_str() {
+        use MoveUnit::{Grapheme, Word};
+        // Optional `(True)` select argument, e.g. `cursor_left(True)`.
+        let select = action
+            .arguments
+            .first()
+            .is_some_and(|arg| matches!(arg, crate::action::ActionArgument::Bool(true)));
+        let command = match action.name.as_str() {
             "submit" => {
                 ctx.post_message(InputSubmitted {
                     value: self.text.clone(),
                 });
                 ctx.set_handled();
-                true
+                return true;
             }
-            _ => false,
-        }
+            "cursor_left" => EditCommand::MoveLeft {
+                select,
+                unit: Grapheme,
+            },
+            "cursor_left_word" => EditCommand::MoveLeft {
+                select,
+                unit: Word,
+            },
+            "cursor_right" => EditCommand::MoveRight {
+                select,
+                unit: Grapheme,
+            },
+            "cursor_right_word" => EditCommand::MoveRight {
+                select,
+                unit: Word,
+            },
+            "delete_left" => EditCommand::Backspace { unit: Grapheme },
+            "delete_left_word" => EditCommand::Backspace { unit: Word },
+            "delete_right" => EditCommand::Delete { unit: Grapheme },
+            "delete_right_word" => EditCommand::Delete { unit: Word },
+            "delete_left_all" => EditCommand::DeleteToStart,
+            "delete_right_all" => EditCommand::DeleteToEnd,
+            "home" => EditCommand::MoveHome { select },
+            "end" => EditCommand::MoveEnd { select },
+            "select_all" => EditCommand::SelectAll,
+            "cut" => EditCommand::Cut,
+            "copy" => EditCommand::Copy,
+            "paste" => EditCommand::Paste,
+            _ => return false,
+        };
+        self.apply_edit_command(command, ctx);
+        true
     }
 }
+
+impl Input {
+    fn apply_edit_command(&mut self, cmd: EditCommand, ctx: &mut crate::event::WidgetCtx) {
+        let mut changed = false;
+        let mut value_changed = false;
+        // Python parity: in password fields word operations fall back to
+        // line operations so word boundaries never leak (`action_home`,
+        // `action_delete_left_all`, ... instead of the word variants).
+        let cmd = match cmd {
+            EditCommand::MoveLeft {
+                select,
+                unit: MoveUnit::Word,
+            } if self.password => EditCommand::MoveHome { select },
+            EditCommand::MoveRight {
+                select,
+                unit: MoveUnit::Word,
+            } if self.password => EditCommand::MoveEnd { select },
+            EditCommand::Backspace { unit: MoveUnit::Word } if self.password => {
+                EditCommand::DeleteToStart
+            }
+            EditCommand::Delete { unit: MoveUnit::Word } if self.password => {
+                EditCommand::DeleteToEnd
+            }
+            other => other,
+        };
+        match cmd {
+            EditCommand::InsertChar(ch) => {
+                if self.is_allowed_char(ch) {
+                    // Build the proposed new value
+                    let mut proposed = self.text.clone();
+                    let mut pos = self.cursor;
+                    if self.selection.start != self.selection.end {
+                        let (s, e) = if self.selection.start <= self.selection.end {
+                            (self.selection.start, self.selection.end)
+                        } else {
+                            (self.selection.end, self.selection.start)
+                        };
+                        proposed.drain(s..e);
+                        pos = s;
+                    }
+                    proposed.insert(pos, ch);
+                    if self.is_value_allowed(&proposed) {
+                        self.delete_selection_if_any();
+                        self.text.insert(self.cursor, ch);
+                        self.cursor += ch.len_utf8();
+                        self.cursor = clamp_grapheme_boundary(&self.text, self.cursor);
+                        self.selection = Selection::cursor(self.cursor);
+                        changed = true;
+                        value_changed = true;
+                    }
+                }
+            }
+            EditCommand::Submit => {
+                ctx.post_message(InputSubmitted {
+                    value: self.text.clone(),
+                });
+            }
+            EditCommand::Copy => {
+                if let Some(text) = self.selected_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
+                }
+            }
+            EditCommand::Cut => {
+                if let Some(text) = self.selected_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
+                    if self.delete_selection_if_any() {
+                        changed = true;
+                        value_changed = true;
+                    }
+                }
+            }
+            EditCommand::Paste => {
+                ctx.post_message(TextEditClipboardPasteRequested {
+                    target: self.node_id(),
+                });
+            }
+            EditCommand::Backspace { unit } => {
+                if self.delete_selection_if_any() {
+                    changed = true;
+                    value_changed = true;
+                } else if self.cursor > 0 {
+                    let start = match unit {
+                        MoveUnit::Grapheme => {
+                            prev_grapheme_boundary(&self.text, self.cursor)
+                        }
+                        MoveUnit::Word => prev_word_boundary(&self.text, self.cursor),
+                    };
+                    self.text.drain(start..self.cursor);
+                    self.cursor = start;
+                    self.selection = Selection::cursor(self.cursor);
+                    changed = true;
+                    value_changed = true;
+                }
+            }
+            EditCommand::Delete { unit } => {
+                if self.delete_selection_if_any() {
+                    changed = true;
+                    value_changed = true;
+                } else if self.cursor < self.text.len() {
+                    let end = match unit {
+                        MoveUnit::Grapheme => {
+                            next_grapheme_boundary(&self.text, self.cursor)
+                        }
+                        // Python `Input.action_delete_right_word` (NOT the
+                        // word-movement boundary, and NOT `TextArea`'s
+                        // `delete_word_right`): delete up to the start of
+                        // the next word, else everything to the right.
+                        MoveUnit::Word => next_word_start_for_delete_right(
+                            &self.text,
+                            self.cursor,
+                        )
+                        .unwrap_or(self.text.len()),
+                    };
+                    self.text.drain(self.cursor..end);
+                    self.selection = Selection::cursor(self.cursor);
+                    changed = true;
+                    value_changed = true;
+                }
+            }
+            EditCommand::DeleteToStart => {
+                if self.delete_selection_if_any() {
+                    changed = true;
+                    value_changed = true;
+                } else if self.cursor > 0 {
+                    self.text.drain(0..self.cursor);
+                    self.cursor = 0;
+                    self.selection = Selection::cursor(0);
+                    changed = true;
+                    value_changed = true;
+                }
+            }
+            EditCommand::MoveLeft { select, unit } => {
+                let next = if self.selection.start != self.selection.end && !select {
+                    self.selection.start.min(self.selection.end)
+                } else {
+                    match unit {
+                        MoveUnit::Grapheme => {
+                            prev_grapheme_boundary(&self.text, self.cursor)
+                        }
+                        MoveUnit::Word => prev_word_boundary(&self.text, self.cursor),
+                    }
+                };
+                changed = self.move_cursor_to(next, select);
+            }
+            EditCommand::MoveRight { select, unit } => {
+                // Accept suggestion on Right at end of text (Python Textual parity).
+                if !select
+                    && self.cursor_at_end()
+                    && self.selection.start == self.selection.end
+                    && !self.suggestion.is_empty()
+                {
+                    if self.accept_suggestion() {
+                        changed = true;
+                        value_changed = true;
+                    }
+                } else {
+                    let next = if self.selection.start != self.selection.end && !select {
+                        self.selection.start.max(self.selection.end)
+                    } else {
+                        match unit {
+                            MoveUnit::Grapheme => {
+                                next_grapheme_boundary(&self.text, self.cursor)
+                            }
+                            MoveUnit::Word => next_word_boundary(&self.text, self.cursor),
+                        }
+                    };
+                    changed = self.move_cursor_to(next, select);
+                }
+            }
+            EditCommand::MoveHome { select } => {
+                // Python `action_home`: with `select`, the anchor is always
+                // the CURRENT cursor (`Selection(cursor, 0)`), not a sticky
+                // prior anchor — each home/end press re-anchors.
+                if select {
+                    changed = self.selection.start != self.cursor
+                        || self.selection.end != 0
+                        || self.cursor != 0;
+                    self.selection = Selection {
+                        start: self.cursor,
+                        end: 0,
+                    };
+                    self.cursor = 0;
+                } else {
+                    changed = self.move_cursor_to(0, false);
+                }
+            }
+            EditCommand::MoveEnd { select } => {
+                // Python `action_end`: `Selection(cursor, len(value))`.
+                if select {
+                    let end = self.text.len();
+                    changed = self.selection.start != self.cursor
+                        || self.selection.end != end
+                        || self.cursor != end;
+                    self.selection = Selection {
+                        start: self.cursor,
+                        end,
+                    };
+                    self.cursor = end;
+                } else {
+                    changed = self.move_cursor_to(self.text.len(), false);
+                }
+            }
+            EditCommand::DeleteToEnd => {
+                if self.delete_selection_if_any() {
+                    changed = true;
+                    value_changed = true;
+                } else if self.cursor < self.text.len() {
+                    self.text.truncate(self.cursor);
+                    self.selection = Selection::cursor(self.cursor);
+                    changed = true;
+                    value_changed = true;
+                }
+            }
+            EditCommand::SelectAll => {
+                self.select_all();
+                changed = self.selection.start != self.selection.end;
+            }
+            EditCommand::InsertNewline
+            | EditCommand::MoveUp { .. }
+            | EditCommand::MoveDown { .. }
+            | EditCommand::DeleteLine
+            | EditCommand::SelectLine => {}
+        }
+
+        if value_changed {
+            self.revalidate();
+            self.update_suggestion();
+            self.post_changed(ctx);
+        }
+        if changed || value_changed {
+            self.chrome.reset_blink();
+            ctx.request_repaint();
+        }
+        ctx.set_handled();
+    }}
 
 impl crate::widgets::Interactive for Input {
     fn on_node_state_changed(&mut self, old: NodeState, new: NodeState) {
@@ -937,193 +1282,14 @@ impl crate::widgets::Interactive for Input {
                 let Some(cmd) = edit_command_from_key(key, false) else {
                     return;
                 };
-                let mut changed = false;
-                let mut value_changed = false;
-                match cmd {
-                    EditCommand::InsertChar(ch) => {
-                        if self.is_allowed_char(ch) {
-                            // Build the proposed new value
-                            let mut proposed = self.text.clone();
-                            let mut pos = self.cursor;
-                            if self.selection.start != self.selection.end {
-                                let (s, e) = if self.selection.start <= self.selection.end {
-                                    (self.selection.start, self.selection.end)
-                                } else {
-                                    (self.selection.end, self.selection.start)
-                                };
-                                proposed.drain(s..e);
-                                pos = s;
-                            }
-                            proposed.insert(pos, ch);
-                            if self.is_value_allowed(&proposed) {
-                                self.delete_selection_if_any();
-                                self.text.insert(self.cursor, ch);
-                                self.cursor += ch.len_utf8();
-                                self.cursor = clamp_grapheme_boundary(&self.text, self.cursor);
-                                self.selection = Selection::cursor(self.cursor);
-                                changed = true;
-                                value_changed = true;
-                            }
-                        }
-                    }
-                    EditCommand::Submit => {
-                        ctx.post_message(InputSubmitted {
-                            value: self.text.clone(),
-                        });
-                    }
-                    EditCommand::Copy => {
-                        if let Some(text) = self.selected_text() {
-                            ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
-                        }
-                    }
-                    EditCommand::Cut => {
-                        if let Some(text) = self.selected_text() {
-                            ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
-                            if self.delete_selection_if_any() {
-                                changed = true;
-                                value_changed = true;
-                            }
-                        }
-                    }
-                    EditCommand::Paste => {
-                        ctx.post_message(TextEditClipboardPasteRequested {
-                            target: self.node_id(),
-                        });
-                    }
-                    EditCommand::Backspace { unit } => {
-                        if self.delete_selection_if_any() {
-                            changed = true;
-                            value_changed = true;
-                        } else if self.cursor > 0 {
-                            let start = match unit {
-                                MoveUnit::Grapheme => {
-                                    prev_grapheme_boundary(&self.text, self.cursor)
-                                }
-                                MoveUnit::Word => prev_word_boundary(&self.text, self.cursor),
-                            };
-                            self.text.drain(start..self.cursor);
-                            self.cursor = start;
-                            self.selection = Selection::cursor(self.cursor);
-                            changed = true;
-                            value_changed = true;
-                        }
-                    }
-                    EditCommand::Delete { unit } => {
-                        if self.delete_selection_if_any() {
-                            changed = true;
-                            value_changed = true;
-                        } else if self.cursor < self.text.len() {
-                            let end = match unit {
-                                MoveUnit::Grapheme => {
-                                    next_grapheme_boundary(&self.text, self.cursor)
-                                }
-                                MoveUnit::Word => next_word_boundary(&self.text, self.cursor),
-                            };
-                            self.text.drain(self.cursor..end);
-                            self.selection = Selection::cursor(self.cursor);
-                            changed = true;
-                            value_changed = true;
-                        }
-                    }
-                    EditCommand::DeleteToStart => {
-                        if self.delete_selection_if_any() {
-                            changed = true;
-                            value_changed = true;
-                        } else if self.cursor > 0 {
-                            self.text.drain(0..self.cursor);
-                            self.cursor = 0;
-                            self.selection = Selection::cursor(0);
-                            changed = true;
-                            value_changed = true;
-                        }
-                    }
-                    EditCommand::MoveLeft { select, unit } => {
-                        let next = if self.selection.start != self.selection.end && !select {
-                            self.selection.start.min(self.selection.end)
-                        } else {
-                            match unit {
-                                MoveUnit::Grapheme => {
-                                    prev_grapheme_boundary(&self.text, self.cursor)
-                                }
-                                MoveUnit::Word => prev_word_boundary(&self.text, self.cursor),
-                            }
-                        };
-                        changed = self.move_cursor_to(next, select);
-                    }
-                    EditCommand::MoveRight { select, unit } => {
-                        // Accept suggestion on Right at end of text (Python Textual parity).
-                        if !select
-                            && self.cursor_at_end()
-                            && self.selection.start == self.selection.end
-                            && !self.suggestion.is_empty()
-                        {
-                            if self.accept_suggestion() {
-                                changed = true;
-                                value_changed = true;
-                            }
-                        } else {
-                            let next = if self.selection.start != self.selection.end && !select {
-                                self.selection.start.max(self.selection.end)
-                            } else {
-                                match unit {
-                                    MoveUnit::Grapheme => {
-                                        next_grapheme_boundary(&self.text, self.cursor)
-                                    }
-                                    MoveUnit::Word => next_word_boundary(&self.text, self.cursor),
-                                }
-                            };
-                            changed = self.move_cursor_to(next, select);
-                        }
-                    }
-                    EditCommand::MoveHome { select } => {
-                        changed = self.move_cursor_to(0, select);
-                    }
-                    EditCommand::MoveEnd { select } => {
-                        changed = self.move_cursor_to(self.text.len(), select);
-                    }
-                    EditCommand::DeleteToEnd => {
-                        if self.delete_selection_if_any() {
-                            changed = true;
-                            value_changed = true;
-                        } else if self.cursor < self.text.len() {
-                            self.text.truncate(self.cursor);
-                            self.selection = Selection::cursor(self.cursor);
-                            changed = true;
-                            value_changed = true;
-                        }
-                    }
-                    EditCommand::SelectAll => {
-                        if !self.text.is_empty() {
-                            self.selection = Selection {
-                                start: 0,
-                                end: self.text.len(),
-                            };
-                            self.cursor = self.text.len();
-                            changed = true;
-                        }
-                    }
-                    EditCommand::InsertNewline
-                    | EditCommand::MoveUp { .. }
-                    | EditCommand::MoveDown { .. }
-                    | EditCommand::DeleteLine
-                    | EditCommand::SelectLine => {}
-                }
-
-                if value_changed {
-                    self.revalidate();
-                    self.update_suggestion();
-                    self.post_changed(ctx);
-                }
-                if changed || value_changed {
-                    self.chrome.reset_blink();
-                    ctx.request_repaint();
-                }
-                ctx.set_handled();
+                self.apply_edit_command(cmd, ctx);
             }
             _ => {}
         }
     }
 
+    /// Apply an [`EditCommand`] (shared by direct key handling and the
+    /// action-declared bindings below, so both paths behave identically).
     fn on_message(&mut self, message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
         if let Some(m) = message.downcast_ref::<TextEditClipboardPaste>() {
             if m.target != self.node_id() {
@@ -1361,6 +1527,98 @@ impl crate::widgets::Render for Input {
         out
     }
 }
+/// Byte index of the start of the next word at or after `cursor` for
+/// Python `Input.action_delete_right_word`: the position of the first
+/// `(?<=\W)\w` match in the text after the cursor (its `hit.end() - 1`
+/// delete target, translated from char to byte indices). `None` when no
+/// later word exists — Python then falls back to `delete_right_all`.
+/// The lookbehind can never match at offset 0 of the `after` slice, so a
+/// cursor inside the last word (or at its end) yields `None`.
+fn next_word_start_for_delete_right(text: &str, cursor: usize) -> Option<usize> {
+    fn is_word_char(ch: char) -> bool {
+        ch.is_alphanumeric() || ch == '_'
+    }
+    let after = text.get(cursor..)?;
+    let mut prev_is_word = false;
+    for (rel, ch) in after.char_indices() {
+        let word = is_word_char(ch);
+        if rel > 0 && word && !prev_is_word {
+            return Some(cursor + rel);
+        }
+        prev_is_word = word;
+    }
+    None
+}
+
+/// Python `Input.BINDINGS` (all show=False): the portable subset whose
+/// behavior this widget implements. Each action below has a matching
+/// `execute_action` arm delegating to the same `apply_edit_command`
+/// path as direct key handling, so action dispatch and raw keys
+/// behave identically. Shared with `MaskedInput`, which subclasses
+/// `Input` in Python and inherits these bindings.
+pub(crate) fn input_bindings() -> Vec<BindingDecl> {
+    vec![
+        BindingDecl::new("left", "cursor_left", "Move cursor left").hidden(),
+        BindingDecl::new("shift+left", "cursor_left(True)", "Move cursor left and select")
+            .hidden(),
+        BindingDecl::new("ctrl+left", "cursor_left_word", "Move cursor left a word").hidden(),
+        BindingDecl::new(
+            "ctrl+shift+left",
+            "cursor_left_word(True)",
+            "Move cursor left a word and select",
+        )
+        .hidden(),
+        BindingDecl::new(
+            "right",
+            "cursor_right",
+            "Move cursor right or accept the completion suggestion",
+        )
+        .hidden(),
+        BindingDecl::new(
+            "shift+right",
+            "cursor_right(True)",
+            "Move cursor right and select",
+        )
+        .hidden(),
+        BindingDecl::new("ctrl+right", "cursor_right_word", "Move cursor right a word")
+            .hidden(),
+        BindingDecl::new(
+            "ctrl+shift+right",
+            "cursor_right_word(True)",
+            "Move cursor right a word and select",
+        )
+        .hidden(),
+        BindingDecl::new("backspace", "delete_left", "Delete character left").hidden(),
+        BindingDecl::new("ctrl+shift+a", "select_all", "Select all").hidden(),
+        BindingDecl::new("home,ctrl+a", "home", "Go to start").hidden(),
+        BindingDecl::new("end,ctrl+e", "end", "Go to end").hidden(),
+        BindingDecl::new("shift+home", "home(True)", "Select line start").hidden(),
+        BindingDecl::new("shift+end", "end(True)", "Select line end").hidden(),
+        BindingDecl::new("delete,ctrl+d", "delete_right", "Delete character right")
+            .hidden(),
+        BindingDecl::new("enter", "submit", "Submit").hidden(),
+        BindingDecl::new("ctrl+w", "delete_left_word", "Delete left to start of word")
+            .hidden(),
+        BindingDecl::new(
+            "ctrl+u,super+backspace",
+            "delete_left_all",
+            "Delete all to the left",
+        )
+        .hidden(),
+        BindingDecl::new(
+            "ctrl+backspace,alt+backspace",
+            "delete_right_word",
+            "Delete right to start of word",
+        )
+        .hidden(),
+        BindingDecl::new("ctrl+k", "delete_right_all", "Delete all to the right")
+            .hidden(),
+        BindingDecl::new("ctrl+x", "cut", "Cut selected text").hidden(),
+        BindingDecl::new("ctrl+c,super+c", "copy", "Copy selected text").hidden(),
+        BindingDecl::new("ctrl+v", "paste", "Paste text from the clipboard").hidden(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1637,13 +1895,17 @@ mod tests {
         assert_eq!(input.cursor, 5);
     }
 
+    /// Python parity, probe-verified (`delete_right_word`): ctrl+backspace
+    /// deletes the word to the RIGHT of the cursor in single-line inputs.
     #[test]
-    fn ctrl_backspace_deletes_previous_word() {
+    /// Python `action_delete_right_word`: from the space at 5 the next
+    /// word starts at 6, so only the space is removed (`hit.end() - 1`).
+    fn ctrl_backspace_deletes_next_word() {
         let mut input = Input::new();
         let _guard = set_dispatch_recipient(make_node_id(), focused_state());
         input.set_text("alpha beta");
-        input.cursor = input.text.len();
-        input.selection = Selection::cursor(input.cursor);
+        input.cursor = 5;
+        input.selection = Selection::cursor(5);
 
         let mut ctx = EventCtx::default();
         {
@@ -1656,7 +1918,48 @@ mod tests {
             &mut __w);
         }
 
-        assert_eq!(input.text, "alpha ");
+        assert_eq!(input.text, "alphabeta");
+        assert_eq!(input.cursor, 5);
+    }
+
+    /// Python parity (`home,ctrl+a`): ctrl+a moves home; select-all is
+    /// ctrl+shift+a; ctrl+w deletes the word left.
+    #[test]
+    fn ctrl_a_home_ctrl_shift_a_selects_ctrl_w_deletes_word_left() {
+        let mut input = Input::new();
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        input.set_text("hello world");
+        input.cursor = 5;
+        input.selection = Selection::cursor(5);
+        let mut ctx = EventCtx::default();
+        let press = |input: &mut Input, ctx: &mut EventCtx, code: KeyCode, mods: KeyModifiers| {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), ctx);
+            input.on_event(
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(code, mods))),
+            &mut __w);
+        };
+        press(&mut input, &mut ctx, KeyCode::Char('w'), KeyModifiers::CONTROL);
+        assert_eq!(input.text, " world", "ctrl+w deletes the word left");
+        assert_eq!(input.cursor, 0);
+        input.set_text("hello world");
+        input.cursor = 5;
+        input.selection = Selection::cursor(5);
+        press(&mut input, &mut ctx, KeyCode::Char('a'), KeyModifiers::CONTROL);
+        assert_eq!(input.cursor, 0, "ctrl+a goes home");
+        assert_eq!(input.selection.normalized(), (0, 0));
+        input.cursor = 5;
+        input.selection = Selection::cursor(5);
+        press(
+            &mut input,
+            &mut ctx,
+            KeyCode::Char('a'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        );
+        assert_eq!(
+            input.selection.normalized(),
+            (0, 11),
+            "ctrl+shift+a selects all"
+        );
     }
 
     #[test]
@@ -1779,6 +2082,189 @@ mod tests {
         let bindings = input.bindings();
         assert!(!bindings.is_empty());
         assert!(bindings.iter().any(|b| b.action == "submit"));
+    }
+
+    /// PR-18: `bindings()` mirrors Python `Input.BINDINGS` entry-for-entry
+    /// (23 bindings, all `show=False`), grounded against textual's
+    /// `_input.py` — notably `home,ctrl+a` (NOT select-all), select-all on
+    /// `ctrl+shift+a` only, `ctrl+w` deleting LEFT and `ctrl+backspace`
+    /// deleting RIGHT.
+    #[test]
+    fn bindings_mirror_python_input_bindings() {
+        let bindings = Input::new().bindings();
+        assert!(bindings.iter().all(|b| !b.show));
+        let pairs: Vec<(&str, &str)> = bindings
+            .iter()
+            .map(|b| (b.key.as_str(), b.action.as_str()))
+            .collect();
+        for expected in [
+            ("left", "cursor_left"),
+            ("shift+left", "cursor_left(True)"),
+            ("ctrl+left", "cursor_left_word"),
+            ("ctrl+shift+left", "cursor_left_word(True)"),
+            ("right", "cursor_right"),
+            ("shift+right", "cursor_right(True)"),
+            ("ctrl+right", "cursor_right_word"),
+            ("ctrl+shift+right", "cursor_right_word(True)"),
+            ("backspace", "delete_left"),
+            ("ctrl+shift+a", "select_all"),
+            ("home,ctrl+a", "home"),
+            ("end,ctrl+e", "end"),
+            ("shift+home", "home(True)"),
+            ("shift+end", "end(True)"),
+            ("delete,ctrl+d", "delete_right"),
+            ("enter", "submit"),
+            ("ctrl+w", "delete_left_word"),
+            ("ctrl+u,super+backspace", "delete_left_all"),
+            ("ctrl+backspace,alt+backspace", "delete_right_word"),
+            ("ctrl+k", "delete_right_all"),
+            ("ctrl+x", "cut"),
+            ("ctrl+c,super+c", "copy"),
+            ("ctrl+v", "paste"),
+        ] {
+            assert!(pairs.contains(&expected), "missing binding {expected:?}");
+        }
+        assert_eq!(pairs.len(), 23);
+    }
+
+    /// PR-18: `delete_right_word` targets the start of the next word
+    /// (Python `(?<=\W)\w` semantics), not the end of the current word.
+    #[test]
+    fn delete_right_word_targets_next_word_start() {
+        assert_eq!(next_word_start_for_delete_right("alpha beta", 0), Some(6));
+        assert_eq!(next_word_start_for_delete_right("alpha beta", 2), Some(6));
+        assert_eq!(next_word_start_for_delete_right("alpha beta", 6), None);
+        assert_eq!(next_word_start_for_delete_right("alpha beta", 10), None);
+        assert_eq!(next_word_start_for_delete_right("  x", 0), Some(2));
+        assert_eq!(next_word_start_for_delete_right("", 0), None);
+        // Multibyte-safe: byte index of the next word's first char.
+        assert_eq!(next_word_start_for_delete_right("héllo wörld", 0), Some(7));
+    }
+
+    fn dispatch_action(
+        input: &mut Input,
+        ctx: &mut EventCtx,
+        name: &str,
+        arguments: Vec<crate::action::ActionArgument>,
+    ) -> bool {
+        let action = crate::action::ParsedAction {
+            namespace: None,
+            name: name.to_string(),
+            arguments,
+        };
+        let mut __w = crate::event::WidgetCtx::__from_dispatch(
+            crate::node_id::NodeId::default(),
+            ctx,
+        );
+        input.execute_action(&action, &mut __w)
+    }
+
+    /// PR-18: `select_all` / `home(True)` / `end` action dispatch matches
+    /// the key path, and `select_all` clears the suggestion like Python's
+    /// `Input.select_all`.
+    #[test]
+    fn execute_action_select_all_home_end() {
+        use crate::action::ActionArgument::Bool;
+        let mut input = Input::new();
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        input.set_text("hello");
+        input.suggestion = "hello world".to_string();
+        let mut ctx = EventCtx::default();
+        assert!(dispatch_action(&mut input, &mut ctx, "end", vec![]));
+        assert_eq!(input.cursor, 5);
+        assert!(dispatch_action(
+            &mut input,
+            &mut ctx,
+            "select_all",
+            vec![]
+        ));
+        assert_eq!(input.selection.start, 0);
+        assert_eq!(input.selection.end, 5);
+        assert_eq!(input.cursor, 5);
+        assert!(input.suggestion.is_empty());
+        assert!(dispatch_action(
+            &mut input,
+            &mut ctx,
+            "home",
+            vec![Bool(true)]
+        ));
+        assert_eq!(input.cursor, 0);
+        assert_eq!((input.selection.start, input.selection.end), (5, 0));
+        assert!(!dispatch_action(&mut input, &mut ctx, "no_such_action", vec![]));
+    }
+
+    /// PR-18: in password fields word operations fall back to line
+    /// operations so word boundaries never leak (Python parity).
+    #[test]
+    fn password_word_operations_fall_back_to_line() {
+        let mut input = Input::new().with_password(true);
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        input.set_text("foo bar");
+        let mut ctx = EventCtx::default();
+        assert!(dispatch_action(&mut input, &mut ctx, "end", vec![]));
+        assert!(dispatch_action(&mut input, &mut ctx, "cursor_left_word", vec![]));
+        assert_eq!(input.cursor, 0);
+        assert!(dispatch_action(&mut input, &mut ctx, "end", vec![]));
+        assert!(dispatch_action(&mut input, &mut ctx, "cursor_right_word", vec![]));
+        assert_eq!(input.cursor, 7);
+        assert!(dispatch_action(&mut input, &mut ctx, "delete_left_word", vec![]));
+        assert_eq!(input.text(), "");
+        input.set_text("foo bar");
+        assert!(dispatch_action(&mut input, &mut ctx, "delete_right_word", vec![]));
+        assert_eq!(input.text(), "");
+    }
+
+    /// PR-18: `valid_empty` lets an empty value pass without running
+    /// validators (Python `Input.validate`), and flipping it revalidates
+    /// (Python `_watch_valid_empty`).
+    #[test]
+    fn valid_empty_skips_validators_on_empty_value() {
+        use crate::validation::Function;
+        let failing = || {
+            vec![std::sync::Arc::new(Function::new(|v: &str| v.len() >= 2, "too short"))
+                as crate::validation::ValidatorRef]
+        };
+        let mut strict = Input::new().with_validators(failing());
+        strict.set_text("");
+        assert!(!strict.validation_result.is_valid());
+
+        let mut lenient = Input::new()
+            .with_validators(failing())
+            .with_valid_empty(true);
+        assert!(lenient.valid_empty());
+        lenient.set_text("");
+        assert!(lenient.validation_result.is_valid());
+        lenient.set_text("x");
+        assert!(!lenient.validation_result.is_valid());
+
+        let mut ctx = crate::reactive::ReactiveCtx::new(crate::node_id::NodeId::default());
+        strict.set_valid_empty(true, &mut ctx);
+        assert!(strict.validation_result.is_valid());
+    }
+
+    /// PR-18: `compact` toggles the `-textual-compact` class (Python
+    /// `compact = reactive(False, toggle_class="-textual-compact")`).
+    #[test]
+    fn compact_toggles_textual_compact_class() {
+        use crate::event::ClassOp;
+        assert!(!Input::new().compact());
+        let compact = Input::new().with_compact(true);
+        assert!(compact.compact());
+        assert!(compact.seed.classes.iter().any(|c| c == "-textual-compact"));
+        assert!(!Input::new()
+            .seed
+            .classes
+            .iter()
+            .any(|c| c == "-textual-compact"));
+
+        let mut input = Input::new();
+        let mut ctx = crate::reactive::ReactiveCtx::new(crate::node_id::NodeId::default());
+        input.set_compact(true, &mut ctx);
+        assert!(input.compact());
+        assert!(ctx.take_class_ops().iter().any(|(_, op)| matches!(
+            op,
+            ClassOp::Add(c) if c == "-textual-compact"
+        )));
     }
 
     #[test]

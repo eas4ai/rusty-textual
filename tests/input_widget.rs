@@ -60,11 +60,23 @@ fn input_shift_selection_then_backspace_deletes_selected_text() {
     assert_eq!(input.text(), "hello worl");
 }
 
+/// PR-18 parity: Python `Input` binds `ctrl+backspace,alt+backspace` to
+/// `delete_right_word` (rightward), unlike `TextArea` which deletes left.
 #[test]
-fn input_ctrl_backspace_deletes_previous_word() {
+fn input_ctrl_backspace_deletes_next_word() {
     let mut input = Input::new();
     let _guard = set_dispatch_recipient(make_node_id(), focused_state());
     input.set_text("alpha beta");
+    { let mut __e = textual::event::EventCtx::default(); let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut __e); input.on_event(
+        &key(KeyCode::Home, KeyModifiers::NONE),
+        &mut __w) };
+    { let mut __e = textual::event::EventCtx::default(); let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut __e); input.on_event(
+        &key(KeyCode::Backspace, KeyModifiers::CONTROL),
+        &mut __w) };
+
+    assert_eq!(input.text(), "beta");
+
+    // At end of text there is no word to the right: no-op.
     { let mut __e = textual::event::EventCtx::default(); let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut __e); input.on_event(
         &key(KeyCode::End, KeyModifiers::NONE),
         &mut __w) };
@@ -72,7 +84,7 @@ fn input_ctrl_backspace_deletes_previous_word() {
         &key(KeyCode::Backspace, KeyModifiers::CONTROL),
         &mut __w) };
 
-    assert_eq!(input.text(), "alpha ");
+    assert_eq!(input.text(), "beta");
 }
 
 #[test]
@@ -91,14 +103,15 @@ fn input_super_left_and_alt_backspace_shortcuts_work() {
         &mut __w) };
     assert_eq!(input.text(), "Zalpha beta");
 
+    // PR-18 parity: `alt+backspace` is `delete_right_word` in Python `Input`.
     input.set_text("alpha beta");
     { let mut __e = textual::event::EventCtx::default(); let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut __e); input.on_event(
-        &key(KeyCode::End, KeyModifiers::NONE),
+        &key(KeyCode::Home, KeyModifiers::NONE),
         &mut __w) };
     { let mut __e = textual::event::EventCtx::default(); let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut __e); input.on_event(
         &key(KeyCode::Backspace, KeyModifiers::ALT),
         &mut __w) };
-    assert_eq!(input.text(), "alpha ");
+    assert_eq!(input.text(), "beta");
 }
 
 // ── restrict: Python `re.fullmatch` contract (_input.py) ────────────────────
