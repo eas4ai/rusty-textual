@@ -544,6 +544,25 @@ pub trait Widget: Send + Sync + Any {
     fn execute_action(&mut self, _action: &ParsedAction, _ctx: &mut WidgetCtx) -> bool {
         false
     }
+    /// Handle a key by its Python-identifier name (mirrors Textual's
+    /// `key_<name>` / `_key_<name>` methods dispatched by
+    /// `textual._dispatch_key.dispatch_key`).
+    ///
+    /// The runtime calls this on the focused widget — once per alias in
+    /// [`crate::keys::KeyEventData::aliases`] (canonical name first) — when
+    /// no binding consumed the key and before the raw `Event::Key` dispatch
+    /// (Python `Widget._on_key` precedes the public `on_key`). Return `true`
+    /// to mark the key handled, which suppresses the action-map fallback;
+    /// the raw dispatch still runs either way, as in Python.
+    ///
+    /// Arbitration differs from Python deliberately: Python raises
+    /// `DuplicateKeyHandlers` when two aliases both match, while here every
+    /// matching alias runs and the last result wins, with a duplicate report
+    /// on the input debug channel (same posture as `BindingClash`).
+    /// The default ignores the key.
+    fn handle_key_name(&mut self, _name: &str, _ctx: &mut WidgetCtx) -> bool {
+        false
+    }
     /// Gate whether an action may run on this widget (its action namespace).
     ///
     /// Mirrors Python `DOMNode.check_action`:

@@ -283,6 +283,61 @@ pub fn take_unhandled_binding_reports() -> Vec<String> {
     UNHANDLED_BINDING_REPORTS.with(|reports| std::mem::take(&mut *reports.borrow_mut()))
 }
 
+/// Dispatch a key to the focused widget's `handle_key_name` hook (P-F).
+///
+/// Rust analogue of Python `textual._dispatch_key.dispatch_key` for the
+/// focused-widget half (`Widget._on_key` → `handle_key`): one call per alias
+/// in [`KeyEventData::aliases`](crate::keys::KeyEventData::aliases)
+/// (canonical name first). Callers invoke this only after bindings decline
+/// the key; the raw `Event::Key` dispatch still runs afterwards (Python runs
+/// `on_key` regardless), and a `true` return marks the outcome handled so the
+/// action-map fallback is suppressed.
+///
+/// Arbitration (documented here per the RFC ruling): Python raises
+/// `DuplicateKeyHandlers` when a second alias also matches; here every
+/// matching alias runs, the last result wins, and the duplicate is reported
+/// on the input debug channel — no new error type, same last-writer-wins
+/// posture as binding clashes. An empty key name matches nothing (Python
+/// returns `False` for `not event.name`).
+fn dispatch_key_name_to_focused(app: &mut App, key: &KeyEventData) -> DispatchOutcome {
+    let mut ctx = EventCtx::default();
+    if key.name().is_empty() {
+        return DispatchOutcome::from_event_ctx(&mut ctx);
+    }
+    let focused = app.active_widget_tree().and_then(focused_node_id_tree);
+    let Some(focused) = focused else {
+        return DispatchOutcome::from_event_ctx(&mut ctx);
+    };
+    let Some(tree) = app.active_widget_tree_mut() else {
+        return DispatchOutcome::from_event_ctx(&mut ctx);
+    };
+    let mut key_handled = false;
+    let mut first_match: Option<&str> = None;
+    if let Some(node) = tree.get_mut(focused) {
+        let _dispatch_guard = set_dispatch_recipient(focused, node.state);
+        ctx.set_node_id(focused);
+        let mut wctx = WidgetCtx::__from_dispatch(focused, &mut ctx);
+        for alias in key.aliases() {
+            if node.widget.handle_key_name(alias, &mut wctx) {
+                if let Some(prev) = first_match {
+                    debug_input(&format!(
+                        "[input] duplicate key-name handlers for {:?}: `key_{prev}` and \
+                         `key_{alias}` both handled; last wins (no `DuplicateKeyHandlers`, \
+                         cf. binding-clash posture)",
+                        key.name(),
+                    ));
+                }
+                first_match = Some(alias);
+                key_handled = true;
+            }
+        }
+        wctx.__enqueue_reactive_if_dirty();
+    }
+    let mut outcome = DispatchOutcome::from_event_ctx(&mut ctx);
+    outcome.handled |= key_handled;
+    outcome
+}
+
 /// Run a string action through the full Python-faithful dispatch chain and merge
 /// the resulting effects into `pass`.
 ///
@@ -600,11 +655,16 @@ fn dispatch_simulated_key_like_input(
         report_unhandled_binding_action(binding_node_id, &action_str);
     }
 
+    // P-F: `key_<name>` hook on the focused widget (no binding consumed it).
+    let mut key_name_outcome = dispatch_key_name_to_focused(app, &key);
+    let key_name_handled = key_name_outcome.handled;
+    merge_outcome_into_runtime_pass(pass, &mut key_name_outcome);
+
     // Raw key dispatch.
     let mut key_outcome = app.dispatch_event_auto(root, Event::Key(key.clone()));
     let key_handled = key_outcome.handled;
     merge_outcome_into_runtime_pass(pass, &mut key_outcome);
-    if key_handled {
+    if key_handled || key_name_handled {
         return;
     }
 
@@ -3038,6 +3098,17 @@ impl App {
                             report_unhandled_binding_action(binding_node_id, &action_str);
                         }
 
+                        // P-F: `key_<name>` hook on the focused widget (no binding
+                        // consumed it). A `true` return marks the key handled
+                        // so the action-map fallback below is suppressed.
+                        let mut key_name_outcome = dispatch_key_name_to_focused(self, &key);
+                        let key_name_handled = key_name_outcome.handled;
+                        self.absorb_outcome(
+                            &mut key_name_outcome,
+                            &mut pending_invalidation,
+                            InvalidationScope::Global,
+                        );
+
                         // Dispatch the raw key so focused widgets (e.g. Input) can consume it.
                         let mut key_outcome =
                             self.dispatch_event_auto(root, Event::Key(key.clone()));
@@ -3062,7 +3133,7 @@ impl App {
                         if key_outcome.stop_requested || msg_outcome.stop_requested {
                             break 'event_loop;
                         }
-                        if !key_outcome.handled {
+                        if !key_outcome.handled && !key_name_handled {
                             if let Some(action) = mapped_action.filter(|a| !is_priority_action(*a))
                             {
                                 if action == Action::CopySelectedText {
@@ -5270,13 +5341,18 @@ impl App {
             report_unhandled_binding_action(binding_node_id, &action_str);
         }
 
+        // P-F: `key_<name>` hook on the focused widget (no binding consumed it).
+        let mut key_name_outcome = dispatch_key_name_to_focused(self, &key);
+        let key_name_handled = key_name_outcome.handled;
+        self.absorb_outcome(&mut key_name_outcome, pending, InvalidationScope::Global);
+
         // Raw key dispatch so focused widgets (Input etc.) can consume it.
         let mut key_outcome = self.dispatch_event_auto(root, Event::Key(key.clone()));
         self.absorb_outcome(&mut key_outcome, pending, InvalidationScope::Global);
         let mut msg_outcome =
             self.dispatch_message_queue_with_runtime(root, key_outcome.messages);
         self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
-        if key_outcome.handled {
+        if key_outcome.handled || key_name_handled {
             return;
         }
 
