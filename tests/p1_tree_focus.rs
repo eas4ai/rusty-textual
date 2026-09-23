@@ -9,9 +9,12 @@ use std::sync::{Arc, Mutex};
 
 use rich_rs::{Console, ConsoleOptions, Segments};
 use textual::compose;
-use textual::event::{BlurEvent, FocusEvent};
+use textual::event::{BlurEvent, DescendantBlurEvent, DescendantFocusEvent, FocusEvent};
 use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, dispatch_event_to_target_tree, dispatch_event_tree, focused_node_id_tree, run_layout_pass};
+use textual::runtime::{
+    build_widget_tree_from_root, dispatch_event_to_target_tree, dispatch_event_tree,
+    focused_node_id_tree, run_layout_pass,
+};
 
 // ---------------------------------------------------------------------------
 // Test probe: focus lifecycle tracking
@@ -70,6 +73,28 @@ impl Widget for TreeFocusProbe {
                 self.set_focus(false);
                 ctx.request_repaint();
                 ctx.set_handled();
+            }
+            // P-D: descendant notifications bubble through ancestors carrying
+            // the focused/blurred node; they never flip this widget's state.
+            Event::DescendantFocus(e) => {
+                self.sink
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(format!(
+                        "{}:descendant-focus:{}",
+                        self.id,
+                        textual::node_id::node_id_to_ffi(e.node)
+                    ));
+            }
+            Event::DescendantBlur(e) => {
+                self.sink
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(format!(
+                        "{}:descendant-blur:{}",
+                        self.id,
+                        textual::node_id::node_id_to_ffi(e.node)
+                    ));
             }
             _ => {}
         }
@@ -903,4 +928,46 @@ fn p1g13_buttons_advanced_like_chain_focus_transfer_is_single_owner() {
     assert!(events.contains(&"left_a:true".to_string()));
     assert!(events.contains(&"left_a:false".to_string()));
     assert!(events.contains(&"right_a:true".to_string()));
+}
+
+// ---------------------------------------------------------------------------
+// P-D: DescendantFocus/DescendantBlur bubble to ancestors carrying the node,
+// without touching focus state (Python `bubble=True` descendant events).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn p1g13_descendant_focus_blur_bubble_without_touching_state() {
+    use textual::widget_tree::WidgetTree;
+    let sink = Arc::new(Mutex::new(Vec::new()));
+    let mut tree = WidgetTree::new();
+    let parent_id = tree.set_root(Box::new(TreeFocusProbe::new("P", sink.clone())));
+    let child_id = tree.mount(parent_id, Box::new(TreeFocusProbe::new("C", sink.clone())));
+
+    dispatch_event_to_target_tree(
+        &mut tree,
+        child_id,
+        &Event::DescendantFocus(DescendantFocusEvent { node: child_id }),
+    );
+    dispatch_event_to_target_tree(
+        &mut tree,
+        child_id,
+        &Event::DescendantBlur(DescendantBlurEvent { node: child_id }),
+    );
+
+    let child_ffi = textual::node_id::node_id_to_ffi(child_id);
+    assert_eq!(
+        *sink.lock().unwrap_or_else(|e| e.into_inner()),
+        vec![
+            format!("C:descendant-focus:{child_ffi}"),
+            format!("P:descendant-focus:{child_ffi}"),
+            format!("C:descendant-blur:{child_ffi}"),
+            format!("P:descendant-blur:{child_ffi}"),
+        ],
+        "descendant events bubble child-first carrying the node"
+    );
+    assert_eq!(
+        focused_node_id_tree(&tree),
+        None,
+        "descendant events must not flip focus state"
+    );
 }

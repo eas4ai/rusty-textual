@@ -120,6 +120,23 @@ pub struct BlurEvent {
     pub node: NodeId,
 }
 
+/// Fired when a descendant widget gains focus (Python
+/// `DescendantFocus`, `bubble=True`). Dispatched at the newly focused node
+/// so it bubbles to ancestors through the normal event path; carries the
+/// focused node. Unlike [`FocusEvent`], it never touches focus state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DescendantFocusEvent {
+    pub node: NodeId,
+}
+
+/// Fired when a descendant widget loses focus (Python `DescendantBlur`,
+/// `bubble=True`). Dispatched at the blurred node; carries it. Unlike
+/// [`BlurEvent`], it never touches focus state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DescendantBlurEvent {
+    pub node: NodeId,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnimationLevel {
     None,
@@ -308,6 +325,8 @@ pub enum Event {
     Ready(ReadyEvent),
     Focus(FocusEvent),
     Blur(BlurEvent),
+    DescendantFocus(DescendantFocusEvent),
+    DescendantBlur(DescendantBlurEvent),
     AnimationValue(AnimationValueEvent),
     AppFocus(bool),
     Tick(u64),
