@@ -46,6 +46,27 @@ impl<A> MessageHandlers<A> {
     ///
     /// All handlers registered for a given type run in registration order
     /// when a matching message is dispatched.
+    ///
+    /// Dispatch is by concrete message type only — deliberately. There is
+    /// no equivalent of Python Textual's `@on(..., selector=...)` kwargs
+    /// (nor its `ALLOW_SELECTOR_MATCH` opt-in): adding a selector
+    /// mini-language to the registry is not worth it, so narrow delivery at
+    /// the call site instead. Resolve the ids once with `query_one` (e.g.
+    /// `#save`), then compare them against [`MessageContext::sender`] /
+    /// [`MessageContext::control`] inside the handler — that is the Rust
+    /// analogue of `@on(Button.Pressed, "#save")`. Payload fields work too
+    /// (e.g. match on `ButtonPressed::button_id`).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let save = app.query_one("#save").expect("save button");
+    /// handlers.on::<ButtonPressed>(move |_app, _msg, mctx, _ctx| {
+    ///     if mctx.control == Some(save) {
+    ///         // ...only the #save button's presses land here.
+    ///     }
+    /// });
+    /// ```
     pub fn on<T, F>(&mut self, mut handler: F)
     where
         T: Message,
@@ -183,6 +204,40 @@ mod tests {
         let mut ctx = EventCtx::default();
         handlers.dispatch(&mut state, &event, &mut ctx);
         assert_eq!(state.last_mctx_sender, Some(sender));
+    }
+
+    #[test]
+    fn handler_can_narrow_by_control_like_on_selector() {
+        // Locks the query-at-callsite pattern documented on `on`: dispatch
+        // stays type-only, and the handler filters on `mctx.control` — the
+        // analogue of Python `@on(Button.Pressed, "#save")`.
+        let save = node_id_from_ffi(7);
+        let other = node_id_from_ffi(8);
+        let mut handlers: MessageHandlers<State> = MessageHandlers::new();
+        handlers.on::<ButtonPressed, _>(move |state, _msg, mctx, _ctx| {
+            if mctx.control == Some(save) {
+                state.button_count += 1;
+            }
+        });
+
+        let mut state = State::new();
+        let mut ctx = EventCtx::default();
+        let press = |control: NodeId| {
+            MessageEvent::new(
+                other,
+                ButtonPressed {
+                    description: "x".into(),
+                    button_id: None,
+                },
+            )
+            .with_control(control)
+        };
+        assert!(handlers.dispatch(&mut state, &press(save), &mut ctx));
+        assert!(handlers.dispatch(&mut state, &press(other), &mut ctx));
+        assert_eq!(
+            state.button_count, 1,
+            "only the matching control must count"
+        );
     }
 
     #[test]
