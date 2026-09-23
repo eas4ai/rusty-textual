@@ -243,7 +243,12 @@ impl<'a> ScreenMessageCtx<'a> {
         self.ctx.request_repaint();
     }
 
-    /// Request the app to stop (quit). Equivalent to Python `self.app.exit()`.
+    /// Request the app to stop (quit) with no result payload.
+    ///
+    /// This is the no-payload stop only — unlike Python `self.app.exit()`,
+    /// it carries no result, return code, or shutdown message. For the
+    /// result-carrying exit, use
+    /// [`App::exit`](crate::runtime::App::exit).
     pub fn exit(&mut self) {
         self.ctx.request_stop();
     }

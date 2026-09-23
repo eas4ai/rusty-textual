@@ -113,6 +113,81 @@ impl<'a> Pilot<'a> {
         self.app.headless_inject_click(self.root, x, y)
     }
 
+    /// Centre of the widget matched by `selector`, for mouse targeting.
+    fn target_center(&self, selector: &str) -> Result<(u16, u16)> {
+        let node = self
+            .app
+            .query_one(selector)
+            .map_err(|e| crate::Error::Message(format!("mouse selector {selector}: {e:?}")))?;
+        let rect = self
+            .app
+            .node_screen_rect(node)
+            .ok_or_else(|| crate::Error::Message(format!("no rendered region for {selector}")))?;
+        Ok((
+            rect.0 + (rect.2.saturating_sub(rect.0)) / 2,
+            rect.1 + (rect.3.saturating_sub(rect.1)) / 2,
+        ))
+    }
+
+    /// Press the left mouse button on the widget matched by `selector` (no
+    /// release). Mirrors `pilot.mouse_down(selector)`.
+    pub fn mouse_down(&mut self, selector: &str) -> Result<()> {
+        let (cx, cy) = self.target_center(selector)?;
+        self.app.headless_inject_mouse_down(self.root, cx, cy)
+    }
+
+    /// Press the left mouse button at an absolute screen coordinate (no
+    /// release). Mirrors `pilot.mouse_down` with a screen offset.
+    pub fn mouse_down_at(&mut self, x: u16, y: u16) -> Result<()> {
+        self.app.headless_inject_mouse_down(self.root, x, y)
+    }
+
+    /// Release the mouse button over the widget matched by `selector`.
+    /// Mirrors `pilot.mouse_up(selector)`. Pairs with [`Pilot::mouse_down`]
+    /// to produce a `Click` when the targets match.
+    pub fn mouse_up(&mut self, selector: &str) -> Result<()> {
+        let (cx, cy) = self.target_center(selector)?;
+        self.app.headless_inject_mouse_up(self.root, cx, cy)
+    }
+
+    /// Release the mouse button at an absolute screen coordinate. Mirrors
+    /// `pilot.mouse_up` with a screen offset.
+    pub fn mouse_up_at(&mut self, x: u16, y: u16) -> Result<()> {
+        self.app.headless_inject_mouse_up(self.root, x, y)
+    }
+
+    /// Double-click the widget matched by `selector`: two press/release
+    /// cycles. Mirrors `pilot.double_click(selector)`.
+    ///
+    /// Minimal behavior: the harness emits two plain `Click` events, one per
+    /// cycle. Chained double-click events (a single `Click` carrying a click
+    /// count) do not exist yet — see the dispatch-model RFC follow-up.
+    pub fn double_click(&mut self, selector: &str) -> Result<()> {
+        let (cx, cy) = self.target_center(selector)?;
+        self.double_click_at(cx, cy)
+    }
+
+    /// Double-click at an absolute screen coordinate.
+    pub fn double_click_at(&mut self, x: u16, y: u16) -> Result<()> {
+        self.click_at(x, y)?;
+        self.click_at(x, y)
+    }
+
+    /// Triple-click the widget matched by `selector`: three press/release
+    /// cycles. Mirrors `pilot.triple_click(selector)`. Same minimal-event
+    /// note as [`Pilot::double_click`].
+    pub fn triple_click(&mut self, selector: &str) -> Result<()> {
+        let (cx, cy) = self.target_center(selector)?;
+        self.triple_click_at(cx, cy)
+    }
+
+    /// Triple-click at an absolute screen coordinate.
+    pub fn triple_click_at(&mut self, x: u16, y: u16) -> Result<()> {
+        self.click_at(x, y)?;
+        self.click_at(x, y)?;
+        self.click_at(x, y)
+    }
+
     /// Move the mouse to the centre of the widget matched by `selector`,
     /// updating hover state (`:hover`, Enter/Leave, the system tooltip) and
     /// dispatching a `MouseMove` to it, then advance to idle. Mirrors
@@ -145,6 +220,52 @@ impl<'a> Pilot<'a> {
 
     /// Alias for [`Pilot::pause`] — wait until the app is idle.
     pub fn wait_for_idle(&mut self) -> Result<()> {
+        self.pause()
+    }
+
+    /// Pause for `delay` of deterministic test-clock time, firing timers
+    /// along the way, then settle to idle. Mirrors
+    /// `await pilot.pause(delay)`: Python sleeps real time so wall-clock
+    /// timers fire; here the manual clock advances with the same
+    /// deadline-by-deadline semantics as [`Pilot::advance_clock`].
+    pub fn pause_for(&mut self, delay: Duration) -> Result<()> {
+        self.advance_clock(delay)?;
+        self.pause()
+    }
+
+    /// Wait until no animation is running, then settle to idle. Mirrors
+    /// `await pilot.wait_for_animation()`.
+    ///
+    /// The manual clock advances in frame-sized steps (bounded: at most
+    /// ~32 simulated seconds) so animations complete instantly in real
+    /// time. Returns after the bound with the app settled even if an
+    /// animation never finishes (e.g. an infinite repeat).
+    pub fn wait_for_animation(&mut self) -> Result<()> {
+        const MAX_STEPS: usize = 2_000;
+        const STEP: Duration = Duration::from_millis(16);
+        for _ in 0..MAX_STEPS {
+            if self.app.animator_is_idle() {
+                break;
+            }
+            self.advance_clock(STEP)?;
+        }
+        self.pause()
+    }
+
+    /// Wait for current and scheduled animations to complete, then settle.
+    /// Mirrors `await pilot.wait_for_scheduled_animations()`: pump once so
+    /// newly scheduled animations enqueue, drain them, and settle.
+    pub fn wait_for_scheduled_animations(&mut self) -> Result<()> {
+        self.pause()?;
+        self.wait_for_animation()?;
+        self.pause()
+    }
+
+    /// Exit the app with `result`. Mirrors `await pilot.exit(result)`:
+    /// records the result on the app (see [`App::exit`](crate::runtime::App::exit))
+    /// with return code 0 and settles to idle.
+    pub fn exit(&mut self, result: Option<String>) -> Result<()> {
+        self.app.exit(result, 0, None);
         self.pause()
     }
 
