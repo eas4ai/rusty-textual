@@ -30,8 +30,9 @@ use super::helpers::{
 };
 use super::render::apply_layout_info_tree_from_layout_rects;
 use super::routing::{
-    active_binding_hints_tree, dispatch_event_broadcast_tree, dispatch_event_to_target_tree,
-    dispatch_event_tree, dispatch_message_queue_tree, dispatch_mouse_scroll,
+    active_binding_hints_tree, dispatch_event_broadcast_tree, dispatch_event_to_node_tree,
+    dispatch_event_to_target_tree, dispatch_event_tree, dispatch_message_queue_tree,
+    dispatch_mouse_scroll,
     dispatch_mouse_scroll_to_target_tree, dispatch_scroll_action_tree, focused_help_metadata_tree,
     focused_node_id_tree, is_priority_action, is_scroll_action, match_binding_chain,
     BindingSource,
@@ -336,6 +337,23 @@ fn dispatch_key_name_to_focused(app: &mut App, key: &KeyEventData) -> DispatchOu
     let mut outcome = DispatchOutcome::from_event_ctx(&mut ctx);
     outcome.handled |= key_handled;
     outcome
+}
+
+/// Fold one [`DispatchOutcome`] into an aggregate (field-wise OR/extend).
+fn merge_dispatch_outcome(agg: &mut DispatchOutcome, other: DispatchOutcome) {
+    agg.handled |= other.handled;
+    agg.repaint_requested |= other.repaint_requested;
+    agg.invalidation.merge(other.invalidation);
+    agg.stop_requested |= other.stop_requested;
+    agg.default_prevented |= other.default_prevented;
+    agg.prevented.extend(other.prevented);
+    agg.animation_requests.extend(other.animation_requests);
+    agg.style_animation_requests
+        .extend(other.style_animation_requests);
+    agg.worker_requests.extend(other.worker_requests);
+    agg.recompose_nodes.extend(other.recompose_nodes);
+    agg.class_ops.extend(other.class_ops);
+    agg.messages.extend(other.messages);
 }
 
 /// Run a string action through the full Python-faithful dispatch chain and merge
@@ -2383,12 +2401,47 @@ impl App {
         self.dispatch_message_queue_with_runtime(root, vec![msg])
     }
 
+    /// Dispatch events queued by [`App::capture_mouse`] (`MouseCapture` /
+    /// `MouseRelease` notices), each to its node only.
+    ///
+    /// Messages the handlers post are dispatched after each notice, mirroring
+    /// the mouse down/up arms. Returns the aggregated outcome for the caller
+    /// to absorb.
+    fn dispatch_pending_app_events(&mut self, root: &mut dyn Widget) -> DispatchOutcome {
+        let mut aggregate = DispatchOutcome::default();
+        let queued = self.drain_pending_app_events();
+        for (target, event) in &queued {
+            let outcome = match self.active_widget_tree_mut() {
+                Some(tree) => dispatch_event_to_node_tree(tree, *target, event),
+                None => DispatchOutcome::default(),
+            };
+            let messages = outcome.messages;
+            merge_dispatch_outcome(
+                &mut aggregate,
+                DispatchOutcome {
+                    messages: Vec::new(),
+                    ..outcome
+                },
+            );
+            if !messages.is_empty() {
+                let msg_outcome = self.dispatch_message_queue_with_runtime(root, messages);
+                merge_dispatch_outcome(&mut aggregate, msg_outcome);
+            }
+        }
+        aggregate
+    }
+
     fn dispatch_background_runtime_messages(&mut self, root: &mut dyn Widget) -> DispatchOutcome {
+        // Queued capture/release notices first (single-node event dispatch),
+        // then app-level messages — mirrors `post_message` ordering.
+        let mut aggregate = self.dispatch_pending_app_events(root);
         // Drain app-level messages first (set_title/set_sub_title broadcasts).
         let mut queue = self.drain_pending_app_messages();
         queue.extend(self.drain_ready_timers());
         queue.extend(self.async_tasks.drain_completed());
-        self.dispatch_message_queue_with_runtime(root, queue)
+        let msg_outcome = self.dispatch_message_queue_with_runtime(root, queue);
+        merge_dispatch_outcome(&mut aggregate, msg_outcome);
+        aggregate
     }
 
     pub async fn run_with<F, R>(&mut self, mut render: F) -> crate::Result<()>
@@ -3302,6 +3355,9 @@ impl App {
                         }
                     }
                     CrosstermEvent::Mouse(mouse) => {
+                        // Python `App.on_event`: every mouse event refreshes
+                        // `App.mouse_position`.
+                        self.mouse_position = (mouse.column, mouse.row);
                         let mouse = if matches!(
                             mouse.kind,
                             MouseEventKind::Moved | MouseEventKind::Drag(_)
@@ -4705,6 +4761,18 @@ impl App {
                 }
             }
 
+            // Queued capture/release notices first (single-node event
+            // dispatch), then app-level / broadcast messages.
+            if self.has_pending_app_events() {
+                progressed = true;
+                let mut pending_events_outcome = self.dispatch_pending_app_events(root);
+                self.absorb_outcome(
+                    &mut pending_events_outcome,
+                    pending,
+                    InvalidationScope::Global,
+                );
+            }
+
             // App-level / broadcast messages (set_title etc.).
             let app_messages = self.drain_pending_app_messages();
             if !app_messages.is_empty() {
@@ -5441,6 +5509,13 @@ impl App {
         screen_y: u16,
         pending: &mut PendingInvalidation,
     ) {
+        self.mouse_position = (screen_x, screen_y);
+        // Queued capture/release notices run before this input (Python
+        // `post_message` ordering: earlier posts dispatch first).
+        if self.has_pending_app_events() {
+            let mut outcome = self.dispatch_pending_app_events(root);
+            self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
+        }
         // P-E: explicit mouse capture retargets the press regardless of
         // pointer position.
         if let Some(target) = self
@@ -5483,6 +5558,13 @@ impl App {
         screen_y: u16,
         pending: &mut PendingInvalidation,
     ) {
+        self.mouse_position = (screen_x, screen_y);
+        // Queued capture/release notices run before this input (Python
+        // `post_message` ordering: earlier posts dispatch first).
+        if self.has_pending_app_events() {
+            let mut outcome = self.dispatch_pending_app_events(root);
+            self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
+        }
         let down_target = self.click_tracker.down_target();
         // P-E: explicit mouse capture retargets the release.
         let target = self
@@ -5583,6 +5665,13 @@ impl App {
         screen_y: u16,
         pending: &mut PendingInvalidation,
     ) {
+        self.mouse_position = (screen_x, screen_y);
+        // Queued capture/release notices run before this input (Python
+        // `post_message` ordering: earlier posts dispatch first).
+        if self.has_pending_app_events() {
+            let mut outcome = self.dispatch_pending_app_events(root);
+            self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
+        }
         // Hover transition (drives `:hover` pseudo + Enter/Leave events), exactly
         // as the live `MouseEventKind::Moved` arm does.
         let before = self.hovered;

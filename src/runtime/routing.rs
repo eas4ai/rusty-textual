@@ -306,6 +306,43 @@ pub fn dispatch_event_to_target_tree(
     }
 }
 
+/// Dispatch an event to exactly one node: no capture phase, no bubble phase.
+///
+/// This is the Rust analogue of Python `post_message` for non-bubbling
+/// notifications (`MouseCapture` / `MouseRelease`, `bubble=False`): the
+/// capture phase is our own invention (Python has none) and bubbling would
+/// deliver to ancestors Python never notifies. A missing node is a silent
+/// no-op (the capturer may have been removed since the notice was queued).
+pub fn dispatch_event_to_node_tree(
+    tree: &mut WidgetTree,
+    target: NodeId,
+    event: &Event,
+) -> DispatchOutcome {
+    let _dispatch_tree_guard = set_dispatch_tree(tree.tree_id());
+    let mut ctx = EventCtx::default();
+    if let Some(node) = tree.get_mut(target) {
+        let _dispatch_guard = set_dispatch_recipient(target, node.state);
+        ctx.set_node_id(target);
+        let mut wctx = WidgetCtx::__from_dispatch(target, &mut ctx);
+        node.widget.on_event(event, &mut wctx);
+        wctx.__enqueue_reactive_if_dirty();
+    }
+    DispatchOutcome {
+        handled: ctx.handled(),
+        repaint_requested: ctx.repaint_requested(),
+        invalidation: ctx.invalidation(),
+        stop_requested: ctx.stop_requested(),
+        messages: ctx.take_messages(),
+        animation_requests: ctx.take_animation_requests(),
+        style_animation_requests: ctx.take_style_animation_requests(),
+        worker_requests: ctx.take_worker_requests(),
+        recompose_nodes: ctx.take_recompose_nodes(),
+        default_prevented: false,
+        prevented: Vec::new(),
+        class_ops: ctx.take_class_ops(),
+    }
+}
+
 /// Dispatch a global event to every node in the tree.
 ///
 /// This is used for runtime-global state updates (e.g. binding-hint payload
