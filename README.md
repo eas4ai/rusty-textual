@@ -262,6 +262,7 @@ Runnable ports of Python Textual examples live in `examples/`:
 
 ```bash
 cargo run --example code_browser [PATH]  # file browser with syntax highlighting
+cargo run --example diff [OLD NEW]       # unified diff viewer (similar)
 cargo run --example calculator           # working desk calculator
 cargo run --example merlin               # Merlin handheld toggle game
 cargo run --example five_by_five         # 5x5 toggle puzzle
