@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::prelude::*;
-use textual::runtime::{App, AppResumed, AppSuspended};
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{App, AppResumed, AppSuspended};
 
 static SUSPENDS: AtomicUsize = AtomicUsize::new(0);
 static RESUMES: AtomicUsize = AtomicUsize::new(0);

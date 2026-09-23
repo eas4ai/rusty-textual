@@ -9,7 +9,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use textual::widgets::{SuggestFromList, Suggester, SuggestionCache};
+use rusty_textual::widgets::{SuggestFromList, Suggester, SuggestionCache};
 
 /// A suggester that records every `get_suggestion` computation.
 struct CountingSuggester {

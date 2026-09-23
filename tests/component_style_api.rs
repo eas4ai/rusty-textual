@@ -9,9 +9,9 @@
 //! ports were working around by hardcoding `#A5BAC9` / `#004578` / `darkred`.
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::css::{resolve_component_style, set_style_context, StyleSheet};
-use textual::prelude::*;
-use textual::style::Color;
+use rusty_textual::css::{resolve_component_style, set_style_context, StyleSheet};
+use rusty_textual::prelude::*;
+use rusty_textual::style::Color;
 
 /// A minimal custom widget that declares two component classes, exactly like
 /// the `CheckerBoard` demo widgets.
@@ -212,7 +212,7 @@ fn merged_multi_name_later_name_wins_regardless_of_specificity() {
         "#,
     ));
     let board = CheckerBoard;
-    let merged = textual::css::resolve_component_style_merged(
+    let merged = rusty_textual::css::resolve_component_style_merged(
         &board,
         &["checkerboard--white-square", "checkerboard--black-square"],
     );
@@ -239,7 +239,7 @@ fn compound_form_matches_compound_class_rules() {
     let compound = resolve_component_style(&board, &["checkerboard--white-square", "-active"]);
     assert_eq!(compound.fg, Some(Color::parse("#00ff00").unwrap()));
 
-    let merged = textual::css::resolve_component_style_merged(
+    let merged = rusty_textual::css::resolve_component_style_merged(
         &board,
         &["checkerboard--white-square", "-active"],
     );
@@ -257,7 +257,7 @@ fn partial_form_returns_only_sheet_set_properties() {
     ));
     let board = CheckerBoard;
     let partial =
-        textual::css::resolve_component_style_partial(&board, &["checkerboard--white-square"]);
+        rusty_textual::css::resolve_component_style_partial(&board, &["checkerboard--white-square"]);
     assert_eq!(partial.bg, Some(Color::parse("#A5BAC9").unwrap()));
     assert_eq!(partial.fg, None);
 }

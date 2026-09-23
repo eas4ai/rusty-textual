@@ -35,7 +35,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use textual::render_context;
+//! use rusty_textual::render_context;
 //!
 //! fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
 //!     let style = render_context::resolved_style().unwrap_or_default();

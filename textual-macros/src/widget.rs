@@ -220,7 +220,7 @@ fn method_table() -> Vec<MethodSpec> {
         ),
         m!(
             "render_with_debug",
-            quote! { fn render_with_debug(&self, console: &rich_rs::Console, options: &rich_rs::ConsoleOptions, debug: &textual::debug::DebugLayout) -> rich_rs::Segments },
+            quote! { fn render_with_debug(&self, console: &rich_rs::Console, options: &rich_rs::ConsoleOptions, debug: &rusty_textual::debug::DebugLayout) -> rich_rs::Segments },
             quote! { render_with_debug(console, options, debug) }
         ),
         m!(
@@ -236,7 +236,7 @@ fn method_table() -> Vec<MethodSpec> {
         // ── Composition ────────────────────────────────────────────────
         m!(
             "compose",
-            quote! { fn compose(&mut self) -> textual::compose::ComposeResult },
+            quote! { fn compose(&mut self) -> rusty_textual::compose::ComposeResult },
             quote! { compose() }
         ),
         // ── Focus / node state ─────────────────────────────────────────
@@ -254,13 +254,13 @@ fn method_table() -> Vec<MethodSpec> {
         ),
         m!(
             "on_node_state_changed",
-            quote! { fn on_node_state_changed(&mut self, old: textual::widgets::NodeState, new: textual::widgets::NodeState) },
+            quote! { fn on_node_state_changed(&mut self, old: rusty_textual::widgets::NodeState, new: rusty_textual::widgets::NodeState) },
             quote! { on_node_state_changed(old, new) }
         ),
         // ── Lifecycle ──────────────────────────────────────────────────
         m!(
             "on_mount",
-            quote! { fn on_mount(&mut self, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_mount(&mut self, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_mount(ctx) }
         ),
         m!("on_unmount", quote! { fn on_unmount(&mut self) }, quote! { on_unmount() }),
@@ -283,22 +283,22 @@ fn method_table() -> Vec<MethodSpec> {
         // ── Events ─────────────────────────────────────────────────────
         m!(
             "on_event_capture",
-            quote! { fn on_event_capture(&mut self, event: &textual::event::Event, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_event_capture(&mut self, event: &rusty_textual::event::Event, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_event_capture(event, ctx) }
         ),
         m!(
             "on_event",
-            quote! { fn on_event(&mut self, event: &textual::event::Event, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_event(&mut self, event: &rusty_textual::event::Event, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_event(event, ctx) }
         ),
         m!(
             "on_message",
-            quote! { fn on_message(&mut self, message: &textual::message::MessageEvent, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_message(&mut self, message: &rusty_textual::message::MessageEvent, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_message(message, ctx) }
         ),
         m!(
             "on_mouse_scroll",
-            quote! { fn on_mouse_scroll(&mut self, delta_x: i32, delta_y: i32, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_mouse_scroll(&mut self, delta_x: i32, delta_y: i32, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_mouse_scroll(delta_x, delta_y, ctx) }
         ),
         m!(
@@ -309,27 +309,27 @@ fn method_table() -> Vec<MethodSpec> {
         // ── App-level hooks ────────────────────────────────────────────
         m!(
             "on_app_key",
-            quote! { fn on_app_key(&mut self, app: &mut textual::App, key: &textual::keys::KeyEventData, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_app_key(&mut self, app: &mut rusty_textual::App, key: &rusty_textual::keys::KeyEventData, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_app_key(app, key, ctx) }
         ),
         m!(
             "on_app_action",
-            quote! { fn on_app_action(&mut self, app: &mut textual::App, action: textual::event::Action, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_app_action(&mut self, app: &mut rusty_textual::App, action: rusty_textual::event::Action, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_app_action(app, action, ctx) }
         ),
         m!(
             "on_app_message",
-            quote! { fn on_app_message(&mut self, app: &mut textual::App, message: &textual::message::MessageEvent, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_app_message(&mut self, app: &mut rusty_textual::App, message: &rusty_textual::message::MessageEvent, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_app_message(app, message, ctx) }
         ),
         m!(
             "on_app_tick",
-            quote! { fn on_app_tick(&mut self, app: &mut textual::App, tick: u64, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_app_tick(&mut self, app: &mut rusty_textual::App, tick: u64, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_app_tick(app, tick, ctx) }
         ),
         m!(
             "on_app_mount",
-            quote! { fn on_app_mount(&mut self, app: &mut textual::App, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_app_mount(&mut self, app: &mut rusty_textual::App, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_app_mount(app, ctx) }
         ),
         // ── Scroll ─────────────────────────────────────────────────────
@@ -387,17 +387,17 @@ fn method_table() -> Vec<MethodSpec> {
         // ── Actions / bindings ─────────────────────────────────────────
         m!(
             "bindings",
-            quote! { fn bindings(&self) -> Vec<textual::widgets::BindingDecl> },
+            quote! { fn bindings(&self) -> Vec<rusty_textual::widgets::BindingDecl> },
             quote! { bindings() }
         ),
         m!(
             "binding_hints",
-            quote! { fn binding_hints(&self) -> Vec<textual::event::BindingHint> },
+            quote! { fn binding_hints(&self) -> Vec<rusty_textual::event::BindingHint> },
             quote! { binding_hints() }
         ),
         m!(
             "execute_action",
-            quote! { fn execute_action(&mut self, action: &textual::action::ParsedAction, ctx: &mut textual::event::WidgetCtx) -> bool },
+            quote! { fn execute_action(&mut self, action: &rusty_textual::action::ParsedAction, ctx: &mut rusty_textual::event::WidgetCtx) -> bool },
             quote! { execute_action(action, ctx) }
         ),
         m!(
@@ -407,23 +407,23 @@ fn method_table() -> Vec<MethodSpec> {
         ),
         m!(
             "action_registry",
-            quote! { fn action_registry(&self) -> &[textual::action::ActionDecl] },
+            quote! { fn action_registry(&self) -> &[rusty_textual::action::ActionDecl] },
             quote! { action_registry() }
         ),
         // ── Styles / seed ──────────────────────────────────────────────
         m!(
             "style",
-            quote! { fn style(&self) -> Option<textual::style::Style> },
+            quote! { fn style(&self) -> Option<rusty_textual::style::Style> },
             quote! { style() }
         ),
         m!(
             "set_inline_style",
-            quote! { fn set_inline_style(&mut self, style: textual::style::Style) },
+            quote! { fn set_inline_style(&mut self, style: rusty_textual::style::Style) },
             quote! { set_inline_style(style) }
         ),
         m!(
             "take_node_seed",
-            quote! { fn take_node_seed(&mut self) -> textual::widgets::NodeSeed },
+            quote! { fn take_node_seed(&mut self) -> rusty_textual::widgets::NodeSeed },
             quote! { take_node_seed() }
         ),
         m!(
@@ -459,22 +459,22 @@ fn method_table() -> Vec<MethodSpec> {
         m!("allow_select", quote! { fn allow_select(&self) -> bool }, quote! { allow_select() }),
         m!(
             "selection_at",
-            quote! { fn selection_at(&self, x: u16, y: u16) -> Option<textual::widgets::WidgetSelectionAnchor> },
+            quote! { fn selection_at(&self, x: u16, y: u16) -> Option<rusty_textual::widgets::WidgetSelectionAnchor> },
             quote! { selection_at(x, y) }
         ),
         m!(
             "selection_word_range_at",
-            quote! { fn selection_word_range_at(&self, x: u16, y: u16) -> Option<(textual::widgets::WidgetSelectionAnchor, textual::widgets::WidgetSelectionAnchor)> },
+            quote! { fn selection_word_range_at(&self, x: u16, y: u16) -> Option<(rusty_textual::widgets::WidgetSelectionAnchor, rusty_textual::widgets::WidgetSelectionAnchor)> },
             quote! { selection_word_range_at(x, y) }
         ),
         m!(
             "selection_all_range",
-            quote! { fn selection_all_range(&self) -> Option<(textual::widgets::WidgetSelectionAnchor, textual::widgets::WidgetSelectionAnchor)> },
+            quote! { fn selection_all_range(&self) -> Option<(rusty_textual::widgets::WidgetSelectionAnchor, rusty_textual::widgets::WidgetSelectionAnchor)> },
             quote! { selection_all_range() }
         ),
         m!(
             "update_selection",
-            quote! { fn update_selection(&mut self, from: textual::widgets::WidgetSelectionAnchor, to: textual::widgets::WidgetSelectionAnchor) -> bool },
+            quote! { fn update_selection(&mut self, from: rusty_textual::widgets::WidgetSelectionAnchor, to: rusty_textual::widgets::WidgetSelectionAnchor) -> bool },
             quote! { update_selection(from, to) }
         ),
         m!(
@@ -489,13 +489,13 @@ fn method_table() -> Vec<MethodSpec> {
         ),
         m!(
             "selection_updated",
-            quote! { fn selection_updated(&mut self, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn selection_updated(&mut self, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { selection_updated(ctx) }
         ),
         // ── Reactive ───────────────────────────────────────────────────
         m!(
             "reactive_widget",
-            quote! { fn reactive_widget(&mut self) -> Option<&mut dyn textual::reactive::ReactiveWidget> },
+            quote! { fn reactive_widget(&mut self) -> Option<&mut dyn rusty_textual::reactive::ReactiveWidget> },
             quote! { reactive_widget() }
         ),
         // ── Style type (NOT forwarded by default; overridable / attr) ───
@@ -546,17 +546,17 @@ fn method_table() -> Vec<MethodSpec> {
         ),
         m!(
             "check_action",
-            quote! { fn check_action(&self, action: &str, parameters: &[textual::action::ActionArgument]) -> Option<bool> },
+            quote! { fn check_action(&self, action: &str, parameters: &[rusty_textual::action::ActionArgument]) -> Option<bool> },
             quote! { check_action(action, parameters) }
         ),
         m!(
             "on_app_unhandled_action",
-            quote! { fn on_app_unhandled_action(&mut self, app: &mut textual::App, action: &str, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_app_unhandled_action(&mut self, app: &mut rusty_textual::App, action: &str, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_app_unhandled_action(app, action, ctx) }
         ),
         m!(
             "on_app_timer",
-            quote! { fn on_app_timer(&mut self, app: &mut textual::App, ctx: &mut textual::event::WidgetCtx) },
+            quote! { fn on_app_timer(&mut self, app: &mut rusty_textual::App, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_app_timer(app, ctx) }
         ),
         m!(
@@ -566,7 +566,7 @@ fn method_table() -> Vec<MethodSpec> {
         ),
         m!(
             "get_component_styles",
-            quote! { fn get_component_styles(&self, name: &str) -> textual::style::Style },
+            quote! { fn get_component_styles(&self, name: &str) -> rusty_textual::style::Style },
             quote! { get_component_styles(name) }
         ),
         m!(
@@ -682,16 +682,16 @@ fn group_capability_name(group: Group) -> Option<&'static str> {
 /// The fully-qualified capability trait path a group forwards to.
 fn group_trait_path(group: Group) -> Option<TokenStream> {
     let ts = match group {
-        Group::Render => quote! { textual::widgets::Render },
-        Group::Interactive => quote! { textual::widgets::Interactive },
-        Group::Layout => quote! { textual::widgets::Layout },
-        Group::Scrollable => quote! { textual::widgets::Scrollable },
-        Group::Focus => quote! { textual::widgets::Focus },
-        Group::Selectable => quote! { textual::widgets::Selectable },
-        Group::HasTooltip => quote! { textual::widgets::HasTooltip },
-        Group::Components => quote! { textual::widgets::Components },
-        Group::AppHooks => quote! { textual::widgets::AppHooks },
-        Group::StyleIdentity => quote! { textual::widgets::StyleIdentity },
+        Group::Render => quote! { rusty_textual::widgets::Render },
+        Group::Interactive => quote! { rusty_textual::widgets::Interactive },
+        Group::Layout => quote! { rusty_textual::widgets::Layout },
+        Group::Scrollable => quote! { rusty_textual::widgets::Scrollable },
+        Group::Focus => quote! { rusty_textual::widgets::Focus },
+        Group::Selectable => quote! { rusty_textual::widgets::Selectable },
+        Group::HasTooltip => quote! { rusty_textual::widgets::HasTooltip },
+        Group::Components => quote! { rusty_textual::widgets::Components },
+        Group::AppHooks => quote! { rusty_textual::widgets::AppHooks },
+        Group::StyleIdentity => quote! { rusty_textual::widgets::StyleIdentity },
         Group::Seed | Group::Framework => return None,
     };
     Some(ts)
@@ -842,7 +842,7 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         // `reactive_widget` with the `reactive` opt-in exposes SELF, not base.
         if spec.name == "reactive_widget" && args.reactive && !overridden {
             methods.push(quote! {
-                fn reactive_widget(&mut self) -> Option<&mut dyn textual::reactive::ReactiveWidget> {
+                fn reactive_widget(&mut self) -> Option<&mut dyn rusty_textual::reactive::ReactiveWidget> {
                     Some(self)
                 }
             });
@@ -878,8 +878,8 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
             methods.push(quote! {
                 fn on_message(
                     &mut self,
-                    message: &textual::message::MessageEvent,
-                    ctx: &mut textual::event::WidgetCtx,
+                    message: &rusty_textual::message::MessageEvent,
+                    ctx: &mut rusty_textual::event::WidgetCtx,
                 ) {
                     #(#dispatch_calls)*
                     // Forward to the base widget's own on_message (its behavior),
@@ -922,13 +922,13 @@ fn assemble_impl(item_struct: &ItemStruct, methods: Vec<TokenStream>) -> TokenSt
     quote! {
         #item_struct
 
-        impl #impl_generics textual::widgets::Widget for #name #ty_generics #where_clause {
+        impl #impl_generics rusty_textual::widgets::Widget for #name #ty_generics #where_clause {
             #(#methods)*
         }
 
         impl #impl_generics rich_rs::Renderable for #name #ty_generics #where_clause {
             fn render(&self, console: &rich_rs::Console, options: &rich_rs::ConsoleOptions) -> rich_rs::Segments {
-                textual::widgets::Widget::render(self, console, options)
+                rusty_textual::widgets::Widget::render(self, console, options)
             }
         }
     }
@@ -994,7 +994,7 @@ fn own_widget_impl(item_struct: &ItemStruct, args: &WidgetArgs, table: &[MethodS
         if spec.name == "reactive_widget" {
             if args.reactive {
                 methods.push(quote! {
-                    fn reactive_widget(&mut self) -> Option<&mut dyn textual::reactive::ReactiveWidget> {
+                    fn reactive_widget(&mut self) -> Option<&mut dyn rusty_textual::reactive::ReactiveWidget> {
                         Some(self)
                     }
                 });
@@ -1033,12 +1033,12 @@ fn own_widget_impl(item_struct: &ItemStruct, args: &WidgetArgs, table: &[MethodS
                 } else if has_seed_field {
                     match spec.name {
                         "take_node_seed" => methods.push(quote! {
-                            fn take_node_seed(&mut self) -> textual::widgets::NodeSeed {
+                            fn take_node_seed(&mut self) -> rusty_textual::widgets::NodeSeed {
                                 ::std::mem::take(&mut self.seed)
                             }
                         }),
                         "set_inline_style" => methods.push(quote! {
-                            fn set_inline_style(&mut self, style: textual::style::Style) {
+                            fn set_inline_style(&mut self, style: rusty_textual::style::Style) {
                                 self.seed.styles.style = style;
                             }
                         }),

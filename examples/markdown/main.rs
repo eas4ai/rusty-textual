@@ -8,8 +8,8 @@
 ///
 /// Rust: `MarkdownViewer::register_content()` + `go()` for navigation,
 /// `check_action()` for dimming, `NavigatorUpdated` for refresh_bindings.
-use textual::message::NavigatorUpdated;
-use textual::prelude::*;
+use rusty_textual::message::NavigatorUpdated;
+use rusty_textual::prelude::*;
 
 const DEMO_MD: &str = include_str!("demo.md");
 const EXAMPLE_MD: &str = include_str!("example.md");
@@ -68,7 +68,7 @@ impl TextualApp for MarkdownApp {
             .with_child_handle(viewer, &self.viewer)
     }
 
-    fn on_mount_with_app(&mut self, app: &mut App, ctx: &mut textual::event::WidgetCtx) {
+    fn on_mount_with_app(&mut self, app: &mut App, ctx: &mut rusty_textual::event::WidgetCtx) {
         // Load initial content: CLI arg path or demo.md.
         if let Some(ref path) = self.initial_path {
             if let Ok(content) = std::fs::read_to_string(path) {
@@ -90,7 +90,7 @@ impl TextualApp for MarkdownApp {
         }
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut rusty_textual::event::WidgetCtx) {
         match key.name() {
             "t" | "T" => {
                 // Python: self.markdown_viewer.show_table_of_contents = not ...
@@ -137,7 +137,7 @@ impl TextualApp for MarkdownApp {
         }
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, _ctx: &mut rusty_textual::event::WidgetCtx) {
         if message.is::<NavigatorUpdated>() {
             if let Some(state) = self
                 .viewer
@@ -153,7 +153,7 @@ impl TextualApp for MarkdownApp {
     fn check_action(
         &self,
         action: &str,
-        _parameters: &[textual::action::ActionArgument],
+        _parameters: &[rusty_textual::action::ActionArgument],
     ) -> Option<bool> {
         match action {
             "forward" if self.nav_state.1 => None,
@@ -163,7 +163,7 @@ impl TextualApp for MarkdownApp {
     }
 }
 
-fn main() -> textual::Result<()> {
+fn main() -> rusty_textual::Result<()> {
     let mut app = MarkdownApp::new();
     if let Some(path) = std::env::args().nth(1) {
         if std::path::Path::new(&path).exists() {
@@ -180,7 +180,7 @@ fn main() -> textual::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use textual::runtime::build_widget_tree_from_root;
+    use rusty_textual::runtime::build_widget_tree_from_root;
 
     #[test]
     fn markdown_app_composes_without_panic() {

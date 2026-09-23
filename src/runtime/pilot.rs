@@ -12,7 +12,7 @@
 //! output between calls — mirroring `await pilot.press(...)`.
 //!
 //! ```no_run
-//! use textual::prelude::*;
+//! use rusty_textual::prelude::*;
 //!
 //! struct MyApp;
 //! impl TextualApp for MyApp {

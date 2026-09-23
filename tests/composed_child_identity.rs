@@ -7,8 +7,8 @@
 //! dropping, forcing container wrappers and type-queries). The seed-identity /
 //! `child_decl_meta` harvest now applies them end-to-end; this locks that in.
 
-use textual::prelude::*;
-use textual::runtime::build_widget_tree_from_root;
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::build_widget_tree_from_root;
 
 fn id_resolves(root: &mut dyn Widget, id: &str) -> bool {
     let tree = build_widget_tree_from_root(root).expect("tree");

@@ -1,8 +1,8 @@
 //! Tests for the MODES system and CommandPaletteScreen integration.
 
-use textual::screen::{Screen, ScreenStack};
-use textual::message::CommandPaletteCommand;
-use textual::widgets::{CommandPaletteScreen, SystemModalScreen};
+use rusty_textual::screen::{Screen, ScreenStack};
+use rusty_textual::message::CommandPaletteCommand;
+use rusty_textual::widgets::{CommandPaletteScreen, SystemModalScreen};
 
 use rich_rs::{Console, ConsoleOptions, Segments};
 
@@ -13,7 +13,7 @@ use rich_rs::{Console, ConsoleOptions, Segments};
 /// Minimal widget for screen compose output.
 struct StubWidget;
 
-impl textual::widgets::Widget for StubWidget {
+impl rusty_textual::widgets::Widget for StubWidget {
     fn render(&self, _console: &Console, _options: &ConsoleOptions) -> Segments {
         Segments::new()
     }
@@ -45,7 +45,7 @@ impl Screen for NamedScreen {
         &self.name
     }
 
-    fn compose(&self) -> Box<dyn textual::widgets::Widget> {
+    fn compose(&self) -> Box<dyn rusty_textual::widgets::Widget> {
         Box::new(StubWidget)
     }
 }

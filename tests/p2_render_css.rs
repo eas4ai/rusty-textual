@@ -4,13 +4,13 @@
 //! are correctly parsed, resolved, and wired into the rendering pipeline.
 
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
-use textual::css::set_style_context;
-use textual::prelude::*;
-use textual::render::FrameBuffer;
-use textual::runtime::{
+use rusty_textual::css::set_style_context;
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::runtime::{
     build_widget_tree_from_root, render_tree_to_frame, render_tree_to_frame_with_stylesheet,
 };
-use textual::style::{
+use rusty_textual::style::{
     Constrain, HorizontalAlign, KeylineType, OverlayMode, Scalar, Style, TextOverflow, TextWrap,
 };
 
@@ -43,16 +43,16 @@ impl BorderCaptionWidget {
         seed.styles.style = seed
             .styles
             .style
-            .border_top(textual::style::Color::parse("white").unwrap())
-            .border_bottom(textual::style::Color::parse("white").unwrap())
-            .border_left(textual::style::Color::parse("white").unwrap())
-            .border_right(textual::style::Color::parse("white").unwrap());
+            .border_top(rusty_textual::style::Color::parse("white").unwrap())
+            .border_bottom(rusty_textual::style::Color::parse("white").unwrap())
+            .border_left(rusty_textual::style::Color::parse("white").unwrap())
+            .border_right(rusty_textual::style::Color::parse("white").unwrap());
         seed.styles.style.border_title_align = Some(HorizontalAlign::Center);
         seed.styles.style.border_subtitle_align = Some(HorizontalAlign::Right);
         seed.styles.style.border_title_color =
-            Some(textual::style::Color::parse("yellow").unwrap());
+            Some(rusty_textual::style::Color::parse("yellow").unwrap());
         seed.styles.style.border_subtitle_color =
-            Some(textual::style::Color::parse("cyan").unwrap());
+            Some(rusty_textual::style::Color::parse("cyan").unwrap());
         Self {
             title,
             subtitle,
@@ -138,9 +138,9 @@ impl Widget for FillWidget {
 #[test]
 fn p2g28_outline_style_fields_wired() {
     // NOTE: parse-only — verifies Style struct fields, not runtime behavior.
-    use textual::style::{BorderEdge, BorderType, Color};
+    use rusty_textual::style::{BorderEdge, BorderType, Color};
 
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     let red = Color::parse("red").unwrap();
 
     // Set outline edges programmatically.
@@ -238,7 +238,7 @@ fn p2g28_outline_does_not_affect_layout_rect() {
 #[test]
 fn p2g29_border_title_align_style_fields() {
     // NOTE: parse-only — verifies Style struct fields, not runtime behavior.
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     style.border_title_align = Some(HorizontalAlign::Center);
     style.border_subtitle_align = Some(HorizontalAlign::Right);
 
@@ -249,9 +249,9 @@ fn p2g29_border_title_align_style_fields() {
 #[test]
 fn p2g29_border_title_color_style_fields() {
     // NOTE: parse-only — verifies Style struct fields, not runtime behavior.
-    use textual::style::Color;
+    use rusty_textual::style::Color;
 
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     let red = Color::parse("red").unwrap();
     let blue = Color::parse("blue").unwrap();
 
@@ -269,7 +269,7 @@ fn p2g29_border_title_color_style_fields() {
 #[test]
 fn p2g29_border_title_style_flags() {
     // NOTE: parse-only — verifies Style struct fields, not runtime behavior.
-    use textual::style::TextStyleFlags;
+    use rusty_textual::style::TextStyleFlags;
 
     let flags = TextStyleFlags {
         bold: true,
@@ -279,7 +279,7 @@ fn p2g29_border_title_style_flags() {
         reverse: false,
         strike: false,
     };
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     style.border_title_style = Some(flags);
 
     let stored = style.border_title_style.unwrap();
@@ -338,7 +338,7 @@ fn p2g29_border_title_subtitle_render_on_edges() {
     assert_eq!(
         title_fg,
         Some(
-            textual::style::Color::parse("yellow")
+            rusty_textual::style::Color::parse("yellow")
                 .unwrap()
                 .to_simple_opaque()
         )
@@ -352,7 +352,7 @@ fn p2g29_border_title_subtitle_render_on_edges() {
 #[test]
 fn p2g31_text_wrap_style_fields() {
     // NOTE: parse-only — verifies Style struct fields, not runtime behavior.
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     style.text_wrap = Some(TextWrap::Wrap);
     assert_eq!(style.text_wrap, Some(TextWrap::Wrap));
 
@@ -363,7 +363,7 @@ fn p2g31_text_wrap_style_fields() {
 #[test]
 fn p2g31_text_overflow_style_fields() {
     // NOTE: parse-only — verifies Style struct fields, not runtime behavior.
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     style.text_overflow = Some(TextOverflow::Clip);
     assert_eq!(style.text_overflow, Some(TextOverflow::Clip));
 
@@ -390,7 +390,7 @@ fn p2g31_text_wrap_css_parse_roundtrip() {
 
 #[test]
 fn p2g31_text_overflow_line_truncation_clip() {
-    use textual::runtime::apply_text_overflow_to_line;
+    use rusty_textual::runtime::apply_text_overflow_to_line;
 
     let long_line = vec![rich_rs::Segment::new("abcdefghij")]; // 10 chars
     let clipped = apply_text_overflow_to_line(&long_line, 5, TextOverflow::Clip);
@@ -404,7 +404,7 @@ fn p2g31_text_overflow_line_truncation_clip() {
 
 #[test]
 fn p2g31_text_overflow_line_truncation_ellipsis() {
-    use textual::runtime::apply_text_overflow_to_line;
+    use rusty_textual::runtime::apply_text_overflow_to_line;
 
     let long_line = vec![rich_rs::Segment::new("abcdefghij")]; // 10 chars
     let ellipsised = apply_text_overflow_to_line(&long_line, 5, TextOverflow::Ellipsis);
@@ -422,7 +422,7 @@ fn p2g31_text_overflow_line_truncation_ellipsis() {
 
 #[test]
 fn p2g31_text_overflow_line_fold_preserves_text() {
-    use textual::runtime::apply_text_overflow_to_line;
+    use rusty_textual::runtime::apply_text_overflow_to_line;
 
     let long_line = vec![rich_rs::Segment::new("abcdefghij")];
     let folded = apply_text_overflow_to_line(&long_line, 5, TextOverflow::Fold);
@@ -432,24 +432,24 @@ fn p2g31_text_overflow_line_fold_preserves_text() {
 
 #[test]
 fn p2g31_text_overflow_mode_function() {
-    use textual::runtime::text_overflow_mode;
+    use rusty_textual::runtime::text_overflow_mode;
 
     // No text-wrap set: should return None.
-    let style_default = textual::style::Style::new();
+    let style_default = rusty_textual::style::Style::new();
     assert!(text_overflow_mode(&style_default).is_none());
 
     // text-wrap: wrap -> None.
-    let mut style_wrap = textual::style::Style::new();
+    let mut style_wrap = rusty_textual::style::Style::new();
     style_wrap.text_wrap = Some(TextWrap::Wrap);
     assert!(text_overflow_mode(&style_wrap).is_none());
 
     // text-wrap: nowrap -> defaults to Clip.
-    let mut style_nowrap = textual::style::Style::new();
+    let mut style_nowrap = rusty_textual::style::Style::new();
     style_nowrap.text_wrap = Some(TextWrap::NoWrap);
     assert_eq!(text_overflow_mode(&style_nowrap), Some(TextOverflow::Clip));
 
     // text-wrap: nowrap + text-overflow: ellipsis -> Ellipsis.
-    let mut style_ellipsis = textual::style::Style::new();
+    let mut style_ellipsis = rusty_textual::style::Style::new();
     style_ellipsis.text_wrap = Some(TextWrap::NoWrap);
     style_ellipsis.text_overflow = Some(TextOverflow::Ellipsis);
     assert_eq!(
@@ -465,13 +465,13 @@ fn p2g31_text_overflow_mode_function() {
 #[test]
 fn p2g34_hatch_style_fields() {
     // NOTE: parse-only — verifies Style struct fields, not runtime behavior.
-    use textual::style::{Color, Hatch};
+    use rusty_textual::style::{Color, Hatch};
 
     let hatch = Hatch {
         character: '+',
         color: Color::parse("red").unwrap(),
     };
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     style.hatch = Some(hatch);
 
     let stored = style.hatch.unwrap();
@@ -482,7 +482,7 @@ fn p2g34_hatch_style_fields() {
 #[test]
 fn p2g34_overlay_style_fields() {
     // NOTE: parse-only — verifies Style struct fields, not runtime behavior.
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     style.overlay = Some(OverlayMode::None);
     assert_eq!(style.overlay, Some(OverlayMode::None));
 
@@ -493,13 +493,13 @@ fn p2g34_overlay_style_fields() {
 #[test]
 fn p2g34_keyline_style_fields() {
     // NOTE: parse-only — verifies Style struct fields, not runtime behavior.
-    use textual::style::{Color, Keyline};
+    use rusty_textual::style::{Color, Keyline};
 
     let keyline = Keyline {
         keyline_type: KeylineType::Thin,
         color: Color::parse("red").unwrap(),
     };
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     style.keyline = Some(keyline);
 
     let stored = style.keyline.unwrap();
@@ -573,7 +573,7 @@ fn p2g34_keyline_heavy_css_parse() {
 #[test]
 fn p2g35_constrain_x_y_style_fields() {
     // NOTE: parse-only — verifies Style struct fields, not runtime behavior.
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     style.constrain_x = Some(Constrain::Inflect);
     style.constrain_y = Some(Constrain::Inside);
 
@@ -584,7 +584,7 @@ fn p2g35_constrain_x_y_style_fields() {
 #[test]
 fn p2g35_expand_style_fields() {
     // NOTE: parse-only — verifies Style struct fields, not runtime behavior.
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     style.expand = Some(true);
     assert_eq!(style.expand, Some(true));
 
@@ -622,10 +622,10 @@ fn p2g35_expand_css_parse_roundtrip() {
 
 #[test]
 fn p2g35_axis_constrain_resolution() {
-    use textual::runtime::resolve_axis_constrain;
+    use rusty_textual::runtime::resolve_axis_constrain;
 
     // When constrain-x/y are not set, falls back to generic constrain.
-    let mut style = textual::style::Style::new();
+    let mut style = rusty_textual::style::Style::new();
     style.constrain = Some(Constrain::Inside);
     let (cx, cy) = resolve_axis_constrain(&style);
     assert_eq!(cx, Constrain::Inside);
@@ -640,7 +640,7 @@ fn p2g35_axis_constrain_resolution() {
 
 #[test]
 fn p2g35_constrain_overlay_position_clamps_inside() {
-    use textual::runtime::constrain_overlay_position;
+    use rusty_textual::runtime::constrain_overlay_position;
 
     let (x, y) =
         constrain_overlay_position(90, 20, 20, 5, 100, 25, Constrain::Inside, Constrain::Inside);
@@ -652,7 +652,7 @@ fn p2g35_constrain_overlay_position_clamps_inside() {
 
 #[test]
 fn p2g35_constrain_overlay_position_inflects() {
-    use textual::runtime::constrain_overlay_position;
+    use rusty_textual::runtime::constrain_overlay_position;
 
     // Overlay overflows right: inflect should flip to left.
     let (x, _y) =
@@ -667,7 +667,7 @@ fn p2g35_constrain_overlay_position_inflects() {
 
 #[test]
 fn p2g35_constrain_none_does_not_clamp() {
-    use textual::runtime::constrain_overlay_position;
+    use rusty_textual::runtime::constrain_overlay_position;
 
     let (x, y) =
         constrain_overlay_position(90, 22, 20, 5, 100, 25, Constrain::None, Constrain::None);
@@ -685,7 +685,7 @@ fn p2_28_outline_paints_over_widget_edges() {
     // edge cells (and over any child content composited there), mirroring Python
     // `StylesCache.render_line`. The root Container fills the frame; the outline
     // overdraws its perimeter rows/cols.
-    use textual::style::{BorderEdge, BorderType, Color};
+    use rusty_textual::style::{BorderEdge, BorderType, Color};
 
     let red = Color::parse("red").unwrap();
     let outline_edge = BorderEdge::Edge {
@@ -726,7 +726,7 @@ fn p2_28_outline_clipped_at_viewport_edge() {
     // Outline edges at/over viewport bounds are clipped to the frame (no panic).
     // The outline overdraws the widget's own perimeter cells; cells off-frame are
     // skipped silently.
-    use textual::style::{BorderEdge, BorderType, Color};
+    use rusty_textual::style::{BorderEdge, BorderType, Color};
 
     let red = Color::parse("red").unwrap();
     let outline_edge = BorderEdge::Edge {
@@ -763,7 +763,7 @@ fn p2_34_hatch_fills_blank_cells_with_pattern() {
     // Hatch replaces blank cells with hatch character; preserves existing text.
     // Label text is exactly 10 chars so layout gives it width 10 (matching
     // content_width). First char is 'X', rest are spaces — hatch fills spaces.
-    use textual::style::{Color, Hatch};
+    use rusty_textual::style::{Color, Hatch};
 
     let mut label = Label::new("X         "); // 10 chars: 'X' + 9 spaces
     label.seed_mut().styles.style.hatch = Some(Hatch {
@@ -787,7 +787,7 @@ fn p2_34_hatch_opacity_blends_color_over_background() {
     // The hatch glyph's foreground must be the hatch color blended over the
     // cell background (Python: fg = background + color, with color carrying its
     // opacity-scaled alpha). White hatch at 50% over a black bg => mid-grey fg.
-    use textual::style::{Color, Hatch};
+    use rusty_textual::style::{Color, Hatch};
 
     let mut label = Label::new("X         "); // 10 chars: 'X' + 9 spaces
     let seed = label.seed_mut();
@@ -883,12 +883,12 @@ fn p2g34_overlay_screen_escapes_on_top_not_blended() {
     let base_style = Style::new()
         .width(Scalar::Percent(100.0))
         .height(Scalar::Percent(100.0))
-        .bg(textual::style::Color::parse("#0000ff").unwrap());
+        .bg(rusty_textual::style::Color::parse("#0000ff").unwrap());
     let mut overlay_style = Style::new()
         .width(Scalar::Percent(100.0))
         .height(Scalar::Percent(100.0))
-        .bg(textual::style::Color::parse("#ff0000").unwrap());
-    overlay_style.position = Some(textual::style::Position::Absolute);
+        .bg(rusty_textual::style::Color::parse("#ff0000").unwrap());
+    overlay_style.position = Some(rusty_textual::style::Position::Absolute);
     overlay_style.overlay = Some(OverlayMode::Screen);
     let mut root = Container::new()
         .with_child(FillWidget::new("BaseFill", base_style))
@@ -902,7 +902,7 @@ fn p2g34_overlay_screen_escapes_on_top_not_blended() {
         .expect("overlay-escape background color should exist");
     assert_eq!(
         bg,
-        textual::style::Color::parse("#ff0000")
+        rusty_textual::style::Color::parse("#ff0000")
             .unwrap()
             .to_simple_opaque(),
         "overlay: screen must paint its own colour on top (escape), not a blend"
@@ -912,10 +912,10 @@ fn p2g34_overlay_screen_escapes_on_top_not_blended() {
 #[test]
 fn p2g34_keyline_draws_separator_between_children() {
     let mut keylined = Container::new();
-    keylined.seed_mut().styles.style.layout = Some(textual::style::Layout::Vertical);
-    keylined.seed_mut().styles.style.keyline = Some(textual::style::Keyline {
+    keylined.seed_mut().styles.style.layout = Some(rusty_textual::style::Layout::Vertical);
+    keylined.seed_mut().styles.style.keyline = Some(rusty_textual::style::Keyline {
         keyline_type: KeylineType::Thin,
-        color: textual::style::Color::parse("red").unwrap(),
+        color: rusty_textual::style::Color::parse("red").unwrap(),
     });
     let mut a = Label::new("A");
     a.seed_mut().styles.style.height = Some(Scalar::Cells(1));
@@ -938,7 +938,7 @@ fn p2g34_keyline_draws_separator_between_children() {
     assert_eq!(
         fg,
         Some(
-            textual::style::Color::parse("red")
+            rusty_textual::style::Color::parse("red")
                 .unwrap()
                 .to_simple_opaque()
         )

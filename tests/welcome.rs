@@ -7,12 +7,12 @@
 //! Unit tests for compose structure / message routing live in the widget source
 //! (`src/widgets/welcome.rs`) because they need access to `pub(crate)` items.
 
-use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn plain_lines(frame: &textual::render::FrameBuffer, w: usize, h: usize) -> Vec<String> {
+fn plain_lines(frame: &rusty_textual::render::FrameBuffer, w: usize, h: usize) -> Vec<String> {
     (0..h)
         .map(|y| (0..w).map(|x| frame.get(x, y).text.clone()).collect())
         .collect()

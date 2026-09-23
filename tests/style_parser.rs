@@ -1,17 +1,17 @@
 use rich_rs::Console;
-use textual::css::set_style_context;
-use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
-use textual::style::AutoColor;
-use textual::style::parse_color_like;
-use textual::widgets::WidgetRenderable;
+use rusty_textual::css::set_style_context;
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
+use rusty_textual::style::AutoColor;
+use rusty_textual::style::parse_color_like;
+use rusty_textual::widgets::WidgetRenderable;
 
 fn render_with_sheet(
     root: &mut dyn Widget,
     width: usize,
     height: usize,
     stylesheet: StyleSheet,
-) -> textual::render::FrameBuffer {
+) -> rusty_textual::render::FrameBuffer {
     let console = Console::new();
     if let Some(mut tree) = build_widget_tree_from_root(root) {
         render_tree_to_frame_with_stylesheet(&mut tree, root, &console, width, height, stylesheet)
@@ -21,7 +21,7 @@ fn render_with_sheet(
         options.size = (width, height);
         options.max_width = width;
         options.max_height = height;
-        textual::render::FrameBuffer::from_renderable(
+        rusty_textual::render::FrameBuffer::from_renderable(
             &console,
             &options,
             &WidgetRenderable::new(root),
@@ -113,11 +113,11 @@ Input {
     );
     assert_eq!(
         rules[0].style().height,
-        Some(textual::style::Scalar::Cells(3))
+        Some(rusty_textual::style::Scalar::Cells(3))
     );
     assert_eq!(
         rules[1].style().width,
-        Some(textual::style::Scalar::Cells(5))
+        Some(rusty_textual::style::Scalar::Cells(5))
     );
 }
 
@@ -131,13 +131,13 @@ fn stylesheet_parser_handles_unterminated_comment() {
     assert_eq!(rules.len(), 1);
     assert_eq!(
         rules[0].style().height,
-        Some(textual::style::Scalar::Cells(2))
+        Some(rusty_textual::style::Scalar::Cells(2))
     );
 }
 
 #[test]
 fn parse_color_like_supports_transparent_and_ansi_names() {
-    use textual::style::parse_color_like;
+    use rusty_textual::style::parse_color_like;
 
     assert_eq!(
         parse_color_like("transparent"),

@@ -25,7 +25,7 @@ use super::{BindingDecl, ListItem, NodeSeed, ScrollView, Widget};
 /// # Construction
 ///
 /// ```rust
-/// use textual::prelude::*;
+/// use rusty_textual::prelude::*;
 ///
 /// // Python: ListView(ListItem(Label("One")), ListItem(Label("Two")))
 /// let list = ListView::from_list_items(vec![

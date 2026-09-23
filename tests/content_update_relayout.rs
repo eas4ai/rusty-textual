@@ -13,8 +13,8 @@
 //! only shows up through `auto_content_width()`). Mirrors the
 //! `radio_set_changed` demo, where `#pressed`/`#index` labels start empty.
 
-use textual::compose;
-use textual::prelude::*;
+use rusty_textual::compose;
+use rusty_textual::prelude::*;
 
 const CSS: &str = r##"
 Horizontal {
@@ -39,7 +39,7 @@ impl TextualApp for ContentUpdateApp {
 
 #[test]
 fn label_set_text_relayouts_auto_width_box() {
-    textual::run_test(ContentUpdateApp, |pilot| {
+    rusty_textual::run_test(ContentUpdateApp, |pilot| {
         pilot.pause()?;
         let label = pilot.app().query_one("#pressed").unwrap();
         // The empty label may not have a recorded rect at all (zero-width box);

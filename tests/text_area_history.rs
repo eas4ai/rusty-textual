@@ -6,11 +6,11 @@ use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use slotmap::SlotMap;
-use textual::document::{Cursor, EditHistory, MockClock, Selection};
-use textual::event::EventCtx;
-use textual::node_id::NodeId;
-use textual::prelude::*;
-use textual::runtime::dispatch_ctx::set_dispatch_recipient;
+use rusty_textual::document::{Cursor, EditHistory, MockClock, Selection};
+use rusty_textual::event::EventCtx;
+use rusty_textual::node_id::NodeId;
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
 
 const MAX_CHECKPOINTS: usize = 5;
 const SIMPLE_TEXT: &str = "ABCDE\nFGHIJ\nKLMNO\nPQRST\nUVWXY\nZ\n";
@@ -47,7 +47,7 @@ fn text_area_with_mock_history() -> (TextArea, MockClock) {
 
 fn press(ta: &mut TextArea, code: KeyCode) {
     let mut ctx = EventCtx::default();
-    let mut w = textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+    let mut w = rusty_textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
     ta.on_event(&key(code), &mut w);
 }
 
@@ -286,7 +286,7 @@ fn test_paste_is_an_isolated_batch() {
 
     let paste = |ta: &mut TextArea, text: &str| {
         let mut ctx = EventCtx::default();
-        let mut w = textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+        let mut w = rusty_textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
         ta.on_message(
             &MessageEvent::new(
                 NodeId::default(),
@@ -493,7 +493,7 @@ fn multi_codepoint_cluster_insert_checkpoints_as_multi_character() {
 fn undo_redo_work_in_read_only_mode() {
     // The read-only gate applies to mutations, not undo/redo (intentional;
     // Python does not gate action_undo/action_redo either).
-    use textual::action::ParsedAction;
+    use rusty_textual::action::ParsedAction;
     let (mut ta, _clock) = text_area_with_mock_history();
     let _guard = set_dispatch_recipient(make_node_id(), focused_state());
     press(&mut ta, KeyCode::Char('x'));
@@ -506,7 +506,7 @@ fn undo_redo_work_in_read_only_mode() {
     };
     let mut ctx = EventCtx::default();
     {
-        let mut w = textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+        let mut w = rusty_textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
         assert!(ta.execute_action(&undo, &mut w));
     }
     assert_eq!(ta.text(), "");
@@ -518,7 +518,7 @@ fn undo_redo_work_in_read_only_mode() {
     };
     let mut ctx = EventCtx::default();
     {
-        let mut w = textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+        let mut w = rusty_textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
         assert!(ta.execute_action(&redo, &mut w));
     }
     assert_eq!(ta.text(), "x");

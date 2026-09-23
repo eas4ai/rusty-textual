@@ -16,10 +16,10 @@
 //! not only when the widget opts in via `clips_descendants_to_content()`.
 
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
-use textual::prelude::*;
-use textual::render::FrameBuffer;
-use textual::style::{BorderEdge, BorderType, Color, Layout, Scalar, Style};
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::style::{BorderEdge, BorderType, Color, Layout, Scalar, Style};
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
 
 /// Leaf widget that paints a solid block of `glyph` across its whole box.
 ///

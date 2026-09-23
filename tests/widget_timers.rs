@@ -11,13 +11,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::prelude::*;
-use textual::reactive::{
+use rusty_textual::prelude::*;
+use rusty_textual::reactive::{
     ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget, RuntimeReactiveEntry,
     enqueue_runtime_reactive_entry,
 };
-use textual::runtime::{Pilot, TimerHandle};
-use textual::widgets::Widget;
+use rusty_textual::runtime::{Pilot, TimerHandle};
+use rusty_textual::widgets::Widget;
 
 /// A widget that counts down once per second on a widget-owned interval.
 struct Countdown {
@@ -126,7 +126,7 @@ fn advance_clock_drives_widget_owned_interval_with_pause_resume() {
         fires: Arc::clone(&fires),
     };
 
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         // Timer registered in on_mount_ctx (RegisterTimer command drained by the
         // startup pump). No fire yet.
         pilot.pause()?;
@@ -207,7 +207,7 @@ impl Widget for Host {
         }
     }
 
-    fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
+    fn on_event(&mut self, event: &Event, ctx: &mut rusty_textual::event::WidgetCtx) {
         if let Event::Key(_) = event {
             // Flip `show` via the widget's own reactive setter and enqueue the
             // change so the reactive phase requests a recompose of this node.
@@ -252,7 +252,7 @@ fn recompose_mounted_widget_registers_timer_headlessly() {
         fires: Arc::clone(&fires),
     };
 
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.pause()?;
         // No Countdown yet (show == false): the timer widget is not mounted.
         assert_eq!(
@@ -353,7 +353,7 @@ fn set_timer_one_shot_fires_exactly_once_via_public_widget_ctx_api() {
         handle_slot: Arc::clone(&handle_slot),
     };
 
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.pause()?;
         assert!(
             handle_slot.lock().unwrap().is_some(),
@@ -387,7 +387,7 @@ fn set_timer_one_shot_can_be_stopped_before_firing() {
         handle_slot: Arc::clone(&handle_slot),
     };
 
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.pause()?;
         let handle = handle_slot.lock().unwrap().expect("timer registered at mount");
         handle.stop();
@@ -415,7 +415,7 @@ fn unmounting_widget_purges_its_timer_no_fire_after() {
         fires: Arc::clone(&fires),
     };
 
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.pause()?;
         pilot.advance_clock(Duration::from_secs(2))?;
         let fires_before = fires.load(Ordering::SeqCst);
@@ -424,7 +424,7 @@ fn unmounting_widget_purges_its_timer_no_fire_after() {
         // Remove the widget → its node is gone.
         pilot.app_mut()
             .remove("Countdown")
-            .map_err(|e| textual::Error::Message(format!("remove Countdown: {e:?}")))?;
+            .map_err(|e| rusty_textual::Error::Message(format!("remove Countdown: {e:?}")))?;
         pilot.pause()?;
 
         // Advance well past several intervals: the timer must not fire the

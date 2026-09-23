@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use rich_rs::{Console, MetaValue, Renderable, Segment, Segments, StyleMeta};
-use textual::render::FrameBuffer;
+use rusty_textual::render::FrameBuffer;
 
 struct MetaRenderable;
 

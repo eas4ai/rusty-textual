@@ -17,15 +17,15 @@
 
 use std::time::Duration;
 
-use textual::compose::ChildDecl;
-use textual::layout::{Region, inspect_node_rects, resolve_layout};
-use textual::prelude::*;
-use textual::reactive::ReactiveCtx;
-use textual::runtime::build_widget_tree_from_root;
-use textual::widget_tree::WidgetTree;
+use rusty_textual::compose::ChildDecl;
+use rusty_textual::layout::{Region, inspect_node_rects, resolve_layout};
+use rusty_textual::prelude::*;
+use rusty_textual::reactive::ReactiveCtx;
+use rusty_textual::runtime::build_widget_tree_from_root;
+use rusty_textual::widget_tree::WidgetTree;
 
 fn throwaway_ctx() -> ReactiveCtx {
-    ReactiveCtx::new(textual::node_id::NodeId::default())
+    ReactiveCtx::new(rusty_textual::node_id::NodeId::default())
 }
 
 /// Build a tree with a single ProgressBar under an AppRoot and return it.
@@ -34,7 +34,7 @@ fn tree_with_progress_bar(bar: ProgressBar) -> WidgetTree {
         root: AppRoot,
     }
     impl Widget for Host {
-        fn compose(&mut self) -> textual::compose::ComposeResult {
+        fn compose(&mut self) -> rusty_textual::compose::ComposeResult {
             self.root.compose()
         }
         fn render(
@@ -99,7 +99,7 @@ fn auto_width_derives_from_child_layout() {
     // The scoped widths live in the framework default sheet; install it as
     // the live style context for this headless layout pass (the runtime does
     // the same around its layout/render passes).
-    let _guard = textual::css::set_style_context(textual::css::default_widget_stylesheet());
+    let _guard = rusty_textual::css::set_style_context(rusty_textual::css::default_widget_stylesheet());
     let mut tree = tree_with_progress_bar(ProgressBar::new(Some(100.0)));
     let root = tree.root().expect("root");
     resolve_layout(&mut tree, root, Region::new(0, 0, 120, 24), (120, 24));
@@ -133,7 +133,7 @@ struct BarCssApp {
 }
 
 impl TextualApp for BarCssApp {
-    fn configure(&mut self, app: &mut App) -> textual::Result<()> {
+    fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
         app.load_stylesheet(self.css);
         Ok(())
     }
@@ -145,7 +145,7 @@ impl TextualApp for BarCssApp {
 }
 
 /// Find the first bar glyph in the rendered frame and return its (x, y).
-fn find_bar_glyph(pilot: &textual::runtime::Pilot) -> (usize, usize) {
+fn find_bar_glyph(pilot: &rusty_textual::runtime::Pilot) -> (usize, usize) {
     for (y, line) in pilot.app().frame_plain_lines().iter().enumerate() {
         for (x, ch) in line.chars().enumerate() {
             if ch == '━' || ch == '╺' || ch == '╸' {
@@ -163,7 +163,7 @@ fn bar_indeterminate_app_css_takes_effect() {
     let mut bar = ProgressBar::new(None);
     // Static full-width indeterminate bar: every glyph carries the
     // highlight (component fg) color, deterministically.
-    bar.set_animation_level(textual::event::AnimationLevel::None);
+    bar.set_animation_level(rusty_textual::event::AnimationLevel::None);
     BarCssApp {
         css: "Bar > .bar--indeterminate { color: #ff0000; }",
         bar: Some(bar),

@@ -1,9 +1,9 @@
 //! Integration tests for the `#[on(MessageType)]` attribute macro.
 
-use textual::event::{EventCtx, WidgetCtx};
-use textual::message::{ButtonPressed, CheckboxChanged, MessageEvent};
-use textual::node_id::node_id_from_ffi;
-use textual::on;
+use rusty_textual::event::{EventCtx, WidgetCtx};
+use rusty_textual::message::{ButtonPressed, CheckboxChanged, MessageEvent};
+use rusty_textual::node_id::node_id_from_ffi;
+use rusty_textual::on;
 
 // ---------------------------------------------------------------------------
 // Test struct with `#[on]`-annotated handler methods
@@ -54,7 +54,7 @@ fn test_ctx() -> EventCtx {
     EventCtx::default()
 }
 
-fn dummy_sender() -> textual::node_id::NodeId {
+fn dummy_sender() -> rusty_textual::node_id::NodeId {
     node_id_from_ffi(1)
 }
 
@@ -73,7 +73,7 @@ fn checkbox_event(checked: bool) -> MessageEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Tests — type-only dispatch (new signature: &MessageEvent, &mut textual::event::WidgetCtx)
+// Tests — type-only dispatch (new signature: &MessageEvent, &mut rusty_textual::event::WidgetCtx)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -238,7 +238,7 @@ fn multiple_dispatches_accumulate() {
 // Tests — fine-grained widget messages dispatch via #[on(Type)]
 // ---------------------------------------------------------------------------
 
-use textual::message::{
+use rusty_textual::message::{
     CollapsibleCollapsed, CollapsibleExpanded, DataTableCellSelected, DataTableRowHighlighted,
     DataTableRowLabelSelected, SelectionListHighlighted,
 };

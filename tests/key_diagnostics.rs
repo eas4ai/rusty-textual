@@ -1,4 +1,4 @@
-//! Integration tests for the canonical key model (`textual::keys`).
+//! Integration tests for the canonical key model (`rusty_textual::keys`).
 //!
 //! These tests exercise the full round-trip from crossterm `KeyEvent` through
 //! `KeyEventData` normalization, and verify display formatting, identifier
@@ -7,8 +7,8 @@
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MediaKeyCode, ModifierKeyCode,
 };
-use textual::event::{Action, ActionMap, KeyBind};
-use textual::keys::{KeyEventData, format_key_display, key_to_identifier};
+use rusty_textual::event::{Action, ActionMap, KeyBind};
+use rusty_textual::keys::{KeyEventData, format_key_display, key_to_identifier};
 
 // ---------------------------------------------------------------------------
 // Helpers

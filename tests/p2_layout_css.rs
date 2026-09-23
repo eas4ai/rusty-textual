@@ -8,13 +8,13 @@
 //! - P2G-33: row-span / column-span
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::layout::{Region, inspect_node_rects, resolve_layout};
-use textual::node_id::NodeId;
-use textual::style::{
+use rusty_textual::layout::{Region, inspect_node_rects, resolve_layout};
+use rusty_textual::node_id::NodeId;
+use rusty_textual::style::{
     BoxSizing, Color, Dock, Layout, Offset, OffsetValue, Position, Scalar, Spacing, Split, Style,
 };
-use textual::widget_tree::WidgetTree;
-use textual::widgets::Widget;
+use rusty_textual::widget_tree::WidgetTree;
+use rusty_textual::widgets::Widget;
 
 // ---------------------------------------------------------------------------
 // Test widget
@@ -588,7 +588,7 @@ fn p2g33_column_span_2_in_2col_grid() {
     };
 
     // Mount children under root but call layout_grid directly.
-    textual::layout::layout_grid(
+    rusty_textual::layout::layout_grid(
         &mut tree,
         &[wide, normal],
         Region::new(0, 0, 80, 60),
@@ -634,7 +634,7 @@ fn p2g33_row_span_2_in_2row_grid() {
         s
     };
 
-    textual::layout::layout_grid(
+    rusty_textual::layout::layout_grid(
         &mut tree,
         &[tall, b, c],
         Region::new(0, 0, 80, 60),
@@ -686,7 +686,7 @@ fn p2g33_span_with_gutter() {
     // Available: 94 wide. 3 cols with 2px gutter between each.
     // Gutter budget: 2 * 2 = 4. Col budget: 90. Col widths: [30, 30, 30].
     // Wide spans cols 0+1: width = 30 + 2 (gutter) + 30 = 62.
-    textual::layout::layout_grid(
+    rusty_textual::layout::layout_grid(
         &mut tree,
         &[wide, a, b],
         Region::new(0, 0, 94, 30),
@@ -720,7 +720,7 @@ fn p2g33_no_span_preserves_existing_behavior() {
         s
     };
 
-    textual::layout::layout_grid(
+    rusty_textual::layout::layout_grid(
         &mut tree,
         &[a, b, c, d],
         Region::new(0, 0, 80, 50),
@@ -830,7 +830,7 @@ fn p2_33_span_exceeding_grid_is_clamped() {
         s
     };
 
-    textual::layout::layout_grid(
+    rusty_textual::layout::layout_grid(
         &mut tree,
         &[wide, normal],
         Region::new(0, 0, 80, 60),
@@ -882,7 +882,7 @@ fn p2_33_overlapping_spans_use_occupancy() {
         s
     };
 
-    textual::layout::layout_grid(
+    rusty_textual::layout::layout_grid(
         &mut tree,
         &[a, b],
         Region::new(0, 0, 90, 60),

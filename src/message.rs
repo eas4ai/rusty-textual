@@ -1006,7 +1006,7 @@ impl Clone for Box<dyn Message> {
 ///   bubbled to ancestors (Python `bubble = False`). Reserved for framework
 ///   control messages.
 ///
-/// Third-party crates: `textual::impl_message!(MyMessage);`
+/// Third-party crates: `rusty_textual::impl_message!(MyMessage);`
 #[macro_export]
 macro_rules! impl_message {
     ($T:ty) => {

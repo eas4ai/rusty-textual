@@ -37,7 +37,7 @@ impl PrettySource {
 /// # Example
 ///
 /// ```rust
-/// use textual::prelude::*;
+/// use rusty_textual::prelude::*;
 ///
 /// let data = vec![1, 2, 3, 4, 5];
 /// let pretty = Pretty::new(&data);

@@ -6,7 +6,7 @@
 //!   regardless of pointer position; `capture_mouse(None)` releases.
 use rich_rs::{Console, ConsoleOptions, Segments};
 use std::sync::{Arc, Mutex};
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 /// Records MouseDown/MouseUp/Click deliveries with click chains.
 #[derive(Debug, Default)]

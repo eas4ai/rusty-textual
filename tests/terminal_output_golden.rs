@@ -1,5 +1,5 @@
 use rich_rs::{ControlType, Segment};
-use textual::render::FrameBuffer;
+use rusty_textual::render::FrameBuffer;
 
 mod support;
 use support::terminal_capture::{

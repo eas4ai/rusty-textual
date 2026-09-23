@@ -10,7 +10,7 @@
 //! - `on_app_unhandled_action_fires_for_custom_binding` is tested internally
 //!   in `src/runtime/event_loop.rs::tests` (requires private
 //!   `dispatch_simulated_key_like_input`).
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 /// All Tree navigation bindings must be hidden (show=false) so they do not
 /// flood the Footer when the Tree is focused, matching Python `show=False`.
@@ -62,7 +62,7 @@ fn dynamic_disabled_binding_does_not_fire_on_keypress() {
         fn check_action(
             &self,
             action: &str,
-            parameters: &[textual::action::ActionArgument],
+            parameters: &[rusty_textual::action::ActionArgument],
         ) -> Option<bool> {
             if action == "register" {
                 let first = parameters.first().and_then(|p| p.as_str());

@@ -2,19 +2,19 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rich_rs::{Console, ConsoleOptions, Segments};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use textual::compose;
-use textual::event::{
+use rusty_textual::compose;
+use rusty_textual::event::{
     Action, BlurEvent, Event, EventCtx, FocusEvent, MouseDownEvent, MouseEnterEvent,
     MouseLeaveEvent, MouseUpEvent,
 };
-use textual::keys::KeyEventData;
-use textual::node_id::NodeId;
-use textual::prelude::*;
-use textual::runtime::{
+use rusty_textual::keys::KeyEventData;
+use rusty_textual::node_id::NodeId;
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{
     build_widget_tree_from_root, dispatch_ctx::set_dispatch_recipient, focused_node_id_tree,
     render_tree_to_frame, tree_content_local_coords, widget_at_tree_layout,
 };
-use textual::widget_tree::WidgetTree;
+use rusty_textual::widget_tree::WidgetTree;
 
 #[derive(Clone)]
 struct ClickProbe {
@@ -46,7 +46,7 @@ impl Widget for ClickProbe {
         true
     }
 
-    fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
+    fn on_event(&mut self, event: &Event, ctx: &mut rusty_textual::event::WidgetCtx) {
         let this = self.node_id();
         match event {
             Event::MouseDown(mouse) if mouse.target == this => {
@@ -109,7 +109,7 @@ impl Widget for LayoutClickProbe {
         true
     }
 
-    fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
+    fn on_event(&mut self, event: &Event, ctx: &mut rusty_textual::event::WidgetCtx) {
         let this = self.node_id();
         match event {
             Event::MouseDown(mouse) if mouse.target == this => {
@@ -165,7 +165,7 @@ impl Widget for HoverProbe {
         Some(1)
     }
 
-    fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
+    fn on_event(&mut self, event: &Event, ctx: &mut rusty_textual::event::WidgetCtx) {
         match event {
             Event::Enter(_) => {
                 self.set_hovered(true);
@@ -220,7 +220,7 @@ impl Widget for FocusProbe {
         true
     }
 
-    fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
+    fn on_event(&mut self, event: &Event, ctx: &mut rusty_textual::event::WidgetCtx) {
         match event {
             Event::Focus(_) => {
                 self.set_focus(true);
@@ -248,7 +248,7 @@ fn click_tree(tree: &mut WidgetTree, x: u16, y: u16) -> bool {
     };
     let _ = focus_node(tree, target);
     let (local_x, local_y) = tree_content_local_coords(tree, target, x, y);
-    let down = textual::runtime::dispatch_event_to_target_tree(
+    let down = rusty_textual::runtime::dispatch_event_to_target_tree(
         tree,
         target,
         &Event::MouseDown(MouseDownEvent {
@@ -259,7 +259,7 @@ fn click_tree(tree: &mut WidgetTree, x: u16, y: u16) -> bool {
             y: local_y,
         }),
     );
-    let up = textual::runtime::dispatch_event_to_target_tree(
+    let up = rusty_textual::runtime::dispatch_event_to_target_tree(
         tree,
         target,
         &Event::MouseUp(MouseUpEvent {
@@ -280,14 +280,14 @@ fn focus_node(tree: &mut WidgetTree, target: NodeId) -> bool {
     }
     if let Some(current_id) = current {
         tree.set_focus_state(current_id, false);
-        let _ = textual::runtime::dispatch_event_to_target_tree(
+        let _ = rusty_textual::runtime::dispatch_event_to_target_tree(
             tree,
             current_id,
             &Event::Blur(BlurEvent { node: current_id }),
         );
     }
     tree.set_focus_state(target, true);
-    textual::runtime::dispatch_event_to_target_tree(
+    rusty_textual::runtime::dispatch_event_to_target_tree(
         tree,
         target,
         &Event::Focus(FocusEvent { node: target }),
@@ -299,7 +299,7 @@ fn send_key_to_focus(tree: &mut WidgetTree, key: KeyEventData) -> bool {
     let Some(target) = focused_node_id_tree(tree).or_else(|| tree.root()) else {
         return false;
     };
-    textual::runtime::dispatch_event_to_target_tree(tree, target, &Event::Key(key)).handled
+    rusty_textual::runtime::dispatch_event_to_target_tree(tree, target, &Event::Key(key)).handled
 }
 
 fn move_hover_tree(tree: &mut WidgetTree, hovered: &mut Option<NodeId>, x: u16, y: u16) -> bool {
@@ -307,14 +307,14 @@ fn move_hover_tree(tree: &mut WidgetTree, hovered: &mut Option<NodeId>, x: u16, 
     if *hovered == target {
         if let Some(id) = target {
             let (local_x, local_y) = tree_content_local_coords(tree, id, x, y);
-            return textual::runtime::call_on_mouse_move_tree(tree, id, local_x, local_y);
+            return rusty_textual::runtime::call_on_mouse_move_tree(tree, id, local_x, local_y);
         }
         return false;
     }
 
     if let Some(previous) = *hovered {
         let (local_x, local_y) = tree_content_local_coords(tree, previous, x, y);
-        let _ = textual::runtime::dispatch_event_to_target_tree(
+        let _ = rusty_textual::runtime::dispatch_event_to_target_tree(
             tree,
             previous,
             &Event::Leave(MouseLeaveEvent {
@@ -328,7 +328,7 @@ fn move_hover_tree(tree: &mut WidgetTree, hovered: &mut Option<NodeId>, x: u16, 
 
     if let Some(id) = target {
         let (local_x, local_y) = tree_content_local_coords(tree, id, x, y);
-        let _ = textual::runtime::dispatch_event_to_target_tree(
+        let _ = rusty_textual::runtime::dispatch_event_to_target_tree(
             tree,
             id,
             &Event::Enter(MouseEnterEvent {
@@ -338,7 +338,7 @@ fn move_hover_tree(tree: &mut WidgetTree, hovered: &mut Option<NodeId>, x: u16, 
                 y: local_y,
             }),
         );
-        let _ = textual::runtime::call_on_mouse_move_tree(tree, id, local_x, local_y);
+        let _ = rusty_textual::runtime::call_on_mouse_move_tree(tree, id, local_x, local_y);
     }
 
     *hovered = target;
@@ -414,7 +414,7 @@ impl Widget for DataTableNavProbe {
         self.inner.on_layout(width, height);
     }
 
-    fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
+    fn on_event(&mut self, event: &Event, ctx: &mut rusty_textual::event::WidgetCtx) {
         match event {
             Event::Focus(_) => {
                 self.focused = true;
@@ -495,7 +495,7 @@ fn p1_gate_row_click_targets_correct_child_by_x() {
         .with_child(ClickProbe::new("right", sink.clone()));
     let mut ctx = EventCtx::default();
 
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); root.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); root.on_event(
         &Event::MouseDown(MouseDownEvent {
             target: NodeId::default(),
             screen_x: 9,
@@ -504,7 +504,7 @@ fn p1_gate_row_click_targets_correct_child_by_x() {
             y: 0,
         }),
         &mut __w) };
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); root.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); root.on_event(
         &Event::MouseUp(MouseUpEvent {
             target: Some(NodeId::default()),
             screen_x: 9,
@@ -599,9 +599,9 @@ fn p1_gate_row_focus_next_prev_cycles_children() {
         .with_child(FocusProbe::new("right", sink.clone()));
     let mut ctx = EventCtx::default();
 
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); root.on_event(&Event::Action(Action::FocusPrev), &mut __w) };
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); root.on_event(&Event::Action(Action::FocusPrev), &mut __w) };
 
     let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
     assert!(
@@ -665,11 +665,11 @@ fn p1_gate_row_focus_routes_arrow_keys_to_datatable() {
         .with_child(DataTableNavProbe::new(sink.clone()));
     root.on_layout(20, 5);
 
-    { let mut __e = textual::event::EventCtx::default(); let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut __e); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
-    { let mut __e = textual::event::EventCtx::default(); let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut __e); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
+    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
+    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
 
     let mut key_ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut key_ctx); root.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut key_ctx); root.on_event(
         &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,

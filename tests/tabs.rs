@@ -1,13 +1,13 @@
 use rich_rs::Console;
-use textual::css::{default_widget_stylesheet, set_style_context};
-use textual::event::EventCtx;
-use textual::event::MouseDownEvent;
-use textual::prelude::*;
-use textual::reactive::ReactiveCtx;
-use textual::render::FrameBuffer;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
-use textual::style::parse_color_like;
-use textual::widgets::NodeState;
+use rusty_textual::css::{default_widget_stylesheet, set_style_context};
+use rusty_textual::event::EventCtx;
+use rusty_textual::event::MouseDownEvent;
+use rusty_textual::prelude::*;
+use rusty_textual::reactive::ReactiveCtx;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::style::parse_color_like;
+use rusty_textual::widgets::NodeState;
 
 fn two_tabs() -> Tabs {
     Tabs::new()
@@ -62,7 +62,7 @@ fn tabs_keyboard_changes_active_tab() {
         crossterm::event::KeyModifiers::NONE,
     ));
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(&Event::Key(key), &mut __w) };
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(&Event::Key(key), &mut __w) };
     assert!(ctx.handled());
     assert!(tabs.is_active("two"));
 }
@@ -73,7 +73,7 @@ fn tabs_mouse_click_on_header_changes_active_tab() {
     tabs.on_layout(40, 5);
     let id = NodeId::default();
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(
         &Event::MouseDown(MouseDownEvent {
             target: id,
             screen_x: 5,
@@ -95,7 +95,7 @@ fn tabs_mouse_hit_testing_handles_wide_grapheme_titles() {
     let id = NodeId::default();
     let first_label_cells = rich_rs::cell_len(" 👩‍🚀 ");
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(
         &Event::MouseDown(MouseDownEvent {
             target: id,
             screen_x: first_label_cells as u16 + 1,
@@ -223,12 +223,12 @@ fn tabs_keyboard_navigation_skips_disabled_and_hidden_tabs() {
         crossterm::event::KeyModifiers::NONE,
     ));
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(&Event::Key(right.clone()), &mut __w) };
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(&Event::Key(right.clone()), &mut __w) };
     assert!(ctx.handled());
     assert!(tabs.is_active("four"));
 
     let mut wrap_ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut wrap_ctx); tabs.on_event(&Event::Key(right), &mut __w) };
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut wrap_ctx); tabs.on_event(&Event::Key(right), &mut __w) };
     assert!(wrap_ctx.handled());
     assert!(tabs.is_active("one"));
 }
@@ -241,7 +241,7 @@ fn tabs_mouse_click_disabled_tab_does_not_activate() {
     tabs.on_layout(40, 5);
     let id = NodeId::default();
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(
         &Event::MouseDown(MouseDownEvent {
             target: id,
             screen_x: 6,

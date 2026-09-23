@@ -1,8 +1,8 @@
 use rich_rs::Console;
-use textual::css::{StyleSheet, default_widget_stylesheet, set_style_context};
-use textual::prelude::*;
-use textual::style::parse_color_like;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::css::{StyleSheet, default_widget_stylesheet, set_style_context};
+use rusty_textual::prelude::*;
+use rusty_textual::style::parse_color_like;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
 
 #[test]
 fn buttons_demo_default_button_has_background() {

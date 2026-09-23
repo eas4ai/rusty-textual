@@ -15,9 +15,9 @@
 //! height paints a vertical-thumb fragment several rows up from where it belongs.
 
 use rich_rs::Console;
-use textual::css::{StyleSheet, default_widget_stylesheet};
-use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
+use rusty_textual::css::{StyleSheet, default_widget_stylesheet};
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
 
 const THUMB_GLYPHS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█', '▎', '▌', '▊'];
 

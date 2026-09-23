@@ -9,10 +9,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::prelude::*;
-use textual::reactive::{ReactiveCtx, RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
-use textual::runtime::Pilot;
-use textual::widgets::Widget;
+use rusty_textual::prelude::*;
+use rusty_textual::reactive::{ReactiveCtx, RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
+use rusty_textual::runtime::Pilot;
+use rusty_textual::widgets::Widget;
 
 #[derive(Reactive)]
 struct AsyncHost {
@@ -50,7 +50,7 @@ impl Widget for AsyncHost {
         true
     }
 
-    fn reactive_widget(&mut self) -> Option<&mut dyn textual::reactive::ReactiveWidget> {
+    fn reactive_widget(&mut self) -> Option<&mut dyn rusty_textual::reactive::ReactiveWidget> {
         Some(self)
     }
 
@@ -88,7 +88,7 @@ fn async_watcher_runs_on_worker_pool() {
         done: Arc::clone(&done),
     };
 
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.pause()?;
         assert!(
             !done.load(Ordering::SeqCst),

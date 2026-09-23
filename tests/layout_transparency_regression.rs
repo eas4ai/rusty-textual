@@ -1,7 +1,7 @@
 use rich_rs::{Console, Segment, Style};
-use textual::render::FrameBuffer;
-use textual::style::parse_color_like;
-use textual::widgets::{Constrained, Horizontal, Widget, WidgetRenderable};
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::style::parse_color_like;
+use rusty_textual::widgets::{Constrained, Horizontal, Widget, WidgetRenderable};
 
 struct Swatch {
     text: &'static str,

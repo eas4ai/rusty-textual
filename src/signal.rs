@@ -7,9 +7,9 @@
 //! # Example
 //!
 //! ```
-//! use textual::signal::{Signal, SignalResponse};
+//! use rusty_textual::signal::{Signal, SignalResponse};
 //! use slotmap::SlotMap;
-//! use textual::node_id::NodeId;
+//! use rusty_textual::node_id::NodeId;
 //!
 //! let mut sm = SlotMap::<NodeId, &str>::new();
 //! let node = sm.insert("widget-a");

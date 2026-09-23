@@ -9,7 +9,7 @@
 /// `food.json` at runtime. Rust embeds `food.json` via `include_str!` and uses
 /// `serde_json` for parsing.
 use serde_json::Value;
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 const FOOD_JSON: &str = include_str!("food.json");
 
@@ -48,11 +48,11 @@ impl TextualApp for JsonTreeApp {
             .with_child(Footer::new())
     }
 
-    fn on_mount_with_app(&mut self, _app: &mut App, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_mount_with_app(&mut self, _app: &mut App, _ctx: &mut rusty_textual::event::WidgetCtx) {
         self.json_data = serde_json::from_str(FOOD_JSON).ok();
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut rusty_textual::event::WidgetCtx) {
         match action {
             "add" => {
                 // Python: json_node = tree.root.add("JSON")
@@ -152,7 +152,7 @@ fn repr_value(data: &Value) -> String {
     }
 }
 
-fn main() -> textual::Result<()> {
+fn main() -> rusty_textual::Result<()> {
     run_sync(JsonTreeApp::new())
 }
 

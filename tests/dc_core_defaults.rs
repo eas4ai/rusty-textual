@@ -3,13 +3,13 @@
 // Since StyleRule::selector_chain() is pub(crate), these tests parse inline CSS
 // and verify properties on the first (and only) rule's style.
 
-use textual::css::StyleSheet;
-use textual::style::{
+use rusty_textual::css::StyleSheet;
+use rusty_textual::style::{
     Constrain, Display, HorizontalAlign, Layout, Overflow, Pointer, Scalar, VerticalAlign,
 };
 
 /// Parse a single-rule CSS block and return its Style.
-fn parse_single(css: &str) -> textual::style::Style {
+fn parse_single(css: &str) -> rusty_textual::style::Style {
     let sheet = StyleSheet::parse(css);
     let rules = sheet.rules();
     assert!(
@@ -536,7 +536,7 @@ fn dc_05_label_variant_accent_parses() {
 
 #[test]
 fn dc_all_combined_stylesheet_parses() {
-    let sheet = textual::css::default_widget_stylesheet();
+    let sheet = rusty_textual::css::default_widget_stylesheet();
     assert!(
         sheet.rules().len() > 30,
         "combined stylesheet should have many rules"

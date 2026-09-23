@@ -13,9 +13,9 @@
 //! renders fine. The gap was purely the missing per-node `on_mount()` call,
 //! now fired by `WidgetTree::fire_mount_callbacks` during tree build.
 
-use textual::prelude::*;
-use textual::runtime::render_tree_to_frame;
-use textual::widget_tree::WidgetTree;
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::render_tree_to_frame;
+use rusty_textual::widget_tree::WidgetTree;
 
 /// Mirrors the `Hello(Static)` wrapper from the hello04/05/06 demos: an inner
 /// `Static` whose content is set in `on_mount`, with `render()` delegated to it.
@@ -58,7 +58,7 @@ impl Widget for Hello {
         self.inner.content_width()
     }
 
-    fn on_mount(&mut self, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_mount(&mut self, _ctx: &mut rusty_textual::event::WidgetCtx) {
         self.mounted = true;
         self.inner.update("Hello, World!");
     }
@@ -68,7 +68,7 @@ impl Widget for Hello {
     }
 }
 
-fn dump_frame(width: usize, height: usize, frame: &textual::render::FrameBuffer) -> String {
+fn dump_frame(width: usize, height: usize, frame: &rusty_textual::render::FrameBuffer) -> String {
     let mut out = String::new();
     for y in 0..height {
         for x in 0..width {

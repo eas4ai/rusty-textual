@@ -7,8 +7,8 @@
 /// Tests that require private APIs (`dispatch_message_bubble`, `collect_focus_chain_tree`)
 /// are written as unit tests inside their respective `src/` modules.
 use rich_rs::{Console, ConsoleOptions, Renderable, Segments};
-use textual::prelude::*;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
 
 // ---------------------------------------------------------------------------
 // Minimal test widget that demonstrates the containment pattern.
@@ -51,12 +51,12 @@ impl Widget for OuterWidget {
         std::mem::take(&mut self.seed)
     }
 
-    fn compose(&mut self) -> textual::compose::ComposeResult {
+    fn compose(&mut self) -> rusty_textual::compose::ComposeResult {
         if self.child_extracted {
             return vec![];
         }
         self.child_extracted = true;
-        vec![textual::compose::ChildDecl::new(Box::new(std::mem::replace(
+        vec![rusty_textual::compose::ChildDecl::new(Box::new(std::mem::replace(
             &mut self.inner,
             Button::new(""),
         )))]
@@ -66,14 +66,14 @@ impl Widget for OuterWidget {
         false
     }
 
-    fn on_message(&mut self, msg: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message(&mut self, msg: &MessageEvent, ctx: &mut rusty_textual::event::WidgetCtx) {
         if msg.downcast_ref::<ButtonPressed>().is_some() {
             ctx.set_handled();
         }
     }
 
-    fn on_event_capture(&mut self, _event: &Event, _ctx: &mut textual::event::WidgetCtx) {}
-    fn on_event(&mut self, _event: &Event, _ctx: &mut textual::event::WidgetCtx) {}
+    fn on_event_capture(&mut self, _event: &Event, _ctx: &mut rusty_textual::event::WidgetCtx) {}
+    fn on_event(&mut self, _event: &Event, _ctx: &mut rusty_textual::event::WidgetCtx) {}
 }
 
 impl Renderable for OuterWidget {

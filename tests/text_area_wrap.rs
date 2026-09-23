@@ -5,12 +5,12 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rich_rs::Console;
 use slotmap::SlotMap;
-use textual::document::{Cursor, Selection};
-use textual::event::EventCtx;
-use textual::node_id::NodeId;
-use textual::prelude::*;
-use textual::render::FrameBuffer;
-use textual::runtime::dispatch_ctx::set_dispatch_recipient;
+use rusty_textual::document::{Cursor, Selection};
+use rusty_textual::event::EventCtx;
+use rusty_textual::node_id::NodeId;
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
 
 fn key(code: KeyCode) -> Event {
     Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
@@ -33,7 +33,7 @@ fn focused_state() -> NodeState {
 
 fn press(ta: &mut TextArea, code: KeyCode) {
     let mut ctx = EventCtx::default();
-    let mut w = textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+    let mut w = rusty_textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
     ta.on_event(&key(code), &mut w);
 }
 
@@ -231,7 +231,7 @@ fn selection_spanning_a_wrap_point_styles_both_rows() {
     });
     let console = Console::new();
     let options = options_for(&console, 5, 3); // wrap width 4: "01 " / "3456"
-    let segments = textual::widgets::Render::render(&ta, &console, &options);
+    let segments = rusty_textual::widgets::Render::render(&ta, &console, &options);
     let debug = format!("{segments:?}");
     // Row 0: "0" unselected + "1 " selected; row 1: "34" selected + "56".
     assert!(debug.contains("\"1 \""), "selected tail of row 0: {debug}");
@@ -252,7 +252,7 @@ fn syntax_spans_stay_stable_across_crlf_and_wrapped_render() {
     let ta = TextArea::new("def foo():\r\n    return 1\r\n").with_language("python");
     let console = Console::new();
     let options = options_for(&console, 8, 8); // wrap width 7 wraps "return 1"
-    let segments = textual::widgets::Render::render(&ta, &console, &options);
+    let segments = rusty_textual::widgets::Render::render(&ta, &console, &options);
     let debug = format!("{segments:?}");
     // The keywords are emitted as their own styled segments (span
     // boundaries respected through the wrap).
@@ -275,10 +275,10 @@ fn mouse_click_on_wrapped_section_maps_to_document_location() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut w = textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+        let mut w = rusty_textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
         // Click visual row 1 ("3456", the wrapped section of line 0), x=2.
         ta.on_event(
-            &Event::MouseDown(textual::event::MouseDownEvent {
+            &Event::MouseDown(rusty_textual::event::MouseDownEvent {
                 target: id,
                 screen_x: 2,
                 screen_y: 1,
@@ -293,9 +293,9 @@ fn mouse_click_on_wrapped_section_maps_to_document_location() {
     // Clicking past the end of a section clamps (offset_to_location).
     let mut ctx = EventCtx::default();
     {
-        let mut w = textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+        let mut w = rusty_textual::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
         ta.on_event(
-            &Event::MouseDown(textual::event::MouseDownEvent {
+            &Event::MouseDown(rusty_textual::event::MouseDownEvent {
                 target: id,
                 screen_x: 4,
                 screen_y: 3,

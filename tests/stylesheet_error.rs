@@ -2,8 +2,8 @@
 //! `Error::StylesheetError` (Python parity) instead of silently running
 //! unstyled.
 
-use textual::Error;
-use textual::prelude::*;
+use rusty_textual::Error;
+use rusty_textual::prelude::*;
 
 struct BadCssPathApp;
 

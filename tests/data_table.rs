@@ -1,11 +1,11 @@
 use rich_rs::Console;
 use slotmap::SlotMap;
-use textual::prelude::*;
-use textual::event::EventCtx;
-use textual::reactive::ReactiveCtx;
-use textual::render::FrameBuffer;
-use textual::runtime::dispatch_ctx::set_dispatch_recipient;
-use textual::widgets::SortKey;
+use rusty_textual::prelude::*;
+use rusty_textual::event::EventCtx;
+use rusty_textual::reactive::ReactiveCtx;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
+use rusty_textual::widgets::SortKey;
 
 fn make_node_id() -> NodeId {
     let mut sm: SlotMap<NodeId, ()> = SlotMap::new();
@@ -139,7 +139,7 @@ fn data_table_row_cursor_actions_can_scroll_horizontal_viewport() {
     table.on_layout(12, 4);
 
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); table.on_event(&Event::Action(Action::ScrollRight), &mut __w) };
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); table.on_event(&Event::Action(Action::ScrollRight), &mut __w) };
     assert!(ctx.handled());
 
     let console = Console::new();

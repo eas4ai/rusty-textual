@@ -1,13 +1,13 @@
 use rich_rs::Console;
-use textual::prelude::*;
-use textual::event::EventCtx;
-use textual::render::FrameBuffer;
-use textual::widget_tree::WidgetTree;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::prelude::*;
+use rusty_textual::event::EventCtx;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::widget_tree::WidgetTree;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
 
 fn render_once(root: &mut dyn Widget, width: usize, height: usize) -> FrameBuffer {
-    let sheet = textual::css::default_widget_stylesheet();
-    let _guard = textual::css::set_style_context(sheet);
+    let sheet = rusty_textual::css::default_widget_stylesheet();
+    let _guard = rusty_textual::css::set_style_context(sheet);
     let console = Console::new();
     let mut tree = build_widget_tree_from_root(root).expect("tree should build");
     render_tree_to_frame(&mut tree, root, &console, width, height)
@@ -20,8 +20,8 @@ fn render_with_tree(
     width: usize,
     height: usize,
 ) -> FrameBuffer {
-    let sheet = textual::css::default_widget_stylesheet();
-    let _guard = textual::css::set_style_context(sheet);
+    let sheet = rusty_textual::css::default_widget_stylesheet();
+    let _guard = rusty_textual::css::set_style_context(sheet);
     render_tree_to_frame(tree, root, console, width, height)
 }
 
@@ -96,8 +96,8 @@ fn center_middle_centers_both_axes() {
 
 #[test]
 fn scrollview_is_focusable_and_supports_home_end_actions() {
-    let sheet = textual::css::default_widget_stylesheet();
-    let _guard = textual::css::set_style_context(sheet);
+    let sheet = rusty_textual::css::default_widget_stylesheet();
+    let _guard = rusty_textual::css::set_style_context(sheet);
     let console = Console::new();
     let mut scroll = ScrollView::new(ListView::new(vec![
         "item 1".to_string(),
@@ -112,7 +112,7 @@ fn scrollview_is_focusable_and_supports_home_end_actions() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         scroll.on_event(&Event::Action(Action::ScrollEnd), &mut __w);
     }
     assert!(ctx.handled());
@@ -120,7 +120,7 @@ fn scrollview_is_focusable_and_supports_home_end_actions() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         scroll.on_event(&Event::Action(Action::ScrollHome), &mut __w);
     }
     assert!(ctx.handled());
@@ -129,8 +129,8 @@ fn scrollview_is_focusable_and_supports_home_end_actions() {
 
 #[test]
 fn vertical_scroll_supports_home_end_actions() {
-    let sheet = textual::css::default_widget_stylesheet();
-    let _guard = textual::css::set_style_context(sheet);
+    let sheet = rusty_textual::css::default_widget_stylesheet();
+    let _guard = rusty_textual::css::set_style_context(sheet);
     let console = Console::new();
     let mut scroll = VerticalScroll::new()
         .with_child(Static::new("row 1"))
@@ -144,7 +144,7 @@ fn vertical_scroll_supports_home_end_actions() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         scroll.on_event(&Event::Action(Action::ScrollEnd), &mut __w);
     }
     assert!(ctx.handled());
@@ -153,7 +153,7 @@ fn vertical_scroll_supports_home_end_actions() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         scroll.on_event(&Event::Action(Action::ScrollHome), &mut __w);
     }
     assert!(ctx.handled());
@@ -163,8 +163,8 @@ fn vertical_scroll_supports_home_end_actions() {
 
 #[test]
 fn scrollable_container_supports_home_end_actions() {
-    let sheet = textual::css::default_widget_stylesheet();
-    let _guard = textual::css::set_style_context(sheet);
+    let sheet = rusty_textual::css::default_widget_stylesheet();
+    let _guard = rusty_textual::css::set_style_context(sheet);
     let console = Console::new();
     let mut scrollable = ScrollableContainer::new()
         .with_child(Static::new("row 1"))
@@ -178,7 +178,7 @@ fn scrollable_container_supports_home_end_actions() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         scrollable.on_event(&Event::Action(Action::ScrollEnd), &mut __w);
     }
     assert!(ctx.handled());
@@ -187,7 +187,7 @@ fn scrollable_container_supports_home_end_actions() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         scrollable.on_event(&Event::Action(Action::ScrollHome), &mut __w);
     }
     assert!(ctx.handled());
@@ -197,8 +197,8 @@ fn scrollable_container_supports_home_end_actions() {
 
 #[test]
 fn horizontal_scroll_is_focusable_and_supports_home_end_actions() {
-    let sheet = textual::css::default_widget_stylesheet();
-    let _guard = textual::css::set_style_context(sheet);
+    let sheet = rusty_textual::css::default_widget_stylesheet();
+    let _guard = rusty_textual::css::set_style_context(sheet);
     let console = Console::new();
     let mut scroll = HorizontalScroll::new()
         .with_child(Label::new("abcdefghi").with_shrink(true))
@@ -209,7 +209,7 @@ fn horizontal_scroll_is_focusable_and_supports_home_end_actions() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         scroll.on_event(&Event::Action(Action::ScrollEnd), &mut __w);
     }
     assert!(ctx.handled());
@@ -218,7 +218,7 @@ fn horizontal_scroll_is_focusable_and_supports_home_end_actions() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         scroll.on_event(&Event::Action(Action::ScrollHome), &mut __w);
     }
     assert!(ctx.handled());

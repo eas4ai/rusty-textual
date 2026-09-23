@@ -6,12 +6,12 @@
 // Tests via the combined default stylesheet using the public selector API
 // to find bare type rules and verify parsed properties.
 
-use textual::css::default_widget_stylesheet;
-use textual::style::{Pointer, Scalar, Spacing, TextAlign};
+use rusty_textual::css::default_widget_stylesheet;
+use rusty_textual::style::{Pointer, Scalar, Spacing, TextAlign};
 
 /// Find a bare type rule (single selector part, no classes, no pseudos) by type name
 /// using the public selector API.
-fn default_style_for_type(type_name: &str) -> textual::style::Style {
+fn default_style_for_type(type_name: &str) -> rusty_textual::style::Style {
     let sheet = default_widget_stylesheet();
     for rule in sheet.rules() {
         let parts = rule.selector_chain().parts();
@@ -42,8 +42,8 @@ fn dc_13_button_has_content_align_center_middle() {
     let ca = style
         .content_align
         .expect("Button should have content-align");
-    assert_eq!(ca.horizontal, textual::style::HorizontalAlign::Center);
-    assert_eq!(ca.vertical, textual::style::VerticalAlign::Middle);
+    assert_eq!(ca.horizontal, rusty_textual::style::HorizontalAlign::Center);
+    assert_eq!(ca.vertical, rusty_textual::style::VerticalAlign::Middle);
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn dc_27_header_has_height_1() {
 #[test]
 fn dc_27_header_has_dock_top() {
     let style = default_style_for_type("Header");
-    assert_eq!(style.dock, Some(textual::style::Dock::Top));
+    assert_eq!(style.dock, Some(rusty_textual::style::Dock::Top));
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn dc_27_header_has_width_100() {
 #[test]
 fn dc_27_header_icon_has_dock_left() {
     let style = default_style_for_type("HeaderIcon");
-    assert_eq!(style.dock, Some(textual::style::Dock::Left));
+    assert_eq!(style.dock, Some(rusty_textual::style::Dock::Left));
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn dc_27_header_title_has_width_100() {
 #[test]
 fn dc_27_header_clock_space_has_dock_right() {
     let style = default_style_for_type("HeaderClockSpace");
-    assert_eq!(style.dock, Some(textual::style::Dock::Right));
+    assert_eq!(style.dock, Some(rusty_textual::style::Dock::Right));
 }
 
 // ==== DC-28: Footer ====
@@ -172,13 +172,13 @@ fn dc_28_footer_has_height_1() {
 #[test]
 fn dc_28_footer_has_dock_bottom() {
     let style = default_style_for_type("Footer");
-    assert_eq!(style.dock, Some(textual::style::Dock::Bottom));
+    assert_eq!(style.dock, Some(rusty_textual::style::Dock::Bottom));
 }
 
 #[test]
 fn dc_28_footer_has_layout_horizontal() {
     let style = default_style_for_type("Footer");
-    assert_eq!(style.layout, Some(textual::style::Layout::Horizontal));
+    assert_eq!(style.layout, Some(rusty_textual::style::Layout::Horizontal));
 }
 
 #[test]
@@ -211,7 +211,7 @@ fn dc_29_option_list_has_padding_0_1() {
 #[test]
 fn dc_29_option_list_has_overflow_x_hidden() {
     let style = default_style_for_type("OptionList");
-    assert_eq!(style.overflow_x, Some(textual::style::Overflow::Hidden));
+    assert_eq!(style.overflow_x, Some(rusty_textual::style::Overflow::Hidden));
 }
 
 // ==== DC-30: SelectionList ====

@@ -10,10 +10,10 @@
 //! not just the top one.
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::layout::{Region, inspect_node_rects, resolve_layout};
-use textual::style::{BoxSizing, Color, Dock, Scalar, Style};
-use textual::widget_tree::WidgetTree;
-use textual::widgets::Widget;
+use rusty_textual::layout::{Region, inspect_node_rects, resolve_layout};
+use rusty_textual::style::{BoxSizing, Color, Dock, Scalar, Style};
+use rusty_textual::widget_tree::WidgetTree;
+use rusty_textual::widgets::Widget;
 
 /// Minimal inline-styled leaf for white-box layout assertions.
 struct StyledLeaf {

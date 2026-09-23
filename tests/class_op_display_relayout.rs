@@ -12,8 +12,8 @@
 //! all, so a widget whose `.visible` class sets `display: block` stayed
 //! invisible until an unrelated relayout happened.
 
-use textual::compose;
-use textual::prelude::*;
+use rusty_textual::compose;
+use rusty_textual::prelude::*;
 
 const CSS: &str = r##"
 #panel {
@@ -41,7 +41,7 @@ impl TextualApp for ClassDisplayApp {
     }
 }
 
-fn panel_is_laid_out(pilot: &textual::runtime::Pilot) -> bool {
+fn panel_is_laid_out(pilot: &rusty_textual::runtime::Pilot) -> bool {
     let panel = pilot.app().query_one("#panel").unwrap();
     match pilot.app().node_screen_rect(panel) {
         Some((_, _, w, h)) => w > 0 && h > 0,

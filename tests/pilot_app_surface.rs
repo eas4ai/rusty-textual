@@ -9,7 +9,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 /// Counter app: every button press bumps `presses`.
 struct CounterApp {
@@ -227,7 +227,7 @@ fn wait_for_animation_idle_is_ok() {
 /// `wait_for_animation` drains a running style animation to completion.
 #[test]
 fn wait_for_animation_drains_style_animation() {
-    use textual::event::StyleValue;
+    use rusty_textual::event::StyleValue;
     struct AnimApp;
     impl TextualApp for AnimApp {
         fn compose(&mut self) -> AppRoot {

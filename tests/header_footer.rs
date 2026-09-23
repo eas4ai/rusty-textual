@@ -1,11 +1,11 @@
 use rich_rs::Console;
-use textual::css::set_style_context;
-use textual::event::{Event, EventCtx, MouseDownEvent, MouseUpEvent};
-use textual::node_id::NodeId;
-use textual::prelude::*;
-use textual::render::FrameBuffer;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
-use textual::style::Color;
+use rusty_textual::css::set_style_context;
+use rusty_textual::event::{Event, EventCtx, MouseDownEvent, MouseUpEvent};
+use rusty_textual::node_id::NodeId;
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::style::Color;
 
 fn options_for(console: &Console, width: usize, height: usize) -> rich_rs::ConsoleOptions {
     let mut options = console.options().clone();
@@ -49,7 +49,7 @@ fn footer_updates_from_bindings_changed_event() {
     let options = options_for(&console, 60, 1);
     let mut footer = Footer::new();
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); footer.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); footer.on_event(
         &Event::BindingsChanged(vec![
             BindingHint::new("tab", "next").hidden(true),
             BindingHint::new("j", "Jessica"),
@@ -72,7 +72,7 @@ fn footer_docks_command_palette_binding_to_right_slot() {
     let options = options_for(&console, 48, 1);
     let mut footer = Footer::new();
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); footer.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); footer.on_event(
         &Event::BindingsChanged(vec![
             BindingHint::new("j", "Jessica"),
             BindingHint::new("ctrl+p", "palette")
@@ -98,7 +98,7 @@ fn footer_groups_consecutive_bindings_with_same_group() {
     let options = options_for(&console, 80, 1);
     let mut footer = Footer::new();
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); footer.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); footer.on_event(
         &Event::BindingsChanged(vec![
             BindingHint::new("left", "move left").with_group("Move"),
             BindingHint::new("right", "move right").with_group("Move"),
@@ -130,10 +130,10 @@ fn footer_applies_deferred_bindings_on_focus_gain() {
     let mut footer = Footer::new();
 
     let mut unfocus_ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut unfocus_ctx); footer.on_event(&Event::AppFocus(false), &mut __w) };
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut unfocus_ctx); footer.on_event(&Event::AppFocus(false), &mut __w) };
 
     let mut bindings_ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut bindings_ctx); footer.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut bindings_ctx); footer.on_event(
         &Event::BindingsChanged(vec![
             BindingHint::new("ctrl+p", "palette").with_key_display("^p"),
         ]),
@@ -146,7 +146,7 @@ fn footer_applies_deferred_bindings_on_focus_gain() {
     assert!(!before_focus_line.contains("palette"));
 
     let mut focus_ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut focus_ctx); footer.on_event(&Event::AppFocus(true), &mut __w) };
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut focus_ctx); footer.on_event(&Event::AppFocus(true), &mut __w) };
     assert!(focus_ctx.repaint_requested());
 
     let after_focus = FrameBuffer::from_renderable(&console, &options, &footer, None);
@@ -157,7 +157,7 @@ fn footer_applies_deferred_bindings_on_focus_gain() {
 
 #[test]
 fn footer_compact_mode_tightens_spacing() {
-    let _guard = set_style_context(textual::css::default_widget_stylesheet());
+    let _guard = set_style_context(rusty_textual::css::default_widget_stylesheet());
     let console = Console::new();
     let options = options_for(&console, 60, 1);
     let non_compact = Footer::new()
@@ -328,7 +328,7 @@ fn footer_key_hover_applies_to_command_palette_item() {
     let options = options_for(&console, width, 1);
     let mut footer = Footer::new();
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); footer.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); footer.on_event(
         &Event::BindingsChanged(vec![
             BindingHint::new("j", "Jessica"),
             BindingHint::new("ctrl+p", "palette")
@@ -385,7 +385,7 @@ fn footer_paints_full_row_background_when_bindings_change_shape() {
     let options = options_for(&console, width, 1);
     let mut footer = Footer::new();
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); footer.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); footer.on_event(
         &Event::BindingsChanged(vec![
             BindingHint::new("p", "Paul"),
             BindingHint::new("ctrl+p", "palette")
@@ -411,7 +411,7 @@ fn footer_paints_full_row_background_when_bindings_change_shape() {
 fn header_mouse_up_toggles_tall_outside_icon() {
     let mut header = Header::new().title("Textual Keys");
     let mut down_ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut down_ctx); header.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut down_ctx); header.on_event(
         &Event::MouseDown(MouseDownEvent {
             target: NodeId::default(),
             screen_x: 20,
@@ -423,7 +423,7 @@ fn header_mouse_up_toggles_tall_outside_icon() {
     assert!(down_ctx.handled());
 
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); header.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); header.on_event(
         &Event::MouseUp(MouseUpEvent {
             target: Some(NodeId::default()),
             screen_x: 20,
@@ -442,7 +442,7 @@ fn header_mouse_up_toggles_tall_outside_icon() {
 fn header_icon_click_does_not_toggle_tall() {
     let mut header = Header::new().title("Textual Keys");
     let mut down_ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut down_ctx); header.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut down_ctx); header.on_event(
         &Event::MouseDown(MouseDownEvent {
             target: NodeId::default(),
             screen_x: 1,
@@ -454,7 +454,7 @@ fn header_icon_click_does_not_toggle_tall() {
     assert!(down_ctx.handled());
 
     let mut ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx); header.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); header.on_event(
         &Event::MouseUp(MouseUpEvent {
             target: Some(NodeId::default()),
             screen_x: 1,
@@ -488,7 +488,7 @@ fn header_cross_region_press_release_is_noop() {
     let mut header = Header::new().title("Textual Keys");
     let id = NodeId::default();
     let mut down_ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut down_ctx); header.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut down_ctx); header.on_event(
         &Event::MouseDown(MouseDownEvent {
             target: id,
             screen_x: 1,
@@ -500,7 +500,7 @@ fn header_cross_region_press_release_is_noop() {
     assert!(down_ctx.handled());
 
     let mut up_ctx = EventCtx::default();
-    { let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut up_ctx); header.on_event(
+    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut up_ctx); header.on_event(
         &Event::MouseUp(MouseUpEvent {
             target: Some(id),
             screen_x: 20,

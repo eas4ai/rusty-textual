@@ -27,11 +27,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rich_rs::Console;
 use slotmap::SlotMap;
-use textual::event::EventCtx;
-use textual::message::MessageEvent;
-use textual::prelude::*;
-use textual::render::FrameBuffer;
-use textual::runtime::dispatch_ctx::set_dispatch_recipient;
+use rusty_textual::event::EventCtx;
+use rusty_textual::message::MessageEvent;
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
 
 // ── test_tree_get_node_by_id.py ───────────────────────────────────────────
 
@@ -548,7 +548,7 @@ fn directory_tree_rebuild_keeps_cursor_on_path() {
     let mut ctx = EventCtx::default();
     {
         let mut w =
-            textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+            rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         tree.on_message(
             &MessageEvent::new(
                 tree.tree_id(),
@@ -569,7 +569,7 @@ fn directory_tree_rebuild_keeps_cursor_on_path() {
     for _ in 0..2 {
         let mut ctx = EventCtx::default();
         let mut w =
-            textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+            rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         tree.on_event(&Event::Key(down.clone()), &mut w);
     }
     assert_eq!(
@@ -582,7 +582,7 @@ fn directory_tree_rebuild_keeps_cursor_on_path() {
     let mut ctx = EventCtx::default();
     {
         let mut w =
-            textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+            rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         tree.on_message(
             &MessageEvent::new(
                 NodeId::default(),

@@ -6,11 +6,11 @@
 //! They do NOT use the legacy FrameBuffer::from_renderable path.
 
 use rich_rs::Console;
-use textual::compose;
-use textual::prelude::*;
-use textual::render::FrameBuffer;
-use textual::style::{Offset, OffsetValue, Position, Scalar};
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame, run_layout_pass};
+use rusty_textual::compose;
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
+use rusty_textual::style::{Offset, OffsetValue, Position, Scalar};
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame, run_layout_pass};
 
 // ===========================================================================
 // Helpers
@@ -612,8 +612,8 @@ fn layout_pass_tree_structure_remains_valid() {
     let mut tree = build_widget_tree_from_root(&mut root).expect("tree should exist");
 
     // Install stylesheet context and run layout.
-    let sheet = textual::css::default_widget_stylesheet();
-    let _guard = textual::css::set_style_context(sheet);
+    let sheet = rusty_textual::css::default_widget_stylesheet();
+    let _guard = rusty_textual::css::set_style_context(sheet);
     run_layout_pass(&mut tree, (40, 10));
 
     // Tree should still be walkable.
@@ -816,14 +816,14 @@ Horizontal > VerticalScroll {
 }
 "#,
     );
-    let _guard = textual::css::set_style_context(sheet);
+    let _guard = rusty_textual::css::set_style_context(sheet);
     run_layout_pass(&mut tree, (80, 24));
 
     let widths: Vec<u16> = children
         .into_iter()
         .map(|id| {
             let (layout, _content) =
-                textual::layout::inspect_node_rects(&tree, id).expect("child rects should exist");
+                rusty_textual::layout::inspect_node_rects(&tree, id).expect("child rects should exist");
             layout.2.saturating_sub(layout.0)
         })
         .collect();

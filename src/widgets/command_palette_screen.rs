@@ -126,7 +126,7 @@ fn search_commands(commands: &[CommandPaletteCommand], query: &str) -> Vec<Comma
 /// `SelectOverlay`). Supplies only the command-row rendering (title line with
 /// fuzzy highlights + a dim help line, Python `command.py` `Command` option) and
 /// its own CSS identity (`CommandList`).
-#[textual::widget(base = OptionList, field = inner, style_type = "CommandList",
+#[rusty_textual::widget(base = OptionList, field = inner, style_type = "CommandList",
     override(layout_height))]
 pub(crate) struct PaletteCommandList {
     inner: OptionList,
@@ -198,7 +198,7 @@ impl PaletteCommandList {
 /// `PaletteCommandList` options via a cross-node deferred command on each
 /// keystroke. `style_type = "CommandPalette"` so the screen CSS (`CommandPalette
 /// #--input`, `CommandPalette #--results`, …) resolves against its descendants.
-#[textual::widget(Interactive)]
+#[rusty_textual::widget(Interactive)]
 pub(crate) struct CommandPaletteBody {
     commands: Vec<CommandPaletteCommand>,
     placeholder: String,

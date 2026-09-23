@@ -10,12 +10,12 @@
 //! guarded by the `docs_render_compose` PTY parity golden, not by baking chrome
 //! into this intrinsic-height number.
 
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 fn with_css<T>(css: &str, f: impl FnOnce() -> T) -> T {
-    let mut sheet = textual::css::default_widget_stylesheet();
-    sheet.extend(&textual::css::StyleSheet::parse(css));
-    let _guard = textual::css::set_style_context(sheet);
+    let mut sheet = rusty_textual::css::default_widget_stylesheet();
+    sheet.extend(&rusty_textual::css::StyleSheet::parse(css));
+    let _guard = rusty_textual::css::set_style_context(sheet);
     f()
 }
 

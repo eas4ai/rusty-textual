@@ -12,7 +12,7 @@
 //! clickable — across a trivial root, a centered modal, and a dense app-root.
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 // A modal root that wraps its id-bearing fields inside a VerticalGroup, exactly
 // like coldapp_kanban's AddTaskRoot.

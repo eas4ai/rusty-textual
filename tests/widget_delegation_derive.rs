@@ -15,10 +15,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use textual::prelude::*;
-use textual::reactive::ReactiveCtx;
-use textual::runtime::Pilot;
-use textual::widgets::Widget;
+use rusty_textual::prelude::*;
+use rusty_textual::reactive::ReactiveCtx;
+use rusty_textual::runtime::Pilot;
+use rusty_textual::widgets::Widget;
 
 // ─────────────────────────────────────────────────────────────────────────
 // StatCard — the flagship: base = VerticalGroup, custom style_type, reactive.
@@ -26,8 +26,8 @@ use textual::widgets::Widget;
 // Widget` + `impl Renderable` (see tests/containment_pattern.rs `OuterWidget`).
 // ─────────────────────────────────────────────────────────────────────────
 
-#[textual::widget(base = VerticalGroup, style_type = "StatCard", reactive)]
-#[derive(textual::Reactive)]
+#[rusty_textual::widget(base = VerticalGroup, style_type = "StatCard", reactive)]
+#[derive(rusty_textual::Reactive)]
 struct StatCard {
     base: VerticalGroup,
     #[reactive]
@@ -48,7 +48,7 @@ impl StatCard {
 // A plain compound with no `style_type`/`reactive` options: proves the default
 // `style_type` is the compound's OWN concrete type name, and that `focusable`
 // forwards to the base (VerticalGroup -> false).
-#[textual::widget(base = VerticalGroup)]
+#[rusty_textual::widget(base = VerticalGroup)]
 struct PlainCard {
     base: VerticalGroup,
 }
@@ -67,7 +67,7 @@ impl PlainCard {
 // every other method still forwards to the base. Proves the override mechanism
 // resolves to the inherent method (inherent wins over the trait method — no
 // recursion).
-#[textual::widget(base = VerticalGroup, override(focusable))]
+#[rusty_textual::widget(base = VerticalGroup, override(focusable))]
 struct FocusableCard {
     base: VerticalGroup,
 }
@@ -87,7 +87,7 @@ impl FocusableCard {
 
 fn make_ctx() -> ReactiveCtx {
     use slotmap::SlotMap;
-    let mut sm: SlotMap<textual::NodeId, ()> = SlotMap::new();
+    let mut sm: SlotMap<rusty_textual::NodeId, ()> = SlotMap::new();
     let id = sm.insert(());
     ReactiveCtx::new(id)
 }
@@ -191,7 +191,7 @@ StatCard { width: auto; height: auto; }
 "#;
 
 impl TextualApp for CardApp {
-    fn configure(&mut self, app: &mut App) -> textual::Result<()> {
+    fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
         app.load_stylesheet(CARD_CSS);
         Ok(())
     }
@@ -200,7 +200,7 @@ impl TextualApp for CardApp {
         AppRoot::new().with_child(StatCard::new())
     }
 
-    fn on_message_with_app(&mut self, _app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(&mut self, _app: &mut App, message: &MessageEvent, ctx: &mut rusty_textual::event::WidgetCtx) {
         if let Some(bp) = message.downcast_ref::<ButtonPressed>() {
             if bp.button_id.as_deref() == Some("go") {
                 self.presses.fetch_add(1, Ordering::SeqCst);
@@ -217,7 +217,7 @@ fn derive_propagates_click_to_composed_child() {
         presses: Arc::clone(&presses),
     };
 
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.click("#go")?;
         pilot.click("#go")?;
         Ok(())
@@ -240,7 +240,7 @@ fn derive_propagates_click_to_composed_child() {
 // forwards to the base. Proves the sub-step-3 macro glue end-to-end via Pilot.
 // ─────────────────────────────────────────────────────────────────────────
 
-#[textual::widget(base = VerticalGroup, on(on_button))]
+#[rusty_textual::widget(base = VerticalGroup, on(on_button))]
 struct ClickCard {
     base: VerticalGroup,
     presses: Arc<AtomicU32>,
@@ -254,7 +254,7 @@ impl ClickCard {
         }
     }
 
-    #[textual::on(ButtonPressed)]
+    #[rusty_textual::on(ButtonPressed)]
     fn on_button(&mut self, event: &ButtonPressed, ctx: &mut WidgetCtx) {
         if event.button_id.as_deref() == Some("go") {
             self.presses.fetch_add(1, Ordering::SeqCst);
@@ -273,7 +273,7 @@ struct ClickCardApp {
 }
 
 impl TextualApp for ClickCardApp {
-    fn configure(&mut self, app: &mut App) -> textual::Result<()> {
+    fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
         app.load_stylesheet(CLICK_CARD_CSS);
         Ok(())
     }
@@ -292,7 +292,7 @@ fn on_handler_widget_receives_child_button_pressed_without_hand_written_on_messa
         presses: Arc::clone(&presses),
     };
 
-    textual::run_test(app, |pilot: &mut Pilot| {
+    rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.click("#go")?;
         pilot.click("#go")?;
         Ok(())

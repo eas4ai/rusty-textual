@@ -8,10 +8,10 @@
 use std::sync::{Arc, Mutex};
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual::compose;
-use textual::event::{BlurEvent, DescendantBlurEvent, DescendantFocusEvent, FocusEvent};
-use textual::prelude::*;
-use textual::runtime::{
+use rusty_textual::compose;
+use rusty_textual::event::{BlurEvent, DescendantBlurEvent, DescendantFocusEvent, FocusEvent};
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{
     build_widget_tree_from_root, dispatch_event_to_target_tree, dispatch_event_tree,
     focused_node_id_tree, run_layout_pass,
 };
@@ -62,7 +62,7 @@ impl Widget for TreeFocusProbe {
         true
     }
 
-    fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
+    fn on_event(&mut self, event: &Event, ctx: &mut rusty_textual::event::WidgetCtx) {
         match event {
             Event::Focus(_) => {
                 self.set_focus(true);
@@ -83,7 +83,7 @@ impl Widget for TreeFocusProbe {
                     .push(format!(
                         "{}:descendant-focus:{}",
                         self.id,
-                        textual::node_id::node_id_to_ffi(e.node)
+                        rusty_textual::node_id::node_id_to_ffi(e.node)
                     ));
             }
             Event::DescendantBlur(e) => {
@@ -93,7 +93,7 @@ impl Widget for TreeFocusProbe {
                     .push(format!(
                         "{}:descendant-blur:{}",
                         self.id,
-                        textual::node_id::node_id_to_ffi(e.node)
+                        rusty_textual::node_id::node_id_to_ffi(e.node)
                     ));
             }
             _ => {}
@@ -150,7 +150,7 @@ impl Widget for TreeHoverProbe {
         true
     }
 
-    fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
+    fn on_event(&mut self, event: &Event, ctx: &mut rusty_textual::event::WidgetCtx) {
         match event {
             Event::Enter(_) => {
                 self.set_hovered(true);
@@ -789,7 +789,7 @@ fn p1g13_key_event_dispatched_to_focused_node_via_tree() {
         fn focusable(&self) -> bool {
             true
         }
-        fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
+        fn on_event(&mut self, event: &Event, ctx: &mut rusty_textual::event::WidgetCtx) {
             match event {
                 Event::Focus(_) => {
                     self.set_focus(true);
@@ -937,7 +937,7 @@ fn p1g13_buttons_advanced_like_chain_focus_transfer_is_single_owner() {
 
 #[test]
 fn p1g13_descendant_focus_blur_bubble_without_touching_state() {
-    use textual::widget_tree::WidgetTree;
+    use rusty_textual::widget_tree::WidgetTree;
     let sink = Arc::new(Mutex::new(Vec::new()));
     let mut tree = WidgetTree::new();
     let parent_id = tree.set_root(Box::new(TreeFocusProbe::new("P", sink.clone())));
@@ -954,7 +954,7 @@ fn p1g13_descendant_focus_blur_bubble_without_touching_state() {
         &Event::DescendantBlur(DescendantBlurEvent { node: child_id }),
     );
 
-    let child_ffi = textual::node_id::node_id_to_ffi(child_id);
+    let child_ffi = rusty_textual::node_id::node_id_to_ffi(child_id);
     assert_eq!(
         *sink.lock().unwrap_or_else(|e| e.into_inner()),
         vec![

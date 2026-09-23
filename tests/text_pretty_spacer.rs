@@ -1,6 +1,6 @@
 use rich_rs::Console;
-use textual::prelude::*;
-use textual::render::FrameBuffer;
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
 
 #[test]
 fn label_layout_height_tracks_wrap_width() {

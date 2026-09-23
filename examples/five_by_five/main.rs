@@ -14,7 +14,7 @@
 /// (five_by_five.py:78-81); cell fill state lives in DOM classes toggled
 /// via queries (five_by_five.py:218-242).
 use rich_rs::{Console, ConsoleOptions, Renderable, Segments};
-use textual::prelude::*;
+use rusty_textual::prelude::*;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -244,13 +244,13 @@ impl Widget for GameCell {
     }
 
     // Move the Button child into the arena tree.
-    fn compose(&mut self) -> textual::compose::ComposeResult {
+    fn compose(&mut self) -> rusty_textual::compose::ComposeResult {
         if self.child_extracted {
             return vec![];
         }
         self.child_extracted = true;
         // Replace inner with a compact sentinel so the field stays valid.
-        vec![textual::compose::ChildDecl::new(Box::new(std::mem::replace(
+        vec![rusty_textual::compose::ChildDecl::new(Box::new(std::mem::replace(
             &mut self.inner,
             Button::new("").compact(true),
         )))]
@@ -275,7 +275,7 @@ impl Widget for GameCell {
     // toggle_cross directly). Mouse-click presses are absorbed here; a future
     // RA-1 demo enhancement could re-emit a custom GameCellPressed { row, col }
     // message instead (Alternative G in SPEC-RA5).
-    fn on_message(&mut self, msg: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message(&mut self, msg: &MessageEvent, ctx: &mut rusty_textual::event::WidgetCtx) {
         if msg.downcast_ref::<ButtonPressed>().is_some() {
             ctx.set_handled();
         }
@@ -297,8 +297,8 @@ impl Widget for GameCell {
         true
     }
 
-    fn on_event_capture(&mut self, _event: &Event, _ctx: &mut textual::event::WidgetCtx) {}
-    fn on_event(&mut self, _event: &Event, _ctx: &mut textual::event::WidgetCtx) {}
+    fn on_event_capture(&mut self, _event: &Event, _ctx: &mut rusty_textual::event::WidgetCtx) {}
+    fn on_event(&mut self, _event: &Event, _ctx: &mut rusty_textual::event::WidgetCtx) {}
 }
 
 impl Renderable for GameCell {
@@ -338,12 +338,12 @@ impl Widget for GameHeader {
         Widget::render(&Label::new(""), console, options)
     }
 
-    fn compose(&mut self) -> textual::compose::ComposeResult {
+    fn compose(&mut self) -> rusty_textual::compose::ComposeResult {
         if self.children_extracted {
             return Vec::new();
         }
         self.children_extracted = true;
-        vec![textual::compose::ChildDecl::new(Box::new(
+        vec![rusty_textual::compose::ChildDecl::new(Box::new(
             Horizontal::new()
                 .with_child(Label::new(APP_TITLE).with_id("app-title"))
                 .with_child(Label::new(moves_text(0)).with_id("moves"))
@@ -359,9 +359,9 @@ impl Widget for GameHeader {
         std::mem::take(&mut self.seed)
     }
 
-    fn on_event_capture(&mut self, _event: &Event, _ctx: &mut textual::event::WidgetCtx) {}
-    fn on_event(&mut self, _event: &Event, _ctx: &mut textual::event::WidgetCtx) {}
-    fn on_message(&mut self, _msg: &MessageEvent, _ctx: &mut textual::event::WidgetCtx) {}
+    fn on_event_capture(&mut self, _event: &Event, _ctx: &mut rusty_textual::event::WidgetCtx) {}
+    fn on_event(&mut self, _event: &Event, _ctx: &mut rusty_textual::event::WidgetCtx) {}
+    fn on_message(&mut self, _msg: &MessageEvent, _ctx: &mut rusty_textual::event::WidgetCtx) {}
 }
 
 impl Renderable for GameHeader {
@@ -440,9 +440,9 @@ impl Widget for WinnerMessage {
         std::mem::take(&mut self.seed)
     }
 
-    fn on_event_capture(&mut self, _event: &Event, _ctx: &mut textual::event::WidgetCtx) {}
-    fn on_event(&mut self, _event: &Event, _ctx: &mut textual::event::WidgetCtx) {}
-    fn on_message(&mut self, _msg: &MessageEvent, _ctx: &mut textual::event::WidgetCtx) {}
+    fn on_event_capture(&mut self, _event: &Event, _ctx: &mut rusty_textual::event::WidgetCtx) {}
+    fn on_event(&mut self, _event: &Event, _ctx: &mut rusty_textual::event::WidgetCtx) {}
+    fn on_message(&mut self, _msg: &MessageEvent, _ctx: &mut rusty_textual::event::WidgetCtx) {}
 }
 
 impl Renderable for WinnerMessage {
@@ -474,9 +474,9 @@ impl Widget for HelpRoot {
         Widget::render(&ScrollView::new(Markdown::new(HELP_TEXT)), console, options)
     }
 
-    fn on_event_capture(&mut self, _event: &Event, _ctx: &mut textual::event::WidgetCtx) {}
-    fn on_event(&mut self, _event: &Event, _ctx: &mut textual::event::WidgetCtx) {}
-    fn on_message(&mut self, _msg: &MessageEvent, _ctx: &mut textual::event::WidgetCtx) {}
+    fn on_event_capture(&mut self, _event: &Event, _ctx: &mut rusty_textual::event::WidgetCtx) {}
+    fn on_event(&mut self, _event: &Event, _ctx: &mut rusty_textual::event::WidgetCtx) {}
+    fn on_message(&mut self, _msg: &MessageEvent, _ctx: &mut rusty_textual::event::WidgetCtx) {}
 }
 
 impl Renderable for HelpRoot {
@@ -643,7 +643,7 @@ impl TextualApp for FiveByFiveApp {
         Some(self)
     }
 
-    fn configure(&mut self, app: &mut App) -> textual::Result<()> {
+    fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
         app.load_stylesheet(CSS);
         app.add_mode("help", || Box::new(HelpScreen));
         Ok(())
@@ -673,11 +673,11 @@ impl TextualApp for FiveByFiveApp {
             .with_child(Footer::new())
     }
 
-    fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut rusty_textual::event::WidgetCtx) {
         self.new_game(app);
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut rusty_textual::event::WidgetCtx) {
         let handled = match key.name() {
             // Navigation — arrow keys, WASD, hjkl
             "up" | "w" | "k" => {
@@ -724,7 +724,7 @@ impl TextualApp for FiveByFiveApp {
     }
 }
 
-fn main() -> textual::Result<()> {
+fn main() -> rusty_textual::Result<()> {
     run_sync(FiveByFiveApp::new())
 }
 

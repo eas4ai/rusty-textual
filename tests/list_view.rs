@@ -1,10 +1,10 @@
 use rich_rs::Console;
 use slotmap::SlotMap;
-use textual::event::MouseDownEvent;
-use textual::event::EventCtx;
-use textual::prelude::*;
-use textual::runtime::dispatch_ctx::set_dispatch_recipient;
-use textual::runtime::{build_widget_tree_from_root, render_tree_to_frame, render_tree_to_frame_with_stylesheet};
+use rusty_textual::event::MouseDownEvent;
+use rusty_textual::event::EventCtx;
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame, render_tree_to_frame_with_stylesheet};
 
 fn make_node_id() -> NodeId {
     let mut sm: SlotMap<NodeId, ()> = SlotMap::new();
@@ -20,8 +20,8 @@ fn focused_state() -> NodeState {
 
 /// Render a root widget through the arena tree (the canonical rendering path).
 fn render_root(root: &mut dyn Widget, width: usize, height: usize) -> Vec<String> {
-    let sheet = textual::css::default_widget_stylesheet();
-    let _guard = textual::css::set_style_context(sheet);
+    let sheet = rusty_textual::css::default_widget_stylesheet();
+    let _guard = rusty_textual::css::set_style_context(sheet);
     let console = Console::new();
     let mut tree = build_widget_tree_from_root(root).expect("tree should build");
     let buf = render_tree_to_frame(&mut tree, root, &console, width, height);
@@ -52,11 +52,11 @@ fn list_view_items_span_three_rows_with_label_padding() {
     // tall (top pad / content / bottom pad). Verify the composed layout.
     const CSS: &str = "Label { padding: 1 2; }";
     let sheet = {
-        let mut s = textual::css::default_widget_stylesheet();
+        let mut s = rusty_textual::css::default_widget_stylesheet();
         s.extend(&StyleSheet::parse(CSS));
         s
     };
-    let _guard = textual::css::set_style_context(sheet.clone());
+    let _guard = rusty_textual::css::set_style_context(sheet.clone());
     let console = Console::new();
     let mut root = Container::new().with_child(ListView::from_list_items(vec![
         ListItem::new(Label::new("One")),
@@ -104,7 +104,7 @@ fn list_view_mouse_click_selects_row_headless() {
     let id = NodeId::default();
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         list.on_event(
         &Event::MouseDown(MouseDownEvent {
             target: id,
@@ -127,7 +127,7 @@ fn list_view_scroll_actions_keep_selection_in_state() {
     let mut ctx = EventCtx::default();
     for _ in 0..7 {
         {
-            let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+            let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
             list.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
     }
@@ -142,7 +142,7 @@ fn list_view_mouse_scroll_clamps_to_bounds() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         list.on_mouse_scroll(0, 100, &mut __w);
     }
     assert!(ctx.handled());
@@ -150,7 +150,7 @@ fn list_view_mouse_scroll_clamps_to_bounds() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         list.on_mouse_scroll(0, -100, &mut __w);
     }
     assert!(ctx.handled());
@@ -170,7 +170,7 @@ fn list_view_navigation_skips_disabled_items() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         list.on_event(&Event::Action(Action::ScrollDown), &mut __w);
     }
     assert_eq!(list.selected(), 2);
@@ -189,7 +189,7 @@ fn list_view_mouse_click_ignores_disabled_items() {
     let id = NodeId::default();
     let mut ctx = EventCtx::default();
     {
-        let mut __w = textual::event::WidgetCtx::__from_dispatch(textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
         list.on_event(
         &Event::MouseDown(MouseDownEvent {
             target: id,

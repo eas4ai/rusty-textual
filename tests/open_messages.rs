@@ -8,14 +8,14 @@
 use std::sync::{Arc, Mutex};
 
 use rich_rs::{Console, ConsoleOptions};
-use textual::event::{EventCtx, WidgetCtx};
-use textual::message::{ButtonPressed, MessageEvent};
-use textual::message_handlers::MessageHandlers;
-use textual::node_id::node_id_from_ffi;
-use textual::on;
-use textual::runtime::dispatch_message_queue_tree;
-use textual::widget_tree::WidgetTree;
-use textual::widgets::Widget;
+use rusty_textual::event::{EventCtx, WidgetCtx};
+use rusty_textual::message::{ButtonPressed, MessageEvent};
+use rusty_textual::message_handlers::MessageHandlers;
+use rusty_textual::node_id::node_id_from_ffi;
+use rusty_textual::on;
+use rusty_textual::runtime::dispatch_message_queue_tree;
+use rusty_textual::widget_tree::WidgetTree;
+use rusty_textual::widgets::Widget;
 
 // ---------------------------------------------------------------------------
 // Custom message types — defined entirely outside src/
@@ -25,14 +25,14 @@ use textual::widgets::Widget;
 struct Ping {
     n: u32,
 }
-textual::impl_message!(Ping);
+rusty_textual::impl_message!(Ping);
 
 #[derive(Debug, Clone)]
 struct CursorEcho {
     #[allow(dead_code)]
     pos: usize,
 }
-textual::impl_message!(CursorEcho, replaceable);
+rusty_textual::impl_message!(CursorEcho, replaceable);
 
 // A second "replaceable" type distinct from CursorEcho, to test TypeId
 // refinement (different types with set_replaceable must NOT coalesce).
@@ -41,7 +41,7 @@ struct AltEcho {
     #[allow(dead_code)]
     pos: usize,
 }
-textual::impl_message!(AltEcho, replaceable);
+rusty_textual::impl_message!(AltEcho, replaceable);
 
 // ---------------------------------------------------------------------------
 // Recorded message entry
@@ -51,8 +51,8 @@ textual::impl_message!(AltEcho, replaceable);
 struct Received {
     is_ping: bool,
     is_cursor_echo: bool,
-    sender: textual::node_id::NodeId,
-    control: Option<textual::node_id::NodeId>,
+    sender: rusty_textual::node_id::NodeId,
+    control: Option<rusty_textual::node_id::NodeId>,
 }
 
 // ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ impl Widget for Recorder {
         rich_rs::Segments::new()
     }
 
-    fn on_message(&mut self, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message(&mut self, message: &MessageEvent, ctx: &mut rusty_textual::event::WidgetCtx) {
         if message.is::<Ping>() || message.is::<CursorEcho>() || message.is::<AltEcho>() {
             self.log.lock().unwrap().push(Received {
                 is_ping: message.is::<Ping>(),
@@ -293,7 +293,7 @@ fn t5_5_builtin_and_custom_coexist_in_same_queue() {
         fn render(&self, _console: &Console, _options: &ConsoleOptions) -> rich_rs::Segments {
             rich_rs::Segments::new()
         }
-        fn on_message(&mut self, message: &MessageEvent, _ctx: &mut textual::event::WidgetCtx) {
+        fn on_message(&mut self, message: &MessageEvent, _ctx: &mut rusty_textual::event::WidgetCtx) {
             if message.is::<Ping>() {
                 self.ping_log.lock().unwrap().push(Received {
                     is_ping: true,
