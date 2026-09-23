@@ -972,6 +972,18 @@ pub trait Message: std::any::Any + Send + Sync + std::fmt::Debug + 'static {
     fn control_meta(&self) -> Option<crate::routing::ControlMeta> {
         None
     }
+
+    /// Whether this message bubbles from the sender up to the root.
+    /// Mirrors Python `Message.bubble` (default `True`).
+    ///
+    /// A `false` message is delivered to the sender node only. Widget
+    /// messages (`ButtonPressed`, `InputChanged`, …) all bubble, matching
+    /// Python; `false` is reserved for framework control messages that must
+    /// not leak into ancestor handlers (none opt out yet — targeted
+    /// delivery for runtime-addressed messages is a separate follow-up).
+    fn bubble(&self) -> bool {
+        true
+    }
 }
 
 impl Clone for Box<dyn Message> {
@@ -990,6 +1002,9 @@ impl Clone for Box<dyn Message> {
 /// - `impl_message!(T, replaceable)` — newer instances replace queued pending
 ///   instances of the same concrete type (same-sender gating is applied by the
 ///   queue coalescer, not here).
+/// - `impl_message!(T, no_bubble)` — delivered to the sender node only, never
+///   bubbled to ancestors (Python `bubble = False`). Reserved for framework
+///   control messages.
 ///
 /// Third-party crates: `textual::impl_message!(MyMessage);`
 #[macro_export]
@@ -1014,6 +1029,19 @@ macro_rules! impl_message {
             }
             fn can_replace(&self, pending: &dyn $crate::message::Message) -> bool {
                 pending.as_any().is::<$T>()
+            }
+        }
+    };
+    ($T:ty, no_bubble) => {
+        impl $crate::message::Message for $T {
+            fn as_any(&self) -> &dyn ::std::any::Any {
+                self
+            }
+            fn clone_box(&self) -> ::std::boxed::Box<dyn $crate::message::Message> {
+                ::std::boxed::Box::new(::std::clone::Clone::clone(self))
+            }
+            fn bubble(&self) -> bool {
+                false
             }
         }
     };
@@ -1148,6 +1176,12 @@ impl MessageEvent {
     pub fn with_control(mut self, control: NodeId) -> Self {
         self.control = Some(control);
         self
+    }
+
+    /// Whether this message bubbles sender→root (Python `Message.bubble`).
+    /// A `false` payload is delivered to the sender node only.
+    pub fn bubbles(&self) -> bool {
+        self.message.bubble()
     }
 
     /// A reference to the message payload as a [`Message`] trait object.
