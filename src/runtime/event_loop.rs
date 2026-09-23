@@ -3440,7 +3440,13 @@ impl App {
                                     mouse.row,
                                     self.hovered.map(node_id_to_ffi)
                                 ));
-                                if let Some(target) = self.widget_at_auto(mouse.column, mouse.row) {
+                                // P-E: explicit mouse capture retargets the press
+                                // regardless of pointer position.
+                                if let Some(target) = self
+                                    .click_tracker
+                                    .capture_target()
+                                    .or_else(|| self.widget_at_auto(mouse.column, mouse.row))
+                                {
                                     let (x, y) = self.content_local_coords_auto(
                                         target,
                                         mouse.column,
@@ -3608,7 +3614,11 @@ impl App {
                             MouseEventKind::Up(_) => {
                                 self.end_selection_drag();
                                 let down_target = self.click_tracker.down_target();
-                                let target = self.widget_at_auto(mouse.column, mouse.row);
+                                // P-E: explicit mouse capture retargets the release.
+                                let target = self
+                                    .click_tracker
+                                    .capture_target()
+                                    .or_else(|| self.widget_at_auto(mouse.column, mouse.row));
                                 let (x, y) = target
                                     .map(|id| {
                                         self.content_local_coords_auto(id, mouse.column, mouse.row)
@@ -3689,7 +3699,14 @@ impl App {
                                 // Synthesize Click if mouseup target matches mousedown target.
                                 if let Some((click_target, click_event)) = self
                                     .click_tracker
-                                    .on_mouse_up(target, x, y, mouse.column, mouse.row)
+                                    .on_mouse_up(
+                                        target,
+                                        x,
+                                        y,
+                                        mouse.column,
+                                        mouse.row,
+                                        Instant::now(),
+                                    )
                                 {
                                     let mut click_outcome = self.dispatch_event_to_target_auto(
                                         root,
@@ -5348,7 +5365,13 @@ impl App {
         screen_y: u16,
         pending: &mut PendingInvalidation,
     ) {
-        if let Some(target) = self.widget_at_auto(screen_x, screen_y) {
+        // P-E: explicit mouse capture retargets the press regardless of
+        // pointer position.
+        if let Some(target) = self
+            .click_tracker
+            .capture_target()
+            .or_else(|| self.widget_at_auto(screen_x, screen_y))
+        {
             let (x, y) = self.content_local_coords_auto(target, screen_x, screen_y);
             self.click_tracker
                 .on_mouse_down(target, x, y, screen_x, screen_y, 0);
@@ -5385,7 +5408,11 @@ impl App {
         pending: &mut PendingInvalidation,
     ) {
         let down_target = self.click_tracker.down_target();
-        let target = self.widget_at_auto(screen_x, screen_y);
+        // P-E: explicit mouse capture retargets the release.
+        let target = self
+            .click_tracker
+            .capture_target()
+            .or_else(|| self.widget_at_auto(screen_x, screen_y));
         let (x, y) = target
             .map(|id| self.content_local_coords_auto(id, screen_x, screen_y))
             .unwrap_or((screen_x, screen_y));
@@ -5421,7 +5448,8 @@ impl App {
         self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
 
         if let Some((click_target, click_event)) =
-            self.click_tracker.on_mouse_up(target, x, y, screen_x, screen_y)
+            self.click_tracker
+                .on_mouse_up(target, x, y, screen_x, screen_y, Instant::now())
         {
             let mut click_outcome =
                 self.dispatch_event_to_target_auto(root, click_target, &click_event);
