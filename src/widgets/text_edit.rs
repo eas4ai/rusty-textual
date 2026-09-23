@@ -88,7 +88,22 @@ pub(crate) fn edit_command_from_key(key: &KeyEventData, multiline: bool) -> Opti
             select: shift,
             unit: MoveUnit::Grapheme,
         }),
-        KeyCode::Char('a') if ctrl_shortcut => Some(EditCommand::SelectAll),
+        // Python parity: ctrl+a goes home in BOTH Input (`home,ctrl+a`) and
+        // TextArea (`home,ctrl+a` → line start). Select-all is ctrl+shift+a,
+        // and only in single-line inputs (TextArea leaves it unbound).
+        KeyCode::Char(ch) if ctrl_shortcut && !shift && ch.eq_ignore_ascii_case(&'a') => {
+            Some(EditCommand::MoveHome { select: false })
+        }
+        KeyCode::Char(ch)
+            if ctrl_shortcut && shift && ch.eq_ignore_ascii_case(&'a') && !multiline =>
+        {
+            Some(EditCommand::SelectAll)
+        }
+        // Python `Input` binding `ctrl+w → delete_left_word` (TextArea binds
+        // the same chord to `delete_word_left` — same leftward behavior).
+        KeyCode::Char(ch) if ctrl_shortcut && !shift && ch.eq_ignore_ascii_case(&'w') => {
+            Some(EditCommand::Backspace { unit: MoveUnit::Word })
+        }
         // NOTE: undo/redo chords (ctrl+z, ctrl+shift+z, ctrl+y) are handled
         // by the TextArea bindings/action path, not EditCommand.
         KeyCode::Char(ch) if (ctrl_shortcut || super_shortcut) && ch.eq_ignore_ascii_case(&'x') => {
@@ -116,15 +131,30 @@ pub(crate) fn edit_command_from_key(key: &KeyEventData, multiline: bool) -> Opti
         KeyCode::Insert if shift && plain_or_shift => Some(EditCommand::Paste),
         KeyCode::Delete if shift && plain_or_shift => Some(EditCommand::Cut),
         KeyCode::Backspace if super_shortcut && !multiline => Some(EditCommand::DeleteToStart),
-        KeyCode::Backspace if ctrl_shortcut => Some(EditCommand::Backspace {
-            unit: MoveUnit::Word,
+        // Python parity, probe-verified: single-line `Input` deletes the word
+        // to the RIGHT on ctrl/alt+backspace (`delete_right_word`), while
+        // multiline `TextArea` deletes left (`delete_word_left`).
+        KeyCode::Backspace if ctrl_shortcut => Some(if multiline {
+            EditCommand::Backspace {
+                unit: MoveUnit::Word,
+            }
+        } else {
+            EditCommand::Delete {
+                unit: MoveUnit::Word,
+            }
         }),
         KeyCode::Backspace
             if key.modifiers == KeyModifiers::ALT
                 || key.modifiers == (KeyModifiers::ALT | KeyModifiers::SHIFT) =>
         {
-            Some(EditCommand::Backspace {
-                unit: MoveUnit::Word,
+            Some(if multiline {
+                EditCommand::Backspace {
+                    unit: MoveUnit::Word,
+                }
+            } else {
+                EditCommand::Delete {
+                    unit: MoveUnit::Word,
+                }
             })
         }
         KeyCode::Backspace if plain_or_shift => Some(EditCommand::Backspace {
@@ -200,6 +230,75 @@ pub(crate) fn first_clipboard_line(text: &str) -> Option<&str> {
 mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn map(code: KeyCode, modifiers: KeyModifiers, multiline: bool) -> Option<EditCommand> {
+        edit_command_from_key(
+            &crate::keys::KeyEventData::from_crossterm(KeyEvent::new(code, modifiers)),
+            multiline,
+        )
+    }
+
+    /// Python parity: ctrl+a goes home in both widgets; select-all is
+    /// ctrl+shift+a in single-line inputs only.
+    #[test]
+    fn ctrl_a_goes_home_select_all_needs_shift_single_line() {
+        for multiline in [false, true] {
+            assert!(matches!(
+                map(KeyCode::Char('a'), KeyModifiers::CONTROL, multiline),
+                Some(EditCommand::MoveHome { select: false })
+            ));
+        }
+        assert!(matches!(
+            map(
+                KeyCode::Char('a'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                false
+            ),
+            Some(EditCommand::SelectAll)
+        ));
+        assert_eq!(
+            map(
+                KeyCode::Char('a'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                true
+            ),
+            None,
+            "TextArea leaves ctrl+shift+a unbound"
+        );
+    }
+
+    /// Python parity, probe-verified: ctrl+w deletes the word left in both
+    /// widgets; ctrl/alt+backspace deletes the word RIGHT in single-line
+    /// inputs (`delete_right_word`) but LEFT in multiline (`delete_word_left`).
+    #[test]
+    fn word_delete_directions_match_python() {
+        for multiline in [false, true] {
+            assert!(matches!(
+                map(KeyCode::Char('w'), KeyModifiers::CONTROL, multiline),
+                Some(EditCommand::Backspace {
+                    unit: MoveUnit::Word
+                })
+            ));
+        }
+        assert!(matches!(
+            map(KeyCode::Backspace, KeyModifiers::CONTROL, false),
+            Some(EditCommand::Delete {
+                unit: MoveUnit::Word
+            })
+        ));
+        assert!(matches!(
+            map(KeyCode::Backspace, KeyModifiers::CONTROL, true),
+            Some(EditCommand::Backspace {
+                unit: MoveUnit::Word
+            })
+        ));
+        assert!(matches!(
+            map(KeyCode::Backspace, KeyModifiers::ALT, false),
+            Some(EditCommand::Delete {
+                unit: MoveUnit::Word
+            })
+        ));
+    }
 
     #[test]
     fn key_mapping_handles_word_and_selection_commands() {
