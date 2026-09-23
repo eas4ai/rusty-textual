@@ -483,8 +483,8 @@ impl Focus for Button {
 
     fn bindings(&self) -> Vec<BindingDecl> {
         // Python: `Binding("enter", "press", "Press button", show=False)` —
-        // hidden from footer/help hints.
-        vec![BindingDecl::new("enter,space", "press", "Press button").hidden()]
+        // hidden from footer/help hints. Enter-only: space never presses.
+        vec![BindingDecl::new("enter", "press", "Press button").hidden()]
     }
 
     fn execute_action(&mut self, action: &ParsedAction, ctx: &mut crate::event::WidgetCtx) -> bool {
@@ -570,23 +570,24 @@ impl Interactive for Button {
                 ));
                 ctx.set_handled();
             }
-            Event::Key(key) if crate::widgets::Widget::node_state(self).focused => match key.code {
-                KeyCode::Enter | KeyCode::Char(' ') => {
-                    self.pressed = PressedState::KeyboardPending;
-                    ctx.add_class("-active");
-                    debug_message(&format!(
-                        "[button] emit key sender={} label=\"{}\" code={:?}",
-                        0u64, self.label, key.code
-                    ));
-                    self.dispatch_press(ctx);
-                    debug_input(&format!(
-                        "[button] key id={} label=\"{}\"",
-                        0u64, self.label
-                    ));
-                    ctx.set_handled();
-                }
-                _ => {}
-            },
+            Event::Key(key)
+                if crate::widgets::Widget::node_state(self).focused
+                    && key.code == KeyCode::Enter =>
+            {
+                // Python parity: only Enter presses (space is not bound).
+                self.pressed = PressedState::KeyboardPending;
+                ctx.add_class("-active");
+                debug_message(&format!(
+                    "[button] emit key sender={} label=\"{}\" code={:?}",
+                    0u64, self.label, key.code
+                ));
+                self.dispatch_press(ctx);
+                debug_input(&format!(
+                    "[button] key id={} label=\"{}\"",
+                    0u64, self.label
+                ));
+                ctx.set_handled();
+            }
             _ => {}
         }
     }
@@ -908,7 +909,7 @@ mod tests {
             let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
             button.on_event(
             &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Char(' '),
+                KeyCode::Enter,
                 KeyModifiers::NONE,
             ))),
             &mut __w);
@@ -918,6 +919,31 @@ mod tests {
         assert!(
             messages.iter().any(|m| m.is::<ButtonPressed>()),
             "ButtonPressed should be posted when no action is set"
+        );
+    }
+
+    /// Python parity (`Binding("enter", "press", ...)`): space never presses
+    /// a focused Button.
+    #[test]
+    fn space_does_not_post_button_pressed() {
+        let mut button = Button::new("Run");
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        let mut ctx = EventCtx::default();
+
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            button.on_event(
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                KeyCode::Char(' '),
+                KeyModifiers::NONE,
+            ))),
+            &mut __w);
+        }
+
+        let messages = ctx.take_messages();
+        assert!(
+            !messages.iter().any(|m| m.is::<ButtonPressed>()),
+            "space must not press a Button (enter-only parity)"
         );
     }
 

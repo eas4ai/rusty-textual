@@ -1061,6 +1061,47 @@ impl Tree {
         }
     }
 
+    /// Move cursor to the next sibling of the parent node (Python
+    /// `action_cursor_parent_next_sibling`, bound to shift+right). No-op at
+    /// root level or when the parent has no next sibling.
+    fn cursor_parent_next_sibling(&mut self, ctx: &mut crate::event::WidgetCtx) {
+        let nodes = self.visible_nodes();
+        let selected = self.selected_line_in(&nodes);
+        let Some(info) = nodes.get(selected) else {
+            return;
+        };
+        if info.path.len() <= 1 {
+            return;
+        }
+        let parent_path = &info.path[..info.path.len() - 1];
+        let Some(parent_idx) = nodes
+            .iter()
+            .position(|n| n.path.as_slice() == parent_path)
+        else {
+            return;
+        };
+        let parent_depth = nodes[parent_idx].depth;
+        let grandparent_path: &[usize] = if parent_path.len() > 1 {
+            &parent_path[..parent_path.len() - 1]
+        } else {
+            &[]
+        };
+        for (i, n) in nodes.iter().enumerate().skip(parent_idx + 1) {
+            if n.depth == parent_depth
+                && n.path.len() == parent_path.len()
+                && (grandparent_path.is_empty()
+                    || n.path[..n.path.len() - 1] == *grandparent_path)
+                && !n.disabled
+            {
+                self.select_index(i, ctx);
+                return;
+            }
+            if n.depth < parent_depth {
+                break;
+            }
+        }
+    }
+
     /// Move cursor directly to the parent node.
     fn cursor_parent(&mut self, ctx: &mut crate::event::WidgetCtx) {
         let nodes = self.visible_nodes();
@@ -1204,7 +1245,13 @@ impl crate::widgets::Focus for Tree {
             BindingDecl::new("shift+up", "cursor_previous_sibling", "Previous sibling").hidden(),
             BindingDecl::new("shift+down", "cursor_next_sibling", "Next sibling").hidden(),
             BindingDecl::new("shift+left", "cursor_parent", "Go to parent").hidden(),
-            BindingDecl::new("shift+right", "toggle_expand_all", "Toggle expand all").hidden(),
+            // Python `Binding("shift,right", "cursor_parent_next_sibling", ...)`.
+            BindingDecl::new(
+                "shift+right",
+                "cursor_parent_next_sibling",
+                "Next sibling of parent",
+            )
+            .hidden(),
             BindingDecl::new("shift+space", "toggle_expand_all", "Toggle expand all").hidden(),
         ]
     }
@@ -1278,6 +1325,11 @@ impl crate::widgets::Focus for Tree {
             }
             "cursor_parent" => {
                 self.cursor_parent(ctx);
+                ctx.set_handled();
+                true
+            }
+            "cursor_parent_next_sibling" => {
+                self.cursor_parent_next_sibling(ctx);
                 ctx.set_handled();
                 true
             }
@@ -1588,6 +1640,45 @@ mod tests {
                 .iter()
                 .any(|class| class == "directory-tree--extension")
         );
+    }
+
+    /// Python parity (`Binding("shift,right", "cursor_parent_next_sibling")`):
+    /// from a grandchild, shift+right moves to the parent's next sibling.
+    /// Visible: Root(0), A(1), a1(2), B(3); from a1 the target is B.
+    #[test]
+    fn shift_right_moves_to_parent_next_sibling() {
+        use crate::action::ParsedAction;
+        use crate::widgets::Widget;
+        let mut tree = Tree::new(vec![TreeNode::new("Root")
+            .expanded(true)
+            .with_child(
+                TreeNode::new("A")
+                    .expanded(true)
+                    .with_child(TreeNode::new("a1")),
+            )
+            .with_child(TreeNode::new("B"))]);
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        tree.on_layout(24, 6);
+        let mut ctx = EventCtx::default();
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            tree.select_index(2, &mut __w);
+        }
+        assert_eq!(tree.selected(), 2);
+        let action = ParsedAction {
+            namespace: None,
+            name: "cursor_parent_next_sibling".to_string(),
+            arguments: vec![],
+        };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            assert!(tree.execute_action(&action, &mut __w));
+        }
+        assert_eq!(tree.selected(), 3, "must land on B (parent A's next sibling)");
+        let bindings = tree.bindings();
+        assert!(bindings.iter().any(|b| b.key == "shift+right"
+            && b.action == "cursor_parent_next_sibling"
+            && !b.show));
     }
 
     #[test]

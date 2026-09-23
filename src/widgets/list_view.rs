@@ -306,12 +306,6 @@ impl ListView {
         (0..self.item_text.len()).find(|idx| self.is_selectable(*idx))
     }
 
-    fn last_selectable(&self) -> Option<usize> {
-        (0..self.item_text.len())
-            .rev()
-            .find(|idx| self.is_selectable(*idx))
-    }
-
     fn closest_selectable(&self, from: usize, direction: isize) -> Option<usize> {
         if self.selectable_count() == 0 {
             return None;
@@ -483,10 +477,14 @@ impl crate::widgets::Focus for ListView {
         vec![
             BindingDecl::new("up", "cursor_up", "Move cursor up").hidden(),
             BindingDecl::new("down", "cursor_down", "Move cursor down").hidden(),
-            BindingDecl::new("pageup", "scroll_up", "Page up").hidden(),
-            BindingDecl::new("pagedown", "scroll_down", "Page down").hidden(),
-            BindingDecl::new("home", "first", "Move to first item").hidden(),
-            BindingDecl::new("end", "last", "Move to last item").hidden(),
+            // Python parity: ListView declares only enter/up/down; paging
+            // and home/end ride the inherited container bindings
+            // (page_up/page_down/scroll_home/scroll_end), which scroll the
+            // viewport without moving the highlight.
+            BindingDecl::new("pageup", "page_up", "Page up").hidden(),
+            BindingDecl::new("pagedown", "page_down", "Page down").hidden(),
+            BindingDecl::new("home", "scroll_home", "Scroll home").hidden(),
+            BindingDecl::new("end", "scroll_end", "Scroll end").hidden(),
             BindingDecl::new("enter", "select_cursor", "Select item").hidden(),
         ]
     }
@@ -503,27 +501,29 @@ impl crate::widgets::Focus for ListView {
                 ctx.set_handled();
                 true
             }
-            "scroll_up" => {
-                self.move_selection(-(self.page_step() as isize), ctx);
+            // Python parity (inherited container bindings): paging scrolls the
+            // viewport only — the highlight stays where it is.
+            "page_up" => {
+                self.scroll_offset(-(self.page_step() as isize), ctx);
                 ctx.set_handled();
                 true
             }
-            "scroll_down" => {
-                self.move_selection(self.page_step() as isize, ctx);
+            "page_down" => {
+                self.scroll_offset(self.page_step() as isize, ctx);
                 ctx.set_handled();
                 true
             }
-            "first" => {
-                if let Some(first) = self.first_selectable() {
-                    self.select_index(first, ctx);
-                }
+            "scroll_home" => {
+                self.scroll_offset(-(self.offset as isize), ctx);
                 ctx.set_handled();
                 true
             }
-            "last" => {
-                if let Some(last) = self.last_selectable() {
-                    self.select_index(last, ctx);
-                }
+            "scroll_end" => {
+                let end = crate::widgets::containers::ScrollView::line_scroll_end(
+                    self.item_text.len(),
+                    self.viewport_height.max(1),
+                );
+                self.scroll_offset(end as isize - self.offset as isize, ctx);
                 ctx.set_handled();
                 true
             }
@@ -642,23 +642,23 @@ impl crate::widgets::Interactive for ListView {
                     ctx.set_handled();
                 }
                 KeyCode::PageUp => {
-                    self.move_selection(-(self.page_step() as isize), ctx);
+                    self.scroll_offset(-(self.page_step() as isize), ctx);
                     ctx.set_handled();
                 }
                 KeyCode::PageDown => {
-                    self.move_selection(self.page_step() as isize, ctx);
+                    self.scroll_offset(self.page_step() as isize, ctx);
                     ctx.set_handled();
                 }
                 KeyCode::Home => {
-                    if let Some(first) = self.first_selectable() {
-                        self.select_index(first, ctx);
-                    }
+                    self.scroll_offset(-(self.offset as isize), ctx);
                     ctx.set_handled();
                 }
                 KeyCode::End => {
-                    if let Some(last) = self.last_selectable() {
-                        self.select_index(last, ctx);
-                    }
+                    let end = crate::widgets::containers::ScrollView::line_scroll_end(
+                        self.item_text.len(),
+                        self.viewport_height.max(1),
+                    );
+                    self.scroll_offset(end as isize - self.offset as isize, ctx);
                     ctx.set_handled();
                 }
                 KeyCode::Enter => {
@@ -839,6 +839,55 @@ mod tests {
     }
 
     // ── Composition / arena tests ───────────────────────────────────────
+
+    /// Python parity (inherited container bindings): paging and home/end
+    /// scroll the viewport WITHOUT moving the highlight (`index` stays).
+    #[test]
+    fn paging_scrolls_viewport_without_moving_highlight() {
+        use crate::action::ParsedAction;
+        let items: Vec<ListItem> = (0..30)
+            .map(|i| ListItem::new(Label::new(format!("item {i}"))))
+            .collect();
+        let mut list = ListView::from_list_items(items);
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        list.on_layout(40, 12);
+        let mut ctx = EventCtx::default();
+        let dispatch = |list: &mut ListView, ctx: &mut EventCtx, name: &str| {
+            let action = ParsedAction {
+                namespace: None,
+                name: name.to_string(),
+                arguments: vec![],
+            };
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                ctx,
+            );
+            assert!(list.execute_action(&action, &mut __w), "{name} must dispatch");
+        };
+        assert_eq!(list.selected(), 0);
+        dispatch(&mut list, &mut ctx, "page_down");
+        assert_eq!(list.selected(), 0, "pagedown must not move the highlight");
+        assert!(list.offset > 0, "pagedown must scroll the viewport");
+        dispatch(&mut list, &mut ctx, "page_up");
+        assert_eq!(list.selected(), 0, "pageup must not move the highlight");
+        assert_eq!(list.offset, 0);
+        dispatch(&mut list, &mut ctx, "scroll_end");
+        assert_eq!(list.selected(), 0, "end must not move the highlight");
+        let max = crate::widgets::containers::ScrollView::line_scroll_end(30, 12);
+        assert_eq!(list.offset, max);
+        dispatch(&mut list, &mut ctx, "scroll_home");
+        assert_eq!(list.selected(), 0, "home must not move the highlight");
+        assert_eq!(list.offset, 0);
+        let declared = list.bindings();
+        let bindings: Vec<(&str, &str)> = declared
+            .iter()
+            .map(|b| (b.key.as_str(), b.action.as_str()))
+            .collect();
+        assert!(bindings.contains(&("pageup", "page_up")));
+        assert!(bindings.contains(&("pagedown", "page_down")));
+        assert!(bindings.contains(&("home", "scroll_home")));
+        assert!(bindings.contains(&("end", "scroll_end")));
+    }
 
     #[test]
     fn from_list_items_keeps_text() {

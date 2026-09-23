@@ -169,12 +169,14 @@ impl Focus for Checkbox {
     }
 
     fn bindings(&self) -> Vec<BindingDecl> {
-        vec![BindingDecl::new("enter,space", "toggle", "Toggle checkbox")]
+        // Python `ToggleButton.BINDINGS`: `Binding("enter,space", "toggle_button",
+        // "Toggle", show=False)` - hidden from footer/help hints.
+        vec![BindingDecl::new("enter,space", "toggle_button", "Toggle").hidden()]
     }
 
     fn execute_action(&mut self, action: &ParsedAction, ctx: &mut crate::event::WidgetCtx) -> bool {
         match action.name.as_str() {
-            "toggle" => {
+            "toggle_button" => {
                 if self.disabled {
                     return false;
                 }
@@ -376,7 +378,9 @@ mod tests {
         let checkbox = Checkbox::new("Test");
         let bindings = checkbox.bindings();
         assert!(!bindings.is_empty());
-        assert!(bindings.iter().any(|b| b.action == "toggle"));
+        assert!(bindings
+            .iter()
+            .any(|b| b.action == "toggle_button" && !b.show));
     }
 
     #[test]
@@ -385,7 +389,7 @@ mod tests {
         let mut ctx = EventCtx::default();
         let action = ParsedAction {
             namespace: None,
-            name: "toggle".to_string(),
+            name: "toggle_button".to_string(),
             arguments: vec![],
         };
         assert!(!checkbox.checked());
