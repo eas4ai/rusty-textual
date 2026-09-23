@@ -141,6 +141,26 @@ pub(crate) fn apply_style_to_segments(
                 }
             }
             let text_opacity = style.text_opacity.map(|value| value as f32 / 100.0);
+            // Python parity: auto/text-opacity folds composite over the
+            // opacity-flattened background — the intermediate
+            // `parent.blend(widget_bg, opacity)` that Python threads into
+            // every rendered line — not the raw rule bg. Without widget
+            // opacity this is the segment bg unchanged, so widgets without
+            // `opacity` render exactly as before.
+            let fold_opacity = style
+                .opacity
+                .map(|value| f32::from(value) / 100.0)
+                .map(|o| o.clamp(0.0, 1.0))
+                .filter(|o| *o < 1.0);
+            let opacity_parent =
+                parent_bg.unwrap_or(crate::style::Color::rgb(0, 0, 0));
+            let fold_base = |bg: crate::style::Color| -> crate::style::Color {
+                match fold_opacity {
+                    Some(o) => TextOpacity::<()>::apply_alpha(bg, o)
+                        .flatten_over(opacity_parent),
+                    None => bg,
+                }
+            };
             // Only stamp the widget's resolved foreground onto segments carrying a
             // visible glyph. Whitespace-only fill (padding, content-area extend,
             // blank rows) must keep fg = terminal-default unless it was given an
@@ -182,21 +202,33 @@ pub(crate) fn apply_style_to_segments(
                     if let Some(opacity) = text_opacity {
                         fg = TextOpacity::<()>::apply_alpha(fg, opacity);
                     }
-                    let flat = fg.flatten_over(bg_for_text);
+                    let flat = fg.flatten_over(fold_base(bg_for_text));
                     s.color = Some(flat.to_simple_opaque());
                     style_changed = true;
                 } else if let Some(auto) = style.fg_auto {
-                    let auto_alpha = auto.alpha();
-                    let effective_alpha = if let Some(opacity) = text_opacity {
-                        (auto_alpha * opacity).clamp(0.0, 1.0)
-                    } else {
-                        auto_alpha
-                    };
-                    // Composite the contrast color using the fractional alpha
-                    // directly (Python `bg + contrast.with_alpha(a)` keeps the
-                    // float), avoiding u8 alpha quantization drift.
+                    // The blend base is the opacity-flattened bg (matching
+                    // the text-opacity fold input), but the contrast HUE is
+                    // decided by the rule-stage bg: Python resolves `auto`
+                    // against `styles.background`, so a light rule bg
+                    // (`$success`) yields black even when the flattened bg
+                    // underneath is dark.
+                    let fold_bg = fold_base(bg_for_text);
                     let contrast = crate::style::contrast_text(bg_for_text);
-                    let flat = contrast.blend_over_float(bg_for_text, effective_alpha);
+                    // Step 1 — Python `auto NN%` resolution against the
+                    // composited bg: opaque contrast base, truncated per
+                    // channel like rich (fractional alpha kept as a float,
+                    // avoiding u8 alpha quantization drift).
+                    let base = contrast.blend_over_float(fold_bg, auto.alpha());
+                    // Step 2 — Python TextOpacity fold over the same base
+                    // (identity without text-opacity).
+                    let flat = match text_opacity {
+                        Some(o) => {
+                            TextOpacity::<()>::blend_foreground_over_background(
+                                base, fold_bg, o,
+                            )
+                        }
+                        None => base,
+                    };
                     s.color = Some(flat.to_simple_opaque());
                     style_changed = true;
                 }
@@ -208,7 +240,7 @@ pub(crate) fn apply_style_to_segments(
                 let existing = crate::style::color_from_simple(existing);
                 let flat = TextOpacity::<()>::blend_foreground_over_background(
                     existing,
-                    bg_for_text,
+                    fold_base(bg_for_text),
                     opacity,
                 );
                 s.color = Some(flat.to_simple_opaque());

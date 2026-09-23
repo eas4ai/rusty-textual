@@ -369,6 +369,83 @@ mod tests {
         );
     }
 
+    /// Python parity (`_styles_cache` + `TextOpacity`): an auto/text-opacity
+    /// fold on an opacity-bearing widget composites over the
+    /// opacity-flattened background, not the raw rule bg. Byte-derived from
+    /// the Python reference (disabled `-primary` Button): raw bg #0178D4
+    /// flattens to (5, 89, 153) at 70% over the #111111 parent; auto-87%
+    /// resolves over THAT to #dee9f1 (222, 233, 241); the 60% fold over
+    /// the same base gives (135, 175, 205). Folding over the raw bg instead
+    /// yields (133, 190, 234) — the pre-fix divergence.
+    #[test]
+    fn opacity_fold_uses_opacity_flattened_background() {
+        use crate::style::AutoColor;
+        let raw_bg = Color::rgb(0x01, 0x78, 0xd4);
+        let parent_bg = Color::rgb(0x11, 0x11, 0x11);
+        let style = Style::new()
+            .bg(raw_bg)
+            .fg_auto(AutoColor::new(87))
+            .text_opacity(60)
+            .opacity(70);
+        let parent_style = Style::new().bg(parent_bg);
+        let seg_style = rich_rs::Style::new().with_bgcolor(raw_bg.to_simple_opaque());
+        let segments = Segments::from(vec![Segment::styled("x", seg_style)]);
+        let out = apply_style_to_segments(
+            node_id_from_ffi(1),
+            segments,
+            style,
+            Some(parent_style),
+        );
+        let color = out
+            .into_iter()
+            .next()
+            .and_then(|segment| segment.style)
+            .and_then(|style| style.color)
+            .expect("folded fg");
+        assert_eq!(
+            crate::style::color_from_simple(color),
+            Color::rgb(135, 175, 205),
+            "auto/text-opacity must fold over the opacity-flattened bg"
+        );
+    }
+
+    /// The `auto` contrast HUE is decided by the rule-stage bg, not the
+    /// opacity-flattened base: Python resolves `auto` against
+    /// `styles.background`, so `$success` (light) yields black even though
+    /// the flattened bg underneath is dark. Byte-derived from the Python
+    /// reference (disabled `-success` Button fold inputs).
+    #[test]
+    fn auto_hue_uses_rule_stage_background() {
+        use crate::style::AutoColor;
+        let raw_bg = Color::rgb(0x4E, 0xBF, 0x71);
+        let parent_bg = Color::rgb(0x13, 0x13, 0x13);
+        let style = Style::new()
+            .bg(raw_bg)
+            .fg_auto(AutoColor::new(87))
+            .text_opacity(60)
+            .opacity(70);
+        let parent_style = Style::new().bg(parent_bg);
+        let seg_style = rich_rs::Style::new().with_bgcolor(raw_bg.to_simple_opaque());
+        let segments = Segments::from(vec![Segment::styled("x", seg_style)]);
+        let out = apply_style_to_segments(
+            node_id_from_ffi(1),
+            segments,
+            style,
+            Some(parent_style),
+        );
+        let color = out
+            .into_iter()
+            .next()
+            .and_then(|segment| segment.style)
+            .and_then(|style| style.color)
+            .expect("folded fg");
+        assert_eq!(
+            crate::style::color_from_simple(color),
+            Color::rgb(28, 66, 39),
+            "light rule bg must yield a black-hue fold even over a dark flat base"
+        );
+    }
+
     #[test]
     fn computed_style_cache_hits_for_stable_widget() {
         use super::resolver::resolve_node_style;
