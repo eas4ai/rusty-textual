@@ -24,8 +24,8 @@ use super::devtools::DevtoolsCommand;
 use super::dispatch_ctx::set_dispatch_recipient;
 use super::helpers::{
     any_widget_active_tree, call_on_mouse_move_tree, collect_focus_chain_tree,
-    generate_enter_leave_events, mouse_scroll_deltas, pointer_shape_for_hover_tree,
-    should_quit_key, tree_content_local_coords, widget_at_tree_layout,
+    collect_focus_chain_tree_sorted, generate_enter_leave_events, mouse_scroll_deltas,
+    pointer_shape_for_hover_tree, should_quit_key, tree_content_local_coords, widget_at_tree_layout,
 };
 use super::render::apply_layout_info_tree_from_layout_rects;
 use super::routing::{
@@ -2413,8 +2413,12 @@ impl App {
         self.style_snapshot_cache.clear();
 
         // Auto-focus the first focusable widget via the arena tree.
+        let bounds = self.hit_test.bounds.clone();
         if let Some(tree) = self.active_widget_tree_mut() {
-            let focus_chain = collect_focus_chain_tree(tree);
+            let current = focused_node_id_tree(tree);
+            let focus_chain = collect_focus_chain_tree_sorted(tree, current, &|id| {
+                bounds.get(&id).map(|r| (r.y0, r.x0))
+            });
             if let Some(&first) = focus_chain.first() {
                 tree.set_focus_state(first, true);
             }
@@ -4495,8 +4499,12 @@ impl App {
         }
         self.style_snapshot_cache.clear();
 
+        let bounds = self.hit_test.bounds.clone();
         if let Some(tree) = self.active_widget_tree_mut() {
-            let focus_chain = collect_focus_chain_tree(tree);
+            let current = focused_node_id_tree(tree);
+            let focus_chain = collect_focus_chain_tree_sorted(tree, current, &|id| {
+                bounds.get(&id).map(|r| (r.y0, r.x0))
+            });
             if let Some(&first) = focus_chain.first() {
                 tree.set_focus_state(first, true);
             }
@@ -6565,15 +6573,17 @@ impl App {
     ///
     /// Returns `true` when focus changed.
     fn move_focus_auto(&mut self, action: Action) -> bool {
+        let bounds = self.hit_test.bounds.clone();
         let Some(tree) = self.active_widget_tree_mut() else {
             return false;
         };
-        let focus_chain = collect_focus_chain_tree(tree);
+        let current = focused_node_id_tree(tree);
+        let focus_chain = collect_focus_chain_tree_sorted(tree, current, &|id| {
+            bounds.get(&id).map(|r| (r.y0, r.x0))
+        });
         if focus_chain.is_empty() {
             return false;
         }
-
-        let current = focused_node_id_tree(tree);
         let current_index =
             current.and_then(|id| focus_chain.iter().position(|candidate| *candidate == id));
         let next_index = match (action, current_index) {

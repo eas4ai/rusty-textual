@@ -718,6 +718,13 @@ pub trait Widget: Send + Sync + Any {
     fn can_focus_children(&self) -> bool {
         true
     }
+    /// Whether focus traversal is trapped inside this subtree (forwarded from
+    /// [`Focus::traps_focus`](crate::widgets::Focus::traps_focus) by the
+    /// `#[widget]` macro when the widget declares `Focus`).
+    #[doc(hidden)]
+    fn traps_focus(&self) -> bool {
+        false
+    }
     /// Whether the widget should be treated as interactive for mouse hover / cursor feedback.
     ///
     /// This is intentionally distinct from `focusable()`: some widgets (e.g. disabled buttons)
