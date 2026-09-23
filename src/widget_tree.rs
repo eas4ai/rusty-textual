@@ -51,7 +51,10 @@ impl fmt::Display for QueryError {
             QueryError::ParseError(msg) => write!(f, "selector parse error: {msg}"),
             QueryError::Unmounted => write!(f, "widget is not mounted (stale handle)"),
             QueryError::TypeMismatch { expected, actual } => {
-                write!(f, "type mismatch: expected {expected}, found widget of type {actual}")
+                write!(
+                    f,
+                    "type mismatch: expected {expected}, found widget of type {actual}"
+                )
             }
         }
     }
@@ -297,6 +300,10 @@ impl WidgetTree {
     /// the real root); its `on_mount()` is a no-op and the real root's lifecycle
     /// is driven separately, so it is skipped.
     pub fn fire_mount_callbacks(&mut self, root_stub: NodeId) {
+        // Synthesized handler context (`on_mount` receives a fresh `WidgetCtx`
+        // whose commands the caller drains): mark this thread draining so the
+        // enqueue assert holds even while a foreign test runs a live loop.
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         // Stamp this tree as the dispatching tree so `CommandTarget::Node`s
         // enqueued from `on_mount` carry their owning tree's identity (a
         // build-time mount can run while a DIFFERENT tree is the active one,
@@ -431,7 +438,12 @@ impl WidgetTree {
     /// Behaves exactly like [`mount`](Self::mount) (same seed consumption,
     /// `mounted` flag, and `Mount` lifecycle event) but lets callers insert
     /// before/after an existing sibling (Python's `mount(..., before=/after=)`).
-    pub fn mount_at(&mut self, parent: NodeId, index: usize, mut widget: Box<dyn Widget>) -> NodeId {
+    pub fn mount_at(
+        &mut self,
+        parent: NodeId,
+        index: usize,
+        mut widget: Box<dyn Widget>,
+    ) -> NodeId {
         // Same gate as `mount` (PR-05): no orphans, no Mount for dead parents.
         assert!(
             self.arena.get(parent).is_some(),
@@ -849,9 +861,8 @@ impl WidgetTree {
                 let old = n.state;
                 n.state.loading = loading;
                 let new = n.state;
-                n.cover_widget = loading.then(|| {
-                    Box::new(crate::widgets::LoadingIndicator::new()) as Box<dyn Widget>
-                });
+                n.cover_widget = loading
+                    .then(|| Box::new(crate::widgets::LoadingIndicator::new()) as Box<dyn Widget>);
                 n.widget.on_node_state_changed(old, new);
             }
         }
@@ -2161,7 +2172,11 @@ mod tests {
         let t2 = WidgetTree::new();
         assert_ne!(t1.tree_id(), 0, "tree_id must be non-zero");
         assert_ne!(t2.tree_id(), 0, "tree_id must be non-zero");
-        assert_ne!(t1.tree_id(), t2.tree_id(), "different trees must have different ids");
+        assert_ne!(
+            t1.tree_id(),
+            t2.tree_id(),
+            "different trees must have different ids"
+        );
     }
 
     #[test]

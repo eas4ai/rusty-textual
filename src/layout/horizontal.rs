@@ -29,92 +29,90 @@ pub fn layout_horizontal(
     let mut intrinsic_widths: Vec<Option<u16>> = Vec::with_capacity(children.len());
     for &child in children {
         let mut style = get_node_style(tree, child);
-            // Transparent wrappers (`Node`): adopt the wrapped child's auto-sizing
-            // on any unset axis (see vertical.rs for rationale).
-            let (wrapper_w_auto_pre, _wrapper_h_auto_pre) =
-                super::common::wrapper_child_auto_axes(tree, child);
-            if wrapper_w_auto_pre && style.width.is_none() {
-                style.width = Some(crate::style::Scalar::Auto);
-            }
-            // A transparent wrapper's unset height mirrors the wrapped child's
-            // intent (`auto` → shrink, otherwise `1fr` flex-fill), NOT the
-            // bare-leaf fill-the-container rule.
-            if style.height.is_none()
-                && let Some(h) = super::common::wrapper_unset_height(tree, child)
-            {
-                style.height = Some(h);
-            }
+        // Transparent wrappers (`Node`): adopt the wrapped child's auto-sizing
+        // on any unset axis (see vertical.rs for rationale).
+        let (wrapper_w_auto_pre, _wrapper_h_auto_pre) =
+            super::common::wrapper_child_auto_axes(tree, child);
+        if wrapper_w_auto_pre && style.width.is_none() {
+            style.width = Some(crate::style::Scalar::Auto);
+        }
+        // A transparent wrapper's unset height mirrors the wrapped child's
+        // intent (`auto` → shrink, otherwise `1fr` flex-fill), NOT the
+        // bare-leaf fill-the-container rule.
+        if style.height.is_none()
+            && let Some(h) = super::common::wrapper_unset_height(tree, child)
+        {
+            style.height = Some(h);
+        }
 
-            // A wrapped widget (this `child`'s parent is a transparent wrapper and
-            // `child` is its sole flow child) must FILL the wrapper on each axis
-            // the wrapper sized by ADOPTING the widget's extent — re-applying the
-            // widget's own explicit size against the wrapper would shrink it (a
-            // `height: 50%` widget would become 50% of an already-sized wrapper).
-            // Own min/max on a filled axis were applied at the wrapper; clear them.
-            // Axes where the wrapper has its OWN extent keep the widget's natural
-            // size for the wrapper's `content-align` (`docs_center07`).
-            let (fill_w, fill_h) = super::common::wrapper_child_fill_axes(tree, child);
-            if fill_h {
-                style.height = Some(crate::style::Scalar::Percent(100.0));
-                style.min_height = None;
-                style.max_height = None;
-            }
-            if fill_w {
-                style.width = Some(crate::style::Scalar::Percent(100.0));
-                style.min_width = None;
-                style.max_width = None;
-            }
-            // `style.width`/`style.height` were normalized to `Some(Auto)` above
-            // for transparent wrappers with auto children, so a plain `Some(Auto)`
-            // check covers both real auto widgets and those wrappers.
-            let width_is_auto =
-                matches!(style.width.as_ref(), Some(crate::style::Scalar::Auto));
-            let height_is_auto =
-                matches!(style.height.as_ref(), Some(crate::style::Scalar::Auto));
-            let mut intrinsic_height = tree
-                .get(child)
-                .and_then(|node| node.widget.layout_height())
-                .and_then(|h| u16::try_from(h).ok());
-            let mut intrinsic_width = tree
-                .get(child)
-                .and_then(|node| node.widget.content_width())
-                .and_then(|w| u16::try_from(w).ok());
-            // `extract_child_spec` now adds the full vertical chrome
-            // (margin+border+padding) on the auto-HEIGHT arm, symmetric with the
-            // auto-WIDTH arm — so the measured intrinsic stays PURE content on
-            // both axes and the layout side owns all chrome (see vertical.rs).
-            // The old `+ own_v_chrome` pre-add is retired.
-            let (_own_h_chrome, own_v_chrome) = super::common::own_box_chrome(&style);
-            if intrinsic_width.is_none() && width_is_auto {
-                intrinsic_width = measure_intrinsic_content_width(tree, child, viewport);
-            }
-            if intrinsic_height.is_none() && height_is_auto {
-                // Available CONTENT height this auto child would receive (full
-                // container height minus own margins + chrome) so Python's
-                // all-dynamic-children rule can fill an `fr`-height child.
-                let avail_content_h = available
-                    .height
-                    .saturating_sub(style.effective_margin().top + style.effective_margin().bottom)
-                    .saturating_sub(own_v_chrome);
-                intrinsic_height =
-                    measure_intrinsic_content_height(tree, child, viewport, avail_content_h);
-            }
-            let mut spec = extract_child_spec(
-                &style,
-                available.width,
-                available.height,
-                viewport,
-                intrinsic_height,
-                intrinsic_width,
-            );
+        // A wrapped widget (this `child`'s parent is a transparent wrapper and
+        // `child` is its sole flow child) must FILL the wrapper on each axis
+        // the wrapper sized by ADOPTING the widget's extent — re-applying the
+        // widget's own explicit size against the wrapper would shrink it (a
+        // `height: 50%` widget would become 50% of an already-sized wrapper).
+        // Own min/max on a filled axis were applied at the wrapper; clear them.
+        // Axes where the wrapper has its OWN extent keep the widget's natural
+        // size for the wrapper's `content-align` (`docs_center07`).
+        let (fill_w, fill_h) = super::common::wrapper_child_fill_axes(tree, child);
+        if fill_h {
+            style.height = Some(crate::style::Scalar::Percent(100.0));
+            style.min_height = None;
+            style.max_height = None;
+        }
+        if fill_w {
+            style.width = Some(crate::style::Scalar::Percent(100.0));
+            style.min_width = None;
+            style.max_width = None;
+        }
+        // `style.width`/`style.height` were normalized to `Some(Auto)` above
+        // for transparent wrappers with auto children, so a plain `Some(Auto)`
+        // check covers both real auto widgets and those wrappers.
+        let width_is_auto = matches!(style.width.as_ref(), Some(crate::style::Scalar::Auto));
+        let height_is_auto = matches!(style.height.as_ref(), Some(crate::style::Scalar::Auto));
+        let mut intrinsic_height = tree
+            .get(child)
+            .and_then(|node| node.widget.layout_height())
+            .and_then(|h| u16::try_from(h).ok());
+        let mut intrinsic_width = tree
+            .get(child)
+            .and_then(|node| node.widget.content_width())
+            .and_then(|w| u16::try_from(w).ok());
+        // `extract_child_spec` now adds the full vertical chrome
+        // (margin+border+padding) on the auto-HEIGHT arm, symmetric with the
+        // auto-WIDTH arm — so the measured intrinsic stays PURE content on
+        // both axes and the layout side owns all chrome (see vertical.rs).
+        // The old `+ own_v_chrome` pre-add is retired.
+        let (_own_h_chrome, own_v_chrome) = super::common::own_box_chrome(&style);
+        if intrinsic_width.is_none() && width_is_auto {
+            intrinsic_width = measure_intrinsic_content_width(tree, child, viewport);
+        }
+        if intrinsic_height.is_none() && height_is_auto {
+            // Available CONTENT height this auto child would receive (full
+            // container height minus own margins + chrome) so Python's
+            // all-dynamic-children rule can fill an `fr`-height child.
+            let avail_content_h = available
+                .height
+                .saturating_sub(style.effective_margin().top + style.effective_margin().bottom)
+                .saturating_sub(own_v_chrome);
+            intrinsic_height =
+                measure_intrinsic_content_height(tree, child, viewport, avail_content_h);
+        }
+        let mut spec = extract_child_spec(
+            &style,
+            available.width,
+            available.height,
+            viewport,
+            intrinsic_height,
+            intrinsic_width,
+        );
 
-            // P2-35: `expand: true` opts this child into flex-grow behavior on
-            // the layout axis even when intrinsic auto sizing would otherwise
-            // produce a fixed size.
-            if style.expand == Some(true) && spec.width_edge.size.is_some() {
-                spec.width_edge.size = None;
-                spec.width_edge.fraction = spec.width_edge.fraction.max(1);
-            }
+        // P2-35: `expand: true` opts this child into flex-grow behavior on
+        // the layout axis even when intrinsic auto sizing would otherwise
+        // produce a fixed size.
+        if style.expand == Some(true) && spec.width_edge.size.is_some() {
+            spec.width_edge.size = None;
+            spec.width_edge.fraction = spec.width_edge.fraction.max(1);
+        }
 
         specs.push(spec);
         intrinsic_widths.push(intrinsic_width);
@@ -209,7 +207,8 @@ pub fn layout_horizontal(
         // Re-seed the widget (and any wrapped subtree) at the resolved width so
         // `layout_height()` reflects the final wrap, then re-read it.
         if let Some(node) = tree.get_mut(child) {
-            node.widget.on_layout(resolved_content_w, avail_content_h.max(1));
+            node.widget
+                .on_layout(resolved_content_w, avail_content_h.max(1));
         }
         super::common::seed_wrapper_subtree_widths(
             tree,

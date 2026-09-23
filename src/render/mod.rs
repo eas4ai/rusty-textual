@@ -245,9 +245,8 @@ impl FrameBuffer {
             let Some(bg) = style.bgcolor.or(default_bg).and_then(rgb_of) else {
                 continue;
             };
-            let blend = |b: u8, f: u8| -> u8 {
-                (b as f32 + (f as f32 - b as f32) * dim_factor) as u8
-            };
+            let blend =
+                |b: u8, f: u8| -> u8 { (b as f32 + (f as f32 - b as f32) * dim_factor) as u8 };
             style.color = Some(rich_rs::SimpleColor::Rgb {
                 r: blend(bg.0, fg.0),
                 g: blend(bg.1, fg.1),
@@ -563,8 +562,16 @@ mod tests {
     fn preblend_dim_blends_fg_toward_bg_and_strips_dim() {
         let mut frame = FrameBuffer::new(3, 1, None);
         let dim_style = Style::new()
-            .with_color(rich_rs::SimpleColor::Rgb { r: 224, g: 224, b: 224 })
-            .with_bgcolor(rich_rs::SimpleColor::Rgb { r: 33, g: 36, b: 39 })
+            .with_color(rich_rs::SimpleColor::Rgb {
+                r: 224,
+                g: 224,
+                b: 224,
+            })
+            .with_bgcolor(rich_rs::SimpleColor::Rgb {
+                r: 33,
+                g: 36,
+                b: 39,
+            })
             .with_dim(true);
         frame.set_cell(
             0,
@@ -599,7 +606,11 @@ mod tests {
         // b: 39 + 185*0.66 = 161.1 -> 161.
         assert_eq!(
             blended.color,
-            Some(rich_rs::SimpleColor::Rgb { r: 159, g: 160, b: 161 })
+            Some(rich_rs::SimpleColor::Rgb {
+                r: 159,
+                g: 160,
+                b: 161
+            })
         );
 
         let kept = frame.get(1, 0).style.unwrap();
@@ -614,7 +625,11 @@ mod tests {
             text: "x".to_string(),
             style: Some(
                 Style::new()
-                    .with_color(rich_rs::SimpleColor::Rgb { r: 200, g: 100, b: 0 })
+                    .with_color(rich_rs::SimpleColor::Rgb {
+                        r: 200,
+                        g: 100,
+                        b: 0,
+                    })
                     .with_bgcolor(rich_rs::SimpleColor::Rgb { r: 0, g: 0, b: 0 })
                     .with_dim(true),
             ),
@@ -626,14 +641,22 @@ mod tests {
         half.preblend_dim_with(0.5);
         assert_eq!(
             half.get(0, 0).style.unwrap().color,
-            Some(rich_rs::SimpleColor::Rgb { r: 100, g: 50, b: 0 })
+            Some(rich_rs::SimpleColor::Rgb {
+                r: 100,
+                g: 50,
+                b: 0
+            })
         );
         let mut full = FrameBuffer::new(1, 1, None);
         full.set_cell(0, 0, cell());
         full.preblend_dim_with(1.0);
         assert_eq!(
             full.get(0, 0).style.unwrap().color,
-            Some(rich_rs::SimpleColor::Rgb { r: 200, g: 100, b: 0 })
+            Some(rich_rs::SimpleColor::Rgb {
+                r: 200,
+                g: 100,
+                b: 0
+            })
         );
     }
 

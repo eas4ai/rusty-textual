@@ -31,7 +31,14 @@ const ANIMATION_DURATION: Duration = Duration::from_millis(300);
 /// Renders as a slider track with a knob that smoothly animates left/right.
 /// Toggled via click, Enter, or Space.
 #[derive(Debug, Clone)]
-#[widget(Focus, Interactive, Layout, Components, reactive, style_type = "Switch")]
+#[widget(
+    Focus,
+    Interactive,
+    Layout,
+    Components,
+    reactive,
+    style_type = "Switch"
+)]
 pub struct Switch {
     value: bool,
     pressed: bool,
@@ -228,22 +235,23 @@ impl Interactive for Switch {
                 ctx.request_repaint();
                 ctx.set_handled();
             }
-            Event::MouseUp(mouse)
-                if self.pressed => {
-                    self.pressed = false;
-                    ctx.request_repaint();
-                    if mouse.target.is_some_and(|t| t == crate::widgets::Widget::node_id(self)) {
-                        self.value = !self.value;
-                        self.on_toggled(ctx);
-                        self.emit_changed(ctx);
-                        ctx.set_handled();
-                    }
+            Event::MouseUp(mouse) if self.pressed => {
+                self.pressed = false;
+                ctx.request_repaint();
+                if mouse
+                    .target
+                    .is_some_and(|t| t == crate::widgets::Widget::node_id(self))
+                {
+                    self.value = !self.value;
+                    self.on_toggled(ctx);
+                    self.emit_changed(ctx);
+                    ctx.set_handled();
                 }
-            Event::AppFocus(false)
-                if self.pressed => {
-                    self.pressed = false;
-                    ctx.request_repaint();
-                }
+            }
+            Event::AppFocus(false) if self.pressed => {
+                self.pressed = false;
+                ctx.request_repaint();
+            }
             Event::Action(Action::Toggle) if crate::widgets::Widget::node_state(self).focused => {
                 self.value = !self.value;
                 self.on_toggled(ctx);
@@ -309,10 +317,7 @@ impl Render for Switch {
             .bg
             .map(|c| c.flatten_over(base_bg))
             .unwrap_or(base_bg);
-        let thumb = slider
-            .fg
-            .map(|c| c.flatten_over(back))
-            .unwrap_or(back);
+        let thumb = slider.fg.map(|c| c.flatten_over(back)).unwrap_or(back);
 
         let renderer = ScrollBarRender {
             virtual_size: SWITCH_VIRTUAL_SIZE,
@@ -328,6 +333,12 @@ impl Render for Switch {
             out.extend(row);
         }
         out
+    }
+}
+
+impl crate::widgets::Components for Switch {
+    fn component_classes(&self) -> &[&'static str] {
+        &["switch--slider"]
     }
 }
 
@@ -364,7 +375,10 @@ mod tests {
         let key =
             KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             widget.on_event(&Event::Key(key), &mut __w);
         }
         assert!(widget.value());
@@ -382,16 +396,20 @@ mod tests {
         let mut widget = Switch::new(false).disabled(true);
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             widget.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: NodeId::default(),
-                screen_x: 0,
-                screen_y: 0,
-                x: 0,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: NodeId::default(),
+                    screen_x: 0,
+                    screen_y: 0,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
         assert!(!widget.value());
         assert!(!ctx.handled());
@@ -510,7 +528,10 @@ mod tests {
             .expect("Switch must expose its ReactiveWidget so the runtime runs watch_value");
         rw.reactive_dispatch(&changes, &mut ctx);
 
-        assert!((widget.slider_pos - 1.0).abs() < f32::EPSILON, "slider must snap to on");
+        assert!(
+            (widget.slider_pos - 1.0).abs() < f32::EPSILON,
+            "slider must snap to on"
+        );
         assert!(
             widget.seed.classes.iter().any(|c| c == "-on"),
             "the `-on` class must be rebuilt after a programmatic set_value"
@@ -535,13 +556,5 @@ mod tests {
         assert!(ctx.has_changes());
         // var fields should not request repaint
         assert!(!ctx.needs_repaint());
-    }
-}
-
-impl crate::widgets::Components for Switch {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "switch--slider",
-        ]
     }
 }

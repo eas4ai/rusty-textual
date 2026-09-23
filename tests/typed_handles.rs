@@ -1,6 +1,6 @@
 use rusty_textual::prelude::*;
 use rusty_textual::reactive::{ReactiveChange, ReactiveWidget};
-use rusty_textual::runtime::{build_widget_tree_from_root};
+use rusty_textual::runtime::build_widget_tree_from_root;
 
 // ---------------------------------------------------------------------------
 // Probe widget used across tests
@@ -130,7 +130,9 @@ fn child_decl_bind_fills_slot() {
     let handle = slot.handle().expect("slot filled after build");
 
     // The mounted node carries id "probe" — verify via query.
-    let queried = tree.query_one("#probe").expect("query should find #probe node");
+    let queried = tree
+        .query_one("#probe")
+        .expect("query should find #probe node");
     assert_eq!(
         queried,
         handle.node_id(),

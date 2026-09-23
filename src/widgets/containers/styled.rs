@@ -84,7 +84,13 @@ impl crate::widgets::Layout for Styled {
 }
 
 impl crate::widgets::Scrollable for Styled {
-    fn on_mouse_scroll(&mut self, _delta_x: i32, _delta_y: i32, _ctx: &mut crate::event::WidgetCtx) {}
+    fn on_mouse_scroll(
+        &mut self,
+        _delta_x: i32,
+        _delta_y: i32,
+        _ctx: &mut crate::event::WidgetCtx,
+    ) {
+    }
 }
 
 impl crate::widgets::StyleIdentity for Styled {

@@ -409,7 +409,10 @@ mod tests {
             },
         );
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             overlay.on_message(&msg_event, &mut __w);
         }
         assert!(
@@ -441,7 +444,10 @@ mod tests {
             },
         );
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             overlay.on_message(&msg_event, &mut __w);
         }
         assert!(
@@ -463,7 +469,10 @@ mod tests {
 
         let msg_event = MessageEvent::new(NodeId::default(), OverlayToggle { overlay: id });
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             overlay.on_message(&msg_event, &mut __w);
         }
         assert!(ctx.handled());
@@ -488,7 +497,10 @@ mod tests {
             OverlayDismissRequested { overlay: Some(id) },
         );
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             overlay.on_message(&msg_event, &mut __w);
         }
         assert!(ctx.handled());
@@ -515,7 +527,10 @@ mod tests {
             },
         );
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             overlay.on_message(&msg_event, &mut __w);
         }
         assert!(!ctx.handled());
@@ -577,7 +592,10 @@ mod tests {
             },
         );
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             overlay.on_message(&msg_event, &mut __w);
         }
         assert!(ctx.handled());
@@ -596,7 +614,10 @@ mod tests {
 
         let msg_event = MessageEvent::new(NodeId::default(), OverlayToggle { overlay: id });
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             overlay.on_message(&msg_event, &mut __w);
         }
         assert!(ctx.handled());

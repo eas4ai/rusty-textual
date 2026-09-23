@@ -1081,12 +1081,8 @@ thread_local! {
 /// `MessagePump._is_prevented` (checked at post time by
 /// `Widget.check_message_enabled`).
 pub(crate) fn is_message_type_prevented(type_id: std::any::TypeId) -> bool {
-    PREVENTED_MESSAGE_TYPES.with(|stack| {
-        stack
-            .borrow()
-            .iter()
-            .any(|frame| frame.contains(&type_id))
-    })
+    PREVENTED_MESSAGE_TYPES
+        .with(|stack| stack.borrow().iter().any(|frame| frame.contains(&type_id)))
 }
 
 /// Snapshot the union of all active prevent frames (deduplicated). Mirrors

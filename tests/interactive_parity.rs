@@ -45,12 +45,15 @@ enum Assert {
     Exact(Box<dyn Fn() -> (bool, String)>),
 }
 
+/// Scripted Pilot interaction driving one parity entry.
+type Script = Box<dyn Fn(&mut Pilot) -> rusty_textual::Result<()>>;
+
 /// One interactive-parity entry: build an app, script an interaction, assert it
 /// did something. Mirrors a `{ name, build, script, assert }` row.
 struct Entry<T: TextualApp + 'static> {
     name: &'static str,
     build: Box<dyn Fn() -> T>,
-    script: Box<dyn Fn(&mut Pilot) -> rusty_textual::Result<()>>,
+    script: Script,
     assert: Assert,
 }
 
@@ -90,8 +93,7 @@ fn run_entry<T: TextualApp + 'static>(entry: Entry<T>) -> std::result::Result<()
                 script(pilot)?;
                 let (ok, detail) = predicate();
                 if !ok {
-                    *outcome.borrow_mut() =
-                        Err(format!("[{name}] WRONG: {detail}"));
+                    *outcome.borrow_mut() = Err(format!("[{name}] WRONG: {detail}"));
                 }
             }
         }
@@ -134,7 +136,12 @@ impl TextualApp for CounterApp {
         ]))
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut rusty_textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut rusty_textual::event::WidgetCtx,
+    ) {
         if let Some(bp) = message.downcast_ref::<ButtonPressed>() {
             if bp.button_id.as_deref() == Some("inc") {
                 let next = self.count.fetch_add(1, Ordering::SeqCst) + 1;

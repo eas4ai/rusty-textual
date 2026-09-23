@@ -241,15 +241,51 @@ mod tests {
     #[test]
     fn fr_distribution_no_overflow_with_fractional_fixed() {
         let edges = vec![
-            Edge { size: Some(9), fraction: 1, min_size: 0 },
-            Edge { size: Some(15), fraction: 1, min_size: 0 },
-            Edge { size: Some(12), fraction: 1, min_size: 0 },
-            Edge { size: Some(7), fraction: 1, min_size: 0 }, // 25h = 7.5
-            Edge { size: Some(18), fraction: 1, min_size: 0 },
-            Edge { size: Some(7), fraction: 1, min_size: 0 }, // 25vh = 7.5
-            Edge { size: Some(5), fraction: 1, min_size: 0 }, // auto
-            Edge { size: None, fraction: 1, min_size: 0 },    // 1fr
-            Edge { size: None, fraction: 3, min_size: 0 },    // 3fr
+            Edge {
+                size: Some(9),
+                fraction: 1,
+                min_size: 0,
+            },
+            Edge {
+                size: Some(15),
+                fraction: 1,
+                min_size: 0,
+            },
+            Edge {
+                size: Some(12),
+                fraction: 1,
+                min_size: 0,
+            },
+            Edge {
+                size: Some(7),
+                fraction: 1,
+                min_size: 0,
+            }, // 25h = 7.5
+            Edge {
+                size: Some(18),
+                fraction: 1,
+                min_size: 0,
+            },
+            Edge {
+                size: Some(7),
+                fraction: 1,
+                min_size: 0,
+            }, // 25vh = 7.5
+            Edge {
+                size: Some(5),
+                fraction: 1,
+                min_size: 0,
+            }, // auto
+            Edge {
+                size: None,
+                fraction: 1,
+                min_size: 0,
+            }, // 1fr
+            Edge {
+                size: None,
+                fraction: 3,
+                min_size: 0,
+            }, // 3fr
         ];
         let fixed_exact = vec![
             Some(9.0),
@@ -265,7 +301,11 @@ mod tests {
         let sizes = layout_resolve_1d_exact(120, &edges, &fixed_exact);
         // Cumulative floor: 9,15,12, (7.5→7), 18, (carry makes 8), 5, then fr.
         assert_eq!(sizes, vec![9, 15, 12, 7, 18, 8, 5, 11, 35]);
-        assert_eq!(sizes.iter().sum::<u16>(), 120, "must not overflow the total");
+        assert_eq!(
+            sizes.iter().sum::<u16>(),
+            120,
+            "must not overflow the total"
+        );
     }
 
     /// A pure `fr` split with no fractional fixed edges still distributes exactly
@@ -274,9 +314,15 @@ mod tests {
     fn pure_fr_split_is_exact() {
         let edges = vec![Edge::default(), Edge::default(), Edge::default()];
         let fixed_exact = vec![None, None, None];
-        assert_eq!(layout_resolve_1d_exact(120, &edges, &fixed_exact), vec![40, 40, 40]);
+        assert_eq!(
+            layout_resolve_1d_exact(120, &edges, &fixed_exact),
+            vec![40, 40, 40]
+        );
         // Uneven total carries the remainder forward (Python fence-post).
-        assert_eq!(layout_resolve_1d_exact(121, &edges, &fixed_exact), vec![40, 40, 41]);
+        assert_eq!(
+            layout_resolve_1d_exact(121, &edges, &fixed_exact),
+            vec![40, 40, 41]
+        );
     }
 
     /// Flexible edges below their `min_size` are pinned (and removed from the
@@ -284,8 +330,16 @@ mod tests {
     #[test]
     fn min_size_pins_flexible_edge() {
         let edges = vec![
-            Edge { size: None, fraction: 1, min_size: 30 },
-            Edge { size: None, fraction: 1, min_size: 0 },
+            Edge {
+                size: None,
+                fraction: 1,
+                min_size: 30,
+            },
+            Edge {
+                size: None,
+                fraction: 1,
+                min_size: 0,
+            },
         ];
         let fixed_exact = vec![None, None];
         // 20 cells, 1fr/1fr: each would get 10, but edge 0's min is 30 → pinned at

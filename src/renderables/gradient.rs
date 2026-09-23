@@ -144,11 +144,9 @@ impl Renderable for LinearGradient {
             let point_x = 0.0 - center_x;
 
             let x1 = (center_x + (point_x * cos_angle - point_y * sin_angle)) / width_f;
-            let x2 =
-                (center_x + (point_x * cos_angle - (point_y + 1.0) * sin_angle)) / width_f;
+            let x2 = (center_x + (point_x * cos_angle - (point_y + 1.0) * sin_angle)) / width_f;
             let point_x_end = width_f - center_x;
-            let end_x1 =
-                (center_x + (point_x_end * cos_angle - point_y * sin_angle)) / width_f;
+            let end_x1 = (center_x + (point_x_end * cos_angle - point_y * sin_angle)) / width_f;
             let delta_x = (end_x1 - x1) / width_f;
 
             if delta_x.abs() < 0.0001 {

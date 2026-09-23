@@ -102,7 +102,9 @@ pub(crate) fn edit_command_from_key(key: &KeyEventData, multiline: bool) -> Opti
         // Python `Input` binding `ctrl+w → delete_left_word` (TextArea binds
         // the same chord to `delete_word_left` — same leftward behavior).
         KeyCode::Char(ch) if ctrl_shortcut && !shift && ch.eq_ignore_ascii_case(&'w') => {
-            Some(EditCommand::Backspace { unit: MoveUnit::Word })
+            Some(EditCommand::Backspace {
+                unit: MoveUnit::Word,
+            })
         }
         // NOTE: undo/redo chords (ctrl+z, ctrl+shift+z, ctrl+y) are handled
         // by the TextArea bindings/action path, not EditCommand.

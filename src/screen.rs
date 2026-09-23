@@ -194,10 +194,7 @@ impl<'a> ScreenMessageCtx<'a> {
     /// tests): pass a `&Mutex<Option<ScreenResult>>` and inspect it after the
     /// handler runs to assert the staged dismissal. The runtime itself uses the
     /// internal screen-tree wiring, not this constructor.
-    pub fn for_test(
-        ctx: &'a mut EventCtx,
-        dismiss_slot: &'a Mutex<Option<ScreenResult>>,
-    ) -> Self {
+    pub fn for_test(ctx: &'a mut EventCtx, dismiss_slot: &'a Mutex<Option<ScreenResult>>) -> Self {
         Self::new(ctx, dismiss_slot)
     }
 
@@ -258,7 +255,6 @@ impl<'a> ScreenMessageCtx<'a> {
         self.ctx
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // ScreenResult
@@ -541,7 +537,8 @@ impl ScreenStack {
     // `ctrl+p` consumer lands with the Wave 1 CommandPaletteScreen rebuild.
     #[allow(dead_code)]
     pub(crate) fn top_screen_name(&self) -> Option<String> {
-        self.top().and_then(|e| e.with_screen(|s| s.name().to_string()))
+        self.top()
+            .and_then(|e| e.with_screen(|s| s.name().to_string()))
     }
 
     /// Find the `WidgetTree::tree_id` of the topmost stacked screen whose
@@ -1735,7 +1732,7 @@ mod tests {
             }
             fn on_event(&mut self, event: &Event, ctx: &mut ScreenMessageCtx) {
                 if let Event::Key(key) = event {
-                    if key.aliases().iter().any(|a| *a == "escape") {
+                    if key.aliases().contains(&"escape") {
                         ctx.dismiss_none();
                     }
                 }

@@ -26,12 +26,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rich_rs::Console;
-use slotmap::SlotMap;
 use rusty_textual::event::EventCtx;
 use rusty_textual::message::MessageEvent;
 use rusty_textual::prelude::*;
 use rusty_textual::render::FrameBuffer;
 use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
+use slotmap::SlotMap;
 
 // ── test_tree_get_node_by_id.py ───────────────────────────────────────────
 
@@ -60,7 +60,9 @@ fn get_tree_node_by_id() {
 /// `src/node_id.rs` to the new key type).
 #[test]
 fn null_key_misses_every_lookup() {
-    let tree = Tree::new(vec![TreeNode::new("Root").with_child(TreeNode::new("Child"))]);
+    let tree = Tree::new(vec![
+        TreeNode::new("Root").with_child(TreeNode::new("Child")),
+    ]);
     let null = TreeNodeId::default();
     assert!(tree.node(null).is_none());
     assert_eq!(tree.get_node_by_id(null), Err(TreeError::UnknownNode(null)));
@@ -84,7 +86,10 @@ fn tree_node_parent() {
     assert_eq!(tree.parent_of(grandchild), Some(child));
     assert_eq!(tree.parent_of(child), Some(root));
     assert_eq!(
-        tree.get_node_by_id(grandchild).unwrap().parent().map(|p| p.id()),
+        tree.get_node_by_id(grandchild)
+            .unwrap()
+            .parent()
+            .map(|p| p.id()),
         Some(child)
     );
 }
@@ -113,7 +118,10 @@ fn tree_node_children() {
     let first = tree.children_of(root)[0];
     let last = *tree.children_of(root).last().unwrap();
     assert_eq!(tree.label_of(first), Some("0"));
-    assert_eq!(tree.label_of(last), Some((CHILDREN - 1).to_string().as_str()));
+    assert_eq!(
+        tree.label_of(last),
+        Some((CHILDREN - 1).to_string().as_str())
+    );
     // The Python "children acts immutable" assertions are type-level in Rust:
     // `children_of` returns `&[TreeNodeId]`.
 }
@@ -126,10 +134,12 @@ fn tree_node_add_before_node() {
     let root = tree.root_id().expect("root");
     let node = tree.add(root, TreeNode::new("node")).unwrap();
     let before_node = tree.add_before(node, TreeNode::new("before node")).unwrap();
-    tree.add_before(before_node, TreeNode::new("first")).unwrap();
+    tree.add_before(before_node, TreeNode::new("first"))
+        .unwrap();
     // "after first" goes right before "before node" (which now has "first"
     // ahead of it).
-    tree.add_before(before_node, TreeNode::new("after first")).unwrap();
+    tree.add_before(before_node, TreeNode::new("after first"))
+        .unwrap();
     let after_node = tree.add_after(node, TreeNode::new("after node")).unwrap();
     let last = tree.add_after(after_node, TreeNode::new("last")).unwrap();
     tree.add_before(last, TreeNode::new("before last")).unwrap();
@@ -161,8 +171,11 @@ fn tree_node_add_after_node() {
     let after_node = tree.add_after(node, TreeNode::new("after node")).unwrap();
     let first = tree.add_before(node, TreeNode::new("first")).unwrap();
     let after_first = tree.add_after(first, TreeNode::new("after first")).unwrap();
-    tree.add_after(after_first, TreeNode::new("before node")).unwrap();
-    let before_last = tree.add_after(after_node, TreeNode::new("before last")).unwrap();
+    tree.add_after(after_first, TreeNode::new("before node"))
+        .unwrap();
+    let before_last = tree
+        .add_after(after_node, TreeNode::new("before last"))
+        .unwrap();
     tree.add_after(before_last, TreeNode::new("last")).unwrap();
 
     let labels: Vec<&str> = tree
@@ -225,9 +238,11 @@ fn tree_node_add_leaf_before_or_after() {
     tree.add_before(leaf, TreeNode::new("before leaf")).unwrap();
     tree.add_after(leaf, TreeNode::new("after leaf")).unwrap();
     let first_existing = tree.children_of(root)[0];
-    tree.add_before(first_existing, TreeNode::new("first")).unwrap();
+    tree.add_before(first_existing, TreeNode::new("first"))
+        .unwrap();
     let last_existing = *tree.children_of(root).last().unwrap();
-    tree.add_after(last_existing, TreeNode::new("last")).unwrap();
+    tree.add_after(last_existing, TreeNode::new("last"))
+        .unwrap();
 
     let labels: Vec<&str> = tree
         .children_of(root)
@@ -268,13 +283,17 @@ fn verse_tree() -> Tree {
     let londinium = tree
         .add(root, TreeNode::new("Londinium").with_data("planet"))
         .unwrap();
-    tree.add(londinium, TreeNode::new("Balkerne").with_data("moon")).unwrap();
-    tree.add(londinium, TreeNode::new("Colchester").with_data("moon")).unwrap();
+    tree.add(londinium, TreeNode::new("Balkerne").with_data("moon"))
+        .unwrap();
+    tree.add(londinium, TreeNode::new("Colchester").with_data("moon"))
+        .unwrap();
     let sihnon = tree
         .add(root, TreeNode::new("Sihnon").with_data("planet"))
         .unwrap();
-    tree.add(sihnon, TreeNode::new("Airen").with_data("moon")).unwrap();
-    tree.add(sihnon, TreeNode::new("Xiaojie").with_data("moon")).unwrap();
+    tree.add(sihnon, TreeNode::new("Airen").with_data("moon"))
+        .unwrap();
+    tree.add(sihnon, TreeNode::new("Xiaojie").with_data("moon"))
+        .unwrap();
     tree
 }
 
@@ -547,8 +566,10 @@ fn directory_tree_rebuild_keeps_cursor_on_path() {
     // rebuilds anchored on the toggled entry.
     let mut ctx = EventCtx::default();
     {
-        let mut w =
-            rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         tree.on_message(
             &MessageEvent::new(
                 tree.tree_id(),
@@ -568,8 +589,10 @@ fn directory_tree_rebuild_keeps_cursor_on_path() {
     let down = KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     for _ in 0..2 {
         let mut ctx = EventCtx::default();
-        let mut w =
-            rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         tree.on_event(&Event::Key(down.clone()), &mut w);
     }
     assert_eq!(
@@ -581,8 +604,10 @@ fn directory_tree_rebuild_keeps_cursor_on_path() {
     // ABOVE the cursor line.
     let mut ctx = EventCtx::default();
     {
-        let mut w =
-            rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         tree.on_message(
             &MessageEvent::new(
                 NodeId::default(),

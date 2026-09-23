@@ -119,10 +119,7 @@ fn later_toast_does_not_reset_earlier_toast_countdown() {
             !frame_shows(pilot.app(), "toast-A"),
             "A dismissed on its own schedule (6s), independent of B"
         );
-        assert!(
-            frame_shows(pilot.app(), "toast-B"),
-            "B still alive at 3s"
-        );
+        assert!(frame_shows(pilot.app(), "toast-B"), "B still alive at 3s");
         assert_eq!(pilot.app().notifications.len(), 1);
 
         // 3s more: B reaches 6s and dismisses.
@@ -200,7 +197,11 @@ fn toast_over_modal_mounts_on_modal_rack_and_dismisses() {
 
         // The rack-owned timer lives on the modal's rack node and dismisses there.
         pilot.advance_clock(Duration::from_secs(6))?;
-        assert_eq!(pilot.app().notifications.len(), 0, "auto-dismissed over the modal");
+        assert_eq!(
+            pilot.app().notifications.len(),
+            0,
+            "auto-dismissed over the modal"
+        );
         {
             let app = pilot.app();
             let screen_tree = &app.screen_stack.top().expect("pushed screen").widget_tree;

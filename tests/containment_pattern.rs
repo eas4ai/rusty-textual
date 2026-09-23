@@ -24,8 +24,10 @@ struct OuterWidget {
 
 impl OuterWidget {
     fn new() -> Self {
-        let mut seed = NodeSeed::default();
-        seed.css_id = Some("test-outer".to_string());
+        let seed = NodeSeed {
+            css_id: Some("test-outer".to_string()),
+            ..Default::default()
+        };
         Self {
             inner: Button::new(""),
             child_extracted: false,
@@ -56,10 +58,9 @@ impl Widget for OuterWidget {
             return vec![];
         }
         self.child_extracted = true;
-        vec![rusty_textual::compose::ChildDecl::new(Box::new(std::mem::replace(
-            &mut self.inner,
-            Button::new(""),
-        )))]
+        vec![rusty_textual::compose::ChildDecl::new(Box::new(
+            std::mem::replace(&mut self.inner, Button::new("")),
+        ))]
     }
 
     fn focusable(&self) -> bool {
@@ -99,8 +100,7 @@ fn containment_style_type_aliases_match() {
     assert!(tree.is_some(), "tree must build from OuterWidget");
     let mut tree = tree.unwrap();
 
-    let buf =
-        render_tree_to_frame_with_stylesheet(&mut tree, &mut outer, &console, 10, 1, sheet);
+    let buf = render_tree_to_frame_with_stylesheet(&mut tree, &mut outer, &console, 10, 1, sheet);
 
     // The OuterWidget renders empty segments; the Button child renders the cell.
     // We verify CSS matching worked by checking that the Button child's style
@@ -153,7 +153,10 @@ fn containment_style_type_aliases_returns_button() {
 #[test]
 fn containment_outer_not_focusable() {
     let widget = OuterWidget::new();
-    assert!(!widget.focusable(), "outer widget must not be focusable itself");
+    assert!(
+        !widget.focusable(),
+        "outer widget must not be focusable itself"
+    );
     // Note: can_focus_children is true by default in this test widget.
     // In the five_by_five GameCell, it is overridden to false to prevent
     // the Button child's bindings from bleeding into the footer.

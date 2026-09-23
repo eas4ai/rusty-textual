@@ -65,7 +65,11 @@ fn arena_widget_posts_message_at_mount() {
     let _tree = build_widget_tree_from_root(&mut root).expect("tree built");
 
     let posts = drain_mount_posts_for_test();
-    assert_eq!(posts.len(), 1, "MountPoster posts exactly one mount message");
+    assert_eq!(
+        posts.len(),
+        1,
+        "MountPoster posts exactly one mount message"
+    );
     let ping = posts[0]
         .downcast_ref::<MountedPing>()
         .expect("posted message is MountedPing");
@@ -119,7 +123,9 @@ fn select_allow_blank_true_posts_nothing_at_mount() {
 
     let posts = drain_mount_posts_for_test();
     assert!(
-        posts.iter().all(|m| m.downcast_ref::<SelectChanged>().is_none()),
+        posts
+            .iter()
+            .all(|m| m.downcast_ref::<SelectChanged>().is_none()),
         "blank Select posts no mount-time SelectChanged"
     );
 }
@@ -188,7 +194,10 @@ fn mount_worker_request_rides_one_absorb_outcome_bundle() {
         1,
         "the mount-time worker request survives the build (was dropped pre-fix)"
     );
-    assert_eq!(outcome.worker_requests[0].name.as_deref(), Some("mount-scan"));
+    assert_eq!(
+        outcome.worker_requests[0].name.as_deref(),
+        Some("mount-scan")
+    );
     assert_eq!(
         outcome.worker_requests[0].owner, *node,
         "worker owner is the mounted node"

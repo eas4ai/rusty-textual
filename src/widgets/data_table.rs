@@ -403,7 +403,10 @@ impl DataTable {
         C: Into<Cell>,
         L: Into<Content>,
     {
-        self.push_row(row.into_iter().map(Into::into).collect(), Some(label.into()))
+        self.push_row(
+            row.into_iter().map(Into::into).collect(),
+            Some(label.into()),
+        )
     }
 
     /// Add a row with a row label (Python `add_row(..., label=…)`). When any row
@@ -795,7 +798,10 @@ impl DataTable {
         }
         self.clamp_indices();
         self.recompute_column_widths();
-        row_data.into_iter().map(|c| c.plain().to_string()).collect()
+        row_data
+            .into_iter()
+            .map(|c| c.plain().to_string())
+            .collect()
     }
 
     /// Remove all rows (and optionally all columns).
@@ -843,9 +849,10 @@ impl DataTable {
             columns.to_vec()
         };
         self.sort_with(reverse, |row| {
-            SortKey::tuple(cols.iter().map(|&c| {
-                SortKey::infer(row.get(c).map(|cell| cell.plain()).unwrap_or(""))
-            }))
+            SortKey::tuple(
+                cols.iter()
+                    .map(|&c| SortKey::infer(row.get(c).map(|cell| cell.plain()).unwrap_or(""))),
+            )
         });
     }
 
@@ -892,7 +899,10 @@ impl DataTable {
         self.rows = indices.iter().map(|&i| self.rows[i].clone()).collect();
         self.row_keys = indices.iter().map(|&i| self.row_keys[i].clone()).collect();
         if self.row_labels.len() == indices.len() {
-            self.row_labels = indices.iter().map(|&i| self.row_labels[i].clone()).collect();
+            self.row_labels = indices
+                .iter()
+                .map(|&i| self.row_labels[i].clone())
+                .collect();
         }
         self.clamp_indices();
     }
@@ -911,7 +921,12 @@ impl DataTable {
     }
 
     /// Replace a cell with a pre-built styled [`Cell`]. Returns `true` on success.
-    pub fn update_cell_content(&mut self, row: usize, col: usize, new_cell: impl Into<Cell>) -> bool {
+    pub fn update_cell_content(
+        &mut self,
+        row: usize,
+        col: usize,
+        new_cell: impl Into<Cell>,
+    ) -> bool {
         if let Some(cell) = self.rows.get_mut(row).and_then(|r| r.get_mut(col)) {
             *cell = new_cell.into();
             self.recompute_column_widths();
@@ -1825,17 +1840,18 @@ impl crate::widgets::Interactive for DataTable {
                 // Clicks past the last column are out of bounds and ignored,
                 // except with a row cursor, where the click still selects the
                 // row (Python `_on_click` out_of_bounds handling).
-                let Some(clicked_col) = clicked_col.or_else(|| {
-                    matches!(self.cursor_type, CursorType::Row).then_some(0)
-                }) else {
+                let Some(clicked_col) = clicked_col
+                    .or_else(|| matches!(self.cursor_type, CursorType::Row).then_some(0))
+                else {
                     ctx.set_handled();
                     return;
                 };
                 if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                    && self.cursor_column != clicked_col {
-                        self.cursor_column = clicked_col;
-                        cursor_changed = true;
-                    }
+                    && self.cursor_column != clicked_col
+                {
+                    self.cursor_column = clicked_col;
+                    cursor_changed = true;
+                }
 
                 let mut data_row_clicked = false;
                 if mouse.y >= header_rows {
@@ -2115,13 +2131,12 @@ impl crate::widgets::Interactive for DataTable {
                 }
                 // Python parity: enter-only (`Binding("enter", "select_cursor")`).
                 // The `show_cursor` gate lives in `selected_message`.
-                KeyCode::Enter
-                    if !self.rows.is_empty() && !self.headers.is_empty() => {
-                        if let Some(message) = self.selected_message() {
-                            ctx.post_message_boxed(message);
-                        }
-                        handled = true;
+                KeyCode::Enter if !self.rows.is_empty() && !self.headers.is_empty() => {
+                    if let Some(message) = self.selected_message() {
+                        ctx.post_message_boxed(message);
                     }
+                    handled = true;
+                }
                 _ => {}
             },
             _ => {}
@@ -2875,7 +2890,13 @@ fn emit_row_per_cell(
         && label_width > 0
     {
         push_cell_pad(label_visual, out);
-        render_cell_segments(label_content, TextAlign::Left, label_width, label_visual, out);
+        render_cell_segments(
+            label_content,
+            TextAlign::Left,
+            label_width,
+            label_visual,
+            out,
+        );
         push_cell_pad(label_visual, out);
         used += label_width + 2 * CELL_PADDING;
     }
@@ -2947,16 +2968,20 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: id,
-                screen_x: 0,
-                screen_y: 0,
-                x: 0,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: id,
+                    screen_x: 0,
+                    screen_y: 0,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -3179,16 +3204,20 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: NodeId::default(),
-                screen_x: 4,
-                screen_y: 0,
-                x: 4,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: NodeId::default(),
+                    screen_x: 4,
+                    screen_y: 0,
+                    x: 4,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
 
         let messages = ctx.take_messages();
@@ -3224,16 +3253,20 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: NodeId::default(),
-                screen_x: 0,
-                screen_y: 0,
-                x: 0,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: NodeId::default(),
+                    screen_x: 0,
+                    screen_y: 0,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
 
         assert_eq!(table.cursor_column, 0);
@@ -3269,46 +3302,62 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Home,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Home,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
         assert_eq!(table.cursor(), (3, 0));
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::End,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::End,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
         assert_eq!(table.cursor(), (3, 2));
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Home,
-                KeyModifiers::CONTROL,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Home,
+                    KeyModifiers::CONTROL,
+                ))),
+                &mut __w,
+            );
         }
         assert_eq!(table.cursor(), (0, 2));
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::End,
-                KeyModifiers::CONTROL,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::End,
+                    KeyModifiers::CONTROL,
+                ))),
+                &mut __w,
+            );
         }
         assert_eq!(table.cursor(), (4, 2));
     }
@@ -3329,7 +3378,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(&Event::Action(Action::ScrollHome), &mut __w);
         }
         assert!(ctx.handled());
@@ -3338,7 +3390,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(&Event::Action(Action::ScrollEnd), &mut __w);
         }
         assert!(ctx.handled());
@@ -3356,16 +3411,20 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: id,
-                screen_x: 4,
-                screen_y: 0,
-                x: 4,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: id,
+                    screen_x: 4,
+                    screen_y: 0,
+                    x: 4,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -3394,13 +3453,17 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Down,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Down,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -3427,13 +3490,17 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Down,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Down,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -3460,13 +3527,17 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Right,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Right,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -3497,13 +3568,17 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Enter,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -3525,13 +3600,17 @@ mod tests {
         let _guard = set_dispatch_recipient(make_node_id(), focused_state());
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Char(' '),
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Char(' '),
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
         let messages = ctx.take_messages();
         assert!(
@@ -3556,13 +3635,17 @@ mod tests {
         let mut ctx = EventCtx::default();
         // Enter posts nothing while the cursor is hidden.
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Enter,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
         assert!(
             ctx.take_messages().is_empty(),
@@ -3572,7 +3655,10 @@ mod tests {
         table.selected = 5;
         table.offset = 0;
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             let action = crate::action::ParsedAction {
                 namespace: None,
                 name: "cursor_down".to_string(),
@@ -3584,7 +3670,10 @@ mod tests {
         assert_eq!(table.offset, 1, "viewport must scroll one line");
         // cursor_right scrolls columns instead of moving the cursor column.
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             let action = crate::action::ParsedAction {
                 namespace: None,
                 name: "cursor_right".to_string(),
@@ -3609,13 +3698,19 @@ mod tests {
         let mut ctx = EventCtx::default();
         table.selected = 15;
         for (name, expect) in [("page_down", 26), ("page_up", 15)] {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             let action = crate::action::ParsedAction {
                 namespace: None,
                 name: name.to_string(),
                 arguments: vec![],
             };
-            assert!(table.execute_action(&action, &mut __w), "{name} must dispatch");
+            assert!(
+                table.execute_action(&action, &mut __w),
+                "{name} must dispatch"
+            );
             assert_eq!(table.selected, expect, "{name} moves one page");
         }
     }
@@ -3648,13 +3743,17 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Enter,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -3687,16 +3786,20 @@ mod tests {
         // the click activates the highlighted cell instead (Python
         // `highlight_click`).
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: id,
-                screen_x: 1,
-                screen_y: 1,
-                x: 1,
-                y: 1,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: id,
+                    screen_x: 1,
+                    screen_y: 1,
+                    x: 1,
+                    y: 1,
+                }),
+                &mut __w,
+            );
         }
         let messages = ctx.take_messages();
         assert_eq!(messages.len(), 1);
@@ -3708,16 +3811,20 @@ mod tests {
         // message, not the selected one.
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: id,
-                screen_x: 1,
-                screen_y: 2,
-                x: 1,
-                y: 2,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: id,
+                    screen_x: 1,
+                    screen_y: 2,
+                    x: 1,
+                    y: 2,
+                }),
+                &mut __w,
+            );
         }
         let messages = ctx.take_messages();
         assert_eq!(messages.len(), 1);
@@ -3739,16 +3846,20 @@ mod tests {
 
         // Label column layout: [pad][label:2][pad] occupies x 0..=3.
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: id,
-                screen_x: 1,
-                screen_y: 2,
-                x: 1,
-                y: 2,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: id,
+                    screen_x: 1,
+                    screen_y: 2,
+                    x: 1,
+                    y: 2,
+                }),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -3829,18 +3940,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Horizontal,
-                    offset: 999.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Horizontal,
+                        offset: 999.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -3866,7 +3981,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_event(&Event::Action(Action::ScrollRight), &mut __w);
         }
         assert!(ctx.handled());
@@ -3889,36 +4007,44 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Horizontal,
-                    offset: 3.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Horizontal,
+                        offset: 3.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert!(ctx.handled());
         let after_first = table.horizontal_offset;
 
         let mut ctx2 = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx2);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx2,
+            );
             table.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Horizontal,
-                    offset: 10.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Horizontal,
+                        offset: 10.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert!(ctx2.handled());
         assert!(ctx2.repaint_requested());
@@ -3966,7 +4092,13 @@ mod tests {
             name: "cursor_down".to_string(),
             arguments: vec![],
         };
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); table.execute_action(&action, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            table.execute_action(&action, &mut __w)
+        });
     }
 
     #[test]
@@ -4004,18 +4136,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             table.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Horizontal,
-                    offset: 999.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Horizontal,
+                        offset: 999.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());

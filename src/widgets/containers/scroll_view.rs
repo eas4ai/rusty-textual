@@ -415,7 +415,12 @@ impl ScrollView {
         ctx.request_repaint();
     }
 
-    fn request_offset_y_animation(&mut self, from: usize, to: usize, ctx: &mut crate::event::WidgetCtx) {
+    fn request_offset_y_animation(
+        &mut self,
+        from: usize,
+        to: usize,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         self.request_offset_y_animation_with_duration(from, to, None, ctx);
     }
 
@@ -466,7 +471,12 @@ impl ScrollView {
         ctx.request_repaint();
     }
 
-    fn request_offset_x_animation(&mut self, from: usize, to: usize, ctx: &mut crate::event::WidgetCtx) {
+    fn request_offset_x_animation(
+        &mut self,
+        from: usize,
+        to: usize,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         self.request_offset_x_animation_with_duration(from, to, None, ctx);
     }
 
@@ -1753,6 +1763,12 @@ impl crate::widgets::Render for ScrollView {
         out
     }
 }
+
+impl crate::widgets::Components for ScrollView {
+    fn component_classes(&self) -> &[&'static str] {
+        &["scrollview--content"]
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1787,7 +1803,13 @@ mod tests {
             name: "scroll_down".to_string(),
             arguments: vec![],
         };
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); sv.execute_action(&action, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            sv.execute_action(&action, &mut __w)
+        });
         assert!(ctx.handled());
     }
 
@@ -1807,7 +1829,10 @@ mod tests {
             done: false,
         });
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             sv.on_event(&event, &mut __w);
         }
         assert!(
@@ -1835,7 +1860,10 @@ mod tests {
             done: false,
         });
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             sv.on_event(&event, &mut __w);
         }
         assert!(
@@ -1861,7 +1889,10 @@ mod tests {
             done: false,
         });
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             sv.on_event(&event, &mut __w);
         }
 
@@ -1882,7 +1913,10 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             sv.on_mouse_scroll(0, 1, &mut __w);
         }
 
@@ -1919,7 +1953,10 @@ mod tests {
             y: 0,
         });
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             sv.on_event(&event, &mut __w);
         }
         // The scrollbar branch sets handled+returns on any scrollbar hit.
@@ -1946,10 +1983,12 @@ mod tests {
         sv.content_width.store(10, Ordering::Relaxed);
 
         let console = Console::default();
-        let mut opts = ConsoleOptions::default();
-        opts.size = (20, 10);
-        opts.max_width = 20;
-        opts.max_height = 10;
+        let opts = ConsoleOptions {
+            size: (20, 10),
+            max_width: 20,
+            max_height: 10,
+            ..Default::default()
+        };
 
         let segments = Widget::render(&sv, &console, &opts);
         let lines = Segment::split_and_crop_lines(segments, 20, None, true, false);
@@ -1991,7 +2030,10 @@ mod tests {
         let mut ctx = EventCtx::default();
         let event = Event::Action(Action::ScrollDown);
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             sv.on_event(&event, &mut __w);
         }
         assert!(
@@ -2003,7 +2045,10 @@ mod tests {
         let mut ctx2 = EventCtx::default();
         let event2 = Event::Action(Action::ScrollHome);
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx2);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx2,
+            );
             sv.on_event(&event2, &mut __w);
         }
         assert!(ctx2.handled(), "ScrollHome should be handled in tree mode");
@@ -2020,10 +2065,12 @@ mod tests {
         let _ = sv.compose();
 
         let console = Console::default();
-        let mut opts = ConsoleOptions::default();
-        opts.size = (20, 10);
-        opts.max_width = 20;
-        opts.max_height = 10;
+        let opts = ConsoleOptions {
+            size: (20, 10),
+            max_width: 20,
+            max_height: 10,
+            ..Default::default()
+        };
 
         let _ = Widget::render(&sv, &console, &opts);
         // render() must NOT overwrite content dimensions to viewport values.
@@ -2152,13 +2199,5 @@ mod tests {
         view.content_width.store(120, Ordering::Relaxed);
         view.content_height.store(80, Ordering::Relaxed);
         assert_eq!(view.scroll_virtual_content_size(), Some((120, 80)));
-    }
-}
-
-impl crate::widgets::Components for ScrollView {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "scrollview--content",
-        ]
     }
 }

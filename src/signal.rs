@@ -311,7 +311,7 @@ mod tests {
     fn default_trait_works() {
         let sig: Signal<f64> = Signal::default();
         assert_eq!(sig.subscriber_count(), 0);
-        assert_eq!(sig.emit(&3.14), 0);
+        assert_eq!(sig.emit(&std::f64::consts::PI), 0);
     }
 
     #[test]

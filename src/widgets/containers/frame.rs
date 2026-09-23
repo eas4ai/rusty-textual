@@ -173,8 +173,7 @@ impl crate::widgets::Render for Frame {
                 let top = format!(
                     "{}{}{}",
                     b.top_left,
-                    std::iter::repeat_n(b.top, inner_total)
-                        .collect::<String>(),
+                    std::iter::repeat_n(b.top, inner_total).collect::<String>(),
                     b.top_right
                 );
                 out.push(Segment::new(top));
@@ -191,8 +190,7 @@ impl crate::widgets::Render for Frame {
                 let bottom = format!(
                     "{}{}{}",
                     b.bottom_left,
-                    std::iter::repeat_n(b.bottom, inner_total)
-                        .collect::<String>(),
+                    std::iter::repeat_n(b.bottom, inner_total).collect::<String>(),
                     b.bottom_right
                 );
                 out.push(Segment::new(bottom));
@@ -262,8 +260,7 @@ impl crate::widgets::Render for Frame {
             let top = format!(
                 "{}{}{}",
                 b.top_left,
-                std::iter::repeat_n(b.top, inner_total)
-                    .collect::<String>(),
+                std::iter::repeat_n(b.top, inner_total).collect::<String>(),
                 b.top_right
             );
             out.push(Segment::new(top));
@@ -288,8 +285,7 @@ impl crate::widgets::Render for Frame {
             let bottom = format!(
                 "{}{}{}",
                 b.bottom_left,
-                std::iter::repeat_n(b.bottom, inner_total)
-                    .collect::<String>(),
+                std::iter::repeat_n(b.bottom, inner_total).collect::<String>(),
                 b.bottom_right
             );
             out.push(Segment::line());

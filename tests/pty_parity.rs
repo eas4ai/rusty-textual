@@ -2085,7 +2085,10 @@ pty_case!(docs_input, "docs_input");
 pty_case!(docs_input_types, "docs_input_types");
 pty_case!(docs_input_validation, "docs_input_validation");
 pty_case!(docs_tabbed_content, "docs_tabbed_content");
-pty_case!(docs_tabbed_content_label_color, "docs_tabbed_content_label_color");
+pty_case!(
+    docs_tabbed_content_label_color,
+    "docs_tabbed_content_label_color"
+);
 pty_case!(docs_text_area_custom_theme, "docs_text_area_custom_theme");
 pty_case!(docs_tree, "docs_tree");
 pty_case!(docs_label, "docs_label");
@@ -2116,8 +2119,14 @@ pty_case!(docs_header_app_title, "docs_header_app_title");
 pty_case!(docs_masked_input, "docs_masked_input");
 pty_case!(docs_pretty, "docs_pretty");
 pty_case!(docs_radio_set_changed, "docs_radio_set_changed");
-pty_case!(docs_select_from_values_widget, "docs_select_from_values_widget");
-pty_case!(docs_selection_list_selections, "docs_selection_list_selections");
+pty_case!(
+    docs_select_from_values_widget,
+    "docs_select_from_values_widget"
+);
+pty_case!(
+    docs_selection_list_selections,
+    "docs_selection_list_selections"
+);
 pty_case!(docs_selection_list_tuples, "docs_selection_list_tuples");
 pty_case!(docs_sparkline, "docs_sparkline");
 pty_case!(docs_sparkline_basic, "docs_sparkline_basic");
@@ -2191,7 +2200,10 @@ pty_case!(docs_data_table_renderables, "docs_data_table_renderables");
 pty_case!(docs_data_table_fixed, "docs_data_table_fixed");
 pty_case!(docs_collapsible, "docs_collapsible");
 pty_case!(docs_collapsible_nested, "docs_collapsible_nested");
-pty_case!(docs_collapsible_custom_symbol, "docs_collapsible_custom_symbol");
+pty_case!(
+    docs_collapsible_custom_symbol,
+    "docs_collapsible_custom_symbol"
+);
 pty_case!(json_tree_initial, "json_tree_initial");
 pty_case!(json_tree_add_node, "json_tree_add_node");
 pty_case!(dictionary_initial, "dictionary_initial");
@@ -2226,7 +2238,10 @@ pty_case!(docs_grid_columns, "docs_grid_columns");
 pty_case!(docs_grid_gutter, "docs_grid_gutter");
 pty_case!(docs_grid_layout1, "docs_grid_layout1");
 pty_case!(docs_grid_layout2, "docs_grid_layout2");
-pty_case!(docs_grid_layout3_row_col_adjust, "docs_grid_layout3_row_col_adjust");
+pty_case!(
+    docs_grid_layout3_row_col_adjust,
+    "docs_grid_layout3_row_col_adjust"
+);
 pty_case!(docs_grid_layout5_col_span, "docs_grid_layout5_col_span");
 pty_case!(docs_grid_layout6_row_span, "docs_grid_layout6_row_span");
 pty_case!(docs_grid_layout7_gutter, "docs_grid_layout7_gutter");
@@ -2246,11 +2261,17 @@ pty_case!(docs_text_style_all, "docs_text_style_all");
 pty_case!(docs_text_wrap, "docs_text_wrap");
 pty_case!(docs_tint, "docs_tint");
 pty_case!(docs_vertical_layout, "docs_vertical_layout");
-pty_case!(docs_vertical_layout_scrolled, "docs_vertical_layout_scrolled");
+pty_case!(
+    docs_vertical_layout_scrolled,
+    "docs_vertical_layout_scrolled"
+);
 pty_case!(docs_visibility, "docs_visibility");
 pty_case!(docs_widget, "docs_widget");
 pty_case!(docs_grid_rows, "docs_grid_rows");
-pty_case!(docs_grid_layout4_row_col_adjust, "docs_grid_layout4_row_col_adjust");
+pty_case!(
+    docs_grid_layout4_row_col_adjust,
+    "docs_grid_layout4_row_col_adjust"
+);
 pty_case!(docs_grid_layout_auto, "docs_grid_layout_auto");
 pty_case!(docs_column_span, "docs_column_span");
 pty_case!(docs_row_span, "docs_row_span");

@@ -165,9 +165,15 @@ pub(crate) enum CommandTarget {
 /// the post-dispatch flush.
 pub(crate) enum WidgetCommand {
     /// Add a CSS class to the target node.
-    AddClass { target: CommandTarget, class: String },
+    AddClass {
+        target: CommandTarget,
+        class: String,
+    },
     /// Remove a CSS class from the target node.
-    RemoveClass { target: CommandTarget, class: String },
+    RemoveClass {
+        target: CommandTarget,
+        class: String,
+    },
     /// Run a downcast-wrapped closure against the resolved target widget with a
     /// fresh `WidgetCtx`. The closure is erased to `&mut dyn Widget` and
     /// downcasts to its captured concrete type at drain (a miss logs + drops).
@@ -254,6 +260,37 @@ pub(crate) fn alloc_widget_timer_id() -> u64 {
 thread_local! {
     /// FIFO of commands enqueued on the current (UI) thread since the last drain.
     static RUNTIME_COMMAND_QUEUE: RefCell<Vec<WidgetCommand>> = const { RefCell::new(Vec::new()) };
+
+    /// Whether the current thread is inside event/message dispatch or a
+    /// pump/flush that drains its own thread-local queue (set by
+    /// [`DispatchDrainGuard`]).
+    static DISPATCH_DRAINING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// RAII: mark the current thread as draining while event/message dispatch or
+/// a pump/flush runs, so [`enqueue_widget_command`] accepts commands the
+/// current thread will itself drain.
+///
+/// The queue is thread-local, so per-thread bookkeeping is exact where the
+/// process-global UI-thread bridge is not: parallel tests each drive their
+/// own harness on their own thread, and a foreign test's live loop or worker
+/// pump must not trip this thread's legitimate dispatches. Worker threads
+/// never dispatch or pump, so genuine off-UI-thread misuse is still caught.
+pub(crate) struct DispatchDrainGuard {
+    prev: bool,
+}
+
+impl DispatchDrainGuard {
+    pub(crate) fn enter() -> Self {
+        let prev = DISPATCH_DRAINING.with(|flag| flag.replace(true));
+        Self { prev }
+    }
+}
+
+impl Drop for DispatchDrainGuard {
+    fn drop(&mut self) {
+        DISPATCH_DRAINING.with(|flag| flag.set(self.prev));
+    }
 }
 
 /// Enqueue a deferred widget command onto the UI-thread FIFO.
@@ -265,7 +302,9 @@ thread_local! {
 /// catches that misuse while a live event loop is running.
 pub(crate) fn enqueue_widget_command(cmd: WidgetCommand) {
     debug_assert!(
-        !crate::runtime::tasks::ui_thread_running() || crate::runtime::tasks::is_ui_thread(),
+        !crate::runtime::tasks::ui_thread_running()
+            || crate::runtime::tasks::is_ui_thread()
+            || DISPATCH_DRAINING.with(|flag| flag.get()),
         "WidgetCommand enqueued off the UI thread; workers must use the worker channel"
     );
     RUNTIME_COMMAND_QUEUE.with(|queue| queue.borrow_mut().push(cmd));

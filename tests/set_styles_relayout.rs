@@ -56,16 +56,12 @@ fn set_styles_offset_moves_widget_rect() {
             .expect("ball has a rendered rect");
 
         // Runtime offset mutation, as mouse01's MouseMoved handler does.
-        pilot
-            .app_mut()
-            .query_mut("#ball")
-            .unwrap()
-            .set_styles(|s| {
-                s.style.offset = Some(Offset {
-                    x: OffsetValue::Cells(12),
-                    y: OffsetValue::Cells(5),
-                });
+        pilot.app_mut().query_mut("#ball").unwrap().set_styles(|s| {
+            s.style.offset = Some(Offset {
+                x: OffsetValue::Cells(12),
+                y: OffsetValue::Cells(5),
             });
+        });
         pilot.pause()?;
 
         let after = pilot
@@ -89,17 +85,16 @@ fn set_styles_paint_only_change_does_not_move_rect() {
         let ball = pilot.app().query_one("#ball").unwrap();
         let before = pilot.app().node_screen_rect(ball).unwrap();
 
-        pilot
-            .app_mut()
-            .query_mut("#ball")
-            .unwrap()
-            .set_styles(|s| {
-                s.style.bold = Some(true);
-            });
+        pilot.app_mut().query_mut("#ball").unwrap().set_styles(|s| {
+            s.style.bold = Some(true);
+        });
         pilot.pause()?;
 
         let after = pilot.app().node_screen_rect(ball).unwrap();
-        assert_eq!(before, after, "paint-only style change must not move the rect");
+        assert_eq!(
+            before, after,
+            "paint-only style change must not move the rect"
+        );
         Ok(())
     })
     .unwrap();

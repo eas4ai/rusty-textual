@@ -211,7 +211,10 @@ fn dc_29_option_list_has_padding_0_1() {
 #[test]
 fn dc_29_option_list_has_overflow_x_hidden() {
     let style = default_style_for_type("OptionList");
-    assert_eq!(style.overflow_x, Some(rusty_textual::style::Overflow::Hidden));
+    assert_eq!(
+        style.overflow_x,
+        Some(rusty_textual::style::Overflow::Hidden)
+    );
 }
 
 // ==== DC-30: SelectionList ====

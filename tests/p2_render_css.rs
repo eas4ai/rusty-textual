@@ -334,7 +334,7 @@ fn p2g29_border_title_subtitle_render_on_edges() {
     let title_byte = lines[0].find("TITLE").expect("title should be present");
     let title_x = rich_rs::cell_len(&lines[0][..title_byte]);
     let title_cell = frame.get(title_x, 0);
-    let title_fg = title_cell.style.and_then(|s| s.color).map(|c| c);
+    let title_fg = title_cell.style.and_then(|s| s.color);
     assert_eq!(
         title_fg,
         Some(
@@ -642,8 +642,12 @@ fn p2g35_axis_constrain_resolution() {
 fn p2g35_constrain_overlay_position_clamps_inside() {
     use rusty_textual::runtime::constrain_overlay_position;
 
-    let (x, y) =
-        constrain_overlay_position(90, 20, 20, 5, 100, 25, Constrain::Inside, Constrain::Inside);
+    let (x, y) = constrain_overlay_position(
+        (90, 20),
+        (20, 5),
+        (100, 25),
+        (Constrain::Inside, Constrain::Inside),
+    );
     assert!(x + 20 <= 100, "x should be clamped inside viewport: x={x}");
     assert!(y + 5 <= 25, "y should be clamped inside viewport: y={y}");
     assert_eq!(x, 80, "x should be clamped to 80 (100 - 20)");
@@ -655,13 +659,21 @@ fn p2g35_constrain_overlay_position_inflects() {
     use rusty_textual::runtime::constrain_overlay_position;
 
     // Overlay overflows right: inflect should flip to left.
-    let (x, _y) =
-        constrain_overlay_position(90, 5, 20, 3, 100, 25, Constrain::Inflect, Constrain::None);
+    let (x, _y) = constrain_overlay_position(
+        (90, 5),
+        (20, 3),
+        (100, 25),
+        (Constrain::Inflect, Constrain::None),
+    );
     assert_eq!(x, 70, "x should inflect to 70 (90 - 20)");
 
     // Overlay overflows bottom: inflect should flip up.
-    let (_x, y) =
-        constrain_overlay_position(5, 22, 10, 5, 100, 25, Constrain::None, Constrain::Inflect);
+    let (_x, y) = constrain_overlay_position(
+        (5, 22),
+        (10, 5),
+        (100, 25),
+        (Constrain::None, Constrain::Inflect),
+    );
     assert_eq!(y, 17, "y should inflect to 17 (22 - 5)");
 }
 
@@ -669,8 +681,12 @@ fn p2g35_constrain_overlay_position_inflects() {
 fn p2g35_constrain_none_does_not_clamp() {
     use rusty_textual::runtime::constrain_overlay_position;
 
-    let (x, y) =
-        constrain_overlay_position(90, 22, 20, 5, 100, 25, Constrain::None, Constrain::None);
+    let (x, y) = constrain_overlay_position(
+        (90, 22),
+        (20, 5),
+        (100, 25),
+        (Constrain::None, Constrain::None),
+    );
     assert_eq!(x, 90, "x should be unchanged");
     assert_eq!(y, 22, "y should be unchanged");
 }
@@ -839,21 +855,18 @@ fn p2g34_hatch_bordered_node_fills_inner_row_not_border_title() {
     let css = ".hatchbox { border: solid white; hatch: cross #ff0000; }";
     let sheet = StyleSheet::parse(css);
 
-    let mut root = Container::new().with_child(
-        Static::new("")
-            .class("hatchbox")
-            .with_border_title("t"),
-    );
+    let mut root =
+        Container::new().with_child(Static::new("").class("hatchbox").with_border_title("t"));
     let console = Console::new();
     let mut tree = build_widget_tree_from_root(&mut root).expect("tree");
-    let frame =
-        render_tree_to_frame_with_stylesheet(&mut tree, &mut root, &console, 12, 6, sheet);
+    let frame = render_tree_to_frame_with_stylesheet(&mut tree, &mut root, &console, 12, 6, sheet);
 
     // Top border row (row 0) carries the title; its blank padding must NOT be
     // hatched. The title is centered-ish as ` t ` — assert no hatch glyph on row 0.
     for x in 0..12usize {
         assert_ne!(
-            frame.get(x, 0).text, "╳",
+            frame.get(x, 0).text,
+            "╳",
             "border/title row must not be hatched (x={x})"
         );
     }
@@ -862,13 +875,18 @@ fn p2g34_hatch_bordered_node_fills_inner_row_not_border_title() {
     // un-hatched, and the hatch must fill it (not just one cell).
     for x in 1..11usize {
         assert_eq!(
-            frame.get(x, 1).text, "╳",
+            frame.get(x, 1).text,
+            "╳",
             "inner content row must be fully hatched (x={x})"
         );
     }
     // The bottom border row closes the box (chrome applied by layout); it is a
     // border row, not a hatched content row.
-    assert_eq!(frame.get(2, 2).text, "─", "bottom border row closes the box");
+    assert_eq!(
+        frame.get(2, 2).text,
+        "─",
+        "bottom border row closes the box"
+    );
     // Border corners survive on the perimeter.
     assert_eq!(frame.get(0, 0).text, "┌", "top-left corner preserved");
     assert_eq!(frame.get(0, 2).text, "└", "bottom-left corner preserved");
@@ -934,7 +952,7 @@ fn p2g34_keyline_draws_separator_between_children() {
         .position(|l| l.contains('─'))
         .expect("separator row");
     let cell = frame.get(0, sep_y);
-    let fg = cell.style.and_then(|s| s.color).map(|c| c);
+    let fg = cell.style.and_then(|s| s.color);
     assert_eq!(
         fg,
         Some(

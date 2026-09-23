@@ -360,6 +360,45 @@ impl ReactiveWidget for Placeholder {
     }
 }
 
+/// Simple word-wrap that breaks text on spaces to fit within `width` cells.
+/// Respects explicit `\n` line breaks (including blank lines from `\n\n`).
+fn word_wrap(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![];
+    }
+    let mut lines = Vec::new();
+
+    for paragraph in text.split('\n') {
+        if paragraph.is_empty() {
+            // Blank line (from \n\n paragraph break).
+            lines.push(String::new());
+            continue;
+        }
+        let mut current = String::new();
+        let mut current_len = 0usize;
+
+        for word in paragraph.split_whitespace() {
+            let word_len = rich_rs::cell_len(word);
+            if current.is_empty() {
+                current = word.to_string();
+                current_len = word_len;
+            } else if current_len + 1 + word_len <= width {
+                current.push(' ');
+                current.push_str(word);
+                current_len += 1 + word_len;
+            } else {
+                lines.push(current);
+                current = word.to_string();
+                current_len = word_len;
+            }
+        }
+        if !current.is_empty() {
+            lines.push(current);
+        }
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,11 +406,12 @@ mod tests {
     use crate::node_id::NodeId;
 
     fn make_console_options(width: usize, height: usize) -> ConsoleOptions {
-        let mut opts = ConsoleOptions::default();
-        opts.size = (width, height);
-        opts.max_width = width;
-        opts.max_height = height;
-        opts
+        ConsoleOptions {
+            size: (width, height),
+            max_width: width,
+            max_height: height,
+            ..Default::default()
+        }
     }
 
     /// Python parity: `Placeholder.render()` returns the BARE label — it must
@@ -505,7 +545,10 @@ mod tests {
         });
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             ph.on_event(&event, &mut __w);
         }
         assert_eq!(ph.variant(), PlaceholderVariant::Size);
@@ -575,7 +618,10 @@ mod tests {
         });
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             ph.on_event(&event, &mut __w);
         }
         assert_eq!(ph.variant(), PlaceholderVariant::Size);
@@ -686,43 +732,4 @@ mod tests {
             "Placeholder unset height must stay None so it flex-fills"
         );
     }
-}
-
-/// Simple word-wrap that breaks text on spaces to fit within `width` cells.
-/// Respects explicit `\n` line breaks (including blank lines from `\n\n`).
-fn word_wrap(text: &str, width: usize) -> Vec<String> {
-    if width == 0 {
-        return vec![];
-    }
-    let mut lines = Vec::new();
-
-    for paragraph in text.split('\n') {
-        if paragraph.is_empty() {
-            // Blank line (from \n\n paragraph break).
-            lines.push(String::new());
-            continue;
-        }
-        let mut current = String::new();
-        let mut current_len = 0usize;
-
-        for word in paragraph.split_whitespace() {
-            let word_len = rich_rs::cell_len(word);
-            if current.is_empty() {
-                current = word.to_string();
-                current_len = word_len;
-            } else if current_len + 1 + word_len <= width {
-                current.push(' ');
-                current.push_str(word);
-                current_len += 1 + word_len;
-            } else {
-                lines.push(current);
-                current = word.to_string();
-                current_len = word_len;
-            }
-        }
-        if !current.is_empty() {
-            lines.push(current);
-        }
-    }
-    lines
 }

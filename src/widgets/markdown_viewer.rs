@@ -769,7 +769,9 @@ impl MarkdownViewer {
         self.inner.execute_action(action, ctx)
     }
 
-    fn style_type_aliases(&self) -> &[&'static str] { self.inner.style_type_aliases() }
+    fn style_type_aliases(&self) -> &[&'static str] {
+        self.inner.style_type_aliases()
+    }
 }
 
 fn slugify_heading(title: &str) -> String {
@@ -1053,7 +1055,13 @@ mod tests {
         let action =
             crate::action::parse_action("link('./example.md')").expect("link action should parse");
         let mut ctx = EventCtx::default();
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); viewer.execute_action(&action, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            viewer.execute_action(&action, &mut __w)
+        });
         assert_eq!(viewer.content, "# Example");
         assert!(
             ctx.take_messages()
@@ -1170,7 +1178,10 @@ mod tests {
         );
         let mut ctx = crate::event::EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             toc.on_message(&msg, &mut __w);
         }
         assert!(ctx.handled());
@@ -1178,7 +1189,7 @@ mod tests {
         assert!(
             messages.iter().any(|m| m
                 .downcast_ref::<MarkdownTableOfContentsSelected>()
-                .map_or(false, |s| s.block_id == "chapter")),
+                .is_some_and(|s| s.block_id == "chapter")),
             "TOC should post MarkdownTableOfContentsSelected with block_id"
         );
     }
@@ -1198,7 +1209,10 @@ mod tests {
         );
         let mut ctx = crate::event::EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             toc.on_message(&msg, &mut __w);
         }
         assert!(
@@ -1222,7 +1236,10 @@ mod tests {
         );
         let mut ctx = crate::event::EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             toc.on_message(&msg, &mut __w);
         }
         assert!(!ctx.handled());
@@ -1265,7 +1282,10 @@ mod tests {
         );
         let mut ctx = crate::event::EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             viewer.on_message(&msg, &mut __w);
         }
         assert!(
@@ -1288,7 +1308,10 @@ mod tests {
         );
         let mut ctx = crate::event::EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             viewer.on_message(&msg, &mut __w);
         }
         assert!(ctx.handled());
@@ -1296,7 +1319,7 @@ mod tests {
         assert!(
             messages.iter().any(|m| m
                 .downcast_ref::<ScrollbarScrollTo>()
-                .map_or(false, |p| p.axis == ScrollbarAxis::Vertical && p.animate)),
+                .is_some_and(|p| p.axis == ScrollbarAxis::Vertical && p.animate)),
             "TOC selection should route through ScrollbarScrollTo for synchronized content+thumb scroll"
         );
     }

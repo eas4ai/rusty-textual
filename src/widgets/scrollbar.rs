@@ -381,15 +381,15 @@ pub struct ScrollbarGeometry {
 
 impl ScrollbarGeometry {
     pub fn from_runtime_state(
-        widget_width: usize,
-        widget_height: usize,
-        content_width: usize,
-        content_height: usize,
-        viewport_width: usize,
-        viewport_height: usize,
-        vertical_lane_width: usize,
-        horizontal_lane_height: usize,
+        widget: (usize, usize),
+        content: (usize, usize),
+        viewport: (usize, usize),
+        lanes: (usize, usize),
     ) -> Self {
+        let (widget_width, widget_height) = widget;
+        let (content_width, content_height) = content;
+        let (viewport_width, viewport_height) = viewport;
+        let (vertical_lane_width, horizontal_lane_height) = lanes;
         Self {
             widget_width: widget_width.max(1),
             widget_height: widget_height.max(1),
@@ -1068,7 +1068,12 @@ mod tests {
             thickness: 1,
             vertical,
         };
-        let lines = renderer.render_bar(track_len, Color::rgb(85, 85, 85), Color::rgb(255, 0, 255), None);
+        let lines = renderer.render_bar(
+            track_len,
+            Color::rgb(85, 85, 85),
+            Color::rgb(255, 0, 255),
+            None,
+        );
         // Vertical: one cell per line (one cell per track index). Horizontal:
         // first line holds the whole row.
         let cells: Vec<&Segment> = if vertical {
@@ -1238,7 +1243,10 @@ mod tests {
         let g_hid = hidden.resolve(80, 20, 80, 60);
         assert_eq!(g_vis.vertical_lane_width, g_hid.vertical_lane_width);
         assert_eq!(g_vis.viewport_width, g_hid.viewport_width);
-        assert!(g_hid.show_vertical, "hidden visibility still reserves the lane");
+        assert!(
+            g_hid.show_vertical,
+            "hidden visibility still reserves the lane"
+        );
         assert_eq!(g_hid.vertical_lane_width, 2);
         assert_eq!(g_hid.viewport_width, 78);
         assert!(g_vis.paint_vertical, "visible scrollbar is painted");
@@ -1324,10 +1332,12 @@ mod tests {
         bar.set_window_virtual_size(2); // content: 2 rows
         bar.set_window_size(28); // viewport: 28 rows (nothing to scroll)
         let console = rich_rs::Console::new();
-        let mut options = rich_rs::ConsoleOptions::default();
-        options.size = (2, 10);
-        options.max_width = 2;
-        options.max_height = 10;
+        let options = rich_rs::ConsoleOptions {
+            size: (2, 10),
+            max_width: 2,
+            max_height: 10,
+            ..Default::default()
+        };
         let segments = crate::widgets::Render::render(&bar, &console, &options);
         assert!(
             segments
@@ -1339,7 +1349,9 @@ mod tests {
         assert!(
             segments
                 .iter()
-                .filter(|seg| seg.control.is_none() && !seg.text.trim().is_empty() || seg.text == " ")
+                .filter(
+                    |seg| seg.control.is_none() && !seg.text.trim().is_empty() || seg.text == " "
+                )
                 .all(|seg| seg.style.and_then(|s| s.bgcolor).is_some()),
             "an unscrollable bar paints the plain track background on every cell"
         );
@@ -1355,16 +1367,20 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             bar.on_event(
-            &Event::MouseUp(MouseUpEvent {
-                target: None,
-                screen_x: 0,
-                screen_y: 0,
-                x: 0,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseUp(MouseUpEvent {
+                    target: None,
+                    screen_x: 0,
+                    screen_y: 0,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
         assert!(!bar.grabbed);
         assert_eq!(bar.grab_offset, 0);
@@ -1395,32 +1411,40 @@ mod tests {
         // Start drag on thumb at top.
         let mut down_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut down_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut down_ctx,
+            );
             bar.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: id,
-                screen_x: 0,
-                screen_y: 0,
-                x: 0,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: id,
+                    screen_x: 0,
+                    screen_y: 0,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
         assert!(down_ctx.handled());
 
         // Move pointer by one terminal row.
         let mut move_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut move_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut move_ctx,
+            );
             bar.on_event(
-            &Event::MouseMove(MouseMoveEvent {
-                target: id,
-                screen_x: 0,
-                screen_y: 1,
-                x: 0,
-                y: 1,
-            }),
-            &mut __w);
+                &Event::MouseMove(MouseMoveEvent {
+                    target: id,
+                    screen_x: 0,
+                    screen_y: 1,
+                    x: 0,
+                    y: 1,
+                }),
+                &mut __w,
+            );
         }
         assert!(move_ctx.handled());
 
@@ -1446,9 +1470,11 @@ mod tests {
     #[test]
     fn scrollbar_color_resolves_from_host_style() {
         use crate::css::SelectorMeta;
-        let mut host = Style::default();
-        host.scrollbar_color = Some(Color::rgb(0, 255, 255));
-        host.scrollbar_background = Some(Color::rgb(0, 0, 255));
+        let host = Style {
+            scrollbar_color: Some(Color::rgb(0, 255, 255)),
+            scrollbar_background: Some(Color::rgb(0, 0, 255)),
+            ..Default::default()
+        };
         let host_meta = SelectorMeta::new("Screen".to_string(), None, Vec::new());
 
         let mut bar = ScrollBar::new(true, 1);
@@ -1458,10 +1484,12 @@ mod tests {
         let self_meta = SelectorMeta::new("ScrollBar".to_string(), None, Vec::new());
 
         let console = rich_rs::Console::new();
-        let mut options = console.options().clone();
-        options.size = (1, 20);
-        options.max_width = 1;
-        options.max_height = 20;
+        let options = rich_rs::ConsoleOptions {
+            size: (1, 20),
+            max_width: 1,
+            max_height: 20,
+            ..console.options().clone()
+        };
 
         // Push host then self, mirroring the render-time stack order.
         crate::css::push_style_context(host_meta, host);
@@ -1496,12 +1524,14 @@ mod tests {
     #[test]
     fn track_fg_composites_over_host_base_background_not_track() {
         use crate::css::SelectorMeta;
-        let mut host = Style::default();
         // background: white; color: blue 80%
-        host.bg = Some(Color::rgb(255, 255, 255));
-        host.fg = Some(Color::rgba_f(0, 0, 255, 0.8));
         // scrollbar-background: a dark surface (so the regression would show).
-        host.scrollbar_background = Some(Color::rgb(0, 0, 0));
+        let host = Style {
+            bg: Some(Color::rgb(255, 255, 255)),
+            fg: Some(Color::rgba_f(0, 0, 255, 0.8)),
+            scrollbar_background: Some(Color::rgb(0, 0, 0)),
+            ..Default::default()
+        };
         let host_meta = SelectorMeta::new("Screen".to_string(), None, Vec::new());
 
         let mut bar = ScrollBar::new(true, 1);
@@ -1511,10 +1541,12 @@ mod tests {
         let self_meta = SelectorMeta::new("ScrollBar".to_string(), None, Vec::new());
 
         let console = rich_rs::Console::new();
-        let mut options = console.options().clone();
-        options.size = (1, 20);
-        options.max_width = 1;
-        options.max_height = 20;
+        let options = rich_rs::ConsoleOptions {
+            size: (1, 20),
+            max_width: 1,
+            max_height: 20,
+            ..console.options().clone()
+        };
 
         crate::css::push_style_context(host_meta, host);
         crate::css::push_style_context(self_meta, Style::default());
@@ -1534,7 +1566,11 @@ mod tests {
             })
             .expect("expected a track cell carrying the host fg color");
         let fg = track_seg.style.and_then(|s| s.color);
-        assert_ne!(fg, Some(wrong), "track fg must NOT flatten over the dark track");
+        assert_ne!(
+            fg,
+            Some(wrong),
+            "track fg must NOT flatten over the dark track"
+        );
         assert_eq!(
             fg,
             Some(expected),
@@ -1557,10 +1593,12 @@ mod tests {
         bar.on_layout(4, 20);
 
         let console = rich_rs::Console::new();
-        let mut options = console.options().clone();
-        options.size = (4, 20);
-        options.max_width = 4;
-        options.max_height = 20;
+        let options = rich_rs::ConsoleOptions {
+            size: (4, 20),
+            max_width: 4,
+            max_height: 20,
+            ..console.options().clone()
+        };
 
         let segments = Widget::render(&bar, &console, &options);
         // Every painted glyph segment (track blank or thumb glyph) on a vertical
@@ -1589,10 +1627,12 @@ mod tests {
         bar.on_layout(20, 3);
 
         let console = rich_rs::Console::new();
-        let mut options = console.options().clone();
-        options.size = (20, 3);
-        options.max_width = 20;
-        options.max_height = 3;
+        let options = rich_rs::ConsoleOptions {
+            size: (20, 3),
+            max_width: 20,
+            max_height: 3,
+            ..console.options().clone()
+        };
 
         let segments = Widget::render(&bar, &console, &options);
         // A horizontal bar duplicates its row `thickness` times, separated by

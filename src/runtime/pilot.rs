@@ -416,7 +416,7 @@ fn single_char_with_mods(key: &str, modifiers: KeyModifiers) -> Option<KeyEvent>
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use crate::message::ButtonPressed;
     use crate::style::{Color, parse_color_like};
     use crate::widgets::{AppRoot, BindingDecl, Button, Horizontal};
@@ -453,7 +453,12 @@ Horizontal { width: auto; height: auto; }
             Ok(())
         }
 
-        fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut crate::event::WidgetCtx) {
+        fn on_app_action_str(
+            &mut self,
+            app: &mut App,
+            action: &str,
+            ctx: &mut crate::event::WidgetCtx,
+        ) {
             if let Ok(parsed) = crate::action::parse_action(action) {
                 if parsed.name == "switch_color" {
                     if let Some(name) = parsed.arguments.first().and_then(|a| a.as_str()) {
@@ -799,8 +804,7 @@ Horizontal { width: auto; height: auto; }
         }
 
         fn on_mount(&mut self) {
-            *self.observed.lock().unwrap() =
-                self.snapshot.iter().map(|c| c.id.clone()).collect();
+            *self.observed.lock().unwrap() = self.snapshot.iter().map(|c| c.id.clone()).collect();
         }
     }
 
@@ -904,7 +908,10 @@ Horizontal { width: auto; height: auto; }
                 .expect("test screen push succeeds");
             pilot.pause()?;
 
-            let active = pilot.app().active_widget_tree().expect("active screen tree");
+            let active = pilot
+                .app()
+                .active_widget_tree()
+                .expect("active screen tree");
             let screen_root = active.root().expect("active screen tree root");
             assert!(
                 active.contains(screen_root),

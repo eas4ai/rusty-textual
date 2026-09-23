@@ -135,33 +135,35 @@ fn table_screen() -> AppRoot {
 
 /// A Tree showing hierarchical data with expanded and collapsed branches.
 fn tree_screen() -> AppRoot {
-    AppRoot::new().with_child(Tree::new(vec![TreeNode::new("textual-rs")
-        .expanded(true)
-        .allow_expand(true)
-        .with_child(
-            TreeNode::new("src")
-                .expanded(true)
-                .allow_expand(true)
-                .with_child(
-                    TreeNode::new("runtime")
-                        .expanded(true)
-                        .allow_expand(true)
-                        .with_child(TreeNode::new("event_loop.rs"))
-                        .with_child(TreeNode::new("render.rs"))
-                        .with_child(TreeNode::new("routing.rs")),
-                )
-                .with_child(
-                    TreeNode::new("widgets")
-                        .expanded(true)
-                        .allow_expand(true)
-                        .with_child(TreeNode::new("button.rs"))
-                        .with_child(TreeNode::new("data_table.rs"))
-                        .with_child(TreeNode::new("text_area.rs")),
-                )
-                .with_child(TreeNode::new("css").allow_expand(true)),
-        )
-        .with_child(TreeNode::new("examples").allow_expand(true))
-        .with_child(TreeNode::new("Cargo.toml"))]))
+    AppRoot::new().with_child(Tree::new(vec![
+        TreeNode::new("textual-rs")
+            .expanded(true)
+            .allow_expand(true)
+            .with_child(
+                TreeNode::new("src")
+                    .expanded(true)
+                    .allow_expand(true)
+                    .with_child(
+                        TreeNode::new("runtime")
+                            .expanded(true)
+                            .allow_expand(true)
+                            .with_child(TreeNode::new("event_loop.rs"))
+                            .with_child(TreeNode::new("render.rs"))
+                            .with_child(TreeNode::new("routing.rs")),
+                    )
+                    .with_child(
+                        TreeNode::new("widgets")
+                            .expanded(true)
+                            .allow_expand(true)
+                            .with_child(TreeNode::new("button.rs"))
+                            .with_child(TreeNode::new("data_table.rs"))
+                            .with_child(TreeNode::new("text_area.rs")),
+                    )
+                    .with_child(TreeNode::new("css").allow_expand(true)),
+            )
+            .with_child(TreeNode::new("examples").allow_expand(true))
+            .with_child(TreeNode::new("Cargo.toml")),
+    ]))
 }
 
 /// A snapshot definition: theme + widget tree + optional stylesheet.

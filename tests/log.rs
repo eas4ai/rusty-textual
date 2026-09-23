@@ -72,7 +72,10 @@ fn log_scrolls_via_actions() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         log.on_event(&Event::Action(Action::ScrollDown), &mut __w);
     }
     assert!(ctx.handled());
@@ -92,7 +95,10 @@ fn log_preserves_viewport_anchor_when_max_lines_prunes() {
 
     let mut scroll_ctx = EventCtx::default();
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut scroll_ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut scroll_ctx,
+        );
         log.on_event(&Event::Action(Action::ScrollDown), &mut __w);
     }
     assert!(scroll_ctx.handled());

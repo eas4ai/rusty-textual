@@ -155,7 +155,11 @@ impl Color {
         let mix = |o: u8, u: u8| -> u8 {
             (u as f32 + (o as f32 - u as f32) * factor).clamp(0.0, 255.0) as u8
         };
-        Color::rgb(mix(self.r, under.r), mix(self.g, under.g), mix(self.b, under.b))
+        Color::rgb(
+            mix(self.r, under.r),
+            mix(self.g, under.g),
+            mix(self.b, under.b),
+        )
     }
 
     /// Python `Color.inverse` — `Color(255 - r, 255 - g, 255 - b, a)`.
@@ -214,7 +218,11 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
         let v = (l * 255.0).round() as u8;
         return (v, v, v);
     }
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
     let p = 2.0 * l - q;
     let hue = |mut t: f32| -> f32 {
         if t < 0.0 {
@@ -983,7 +991,12 @@ fn lab_to_rgb(l: f64, a: f64, b: f64, alpha: f32) -> Color {
     // toward zero; Rust's saturating f64->u8 cast matches after truncation for the
     // in-gamut range, and out-of-range values are corrected by the caller's `.clamped()`.
     let to_byte = |v: f64| -> u8 { v.trunc().clamp(0.0, 255.0) as u8 };
-    Color::rgba_f(to_byte(r * 255.0), to_byte(g * 255.0), to_byte(bb * 255.0), alpha)
+    Color::rgba_f(
+        to_byte(r * 255.0),
+        to_byte(g * 255.0),
+        to_byte(bb * 255.0),
+        alpha,
+    )
 }
 
 pub(crate) fn blend_colors(a: Color, b: Color, percent: u8) -> Color {
@@ -1481,8 +1494,7 @@ impl BorderType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BorderEdge {
     /// Not specified by any rule / inline style.
     #[default]
@@ -1495,7 +1507,6 @@ pub enum BorderEdge {
         color: Color,
     },
 }
-
 
 impl BorderEdge {
     pub fn is_set(&self) -> bool {
@@ -4103,7 +4114,10 @@ mod tests {
         let vh = Scalar::ViewHeight(25.0);
         assert_eq!(resolve_scalar_exact(&vh, 120, 120, 30, 120, 30), Some(7.5));
         // `auto`/`fr` have no direct percentage base → resolved by the 1D solver.
-        assert_eq!(resolve_scalar_exact(&Scalar::Auto, 30, 30, 30, 30, 30), None);
+        assert_eq!(
+            resolve_scalar_exact(&Scalar::Auto, 30, 30, 30, 30, 30),
+            None
+        );
         assert_eq!(
             resolve_scalar_exact(&Scalar::Fraction(2.0), 30, 30, 30, 30, 30),
             None
@@ -4145,19 +4159,37 @@ mod tests {
         assert_eq!(parse_color_like("lime"), Some(Color::rgb(0, 255, 0)));
         // Case-insensitive; extended keywords resolve too.
         assert_eq!(parse_color_like("White"), Some(Color::rgb(255, 255, 255)));
-        assert_eq!(parse_color_like("rebeccapurple"), Some(Color::rgb(102, 51, 153)));
+        assert_eq!(
+            parse_color_like("rebeccapurple"),
+            Some(Color::rgb(102, 51, 153))
+        );
         // `ansi_*` names keep the terminal-palette values (handled separately).
-        assert_eq!(parse_color_like("ansi_white"), Some(Color::rgb(192, 192, 192)));
+        assert_eq!(
+            parse_color_like("ansi_white"),
+            Some(Color::rgb(192, 192, 192))
+        );
     }
 
     #[test]
     fn hsl_and_hsla_parse_to_rgb() {
         // hsl(240,100%,50%) = pure blue (Python Textual / CSS).
-        assert_eq!(parse_color_like("hsl(240, 100%, 50%)"), Some(Color::rgb(0, 0, 255)));
-        assert_eq!(parse_color_like("hsl(0, 100%, 50%)"), Some(Color::rgb(255, 0, 0)));
-        assert_eq!(parse_color_like("hsl(120, 100%, 50%)"), Some(Color::rgb(0, 255, 0)));
+        assert_eq!(
+            parse_color_like("hsl(240, 100%, 50%)"),
+            Some(Color::rgb(0, 0, 255))
+        );
+        assert_eq!(
+            parse_color_like("hsl(0, 100%, 50%)"),
+            Some(Color::rgb(255, 0, 0))
+        );
+        assert_eq!(
+            parse_color_like("hsl(120, 100%, 50%)"),
+            Some(Color::rgb(0, 255, 0))
+        );
         // s=0 => grey at lightness.
-        assert_eq!(parse_color_like("hsl(0, 0%, 50%)"), Some(Color::rgb(128, 128, 128)));
+        assert_eq!(
+            parse_color_like("hsl(0, 0%, 50%)"),
+            Some(Color::rgb(128, 128, 128))
+        );
         // hsla carries alpha (kept as a float, not u8-quantized).
         assert_eq!(
             parse_color_like("hsla(240, 100%, 50%, 0.5)"),
@@ -4172,7 +4204,10 @@ mod tests {
         // Color(18,18,18) + Color(255,0,0,a=0.1) == Color(41,16,16).
         let base = Color::rgb(18, 18, 18);
         let red10 = Color::rgb(255, 0, 0).with_alpha(0.1);
-        assert!((red10.a - 0.1).abs() < 1e-6, "alpha stays the exact float 0.1");
+        assert!(
+            (red10.a - 0.1).abs() < 1e-6,
+            "alpha stays the exact float 0.1"
+        );
         let composited = red10.flatten_over(base);
         assert_eq!(composited, Color::rgb(41, 16, 16));
         // The old u8 path would have produced 42 in the red channel.
@@ -4236,7 +4271,10 @@ mod tests {
     //                           viewport_width, viewport_height, fr_total, available)
     #[test]
     fn resolve_scalar_auto_returns_zero() {
-        assert_eq!(resolve_scalar(&Scalar::Auto, 100, 100, 50, 200, 60, 0.0, 0), 0);
+        assert_eq!(
+            resolve_scalar(&Scalar::Auto, 100, 100, 50, 200, 60, 0.0, 0),
+            0
+        );
     }
 
     #[test]
@@ -4266,11 +4304,20 @@ mod tests {
     #[test]
     fn resolve_scalar_fraction() {
         // 1fr out of 3fr total, with 90 available → 30
-        assert_eq!(resolve_scalar(&Scalar::Fraction(1.0), 0, 0, 0, 0, 0, 3.0, 90), 30);
+        assert_eq!(
+            resolve_scalar(&Scalar::Fraction(1.0), 0, 0, 0, 0, 0, 3.0, 90),
+            30
+        );
         // 2fr out of 3fr total, with 90 available → 60
-        assert_eq!(resolve_scalar(&Scalar::Fraction(2.0), 0, 0, 0, 0, 0, 3.0, 90), 60);
+        assert_eq!(
+            resolve_scalar(&Scalar::Fraction(2.0), 0, 0, 0, 0, 0, 3.0, 90),
+            60
+        );
         // 0 total fr → 0
-        assert_eq!(resolve_scalar(&Scalar::Fraction(1.0), 0, 0, 0, 0, 0, 0.0, 90), 0);
+        assert_eq!(
+            resolve_scalar(&Scalar::Fraction(1.0), 0, 0, 0, 0, 0, 0.0, 90),
+            0
+        );
     }
 
     #[test]

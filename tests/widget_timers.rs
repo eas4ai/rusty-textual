@@ -77,9 +77,10 @@ impl Widget for Countdown {
     }
 
     fn on_mount(&mut self, ctx: &mut WidgetCtx) {
-        let handle = ctx.set_interval::<Self, _>(Duration::from_secs(1), false, |w, wctx, _tick| {
-            w.tick(wctx);
-        });
+        let handle =
+            ctx.set_interval::<Self, _>(Duration::from_secs(1), false, |w, wctx, _tick| {
+                w.tick(wctx);
+            });
         *self.handle_slot.lock().unwrap() = Some(handle);
     }
 }
@@ -130,24 +131,43 @@ fn advance_clock_drives_widget_owned_interval_with_pause_resume() {
         // Timer registered in on_mount_ctx (RegisterTimer command drained by the
         // startup pump). No fire yet.
         pilot.pause()?;
-        assert_eq!(observed.load(Ordering::SeqCst), i32::MIN, "no tick before clock advances");
+        assert_eq!(
+            observed.load(Ordering::SeqCst),
+            i32::MIN,
+            "no tick before clock advances"
+        );
 
         // Deterministic drive: 3 seconds → 3 ticks → remaining 10 → 7.
         pilot.advance_clock(Duration::from_secs(3))?;
-        assert_eq!(observed.load(Ordering::SeqCst), 7, "3 clock seconds = 3 ticks (10 -> 7)");
+        assert_eq!(
+            observed.load(Ordering::SeqCst),
+            7,
+            "3 clock seconds = 3 ticks (10 -> 7)"
+        );
 
         // pause() halts firing.
-        let handle = handle_slot.lock().unwrap().expect("timer registered at mount");
+        let handle = handle_slot
+            .lock()
+            .unwrap()
+            .expect("timer registered at mount");
         handle.pause();
         pilot.pause()?; // drain the PauseTimer command
         pilot.advance_clock(Duration::from_secs(5))?;
-        assert_eq!(observed.load(Ordering::SeqCst), 7, "paused timer does not fire");
+        assert_eq!(
+            observed.load(Ordering::SeqCst),
+            7,
+            "paused timer does not fire"
+        );
 
         // resume() continues from where it left off.
         handle.resume();
         pilot.pause()?; // drain the ResumeTimer command
         pilot.advance_clock(Duration::from_secs(2))?;
-        assert_eq!(observed.load(Ordering::SeqCst), 5, "resumed timer ticks (7 -> 5)");
+        assert_eq!(
+            observed.load(Ordering::SeqCst),
+            5,
+            "resumed timer ticks (7 -> 5)"
+        );
 
         Ok(())
     })
@@ -367,11 +387,19 @@ fn set_timer_one_shot_fires_exactly_once_via_public_widget_ctx_api() {
 
         // Crossing the deadline fires the callback once.
         pilot.advance_clock(Duration::from_secs(1))?;
-        assert_eq!(fires.load(Ordering::SeqCst), 1, "one-shot fired at its deadline");
+        assert_eq!(
+            fires.load(Ordering::SeqCst),
+            1,
+            "one-shot fired at its deadline"
+        );
 
         // Well past several would-be intervals: never fires again.
         pilot.advance_clock(Duration::from_secs(10))?;
-        assert_eq!(fires.load(Ordering::SeqCst), 1, "one-shot never fires twice");
+        assert_eq!(
+            fires.load(Ordering::SeqCst),
+            1,
+            "one-shot never fires twice"
+        );
 
         Ok(())
     })
@@ -389,7 +417,10 @@ fn set_timer_one_shot_can_be_stopped_before_firing() {
 
     rusty_textual::run_test(app, |pilot: &mut Pilot| {
         pilot.pause()?;
-        let handle = handle_slot.lock().unwrap().expect("timer registered at mount");
+        let handle = handle_slot
+            .lock()
+            .unwrap()
+            .expect("timer registered at mount");
         handle.stop();
         pilot.pause()?; // drain the StopTimer command
         pilot.advance_clock(Duration::from_secs(10))?;
@@ -422,7 +453,8 @@ fn unmounting_widget_purges_its_timer_no_fire_after() {
         assert_eq!(fires_before, 2, "timer fired twice before unmount");
 
         // Remove the widget → its node is gone.
-        pilot.app_mut()
+        pilot
+            .app_mut()
             .remove("Countdown")
             .map_err(|e| rusty_textual::Error::Message(format!("remove Countdown: {e:?}")))?;
         pilot.pause()?;

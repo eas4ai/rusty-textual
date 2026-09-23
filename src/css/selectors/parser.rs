@@ -410,10 +410,9 @@ fn parse_selector(selector: &str) -> Option<StyleSelector> {
             return;
         }
         match mode {
-            None
-                if type_name.is_none() => {
-                    type_name = Some(token.to_string());
-                }
+            None if type_name.is_none() => {
+                type_name = Some(token.to_string());
+            }
             Some('#') => id = Some(token.to_string()),
             Some('.') => classes.push(token.to_string()),
             Some(':') => {
@@ -1236,19 +1235,15 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                 }
             }
             "grid-columns" => {
-                let parsed: Vec<Option<Scalar>> = value
-                    .split_whitespace()
-                    .map(parse_scalar)
-                    .collect();
+                let parsed: Vec<Option<Scalar>> =
+                    value.split_whitespace().map(parse_scalar).collect();
                 if !parsed.is_empty() && parsed.iter().all(|s| s.is_some()) {
                     style.grid_columns = Some(parsed.into_iter().map(|s| s.unwrap()).collect());
                 }
             }
             "grid-rows" => {
-                let parsed: Vec<Option<Scalar>> = value
-                    .split_whitespace()
-                    .map(parse_scalar)
-                    .collect();
+                let parsed: Vec<Option<Scalar>> =
+                    value.split_whitespace().map(parse_scalar).collect();
                 if !parsed.is_empty() && parsed.iter().all(|s| s.is_some()) {
                     style.grid_rows = Some(parsed.into_iter().map(|s| s.unwrap()).collect());
                 }
@@ -3821,19 +3816,10 @@ mod tests {
         // `scrollbar-size: H V` must set scrollbar_size_horizontal = H and
         // scrollbar_size_vertical = V (mirrors Python _styles_builder.py:997-1017).
         let style = parse_style_body("scrollbar-size: 5 1");
+        assert_eq!(style.scrollbar_size_horizontal, Some(5), "H should be 5");
+        assert_eq!(style.scrollbar_size_vertical, Some(1), "V should be 1");
         assert_eq!(
-            style.scrollbar_size_horizontal,
-            Some(5),
-            "H should be 5"
-        );
-        assert_eq!(
-            style.scrollbar_size_vertical,
-            Some(1),
-            "V should be 1"
-        );
-        assert_eq!(
-            style.scrollbar_size,
-            None,
+            style.scrollbar_size, None,
             "shorthand field must stay None for two-value form"
         );
     }
@@ -3842,7 +3828,11 @@ mod tests {
     fn scrollbar_size_single_value_fallback() {
         // Single-value path keeps working (backward compat).
         let style = parse_style_body("scrollbar-size: 3");
-        assert_eq!(style.scrollbar_size, Some(3), "single value -> scrollbar_size");
+        assert_eq!(
+            style.scrollbar_size,
+            Some(3),
+            "single value -> scrollbar_size"
+        );
         assert_eq!(style.scrollbar_size_horizontal, None, "H must be None");
         assert_eq!(style.scrollbar_size_vertical, None, "V must be None");
     }

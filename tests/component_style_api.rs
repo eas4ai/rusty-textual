@@ -9,7 +9,7 @@
 //! ports were working around by hardcoding `#A5BAC9` / `#004578` / `darkred`.
 
 use rich_rs::{Console, ConsoleOptions, Segments};
-use rusty_textual::css::{resolve_component_style, set_style_context, StyleSheet};
+use rusty_textual::css::{StyleSheet, resolve_component_style, set_style_context};
 use rusty_textual::prelude::*;
 use rusty_textual::style::Color;
 
@@ -93,8 +93,12 @@ fn get_component_rich_style_produces_paintable_bg() {
         .get_component_rich_style("checkerboard--black-square")
         .expect("black square should yield a paintable rich style");
 
-    let white_bg = white.bgcolor.expect("white rich style should carry a bgcolor");
-    let black_bg = black.bgcolor.expect("black rich style should carry a bgcolor");
+    let white_bg = white
+        .bgcolor
+        .expect("white rich style should carry a bgcolor");
+    let black_bg = black
+        .bgcolor
+        .expect("black rich style should carry a bgcolor");
 
     assert_eq!(
         white_bg,
@@ -256,8 +260,10 @@ fn partial_form_returns_only_sheet_set_properties() {
         "CheckerBoard .checkerboard--white-square { background: #A5BAC9; }",
     ));
     let board = CheckerBoard;
-    let partial =
-        rusty_textual::css::resolve_component_style_partial(&board, &["checkerboard--white-square"]);
+    let partial = rusty_textual::css::resolve_component_style_partial(
+        &board,
+        &["checkerboard--white-square"],
+    );
     assert_eq!(partial.bg, Some(Color::parse("#A5BAC9").unwrap()));
     assert_eq!(partial.fg, None);
 }
@@ -267,7 +273,10 @@ fn partial_form_returns_only_sheet_set_properties() {
 /// An undeclared name fired through the validated trait method asserts in
 /// debug builds (Python raises `KeyError`).
 #[test]
-#[cfg_attr(debug_assertions, should_panic(expected = "not declared in component_classes"))]
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "not declared in component_classes")
+)]
 fn undeclared_component_name_fails_debug_validation() {
     let _guard = set_style_context(StyleSheet::parse(""));
     let board = CheckerBoard;

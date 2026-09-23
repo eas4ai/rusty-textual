@@ -7,10 +7,9 @@ use crate::node_id::NodeId;
 use crate::widget_tree::WidgetTree;
 use crate::widgets::{
     APP_ROOT_HSCROLLBAR_ID, APP_ROOT_SCROLLBAR_CORNER_ID, APP_ROOT_VSCROLLBAR_ID,
-    DATA_TABLE_HSCROLLBAR_ID, KEY_PANEL_VSCROLLBAR_ID, LOG_HSCROLLBAR_ID,
-    LOG_SCROLLBAR_CORNER_ID, LOG_VSCROLLBAR_ID, RICH_LOG_VSCROLLBAR_ID,
-    SCROLL_VIEW_HSCROLLBAR_ID, SCROLL_VIEW_SCROLLBAR_CORNER_ID, SCROLL_VIEW_VSCROLLBAR_ID,
-    SYSTEM_TOOLTIP_STYLE_ID,
+    DATA_TABLE_HSCROLLBAR_ID, KEY_PANEL_VSCROLLBAR_ID, LOG_HSCROLLBAR_ID, LOG_SCROLLBAR_CORNER_ID,
+    LOG_VSCROLLBAR_ID, RICH_LOG_VSCROLLBAR_ID, SCROLL_VIEW_HSCROLLBAR_ID,
+    SCROLL_VIEW_SCROLLBAR_CORNER_ID, SCROLL_VIEW_VSCROLLBAR_ID, SYSTEM_TOOLTIP_STYLE_ID,
 };
 use crossterm::event::{KeyCode, KeyModifiers, MouseEventKind};
 use rich_rs::ConsoleOptions;
@@ -914,18 +913,22 @@ mod tests {
             app_root.set_virtual_content_size(114, 50);
             let mut ctx = EventCtx::default();
             {
-                let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+                let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                    crate::node_id::NodeId::default(),
+                    &mut ctx,
+                );
                 app_root.on_message(
-                &MessageEvent::new(
-                    node_id_from_ffi(0),
-                    ScrollbarScrollTo {
-                        axis: ScrollbarAxis::Vertical,
-                        offset: 16.0,
-                        animate: false,
-                        scroll_duration: None,
-                    },
-                ),
-                &mut __w);
+                    &MessageEvent::new(
+                        node_id_from_ffi(0),
+                        ScrollbarScrollTo {
+                            axis: ScrollbarAxis::Vertical,
+                            offset: 16.0,
+                            animate: false,
+                            scroll_duration: None,
+                        },
+                    ),
+                    &mut __w,
+                );
             }
         }
 
@@ -1275,8 +1278,7 @@ mod tests {
         let inner_id = tree.mount(zone_id, Box::new(Button::new("inner")));
         let outer_id = tree.mount(root_id, Box::new(Button::new("outer")));
         let no_pos = &|_: crate::node_id::NodeId| None;
-        let trapped =
-            collect_focus_chain_tree_sorted(&tree, Some(inner_id), no_pos);
+        let trapped = collect_focus_chain_tree_sorted(&tree, Some(inner_id), no_pos);
         assert_eq!(trapped, vec![inner_id]);
         let free = collect_focus_chain_tree_sorted(&tree, None, no_pos);
         assert_eq!(free, vec![inner_id, outer_id]);

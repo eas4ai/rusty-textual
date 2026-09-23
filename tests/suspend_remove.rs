@@ -4,8 +4,8 @@
 //! stops and resume *after* it restarts; `remove` returns an awaitable that
 //! resolves once the loop has drained the removal's unmount work.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rich_rs::{Console, ConsoleOptions, Segments};
 use rusty_textual::prelude::*;

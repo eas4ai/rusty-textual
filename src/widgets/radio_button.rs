@@ -190,7 +190,7 @@ impl crate::widgets::Render for RadioButton {
         // against that live context, so
         // `RadioSet:focus > RadioButton.-selected > .toggle--label` matches.
         let button_style = crate::css::resolve_component_style(self, &["toggle--button"]);
-        let button_rich = button_style.to_rich().unwrap_or_else(rich_rs::Style::new);
+        let button_rich = button_style.to_rich().unwrap_or_default();
         let label_style = crate::css::resolve_component_style(self, &["toggle--label"]);
 
         // Flatten a (possibly semi-transparent) selected-label background over
@@ -227,8 +227,7 @@ impl crate::widgets::Render for RadioButton {
         // layered UNDER the markup spans — Python's
         // `self._label.pad(1, 1).stylize_before(label_style)` — so
         // `[bold italic red]…[/]` colourises like any `Static` label.
-        let label_content =
-            super::helpers::toggle_label_content(&self.label, label_effective);
+        let label_content = super::helpers::toggle_label_content(&self.label, label_effective);
         let mut segments = vec![
             Segment::styled("▐".to_string(), side_style),
             Segment::styled(glyph.to_string(), button_rich),
@@ -248,6 +247,12 @@ impl crate::widgets::Render for RadioButton {
 
     fn style_type(&self) -> &'static str {
         "RadioButton"
+    }
+}
+
+impl crate::widgets::Components for RadioButton {
+    fn component_classes(&self) -> &[&'static str] {
+        &["toggle--button", "toggle--label"]
     }
 }
 #[cfg(test)]
@@ -272,7 +277,10 @@ mod tests {
         let key =
             KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             button.on_event(&Event::Key(key), &mut __w);
         }
         assert!(button.value());
@@ -287,14 +295,5 @@ mod tests {
     fn radio_button_disabled_is_not_focusable() {
         let button = RadioButton::new("A").disabled(true);
         assert!(!button.focusable());
-    }
-}
-
-impl crate::widgets::Components for RadioButton {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "toggle--button",
-            "toggle--label",
-        ]
     }
 }

@@ -31,7 +31,7 @@ fn tree_nav_bindings_are_hidden() {
 #[test]
 fn tree_node_starts_collapsed() {
     let n = TreeNode::new("x");
-    assert_eq!(n.is_expanded(), false, "TreeNode::new must start collapsed");
+    assert!(!n.is_expanded(), "TreeNode::new must start collapsed");
 }
 
 /// Port of Python `test_dynamic_bindings.py::test_dynamic_disabled`: a key

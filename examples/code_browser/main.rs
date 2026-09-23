@@ -85,14 +85,10 @@ impl CodeBrowserApp {
 
     /// Mirrors Python's `watch_show_tree`: toggles `-show-tree` CSS class on
     /// the Screen, which the stylesheet uses to show/hide the directory tree.
-    fn watch_show_tree(
-        &mut self,
-        app: &mut App,
-        _old: &bool,
-        new: &bool,
-        ctx: &mut ReactiveCtx,
-    ) {
-        let _ = app.query_mut("Screen").map(|q| q.set_class(*new, &["-show-tree"]));
+    fn watch_show_tree(&mut self, app: &mut App, _old: &bool, new: &bool, ctx: &mut ReactiveCtx) {
+        let _ = app
+            .query_mut("Screen")
+            .map(|q| q.set_class(*new, &["-show-tree"]));
         ctx.request_styles();
         ctx.request_layout();
         ctx.request_repaint();
@@ -125,8 +121,7 @@ impl CodeBrowserApp {
                     app.set_sub_title(path.as_str());
                 }
                 Err(e) => {
-                    let error_msg =
-                        format!("[b red]Error reading file:[/b red]\n{path}\n\n{e}");
+                    let error_msg = format!("[b red]Error reading file:[/b red]\n{path}\n\n{e}");
                     if let Some(h) = self.code {
                         let _ = h.update(app, |s, _ctx| s.update(&error_msg));
                     }
@@ -186,13 +181,20 @@ impl TextualApp for CodeBrowserApp {
         self.code = app.query_one_typed::<Static>("#code").ok();
         // The VerticalScroll is a direct child of Node#code-view; use a
         // descendant selector to bypass the Node wrapper.
-        self.code_view = app.query_one_typed::<VerticalScroll>("#code-view VerticalScroll").ok();
+        self.code_view = app
+            .query_one_typed::<VerticalScroll>("#code-view VerticalScroll")
+            .ok();
 
         // Note: initial tree visibility is applied by watch_show_tree firing at
         // mount (init-phase watcher dispatch, G3) — no manual add_class needed.
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut rusty_textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut rusty_textual::event::WidgetCtx,
+    ) {
         // Toggle the directory-tree sidebar when the user presses "f".
         // Mirrors Python's `action_toggle_files` which flips `self.show_tree`.
         if key.name() == "f" {

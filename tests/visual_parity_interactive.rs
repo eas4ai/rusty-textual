@@ -31,9 +31,12 @@ struct Case {
 // the `:focus` text-style reverse band plus the surface/blend background. The
 // reverse-band width was fixed with the line-pad render change; this case pins
 // the residual bg parity. Real asserting case — no pending flag.
-const CASES: &[Case] = &[
-    Case { name: "button_focus", bin: "button", py_rel: "widgets/button.py", keys: "\t" },
-];
+const CASES: &[Case] = &[Case {
+    name: "button_focus",
+    bin: "button",
+    py_rel: "widgets/button.py",
+    keys: "\t",
+}];
 
 fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -51,7 +54,8 @@ fn serialize(parser: &vt100::Parser) -> String {
     let screen = parser.screen();
     let mut serial = String::new();
     for r in 0..ROWS {
-        let (mut start, mut fg, mut bg, mut run) = (0u16, String::new(), String::new(), String::new());
+        let (mut start, mut fg, mut bg, mut run) =
+            (0u16, String::new(), String::new(), String::new());
         for c in 0..COLS {
             let cell = screen.cell(r, c);
             let (ch, cfg, cbg) = match cell {
@@ -64,15 +68,24 @@ fn serialize(parser: &vt100::Parser) -> String {
             };
             let chs = if ch.is_empty() { " ".to_string() } else { ch };
             if c == 0 {
-                start = 0; fg = cfg; bg = cbg; run = chs;
+                start = 0;
+                fg = cfg;
+                bg = cbg;
+                run = chs;
             } else if cfg == fg && cbg == bg {
                 run.push_str(&chs);
             } else {
                 serial.push_str(&format!("[{start}-{}] {run:?} fg={fg} bg={bg}\n", c - 1));
-                start = c; fg = cfg; bg = cbg; run = chs;
+                start = c;
+                fg = cfg;
+                bg = cbg;
+                run = chs;
             }
         }
-        serial.push_str(&format!("[{start}-{}] {run:?} fg={fg} bg={bg}\n--row {r}--\n", COLS - 1));
+        serial.push_str(&format!(
+            "[{start}-{}] {run:?} fg={fg} bg={bg}\n--row {r}--\n",
+            COLS - 1
+        ));
     }
     serial
 }
@@ -87,7 +100,12 @@ fn capture(mut cmd: CommandBuilder, cwd: PathBuf, keys: &str) -> String {
     cmd.env("TEXTUAL_COLOR_SYSTEM", "truecolor");
 
     let pty = native_pty_system()
-        .openpty(PtySize { rows: ROWS, cols: COLS, pixel_width: 0, pixel_height: 0 })
+        .openpty(PtySize {
+            rows: ROWS,
+            cols: COLS,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
         .expect("openpty");
     let mut child = pty.slave.spawn_command(cmd).expect("spawn");
     drop(pty.slave);
@@ -98,7 +116,9 @@ fn capture(mut cmd: CommandBuilder, cwd: PathBuf, keys: &str) -> String {
     let t = std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         while let Ok(n) = reader.read(&mut buf) {
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             feed.lock().unwrap().process(&buf[..n]);
         }
     });
@@ -109,7 +129,9 @@ fn capture(mut cmd: CommandBuilder, cwd: PathBuf, keys: &str) -> String {
         std::thread::sleep(Duration::from_millis(200));
         let s = { serialize(&parser.lock().unwrap()) };
         let txt: String = s.lines().filter(|l| l.starts_with('[')).collect();
-        if !txt.trim().is_empty() && s == prev { break; }
+        if !txt.trim().is_empty() && s == prev {
+            break;
+        }
         prev = s;
     }
     // send keys, let them land, wait for re-stable
@@ -121,7 +143,9 @@ fn capture(mut cmd: CommandBuilder, cwd: PathBuf, keys: &str) -> String {
         for _ in 0..30 {
             std::thread::sleep(Duration::from_millis(200));
             let s = { serialize(&parser.lock().unwrap()) };
-            if s == p2 { break; }
+            if s == p2 {
+                break;
+            }
             p2 = s;
         }
     }
@@ -135,7 +159,9 @@ fn capture(mut cmd: CommandBuilder, cwd: PathBuf, keys: &str) -> String {
 }
 
 fn golden_path(name: &str) -> PathBuf {
-    repo().join("tests/pty_parity/golden_styled_interactive").join(format!("{name}.styled"))
+    repo()
+        .join("tests/pty_parity/golden_styled_interactive")
+        .join(format!("{name}.styled"))
 }
 
 #[test]
@@ -156,28 +182,53 @@ fn interactive_parity() {
             eprintln!("regen {} ({} rows)", case.name, g.matches("--row").count());
             continue;
         }
-        let bin = repo().join("docs/examples/target/debug/examples").join(case.bin);
-        if !bin.exists() { eprintln!("SKIP {} (no bin)", case.name); continue; }
+        let bin = repo()
+            .join("docs/examples/target/debug/examples")
+            .join(case.bin);
+        if !bin.exists() {
+            eprintln!("SKIP {} (no bin)", case.name);
+            continue;
+        }
         let golden = match std::fs::read_to_string(golden_path(case.name)) {
             Ok(g) => g,
-            Err(_) => { eprintln!("SKIP {} (no golden; REGEN_INTERACTIVE=1)", case.name); continue; }
+            Err(_) => {
+                eprintln!("SKIP {} (no golden; REGEN_INTERACTIVE=1)", case.name);
+                continue;
+            }
         };
-        let actual = capture(CommandBuilder::new(bin.to_str().unwrap()), repo(), case.keys);
+        let actual = capture(
+            CommandBuilder::new(bin.to_str().unwrap()),
+            repo(),
+            case.keys,
+        );
         if actual.trim() == golden.trim() {
             eprintln!("PASS {}", case.name);
         } else {
             if debug.as_deref() == Some(case.name) {
-                let (gl, al): (Vec<&str>, Vec<&str>) = (golden.lines().collect(), actual.lines().collect());
+                let (gl, al): (Vec<&str>, Vec<&str>) =
+                    (golden.lines().collect(), actual.lines().collect());
                 eprintln!("--- DEBUG {} (py vs rust) ---", case.name);
                 let mut shown = 0;
                 for i in 0..gl.len().max(al.len()) {
-                    let (g, a) = (gl.get(i).copied().unwrap_or("<none>"), al.get(i).copied().unwrap_or("<none>"));
-                    if g != a { eprintln!("  py  : {g}\n  rust: {a}"); shown += 1; if shown >= 14 { break; } }
+                    let (g, a) = (
+                        gl.get(i).copied().unwrap_or("<none>"),
+                        al.get(i).copied().unwrap_or("<none>"),
+                    );
+                    if g != a {
+                        eprintln!("  py  : {g}\n  rust: {a}");
+                        shown += 1;
+                        if shown >= 14 {
+                            break;
+                        }
+                    }
                 }
             }
             eprintln!("FAIL {}", case.name);
             failures.push(case.name);
         }
     }
-    assert!(failures.is_empty(), "interactive styled parity FAILED: {failures:?}");
+    assert!(
+        failures.is_empty(),
+        "interactive styled parity FAILED: {failures:?}"
+    );
 }

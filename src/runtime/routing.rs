@@ -204,8 +204,8 @@ pub fn dispatch_event_tree(
                 let _dispatch_guard = set_dispatch_recipient(node_id, node.state);
                 ctx.set_node_id(node_id);
                 let mut wctx = WidgetCtx::__from_dispatch(node_id, &mut ctx);
-            node.widget.on_event(event, &mut wctx);
-            wctx.__enqueue_reactive_if_dirty();
+                node.widget.on_event(event, &mut wctx);
+                wctx.__enqueue_reactive_if_dirty();
             }
             if ctx.handled() {
                 break;
@@ -248,6 +248,7 @@ pub fn dispatch_event_to_target_tree(
     target: NodeId,
     event: &Event,
 ) -> DispatchOutcome {
+    let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
     let _dispatch_tree_guard = set_dispatch_tree(tree.tree_id());
     let mut ctx = EventCtx::default();
     let path = build_path_to_node(tree, target);
@@ -273,8 +274,8 @@ pub fn dispatch_event_to_target_tree(
                 let _dispatch_guard = set_dispatch_recipient(node_id, node.state);
                 ctx.set_node_id(node_id);
                 let mut wctx = WidgetCtx::__from_dispatch(node_id, &mut ctx);
-            node.widget.on_event(event, &mut wctx);
-            wctx.__enqueue_reactive_if_dirty();
+                node.widget.on_event(event, &mut wctx);
+                wctx.__enqueue_reactive_if_dirty();
             }
             if ctx.handled() {
                 break;
@@ -680,8 +681,8 @@ fn dispatch_message_bubble(
             let _dispatch_guard = set_dispatch_recipient(node_id, node.state);
             ctx.set_node_id(node_id);
             let mut wctx = WidgetCtx::__from_dispatch(node_id, &mut *ctx);
-                node.widget.on_message(&envelope.event, &mut wctx);
-                wctx.__enqueue_reactive_if_dirty();
+            node.widget.on_message(&envelope.event, &mut wctx);
+            wctx.__enqueue_reactive_if_dirty();
             if ctx.handled() {
                 envelope.stop();
             }
@@ -964,21 +965,19 @@ pub(crate) fn match_binding_chain(
     // cadence: `handle_bindings_clash` per chain build, never per phase);
     // only the key-dispatch callers supply a sink, the hint pass has no
     // clash semantics by construction.
-    let mut collect_node = |node_id: NodeId,
-                            source: BindingSource,
-                            widget: &dyn Widget|
-     -> Vec<BindingDecl> {
-        let mut clashed = Vec::new();
-        let bindings = effective_bindings(widget, keymap, &mut clashed);
-        if let Some(sink) = clashes.as_deref_mut() {
-            sink.extend(clashed.into_iter().map(|binding| BindingClash {
-                node: node_id,
-                source,
-                binding,
-            }));
-        }
-        bindings
-    };
+    let mut collect_node =
+        |node_id: NodeId, source: BindingSource, widget: &dyn Widget| -> Vec<BindingDecl> {
+            let mut clashed = Vec::new();
+            let bindings = effective_bindings(widget, keymap, &mut clashed);
+            if let Some(sink) = clashes.as_deref_mut() {
+                sink.extend(clashed.into_iter().map(|binding| BindingClash {
+                    node: node_id,
+                    source,
+                    binding,
+                }));
+            }
+            bindings
+        };
     let active_chain: Vec<(NodeId, Vec<BindingDecl>)> = active_path
         .iter()
         .filter_map(|&node_id| {
@@ -1321,7 +1320,11 @@ mod message_tests {
             self.child.on_event(event, ctx);
         }
 
-        fn on_message(&mut self, message: &crate::message::MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+        fn on_message(
+            &mut self,
+            message: &crate::message::MessageEvent,
+            ctx: &mut crate::event::WidgetCtx,
+        ) {
             if message.is::<crate::message::InputChanged>() {
                 self.seen += 1;
                 ctx.set_handled();
@@ -1342,7 +1345,10 @@ mod message_tests {
         // Deliver message directly to root for this unit test.
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             root.on_message(&outcome.messages[0], &mut __w);
         }
         assert!(ctx.handled());
@@ -1373,7 +1379,11 @@ mod message_tests {
         fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
             self.child.on_event(event, ctx);
         }
-        fn on_message(&mut self, message: &crate::message::MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+        fn on_message(
+            &mut self,
+            message: &crate::message::MessageEvent,
+            ctx: &mut crate::event::WidgetCtx,
+        ) {
             if message.is::<crate::message::ButtonPressed>() {
                 self.seen += 1;
                 ctx.set_handled();
@@ -1468,7 +1478,12 @@ mod message_tests {
         fn render(&self, _console: &Console, _options: &ConsoleOptions) -> rich_rs::Segments {
             rich_rs::Segments::new()
         }
-        fn on_mouse_scroll(&mut self, _delta_x: i32, _delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
+        fn on_mouse_scroll(
+            &mut self,
+            _delta_x: i32,
+            _delta_y: i32,
+            ctx: &mut crate::event::WidgetCtx,
+        ) {
             self.seen += 1;
             ctx.set_handled();
         }
@@ -2182,11 +2197,7 @@ mod envelope_tests {
             Segments::new()
         }
 
-        fn on_message(
-            &mut self,
-            message: &MessageEvent,
-            _ctx: &mut crate::event::WidgetCtx,
-        ) {
+        fn on_message(&mut self, message: &MessageEvent, _ctx: &mut crate::event::WidgetCtx) {
             if message.is::<SenderOnlyPing>() {
                 self.count.fetch_add(1, Ordering::Relaxed);
             }
@@ -2231,7 +2242,11 @@ mod envelope_tests {
         let _ = dispatch_message_queue_tree(&mut tree, messages);
         assert_eq!(leaf_count.load(Ordering::Relaxed), 1, "sender sees message");
         assert_eq!(mid_count.load(Ordering::Relaxed), 0, "mid must NOT see it");
-        assert_eq!(root_count.load(Ordering::Relaxed), 0, "root must NOT see it");
+        assert_eq!(
+            root_count.load(Ordering::Relaxed),
+            0,
+            "root must NOT see it"
+        );
     }
 
     // P-B: `prevent_default()` semantics (Python `Message.prevent_default`):
@@ -2803,8 +2818,14 @@ mod envelope_tests {
                 .can_replace(&crate::message::DataTableCellHighlighted { row: 1, column: 1 })
         );
         assert!(
-            !crate::message::OptionHighlighted { index: 0, option_id: None }
-                .can_replace(&crate::message::OptionHighlighted { index: 1, option_id: None })
+            !crate::message::OptionHighlighted {
+                index: 0,
+                option_id: None
+            }
+            .can_replace(&crate::message::OptionHighlighted {
+                index: 1,
+                option_id: None
+            })
         );
         // Non-replaceable variants.
         assert!(
@@ -3454,7 +3475,10 @@ mod binding_tests {
 
         let key = KeyEventData::from_crossterm(key_event(KeyCode::Esc, KeyModifiers::empty()));
         let result = match_binding_chain(&tree, None, &key, None, &Keymap::new(), None);
-        assert_eq!(result, Some((body_id, "app.pop_screen".to_string(), BindingSource::Active)));
+        assert_eq!(
+            result,
+            Some((body_id, "app.pop_screen".to_string(), BindingSource::Active))
+        );
     }
 
     /// CLUSTER 6 (app-root bindings): when a separate app-root tree is supplied
@@ -3473,14 +3497,24 @@ mod binding_tests {
         let mut app_root = WidgetTree::new();
         let app_node = app_root.set_root(Box::new(BindingWidget::new(
             false,
-            vec![BindingDecl::new("s", "app.switch_mode('settings')", "Settings")],
+            vec![BindingDecl::new(
+                "s",
+                "app.switch_mode('settings')",
+                "Settings",
+            )],
         )));
 
-        let key = KeyEventData::from_crossterm(key_event(KeyCode::Char('s'), KeyModifiers::empty()));
-        let result = match_binding_chain(&screen, Some(&app_root), &key, None, &Keymap::new(), None);
+        let key =
+            KeyEventData::from_crossterm(key_event(KeyCode::Char('s'), KeyModifiers::empty()));
+        let result =
+            match_binding_chain(&screen, Some(&app_root), &key, None, &Keymap::new(), None);
         assert_eq!(
             result,
-            Some((app_node, "app.switch_mode('settings')".to_string(), BindingSource::AppRoot)),
+            Some((
+                app_node,
+                "app.switch_mode('settings')".to_string(),
+                BindingSource::AppRoot
+            )),
             "app-root binding must be consulted while a screen is active"
         );
     }
@@ -3502,11 +3536,17 @@ mod binding_tests {
         let mut app_root = WidgetTree::new();
         app_root.set_root(Box::new(BindingWidget::new(
             false,
-            vec![BindingDecl::new("s", "app.switch_mode('settings')", "Settings")],
+            vec![BindingDecl::new(
+                "s",
+                "app.switch_mode('settings')",
+                "Settings",
+            )],
         )));
 
-        let key = KeyEventData::from_crossterm(key_event(KeyCode::Char('s'), KeyModifiers::empty()));
-        let result = match_binding_chain(&screen, Some(&app_root), &key, None, &Keymap::new(), None);
+        let key =
+            KeyEventData::from_crossterm(key_event(KeyCode::Char('s'), KeyModifiers::empty()));
+        let result =
+            match_binding_chain(&screen, Some(&app_root), &key, None, &Keymap::new(), None);
         assert_eq!(
             result,
             Some((body_id, "screen_action".to_string(), BindingSource::Active)),

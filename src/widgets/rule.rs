@@ -475,24 +475,38 @@ mod tests {
         // added `rule--horizontal` / `rule--vertical`, which never matched, so the
         // vertical margins (`margin: 1 0`) and horizontal margins (`margin: 0 2`)
         // were silently dropped.
-        let _guard =
-            crate::css::set_style_context(crate::css::default_widget_stylesheet());
+        let _guard = crate::css::set_style_context(crate::css::default_widget_stylesheet());
 
         let h = Rule::horizontal();
         let h_meta = crate::css::selector_meta_generic(&h);
         let h_margin = crate::css::resolve_style(&h, &h_meta).effective_margin();
         assert_eq!(h_margin.top, 1, "horizontal rule top margin (margin: 1 0)");
-        assert_eq!(h_margin.bottom, 1, "horizontal rule bottom margin (margin: 1 0)");
-        assert_eq!(h_margin.left, 0, "horizontal rule left margin (margin: 1 0)");
-        assert_eq!(h_margin.right, 0, "horizontal rule right margin (margin: 1 0)");
+        assert_eq!(
+            h_margin.bottom, 1,
+            "horizontal rule bottom margin (margin: 1 0)"
+        );
+        assert_eq!(
+            h_margin.left, 0,
+            "horizontal rule left margin (margin: 1 0)"
+        );
+        assert_eq!(
+            h_margin.right, 0,
+            "horizontal rule right margin (margin: 1 0)"
+        );
 
         let v = Rule::vertical();
         let v_meta = crate::css::selector_meta_generic(&v);
         let v_margin = crate::css::resolve_style(&v, &v_meta).effective_margin();
         assert_eq!(v_margin.left, 2, "vertical rule left margin (margin: 0 2)");
-        assert_eq!(v_margin.right, 2, "vertical rule right margin (margin: 0 2)");
+        assert_eq!(
+            v_margin.right, 2,
+            "vertical rule right margin (margin: 0 2)"
+        );
         assert_eq!(v_margin.top, 0, "vertical rule top margin (margin: 0 2)");
-        assert_eq!(v_margin.bottom, 0, "vertical rule bottom margin (margin: 0 2)");
+        assert_eq!(
+            v_margin.bottom, 0,
+            "vertical rule bottom margin (margin: 0 2)"
+        );
     }
 
     #[test]

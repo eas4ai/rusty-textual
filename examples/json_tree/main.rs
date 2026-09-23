@@ -1,3 +1,4 @@
+use rusty_textual::prelude::*;
 /// Port of Python Textual `examples/json_tree.py`.
 ///
 /// Demonstrates dynamic `Tree` population from JSON data:
@@ -9,7 +10,6 @@
 /// `food.json` at runtime. Rust embeds `food.json` via `include_str!` and uses
 /// `serde_json` for parsing.
 use serde_json::Value;
-use rusty_textual::prelude::*;
 
 const FOOD_JSON: &str = include_str!("food.json");
 
@@ -52,7 +52,12 @@ impl TextualApp for JsonTreeApp {
         self.json_data = serde_json::from_str(FOOD_JSON).ok();
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut rusty_textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut rusty_textual::event::WidgetCtx,
+    ) {
         match action {
             "add" => {
                 // Python: json_node = tree.root.add("JSON")

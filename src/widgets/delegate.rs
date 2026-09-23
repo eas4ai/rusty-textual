@@ -620,6 +620,11 @@ macro_rules! delegate_widget_to {
     };
 }
 
+// DEFERRED(RA-2): remove delegate macros after RA-2 node-record split is landed
+pub use delegate_renderable;
+pub use delegate_widget_method;
+pub use delegate_widget_to;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -653,8 +658,3 @@ mod tests {
         );
     }
 }
-
-// DEFERRED(RA-2): remove delegate macros after RA-2 node-record split is landed
-pub use delegate_renderable;
-pub use delegate_widget_method;
-pub use delegate_widget_to;

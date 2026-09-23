@@ -62,7 +62,7 @@ pub(crate) fn component_surface_bg<W: Widget + ?Sized>(widget: &W) -> Color {
 /// and no text attributes) — equivalent to an empty Rich style.
 pub(crate) fn component_style_to_rich(style: &Style, surface: Color) -> Option<rich_rs::Style> {
     let attrs = style.to_rich_without_colors();
-    let mut rich = attrs.clone().unwrap_or_default();
+    let mut rich = attrs.unwrap_or_default();
     let mut has_paint = attrs.is_some();
     let mut under_bg = surface;
 
@@ -215,28 +215,14 @@ mod tests {
     /// this resolved `.part` against the `Wrapper` stack and lost the rule.
     #[test]
     fn inline_nested_render_does_not_misfire_live_context() {
-        struct Wrapper;
-        impl Widget for Wrapper {
-            fn render(
-                &self,
-                _c: &rich_rs::Console,
-                _o: &rich_rs::ConsoleOptions,
-            ) -> Segments {
-                Segments::new()
-            }
-            fn style_type(&self) -> &'static str {
-                "Wrapper"
-            }
-        }
+        // The outer widget is represented by its live selector meta below;
+        // no instance is needed.
         let _guard = super::super::context::set_style_context(StyleSheet::parse(
             "CheckerBoard > .part { color: #ff0000; }",
         ));
         // Wrapper's meta is marked live and on top (as if mid-render).
-        let wrapper_meta = super::super::ast::SelectorMeta::new(
-            "Wrapper".to_string(),
-            None,
-            Vec::new(),
-        );
+        let wrapper_meta =
+            super::super::ast::SelectorMeta::new("Wrapper".to_string(), None, Vec::new());
         let style = super::super::resolver::with_style_stack(wrapper_meta, Style::new(), || {
             let _live = super::super::context::mark_live_widget_meta();
             // Board resolves its OWN component inline under Wrapper's render.
@@ -313,8 +299,8 @@ mod tests {
     fn alpha_background_flattens_over_surface() {
         // 50% white over black surface -> mid gray.
         let style = Style::new().bg(Color::rgba(255, 255, 255, 128));
-        let rich = component_style_to_rich(&style, Color::rgb(0, 0, 0))
-            .expect("bg should be paintable");
+        let rich =
+            component_style_to_rich(&style, Color::rgb(0, 0, 0)).expect("bg should be paintable");
         let bg = rich.bgcolor.expect("bgcolor set");
         let bg = crate::style::color_from_simple(bg);
         assert!(
@@ -358,11 +344,9 @@ mod tests {
 
     #[test]
     fn text_opacity_folds_foreground_toward_surface() {
-        let style = Style::new()
-            .fg(Color::rgb(255, 255, 255))
-            .text_opacity(50);
-        let rich = component_style_to_rich(&style, Color::rgb(0, 0, 0))
-            .expect("fg should be paintable");
+        let style = Style::new().fg(Color::rgb(255, 255, 255)).text_opacity(50);
+        let rich =
+            component_style_to_rich(&style, Color::rgb(0, 0, 0)).expect("fg should be paintable");
         let fg = crate::style::color_from_simple(rich.color.expect("color set"));
         assert!(
             fg.r > 100 && fg.r < 155,

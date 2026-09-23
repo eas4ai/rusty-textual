@@ -5,12 +5,12 @@
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use slotmap::SlotMap;
 use rusty_textual::document::{Cursor, EditHistory, MockClock, Selection};
 use rusty_textual::event::EventCtx;
 use rusty_textual::node_id::NodeId;
 use rusty_textual::prelude::*;
 use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
+use slotmap::SlotMap;
 
 const MAX_CHECKPOINTS: usize = 5;
 const SIMPLE_TEXT: &str = "ABCDE\nFGHIJ\nKLMNO\nPQRST\nUVWXY\nZ\n";

@@ -288,7 +288,6 @@ pub trait Widget: Send + Sync + Any {
         Vec::new()
     }
 
-
     /// Return this widget's arena-assigned NodeId.
     ///
     /// During event/message dispatch and rendering, the runtime sets a
@@ -1294,15 +1293,16 @@ pub(crate) fn render_widget_with_meta<W: Widget + ?Sized>(
         // vertical-extend rows carry that color (auto-contrast for `color: auto`,
         // already baked into fill_fg_style). Checking only `resolved.fg` missed
         // the `color: auto` case (e.g. text_align), dropping fg on extend rows.
-        let vfill_style = if !segments_empty
-            && (resolved.fg.is_some() || resolved.fg_auto.is_some())
-        {
-            fill_fg_style // content widget with explicit/auto fg → visual_style extend
-        } else {
-            fill // chrome-only container (or no fg) → bg-only extend (Blank/inner.rich_style)
-        };
-        let vfill_blank =
-            vec![rich_rs::Segment::styled(" ".repeat(fill_width), vfill_style)];
+        let vfill_style =
+            if !segments_empty && (resolved.fg.is_some() || resolved.fg_auto.is_some()) {
+                fill_fg_style // content widget with explicit/auto fg → visual_style extend
+            } else {
+                fill // chrome-only container (or no fg) → bg-only extend (Blank/inner.rich_style)
+            };
+        let vfill_blank = vec![rich_rs::Segment::styled(
+            " ".repeat(fill_width),
+            vfill_style,
+        )];
         while shaped.len() < content_height {
             shaped.push(vfill_blank.clone());
         }
@@ -1395,8 +1395,7 @@ fn apply_content_alignment(
     // alignment space with the widget's rich_style (visual.py `to_strips`). This
     // is distinct from non-aligned trailing space, which is `to_strip`
     // background-only padding.
-    let pad_segment =
-        |width: usize| rich_rs::Segment::styled(" ".repeat(width), pad_style);
+    let pad_segment = |width: usize| rich_rs::Segment::styled(" ".repeat(width), pad_style);
     // Per-line rendered width (trimmed cell width, or the synthetic-padding
     // length), clamped to the content box.
     let line_width_of = |line: &[rich_rs::Segment]| -> usize {
@@ -1817,14 +1816,8 @@ mod tests {
             vec![rich_rs::Segment::styled("aaaa".to_string(), s)], // width 4 (widest)
             vec![rich_rs::Segment::styled("aa".to_string(), s)],   // width 2
         ];
-        let out = apply_content_alignment(
-            lines,
-            10,
-            2,
-            HorizontalAlign::Center,
-            VerticalAlign::Top,
-            s,
-        );
+        let out =
+            apply_content_alignment(lines, 10, 2, HorizontalAlign::Center, VerticalAlign::Top, s);
         let leading = |line: &Vec<rich_rs::Segment>| -> usize {
             let text: String = line.iter().map(|seg| seg.text.as_ref()).collect();
             text.len() - text.trim_start().len()
@@ -2036,10 +2029,12 @@ mod tests {
     #[test]
     fn render_styled_dyn_obj_sets_dispatch_context_and_restores() {
         let console = rich_rs::Console::new();
-        let mut opts = rich_rs::ConsoleOptions::default();
-        opts.size = (10, 1);
-        opts.max_width = 10;
-        opts.max_height = 1;
+        let opts = rich_rs::ConsoleOptions {
+            size: (10, 1),
+            max_width: 10,
+            max_height: 1,
+            ..Default::default()
+        };
 
         // Create from same SlotMap so keys are distinct.
         let mut sm: slotmap::SlotMap<NodeId, ()> = slotmap::SlotMap::new();
@@ -2085,10 +2080,12 @@ mod tests {
     fn render_line_default_extracts_requested_row() {
         let widget = DefaultLineProbe;
         let console = rich_rs::Console::new();
-        let mut options = rich_rs::ConsoleOptions::default();
-        options.size = (16, 2);
-        options.max_width = 16;
-        options.max_height = 2;
+        let options = rich_rs::ConsoleOptions {
+            size: (16, 2),
+            max_width: 16,
+            max_height: 2,
+            ..Default::default()
+        };
 
         let line0 = widget.render_line(0, &console, &options);
         let line1 = widget.render_line(1, &console, &options);
@@ -2126,10 +2123,12 @@ mod tests {
             calls: calls.clone(),
         };
         let console = rich_rs::Console::new();
-        let mut options = rich_rs::ConsoleOptions::default();
-        options.size = (16, 3);
-        options.max_width = 16;
-        options.max_height = 3;
+        let options = rich_rs::ConsoleOptions {
+            size: (16, 3),
+            max_width: 16,
+            max_height: 3,
+            ..Default::default()
+        };
 
         let lines = widget.render_lines(2, 3, &console, &options);
         assert_eq!(calls.load(Ordering::SeqCst), 3);

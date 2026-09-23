@@ -97,18 +97,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             vs.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 7.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 7.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
 
         assert_eq!(vs.scroll_offset().1, 7);

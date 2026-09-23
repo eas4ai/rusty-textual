@@ -124,7 +124,11 @@ fn dc_04_widget_link_style_underline() {
 fn dc_04_widget_transparent_bg() {
     let s = parse_single("Widget { background: transparent; }");
     let bg = s.bg.expect("Widget should have bg");
-    assert_eq!(bg.alpha_u8(), 0, "Widget bg should be transparent (alpha=0)");
+    assert_eq!(
+        bg.alpha_u8(),
+        0,
+        "Widget bg should be transparent (alpha=0)"
+    );
 }
 
 // =====================================================================
@@ -154,27 +158,27 @@ fn dc_05_label_variant_success_parses() {
     let sheet =
         StyleSheet::parse(r#"Label { &.success { color: $text-success; bg: $success-muted; } }"#);
     // Should produce rules (base + nested) without panicking.
-    assert!(sheet.rules().len() >= 1);
+    assert!(!sheet.rules().is_empty());
 }
 
 #[test]
 fn dc_05_label_variant_error_parses() {
     let sheet = StyleSheet::parse(r#"Label { &.error { color: $text-error; bg: $error-muted; } }"#);
-    assert!(sheet.rules().len() >= 1);
+    assert!(!sheet.rules().is_empty());
 }
 
 #[test]
 fn dc_05_label_variant_warning_parses() {
     let sheet =
         StyleSheet::parse(r#"Label { &.warning { color: $text-warning; bg: $warning-muted; } }"#);
-    assert!(sheet.rules().len() >= 1);
+    assert!(!sheet.rules().is_empty());
 }
 
 #[test]
 fn dc_05_label_variant_primary_parses() {
     let sheet =
         StyleSheet::parse(r#"Label { &.primary { color: $text-primary; bg: $primary-muted; } }"#);
-    assert!(sheet.rules().len() >= 1);
+    assert!(!sheet.rules().is_empty());
 }
 
 // =====================================================================
@@ -411,7 +415,7 @@ fn dc_36_collapsible_nested_rules_parse() {
         }
     "#,
     );
-    assert!(sheet.rules().len() >= 1, "Collapsible CSS should parse");
+    assert!(!sheet.rules().is_empty(), "Collapsible CSS should parse");
 }
 
 #[test]
@@ -432,7 +436,7 @@ fn dc_36_collapsible_title_nested_rules_parse() {
     "#,
     );
     assert!(
-        sheet.rules().len() >= 1,
+        !sheet.rules().is_empty(),
         "CollapsibleTitle CSS should parse"
     );
 }
@@ -486,7 +490,7 @@ fn dc_01_screen_selection_class_parses() {
     "#,
     );
     assert!(
-        sheet.rules().len() >= 1,
+        !sheet.rules().is_empty(),
         "Screen with .screen--selection should parse"
     );
 }
@@ -520,14 +524,14 @@ fn dc_05_label_variant_secondary_parses() {
     let sheet = StyleSheet::parse(
         r#"Label { &.secondary { color: $text-secondary; bg: $secondary-muted; } }"#,
     );
-    assert!(sheet.rules().len() >= 1);
+    assert!(!sheet.rules().is_empty());
 }
 
 #[test]
 fn dc_05_label_variant_accent_parses() {
     let sheet =
         StyleSheet::parse(r#"Label { &.accent { color: $text-accent; bg: $accent-muted; } }"#);
-    assert!(sheet.rules().len() >= 1);
+    assert!(!sheet.rules().is_empty());
 }
 
 // =====================================================================

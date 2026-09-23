@@ -15,9 +15,9 @@
 //!   * the real cargo-built Rust example binary, in its own PTY, and
 //!   * the real Python Textual app (`<checkout>/docs/examples/<cat>/<name>.py`),
 //!     in its own PTY, at the SAME size,
-//! driven by the SAME multi-step input script, captured as a CELL GRID (per-cell
-//! glyph + fg + bg colour via the `vt100` emulator). No tmux (pure PTY+vt100 on
-//! both sides), no goldens, no in-process shortcuts. Real app vs real app.
+//!     driven by the SAME multi-step input script, captured as a CELL GRID (per-cell
+//!     glyph + fg + bg colour via the `vt100` emulator). No tmux (pure PTY+vt100 on
+//!     both sides), no goldens, no in-process shortcuts. Real app vs real app.
 //!
 //! NON-DETERMINISM POLICY
 //! ----------------------
@@ -32,6 +32,7 @@
 //!   * a network payload: assert weather *appeared* (region became non-empty)
 //!     and that no internal event text (e.g. "WorkerStateChanged") leaked onto
 //!     the screen, rather than matching exact weather text.
+//!
 //! Each case documents which mode it uses and why.
 //!
 //! This file is a HARNESS + a set of acceptance cases. The acceptance cases are
@@ -94,14 +95,6 @@ impl Col {
             Col::Rgb(r, g, b) => b as i32 > r as i32 + 30 && b as i32 > g as i32 + 30 && b > 90,
             // Common palette blues (4 = blue, 12 = bright blue, 33/39/27 etc.).
             Col::Idx(i) => matches!(i, 4 | 12 | 21 | 27 | 33 | 39 | 45 | 63),
-            Col::Default => false,
-        }
-    }
-    /// Is this colour "reddish" (red clearly dominant)?
-    fn is_red(self) -> bool {
-        match self {
-            Col::Rgb(r, g, b) => r as i32 > g as i32 + 40 && r as i32 > b as i32 + 40 && r > 110,
-            Col::Idx(i) => matches!(i, 1 | 9 | 196 | 160 | 124 | 203),
             Col::Default => false,
         }
     }
@@ -198,21 +191,6 @@ impl Grid {
 
     fn contains(&self, needle: &str) -> bool {
         self.text().contains(needle)
-    }
-
-    /// Does any cell in the grid have a bluish bg or fg? (colour-aware probe)
-    fn any_blue(&self) -> bool {
-        self.cells
-            .iter()
-            .flatten()
-            .any(|c| c.bg.is_blue() || c.fg.is_blue())
-    }
-
-    fn any_red(&self) -> bool {
-        self.cells
-            .iter()
-            .flatten()
-            .any(|c| c.bg.is_red() || c.fg.is_red())
     }
 
     /// The set of distinct bg colours present (for diff reporting).
@@ -503,37 +481,6 @@ fn text_diff(py: &Grid, rust: &Grid) -> String {
     }
     if out.is_empty() {
         out.push_str("(no text differences)\n");
-    }
-    out
-}
-
-/// Cell-level colour diff for a given row range, showing fg/bg per differing
-/// cell. Useful when the glyphs match but colours don't (or vice versa).
-fn cell_diff_rows(py: &Grid, rust: &Grid, rows: std::ops::Range<usize>) -> String {
-    let mut out = String::new();
-    for row in rows {
-        for col in 0..COLS as usize {
-            let pc = py.cell(row, col);
-            let rc = rust.cell(row, col);
-            if pc.ch == '\u{200b}' || rc.ch == '\u{200b}' {
-                continue;
-            }
-            let differs = pc.ch != rc.ch || pc.fg != rc.fg || pc.bg != rc.bg;
-            if differs {
-                out.push_str(&format!(
-                    "  [{row:>2},{col:>3}] py {:?} fg={} bg={}  |  rust {:?} fg={} bg={}\n",
-                    pc.ch,
-                    pc.fg.short(),
-                    pc.bg.short(),
-                    rc.ch,
-                    rc.fg.short(),
-                    rc.bg.short(),
-                ));
-            }
-        }
-    }
-    if out.is_empty() {
-        out.push_str("  (no cell differences in range)\n");
     }
     out
 }
@@ -1562,7 +1509,11 @@ fn parity_computed01_color() {
 /// watch01: submit a colour name; both swatches update their backgrounds.
 #[test]
 fn parity_watch01_color() {
-    let script = [Step::SendKeys("red"), Step::Key(Key::Enter), Step::Wait(300)];
+    let script = [
+        Step::SendKeys("red"),
+        Step::Key(Key::Enter),
+        Step::Wait(300),
+    ];
     let (rf, pf) = cat_both("watch01", "guide/reactivity", &script, 400);
     assert_glyph_parity("watch01", &pf, &rf, &[]);
 }
@@ -1635,7 +1586,11 @@ fn parity_set_reactive02_greeting() {
 /// `mutate_reactive` + recompose.
 #[test]
 fn parity_set_reactive03_names() {
-    let script = [Step::SendKeys("Ada"), Step::Key(Key::Enter), Step::Wait(300)];
+    let script = [
+        Step::SendKeys("Ada"),
+        Step::Key(Key::Enter),
+        Step::Wait(300),
+    ];
     let (rf, pf) = cat_both("set_reactive03", "guide/reactivity", &script, 400);
     assert_glyph_parity("set_reactive03", &pf, &rf, &[]);
 }
@@ -1704,8 +1659,20 @@ fn parity_stopwatch05_ticks() {
     // by fingerprinting rows 5..28 only.
     let rows = 5..28usize;
     let cols = 0..COLS as usize;
-    let rust_adv = region_advances(&AppKind::Rust("stopwatch05"), &[], rows.clone(), cols.clone(), 1200);
-    let py_adv = region_advances(&AppKind::Python("tutorial", "stopwatch05"), &[], rows, cols, 1200);
+    let rust_adv = region_advances(
+        &AppKind::Rust("stopwatch05"),
+        &[],
+        rows.clone(),
+        cols.clone(),
+        1200,
+    );
+    let py_adv = region_advances(
+        &AppKind::Python("tutorial", "stopwatch05"),
+        &[],
+        rows,
+        cols,
+        1200,
+    );
     eprintln!("stopwatch05: rust_ticks={rust_adv} py_ticks={py_adv}");
     assert!(
         rust_adv && py_adv,
@@ -1898,7 +1865,10 @@ fn tooltip_appears(name: &'static str) -> (bool, bool) {
         eprintln!("{label}: tooltip shown = {shown}");
         shown
     }
-    (run(&AppKind::Rust(name)), run(&AppKind::Python("guide/widgets", name)))
+    (
+        run(&AppKind::Rust(name)),
+        run(&AppKind::Python("guide/widgets", name)),
+    )
 }
 
 /// tooltip01: default-styled tooltip.
@@ -2029,8 +1999,20 @@ fn parity_widgets04_mount_welcome() {
 fn parity_world_clock01_ticks() {
     let rows = 0..ROWS as usize;
     let cols = 0..COLS as usize;
-    let rust_adv = region_advances(&AppKind::Rust("world_clock01"), &[], rows.clone(), cols.clone(), 1200);
-    let py_adv = region_advances(&AppKind::Python("guide/reactivity", "world_clock01"), &[], rows, cols, 1200);
+    let rust_adv = region_advances(
+        &AppKind::Rust("world_clock01"),
+        &[],
+        rows.clone(),
+        cols.clone(),
+        1200,
+    );
+    let py_adv = region_advances(
+        &AppKind::Python("guide/reactivity", "world_clock01"),
+        &[],
+        rows,
+        cols,
+        1200,
+    );
     eprintln!("world_clock01: rust_ticks={rust_adv} py_ticks={py_adv}");
     assert!(
         rust_adv && py_adv,
@@ -2043,8 +2025,20 @@ fn parity_world_clock01_ticks() {
 fn parity_world_clock02_ticks() {
     let rows = 0..ROWS as usize;
     let cols = 0..COLS as usize;
-    let rust_adv = region_advances(&AppKind::Rust("world_clock02"), &[], rows.clone(), cols.clone(), 1200);
-    let py_adv = region_advances(&AppKind::Python("guide/reactivity", "world_clock02"), &[], rows, cols, 1200);
+    let rust_adv = region_advances(
+        &AppKind::Rust("world_clock02"),
+        &[],
+        rows.clone(),
+        cols.clone(),
+        1200,
+    );
+    let py_adv = region_advances(
+        &AppKind::Python("guide/reactivity", "world_clock02"),
+        &[],
+        rows,
+        cols,
+        1200,
+    );
     eprintln!("world_clock02: rust_ticks={rust_adv} py_ticks={py_adv}");
     assert!(
         rust_adv && py_adv,
@@ -2057,8 +2051,20 @@ fn parity_world_clock02_ticks() {
 fn parity_world_clock03_ticks() {
     let rows = 0..ROWS as usize;
     let cols = 0..COLS as usize;
-    let rust_adv = region_advances(&AppKind::Rust("world_clock03"), &[], rows.clone(), cols.clone(), 1200);
-    let py_adv = region_advances(&AppKind::Python("guide/reactivity", "world_clock03"), &[], rows, cols, 1200);
+    let rust_adv = region_advances(
+        &AppKind::Rust("world_clock03"),
+        &[],
+        rows.clone(),
+        cols.clone(),
+        1200,
+    );
+    let py_adv = region_advances(
+        &AppKind::Python("guide/reactivity", "world_clock03"),
+        &[],
+        rows,
+        cols,
+        1200,
+    );
     eprintln!("world_clock03: rust_ticks={rust_adv} py_ticks={py_adv}");
     assert!(
         rust_adv && py_adv,
@@ -2346,9 +2352,15 @@ fn parity_command01_palette_bell() {
     let (rok, rb) = run(&AppKind::Rust("command01"));
     let (pok, pb) = run(&AppKind::Python("guide/command_palette", "command01"));
     eprintln!("command01: rust(no_crash={rok},bell_entry={rb}) py(no_crash={pok},bell_entry={pb})");
-    assert!(pok, "command01: Python command palette crashed (rich clear_meta_and_links)");
+    assert!(
+        pok,
+        "command01: Python command palette crashed (rich clear_meta_and_links)"
+    );
     assert!(rok, "command01: Rust command palette traceback");
-    assert!(pb && rb, "command01: both must list the Bell command — rust={rb} py={pb}");
+    assert!(
+        pb && rb,
+        "command01: both must list the Bell command — rust={rb} py={pb}"
+    );
 }
 
 /// command02: a Provider listing the *.py files in the cwd. Open the palette and
@@ -2371,7 +2383,10 @@ fn parity_command02_palette_open() {
     let rok = run(&AppKind::Rust("command02"));
     let pok = run(&AppKind::Python("guide/command_palette", "command02"));
     eprintln!("command02: rust_no_crash={rok} py_no_crash={pok}");
-    assert!(pok && rok, "command02 palette must open without a traceback — rust={rok} py={pok}");
+    assert!(
+        pok && rok,
+        "command02 palette must open without a traceback — rust={rok} py={pok}"
+    );
 }
 
 // --- events -----------------------------------------------------------------
@@ -2409,16 +2424,21 @@ fn parity_events_dictionary_input() {
         let typed = g.contains("hello");
         // results region is rows below the docked input; non-empty if any
         // non-blank text appears below row 2 other than the input itself.
-        let results = (3..ROWS as usize)
-            .any(|r| !g.row_text(r).trim().is_empty());
+        let results = (3..ROWS as usize).any(|r| !g.row_text(r).trim().is_empty());
         app.shutdown();
         (typed, results)
     }
     let (rt, rr) = run(&AppKind::Rust("dictionary"));
     let (pt, pr) = run(&AppKind::Python("events", "dictionary"));
     eprintln!("dictionary: rust(typed={rt},results={rr}) py(typed={pt},results={pr})");
-    assert!(rt && pt, "dictionary: typed text missing — rust={rt} py={pt}");
-    assert!(rr && pr, "dictionary: results region empty — rust={rr} py={pr}");
+    assert!(
+        rt && pt,
+        "dictionary: typed text missing — rust={rt} py={pt}"
+    );
+    assert!(
+        rr && pr,
+        "dictionary: results region empty — rust={rr} py={pr}"
+    );
 }
 
 /// on_decorator01: three Buttons; `on_button_pressed` dispatches by id/class.
@@ -2646,7 +2666,10 @@ fn parity_howto_render_compose() {
     let (rt, rb) = probe(&AppKind::Rust("render_compose"));
     let (pt, pb) = probe(&AppKind::Python("how-to", "render_compose"));
     eprintln!("render_compose: rust(text={rt},bgs={rb}) py(text={pt},bgs={pb})");
-    assert!(rt && pt, "render_compose: splash text missing — rust={rt} py={pt}");
+    assert!(
+        rt && pt,
+        "render_compose: splash text missing — rust={rt} py={pt}"
+    );
     assert!(
         rb >= 8 && pb >= 8,
         "render_compose: gradient background not multi-colour — rust_bgs={rb} py_bgs={pb}"

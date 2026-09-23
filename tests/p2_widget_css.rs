@@ -11,7 +11,9 @@ use rusty_textual::css::set_style_context;
 use rusty_textual::event::{Event, EventCtx, MouseDownEvent};
 use rusty_textual::prelude::*;
 use rusty_textual::render::FrameBuffer;
-use rusty_textual::style::{PropertyTransition, ScrollbarGutter, ScrollbarVisibility, TransitionTiming};
+use rusty_textual::style::{
+    PropertyTransition, ScrollbarGutter, ScrollbarVisibility, TransitionTiming,
+};
 
 // ───────────────────────────────────────────────────────────────────────
 // P2G-30  Scrollbar CSS
@@ -292,15 +294,22 @@ fn p2g30_scroll_view_drag_thumb_uses_active_color() {
     let _ = Widget::render(&sv, &console, &opts);
 
     let mut ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); sv.on_event(
-        &Event::MouseDown(MouseDownEvent {
-            target: NodeId::default(),
-            screen_x: 9,
-            screen_y: 0,
-            x: 9,
-            y: 0,
-        }),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        sv.on_event(
+            &Event::MouseDown(MouseDownEvent {
+                target: NodeId::default(),
+                screen_x: 9,
+                screen_y: 0,
+                x: 9,
+                y: 0,
+            }),
+            &mut __w,
+        )
+    };
     assert!(
         ctx.handled(),
         "scrollbar thumb mouse-down should be handled"
@@ -521,8 +530,10 @@ fn p2g32_link_hover_applies_hover_css() {
         hovered: true,
         ..Default::default()
     };
-    let _dispatch_guard =
-        rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient(NodeId::default(), hovered_state);
+    let _dispatch_guard = rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient(
+        NodeId::default(),
+        hovered_state,
+    );
 
     let console = Console::new();
     let mut opts = console.options().clone();

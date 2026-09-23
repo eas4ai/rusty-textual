@@ -1,7 +1,7 @@
 //! Tests for the MODES system and CommandPaletteScreen integration.
 
-use rusty_textual::screen::{Screen, ScreenStack};
 use rusty_textual::message::CommandPaletteCommand;
+use rusty_textual::screen::{Screen, ScreenStack};
 use rusty_textual::widgets::{CommandPaletteScreen, SystemModalScreen};
 
 use rich_rs::{Console, ConsoleOptions, Segments};

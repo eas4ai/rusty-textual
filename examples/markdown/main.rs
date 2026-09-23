@@ -90,7 +90,12 @@ impl TextualApp for MarkdownApp {
         }
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut rusty_textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut rusty_textual::event::WidgetCtx,
+    ) {
         match key.name() {
             "t" | "T" => {
                 // Python: self.markdown_viewer.show_table_of_contents = not ...
@@ -137,14 +142,17 @@ impl TextualApp for MarkdownApp {
         }
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, _ctx: &mut rusty_textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        _ctx: &mut rusty_textual::event::WidgetCtx,
+    ) {
         if message.is::<NavigatorUpdated>() {
-            if let Some(state) = self
-                .viewer
-                .handle()
-                .ok()
-                .and_then(|h| h.read(app, |v| (v.navigator.at_start(), v.navigator.at_end())).ok())
-            {
+            if let Some(state) = self.viewer.handle().ok().and_then(|h| {
+                h.read(app, |v| (v.navigator.at_start(), v.navigator.at_end()))
+                    .ok()
+            }) {
                 self.set_nav_state(state, app.reactive_ctx());
             }
         }
@@ -202,10 +210,16 @@ mod tests {
     #[test]
     fn viewer_slot_is_bound_after_tree_build() {
         let mut app = MarkdownApp::new();
-        assert!(app.viewer.get().is_none(), "slot should be unfilled before compose");
+        assert!(
+            app.viewer.get().is_none(),
+            "slot should be unfilled before compose"
+        );
         let mut root = app.compose();
         let tree = build_widget_tree_from_root(&mut root).expect("tree should build");
-        let handle = app.viewer.handle().expect("slot should be filled after compose+build");
+        let handle = app
+            .viewer
+            .handle()
+            .expect("slot should be filled after compose+build");
         // The mounted node should still be readable.
         let _ = handle
             .read_in(&tree, |_viewer| ())

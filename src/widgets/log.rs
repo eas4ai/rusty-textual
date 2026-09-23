@@ -860,7 +860,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             log.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
         let messages = ctx.take_messages();
@@ -879,18 +882,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             log.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 2.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 2.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert!(ctx.handled());
         assert!(ctx.repaint_requested());
@@ -969,7 +976,7 @@ mod tests {
         let mut log = Log::new().auto_scroll(false);
         log.write_lines(["alpha", "beta"]);
         let _ = log.render(&console, &options);
-        assert!(log.cache.lock().unwrap().entries.len() > 0);
+        assert!(!log.cache.lock().unwrap().entries.is_empty());
 
         log.clear();
         assert_eq!(log.cache.lock().unwrap().entries.len(), 0);
@@ -1000,32 +1007,40 @@ mod tests {
         // Mouse down starts selection
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             log.on_event(
-            &Event::MouseDown(crate::event::MouseDownEvent {
-                target: id,
-                screen_x: 2,
-                screen_y: 0,
-                x: 2,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(crate::event::MouseDownEvent {
+                    target: id,
+                    screen_x: 2,
+                    screen_y: 0,
+                    x: 2,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
         assert!(log.selecting);
 
         // Mouse up at same position clears selection
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             log.on_event(
-            &Event::MouseUp(crate::event::MouseUpEvent {
-                target: Some(id),
-                screen_x: 2,
-                screen_y: 0,
-                x: 2,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseUp(crate::event::MouseUpEvent {
+                    target: Some(id),
+                    screen_x: 2,
+                    screen_y: 0,
+                    x: 2,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
         assert!(!log.selecting);
         assert!(log.selection_range().is_none());
@@ -1062,18 +1077,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             log.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 2.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 2.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());

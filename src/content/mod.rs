@@ -3304,9 +3304,7 @@ mod tests {
         );
         assert_eq!(strips.len(), 1);
         // Some segment over the "Ring" glyphs must carry @click=app.bell.
-        let found = strips[0]
-            .iter()
-            .find_map(|seg| seg_meta_str(seg, "@click"));
+        let found = strips[0].iter().find_map(|seg| seg_meta_str(seg, "@click"));
         assert_eq!(found.as_deref(), Some("app.bell"));
     }
 
@@ -3351,9 +3349,7 @@ mod tests {
             0,
             null_resolver,
         );
-        let found = strips[0]
-            .iter()
-            .find_map(|seg| seg_meta_str(seg, "@click"));
+        let found = strips[0].iter().find_map(|seg| seg_meta_str(seg, "@click"));
         assert_eq!(found.as_deref(), Some("set_background('cyan')"));
     }
 }

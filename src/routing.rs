@@ -488,7 +488,6 @@ mod tests {
 
     struct State {
         bell: u32,
-        toggled: u32,
         quit: u32,
         any_button: u32,
     }
@@ -512,7 +511,6 @@ mod tests {
 
         let mut state = State {
             bell: 0,
-            toggled: 0,
             quit: 0,
             any_button: 0,
         };
@@ -537,7 +535,6 @@ mod tests {
 
         let mut state = State {
             bell: 0,
-            toggled: 0,
             quit: 0,
             any_button: 0,
         };
@@ -560,7 +557,6 @@ mod tests {
 
         let mut state = State {
             bell: 0,
-            toggled: 0,
             quit: 0,
             any_button: 0,
         };

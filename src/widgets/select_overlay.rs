@@ -21,9 +21,9 @@
 
 use rich_rs::Text;
 
+use super::Widget;
 use super::option_list::OptionItem;
 use super::option_list::OptionList;
-use super::Widget;
 use crate::event::{Event, WidgetCtx};
 use crate::message::SelectOverlayDismiss;
 use crossterm::event::KeyCode;

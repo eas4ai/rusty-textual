@@ -721,9 +721,7 @@ impl RichLog {
                 } else {
                     split
                         .into_iter()
-                        .map(|line| {
-                            crate::widgets::helpers::adjust_line_length_no_bg(&line, width)
-                        })
+                        .map(|line| crate::widgets::helpers::adjust_line_length_no_bg(&line, width))
                         .collect()
                 }
             }
@@ -1087,7 +1085,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             log.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
         let messages = ctx.take_messages();
@@ -1119,18 +1120,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
-            log.on_message(
-            &MessageEvent::new(
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
                 crate::node_id::NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 1.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &mut ctx,
+            );
+            log.on_message(
+                &MessageEvent::new(
+                    crate::node_id::NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 1.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert!(ctx.handled());
         assert_eq!(log.offset_y, 1);

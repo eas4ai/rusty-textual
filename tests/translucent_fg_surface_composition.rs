@@ -62,12 +62,20 @@ fn digits_muted_fg_flattens_over_boosted_surface() {
     // which is the muted fg flattened over the raw $background).
     assert_eq!(
         style.bgcolor,
-        Some(rich_rs::SimpleColor::Rgb { r: 27, g: 27, b: 27 }),
+        Some(rich_rs::SimpleColor::Rgb {
+            r: 27,
+            g: 27,
+            b: 27
+        }),
         "digit cell background must be the boost-composited surface"
     );
     assert_eq!(
         style.color,
-        Some(rich_rs::SimpleColor::Rgb { r: 145, g: 145, b: 145 }),
+        Some(rich_rs::SimpleColor::Rgb {
+            r: 145,
+            g: 145,
+            b: 145
+        }),
         "muted fg must flatten over the boosted surface (#919191), got: {:?}",
         style.color
     );
@@ -80,12 +88,20 @@ fn static_muted_fg_flattens_over_boosted_surface() {
     let style = buf.get(x, y).style.expect("styled cell");
     assert_eq!(
         style.bgcolor,
-        Some(rich_rs::SimpleColor::Rgb { r: 27, g: 27, b: 27 }),
+        Some(rich_rs::SimpleColor::Rgb {
+            r: 27,
+            g: 27,
+            b: 27
+        }),
         "text cell background must be the boost-composited surface"
     );
     assert_eq!(
         style.color,
-        Some(rich_rs::SimpleColor::Rgb { r: 145, g: 145, b: 145 }),
+        Some(rich_rs::SimpleColor::Rgb {
+            r: 145,
+            g: 145,
+            b: 145
+        }),
         "muted fg must flatten over the boosted surface (#919191), got: {:?}",
         style.color
     );

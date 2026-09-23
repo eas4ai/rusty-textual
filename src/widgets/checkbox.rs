@@ -26,10 +26,7 @@ fn tag_segment_no_text_style(seg: &mut Segment) {
         .as_ref()
         .map(|m| (**m).clone())
         .unwrap_or_default();
-    map.insert(
-        "textual:no_text_style".to_string(),
-        MetaValue::Bool(true),
-    );
+    map.insert("textual:no_text_style".to_string(), MetaValue::Bool(true));
     meta.meta = Some(std::sync::Arc::new(map));
     seg.meta = Some(meta);
 }
@@ -195,7 +192,12 @@ impl Layout for Checkbox {
         // contract). Python ToggleButton.get_content_width: 3 (the `▐X▌` button)
         // + 2 (the label's 1-cell left/right pad) + the label's own width. Markup
         // tags are stripped first so `[b]…[/b]` doesn't inflate the width.
-        Some(self.label_content().cell_length().saturating_add(3 + 2).max(1))
+        Some(
+            self.label_content()
+                .cell_length()
+                .saturating_add(3 + 2)
+                .max(1),
+        )
     }
 
     fn layout_height(&self) -> Option<usize> {
@@ -217,20 +219,21 @@ impl Interactive for Checkbox {
                 ctx.request_repaint();
                 ctx.set_handled();
             }
-            Event::MouseUp(mouse)
-                if self.pressed => {
-                    self.pressed = false;
-                    ctx.request_repaint();
-                    if mouse.target.is_some_and(|t| t == crate::widgets::Widget::node_id(self)) {
-                        self.toggle_reactive(ctx);
-                        ctx.set_handled();
-                    }
+            Event::MouseUp(mouse) if self.pressed => {
+                self.pressed = false;
+                ctx.request_repaint();
+                if mouse
+                    .target
+                    .is_some_and(|t| t == crate::widgets::Widget::node_id(self))
+                {
+                    self.toggle_reactive(ctx);
+                    ctx.set_handled();
                 }
-            Event::AppFocus(false)
-                if self.pressed => {
-                    self.pressed = false;
-                    ctx.request_repaint();
-                }
+            }
+            Event::AppFocus(false) if self.pressed => {
+                self.pressed = false;
+                ctx.request_repaint();
+            }
             Event::Action(Action::Toggle) if crate::widgets::Widget::node_state(self).focused => {
                 self.toggle_reactive(ctx);
                 ctx.set_handled();
@@ -257,11 +260,10 @@ impl Render for Checkbox {
 
         // Flatten widget's own bg over the ancestor composited background so
         // transparent-bg checkboxes still get the correct surface color.
-        let parent_bg =
-            crate::css::current_ancestor_composited_background().unwrap_or_else(|| {
-                crate::style::parse_color_like("$background")
-                    .unwrap_or(crate::style::Color::rgb(0, 0, 0))
-            });
+        let parent_bg = crate::css::current_ancestor_composited_background().unwrap_or_else(|| {
+            crate::style::parse_color_like("$background")
+                .unwrap_or(crate::style::Color::rgb(0, 0, 0))
+        });
         let effective_bg = visual_style
             .bg
             .map(|c| c.flatten_over(parent_bg))
@@ -296,7 +298,10 @@ impl Render for Checkbox {
             ContentPart::from(("▐", side_style.clone())),
             ContentPart::from(("X", button_style)),
             ContentPart::from(("▌", side_style)),
-            ContentPart::from(super::helpers::toggle_label_content(&self.label, label_style)),
+            ContentPart::from(super::helpers::toggle_label_content(
+                &self.label,
+                label_style,
+            )),
         ]);
 
         let resolve_fn = super::helpers::markup_tag_resolve;
@@ -332,6 +337,12 @@ impl Render for Checkbox {
     }
 }
 
+impl crate::widgets::Components for Checkbox {
+    fn component_classes(&self) -> &[&'static str] {
+        &["toggle--button", "toggle--label"]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,7 +374,10 @@ mod tests {
             KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             checkbox.on_event(&Event::Key(key), &mut __w);
         }
         let messages = ctx.take_messages();
@@ -378,9 +392,11 @@ mod tests {
         let checkbox = Checkbox::new("Test");
         let bindings = checkbox.bindings();
         assert!(!bindings.is_empty());
-        assert!(bindings
-            .iter()
-            .any(|b| b.action == "toggle_button" && !b.show));
+        assert!(
+            bindings
+                .iter()
+                .any(|b| b.action == "toggle_button" && !b.show)
+        );
     }
 
     #[test]
@@ -393,7 +409,13 @@ mod tests {
             arguments: vec![],
         };
         assert!(!checkbox.checked());
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); checkbox.execute_action(&action, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            checkbox.execute_action(&action, &mut __w)
+        });
         assert!(checkbox.checked());
         let messages = ctx.take_messages();
         assert!(messages.iter().any(|m| {
@@ -443,14 +465,5 @@ mod tests {
     fn checkbox_compose_returns_empty() {
         let mut checkbox = Checkbox::new("Test");
         assert!(checkbox.compose().is_empty());
-    }
-}
-
-impl crate::widgets::Components for Checkbox {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "toggle--button",
-            "toggle--label",
-        ]
     }
 }

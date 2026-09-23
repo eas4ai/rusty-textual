@@ -6,8 +6,10 @@
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use rusty_textual::prelude::*;
 use rusty_textual::render::FrameBuffer;
+use rusty_textual::runtime::{
+    build_widget_tree_from_root, render_tree_to_frame, render_tree_to_frame_with_stylesheet,
+};
 use rusty_textual::style::{BorderEdge, BorderType, Color, HorizontalAlign, Spacing, Style};
-use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame, render_tree_to_frame_with_stylesheet};
 
 // ===========================================================================
 // Helpers (mirrors p2_render_css.rs)

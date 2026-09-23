@@ -1,7 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rich_rs::{Console, ConsoleOptions, Segments};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use rusty_textual::compose;
 use rusty_textual::event::{
     Action, BlurEvent, Event, EventCtx, FocusEvent, MouseDownEvent, MouseEnterEvent,
@@ -15,6 +13,8 @@ use rusty_textual::runtime::{
     render_tree_to_frame, tree_content_local_coords, widget_at_tree_layout,
 };
 use rusty_textual::widget_tree::WidgetTree;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 struct ClickProbe {
@@ -495,24 +495,38 @@ fn p1_gate_row_click_targets_correct_child_by_x() {
         .with_child(ClickProbe::new("right", sink.clone()));
     let mut ctx = EventCtx::default();
 
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); root.on_event(
-        &Event::MouseDown(MouseDownEvent {
-            target: NodeId::default(),
-            screen_x: 9,
-            screen_y: 0,
-            x: 9,
-            y: 0,
-        }),
-        &mut __w) };
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); root.on_event(
-        &Event::MouseUp(MouseUpEvent {
-            target: Some(NodeId::default()),
-            screen_x: 9,
-            screen_y: 0,
-            x: 9,
-            y: 0,
-        }),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        root.on_event(
+            &Event::MouseDown(MouseDownEvent {
+                target: NodeId::default(),
+                screen_x: 9,
+                screen_y: 0,
+                x: 9,
+                y: 0,
+            }),
+            &mut __w,
+        )
+    };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        root.on_event(
+            &Event::MouseUp(MouseUpEvent {
+                target: Some(NodeId::default()),
+                screen_x: 9,
+                screen_y: 0,
+                x: 9,
+                y: 0,
+            }),
+            &mut __w,
+        )
+    };
 
     let descriptions = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
     assert_eq!(
@@ -599,9 +613,27 @@ fn p1_gate_row_focus_next_prev_cycles_children() {
         .with_child(FocusProbe::new("right", sink.clone()));
     let mut ctx = EventCtx::default();
 
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); root.on_event(&Event::Action(Action::FocusPrev), &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        root.on_event(&Event::Action(Action::FocusNext), &mut __w)
+    };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        root.on_event(&Event::Action(Action::FocusNext), &mut __w)
+    };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        root.on_event(&Event::Action(Action::FocusPrev), &mut __w)
+    };
 
     let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
     assert!(
@@ -665,16 +697,37 @@ fn p1_gate_row_focus_routes_arrow_keys_to_datatable() {
         .with_child(DataTableNavProbe::new(sink.clone()));
     root.on_layout(20, 5);
 
-    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
-    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); root.on_event(&Event::Action(Action::FocusNext), &mut __w) };
+    {
+        let mut __e = rusty_textual::event::EventCtx::default();
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut __e,
+        );
+        root.on_event(&Event::Action(Action::FocusNext), &mut __w)
+    };
+    {
+        let mut __e = rusty_textual::event::EventCtx::default();
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut __e,
+        );
+        root.on_event(&Event::Action(Action::FocusNext), &mut __w)
+    };
 
     let mut key_ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut key_ctx); root.on_event(
-        &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-            KeyCode::Down,
-            KeyModifiers::NONE,
-        ))),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut key_ctx,
+        );
+        root.on_event(
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                KeyCode::Down,
+                KeyModifiers::NONE,
+            ))),
+            &mut __w,
+        )
+    };
 
     let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
     assert!(

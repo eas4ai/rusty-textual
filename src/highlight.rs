@@ -392,10 +392,7 @@ mod tests {
         let ret = style_of(&spans, "return").expect("return span");
         assert_eq!(ret.color, Some(HighlightColor::TextAccent));
 
-        let doc: Vec<_> = spans
-            .iter()
-            .filter(|(t, _)| t.contains("Doc."))
-            .collect();
+        let doc: Vec<_> = spans.iter().filter(|(t, _)| t.contains("Doc.")).collect();
         assert!(!doc.is_empty(), "docstring span exists");
         assert_eq!(doc[0].1.color, Some(HighlightColor::TextSuccess));
         assert!((doc[0].1.alpha - 0.8).abs() < 1e-6, "docstring 80%");
@@ -425,4 +422,3 @@ mod tests {
         }
     }
 }
-

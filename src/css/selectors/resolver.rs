@@ -12,9 +12,7 @@ use super::debug::{style_debug_matches, style_debug_meta_label, style_debug_summ
 use super::matching::rule_specificity;
 
 fn widget_is_screen<T: Widget + ?Sized>(widget: &T) -> bool {
-    widget.style_type() == "Screen"
-        || widget
-            .style_type_aliases().contains(&"Screen")
+    widget.style_type() == "Screen" || widget.style_type_aliases().contains(&"Screen")
 }
 
 /// Interaction states for type-only/off-tree meta, sourced from the dispatch
@@ -75,7 +73,7 @@ impl StyleSheet {
                 }
             }
         }
-        matches.sort_by(|a, b| a.0.cmp(&b.0));
+        matches.sort_by_key(|a| a.0);
         // Python parity (`extract_rules` outermost key): the whole user
         // layer outranks the whole default layer. Fold each layer with
         // importance, then merge layers with the higher layer winning every
@@ -203,9 +201,7 @@ pub(crate) fn node_selector_meta_from_node(node: &WidgetNode, node_id: NodeId) -
     let pseudos = app_runtime_pseudos();
     let state = node.state;
     let is_screen = node.widget.style_type() == "Screen"
-        || node
-            .widget
-            .style_type_aliases().contains(&"Screen");
+        || node.widget.style_type_aliases().contains(&"Screen");
     // Python parity: an active screen behaves as :focus while the app is active.
     let focused = (state.focused || is_screen) && app_is_active();
     SelectorMeta {
@@ -343,7 +339,9 @@ pub(crate) fn current_composited_background() -> Option<crate::style::Color> {
                 // intensity. Apply it here so children see the tinted surface as parent bg.
                 let effective = if let Some(tint) = style.background_tint {
                     crate::renderables::Tint::<()>::blend_color_with_percent(
-                        flat, tint.color, tint.percent,
+                        flat,
+                        tint.color,
+                        tint.percent,
                     )
                 } else {
                     flat
@@ -443,7 +441,11 @@ pub(crate) fn current_ancestor_composited_background() -> Option<crate::style::C
         let stack = stack.borrow();
         // All entries except the last (= current widget's own style).
         let len = stack.len();
-        let ancestor_slice = if len >= 2 { &stack[..len - 1] } else { &stack[..0] };
+        let ancestor_slice = if len >= 2 {
+            &stack[..len - 1]
+        } else {
+            &stack[..0]
+        };
         let mut saw_background = false;
         let mut composited = fallback;
         for style in ancestor_slice.iter() {
@@ -453,7 +455,9 @@ pub(crate) fn current_ancestor_composited_background() -> Option<crate::style::C
                 // ancestor backgrounds so the tinted surface propagates correctly.
                 let effective = if let Some(tint) = style.background_tint {
                     crate::renderables::Tint::<()>::blend_color_with_percent(
-                        flat, tint.color, tint.percent,
+                        flat,
+                        tint.color,
+                        tint.percent,
                     )
                 } else {
                     flat
@@ -569,10 +573,7 @@ pub fn resolve_component_style_merged<T: Widget + ?Sized>(widget: &T, names: &[&
 /// set by matching sheet rules, WITHOUT the inherit-from-parent step (Python
 /// `partial_rich_style` semantics). The [`Style`]'s `Option` fields express
 /// the partiality directly.
-pub fn resolve_component_style_partial<T: Widget + ?Sized>(
-    widget: &T,
-    classes: &[&str],
-) -> Style {
+pub fn resolve_component_style_partial<T: Widget + ?Sized>(widget: &T, classes: &[&str]) -> Style {
     let meta = selector_meta_component_phantom(classes);
     let resolve = || {
         STYLE_CONTEXT

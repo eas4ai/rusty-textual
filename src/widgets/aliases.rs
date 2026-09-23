@@ -1,6 +1,6 @@
 use rich_rs::{Console, ConsoleOptions, MetaValue, Renderable, Segment, Segments, Text};
-use textual_macros::widget;
 use std::sync::Arc;
+use textual_macros::widget;
 
 use crate::widgets::NodeSeed;
 
@@ -366,105 +366,6 @@ impl Static {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Regression tests (DG-02)
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use crate::widgets::Widget;
-    use super::*;
-
-    #[test]
-    fn static_update_changes_content() {
-        let mut widget = Static::new("initial");
-        widget.update("updated");
-        // content is now "updated" — confirm Plain variant is active
-        assert!(matches!(widget.content, StaticContent::Plain));
-    }
-
-    #[test]
-    fn static_update_rich_switches_to_rich_variant() {
-        let mut widget = Static::new("initial");
-        let text = Text::plain("rich content");
-        widget.update_rich(text);
-        assert!(matches!(widget.content, StaticContent::Rich(_)));
-    }
-
-    #[test]
-    fn static_update_after_rich_reverts_to_plain() {
-        let mut widget = Static::new("initial");
-        widget.update_rich(Text::plain("rich"));
-        widget.update("plain again");
-        assert!(matches!(widget.content, StaticContent::Plain));
-    }
-
-    #[test]
-    fn static_clear_sets_plain_empty() {
-        let mut widget = Static::new("hello");
-        widget.update_rich(Text::plain("rich"));
-        widget.clear();
-        assert!(matches!(widget.content, StaticContent::Plain));
-    }
-
-    #[test]
-    fn static_layout_height_rich_returns_line_count() {
-        let mut widget = Static::new("");
-        let text = Text::plain("line one\nline two\nline three");
-        widget.update_rich(text);
-        assert_eq!(widget.layout_height(), Some(3));
-    }
-
-    /// `intrinsic_height` must count REAL word-wrapped lines, not a
-    /// `cell_len.div_ceil(width)` char-count. A paragraph longer than the width
-    /// breaks at word boundaries and produces MORE lines than the char-count
-    /// estimate, so the old estimate under-counted and clipped the wrapped tail
-    /// (`docs/examples/guide/styles/padding02`).
-    #[test]
-    fn static_intrinsic_height_uses_real_word_wrap() {
-        let mut widget = Static::new("Fear is the little-death that brings total obliteration.");
-        // Content width 22 (padding02: width 30 - padding 4*2).
-        Widget::on_layout(&mut widget, 22, 0);
-        let h = widget.intrinsic_height();
-        // Word-wrapping "Fear is the little-death that brings total
-        // obliteration." at 22 cells yields 4 lines (Rich word-wrap). The naive
-        // char-count estimate `56.div_ceil(22)` = 3 would clip a line.
-        assert!(
-            h >= 4,
-            "word-wrapped height should be >= 4 lines, got {h} (char-count \
-             estimate would under-count to 3)"
-        );
-    }
-
-    /// A `Static` displaying a rich renderable (Python `Static(Markdown(...))`,
-    /// the framework `Welcome` body) must report its height as the RENDERED
-    /// line count at the laid-out width — rich markdown spacing, NOT the
-    /// Textual `Markdown` block-widget margins.
-    #[test]
-    fn static_from_renderable_height_counts_rendered_markdown_lines() {
-        let mut widget = Static::from_renderable(rich_rs::markdown::Markdown::new(
-            "# Title\n\nbody text",
-        ));
-        Widget::on_layout(&mut widget, 40, 0);
-        // rich markdown: centered H1 line, blank separator, body line.
-        assert_eq!(widget.layout_height(), Some(3));
-    }
-
-    /// `intrinsic_content_width` must measure the RENDERED width (markup
-    /// stripped), like `Label`. Counting the raw text sized the auto-width box
-    /// to 19 for "[b]Example switches\n" (16 + the "[b]" tag), which
-    /// `content-align: center` then offset by (19-16)/2 = 1 column
-    /// (docs/examples/widgets/switch title).
-    #[test]
-    fn static_intrinsic_width_strips_markup() {
-        let widget = Static::new("[b]Example switches\n");
-        assert_eq!(widget.intrinsic_content_width(), 16);
-        // With markup disabled the tags render as-is and DO count.
-        let raw = Static::new("[b]Example switches\n").without_markup();
-        assert_eq!(raw.intrinsic_content_width(), 19);
-    }
-}
-
 impl crate::widgets::Interactive for Static {
     fn on_layout(&mut self, width: u16, _height: u16) {
         // Hidden/disconnected nodes can transiently receive width=0/1 during
@@ -607,5 +508,103 @@ impl crate::widgets::Render for Static {
 
     fn border_subtitle(&self) -> Option<&str> {
         self.border_subtitle.as_deref()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests (DG-02)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::widgets::Widget;
+
+    #[test]
+    fn static_update_changes_content() {
+        let mut widget = Static::new("initial");
+        widget.update("updated");
+        // content is now "updated" — confirm Plain variant is active
+        assert!(matches!(widget.content, StaticContent::Plain));
+    }
+
+    #[test]
+    fn static_update_rich_switches_to_rich_variant() {
+        let mut widget = Static::new("initial");
+        let text = Text::plain("rich content");
+        widget.update_rich(text);
+        assert!(matches!(widget.content, StaticContent::Rich(_)));
+    }
+
+    #[test]
+    fn static_update_after_rich_reverts_to_plain() {
+        let mut widget = Static::new("initial");
+        widget.update_rich(Text::plain("rich"));
+        widget.update("plain again");
+        assert!(matches!(widget.content, StaticContent::Plain));
+    }
+
+    #[test]
+    fn static_clear_sets_plain_empty() {
+        let mut widget = Static::new("hello");
+        widget.update_rich(Text::plain("rich"));
+        widget.clear();
+        assert!(matches!(widget.content, StaticContent::Plain));
+    }
+
+    #[test]
+    fn static_layout_height_rich_returns_line_count() {
+        let mut widget = Static::new("");
+        let text = Text::plain("line one\nline two\nline three");
+        widget.update_rich(text);
+        assert_eq!(widget.layout_height(), Some(3));
+    }
+
+    /// `intrinsic_height` must count REAL word-wrapped lines, not a
+    /// `cell_len.div_ceil(width)` char-count. A paragraph longer than the width
+    /// breaks at word boundaries and produces MORE lines than the char-count
+    /// estimate, so the old estimate under-counted and clipped the wrapped tail
+    /// (`docs/examples/guide/styles/padding02`).
+    #[test]
+    fn static_intrinsic_height_uses_real_word_wrap() {
+        let mut widget = Static::new("Fear is the little-death that brings total obliteration.");
+        // Content width 22 (padding02: width 30 - padding 4*2).
+        Widget::on_layout(&mut widget, 22, 0);
+        let h = widget.intrinsic_height();
+        // Word-wrapping "Fear is the little-death that brings total
+        // obliteration." at 22 cells yields 4 lines (Rich word-wrap). The naive
+        // char-count estimate `56.div_ceil(22)` = 3 would clip a line.
+        assert!(
+            h >= 4,
+            "word-wrapped height should be >= 4 lines, got {h} (char-count \
+             estimate would under-count to 3)"
+        );
+    }
+
+    /// A `Static` displaying a rich renderable (Python `Static(Markdown(...))`,
+    /// the framework `Welcome` body) must report its height as the RENDERED
+    /// line count at the laid-out width — rich markdown spacing, NOT the
+    /// Textual `Markdown` block-widget margins.
+    #[test]
+    fn static_from_renderable_height_counts_rendered_markdown_lines() {
+        let mut widget =
+            Static::from_renderable(rich_rs::markdown::Markdown::new("# Title\n\nbody text"));
+        Widget::on_layout(&mut widget, 40, 0);
+        // rich markdown: centered H1 line, blank separator, body line.
+        assert_eq!(widget.layout_height(), Some(3));
+    }
+
+    /// `intrinsic_content_width` must measure the RENDERED width (markup
+    /// stripped), like `Label`. Counting the raw text sized the auto-width box
+    /// to 19 for "[b]Example switches\n" (16 + the "[b]" tag), which
+    /// `content-align: center` then offset by (19-16)/2 = 1 column
+    /// (docs/examples/widgets/switch title).
+    #[test]
+    fn static_intrinsic_width_strips_markup() {
+        let widget = Static::new("[b]Example switches\n");
+        assert_eq!(widget.intrinsic_content_width(), 16);
+        // With markup disabled the tags render as-is and DO count.
+        let raw = Static::new("[b]Example switches\n").without_markup();
+        assert_eq!(raw.intrinsic_content_width(), 19);
     }
 }

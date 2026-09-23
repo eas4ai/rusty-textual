@@ -55,10 +55,7 @@ impl Widget for TintHost {
         true
     }
     fn compose(&mut self) -> ComposeResult {
-        vec![ChildDecl::new(Box::new(
-            Static::new(LABEL_TEXT).without_markup(),
-        ))
-        .with_id("lbl")]
+        vec![ChildDecl::new(Box::new(Static::new(LABEL_TEXT).without_markup())).with_id("lbl")]
     }
     /// Chrome-only: the framework paints the surface from the resolved style;
     /// the composed label composites over it (the `SelectCurrent` shape).

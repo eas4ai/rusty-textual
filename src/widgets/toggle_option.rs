@@ -218,10 +218,7 @@ impl OptionItem {
     ///
     /// Mirrors Python `OptionList(*[Option(table)])` where `table` is a Rich
     /// `Table` renderable.
-    pub fn renderable(
-        label: impl Into<String>,
-        renderable: impl Renderable + 'static,
-    ) -> Self {
+    pub fn renderable(label: impl Into<String>, renderable: impl Renderable + 'static) -> Self {
         Self::Option {
             prompt: label.into(),
             content: Some(OptionContent::Renderable(Arc::new(renderable))),
@@ -448,21 +445,19 @@ impl BinaryToggleState {
                 outcome.repaint = true;
                 outcome.handled = true;
             }
-            Event::MouseUp(mouse)
-                if self.pressed => {
-                    self.pressed = false;
-                    outcome.repaint = true;
-                    if mouse.target == Some(id) {
-                        self.toggle();
-                        outcome.toggled = true;
-                        outcome.handled = true;
-                    }
+            Event::MouseUp(mouse) if self.pressed => {
+                self.pressed = false;
+                outcome.repaint = true;
+                if mouse.target == Some(id) {
+                    self.toggle();
+                    outcome.toggled = true;
+                    outcome.handled = true;
                 }
-            Event::AppFocus(false)
-                if self.pressed => {
-                    self.pressed = false;
-                    outcome.repaint = true;
-                }
+            }
+            Event::AppFocus(false) if self.pressed => {
+                self.pressed = false;
+                outcome.repaint = true;
+            }
             Event::Action(Action::Toggle) if self.focused => {
                 self.toggle();
                 outcome.toggled = true;

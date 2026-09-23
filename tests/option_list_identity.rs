@@ -152,7 +152,10 @@ fn create_with_duplicate_id() {
 #[test]
 fn create_with_duplicate_id_and_subsequent_non_dupes() {
     let mut list = create_fixture();
-    assert!(list.add_option("dupe", Some(OptionId::new("3")), false).is_err());
+    assert!(
+        list.add_option("dupe", Some(OptionId::new("3")), false)
+            .is_err()
+    );
     assert_eq!(list.option_count(), 5);
     list.add_option("Not a dupe", Some(OptionId::new("6")), false)
         .unwrap();
@@ -357,7 +360,8 @@ fn replace_option_prompt_with_valid_id() {
 #[test]
 fn replace_option_prompt_with_valid_index() {
     let mut list = sample_list();
-    list.replace_option_prompt_at_index(1, "new-prompt").unwrap();
+    list.replace_option_prompt_at_index(1, "new-prompt")
+        .unwrap();
     assert_eq!(
         list.get_option_at_index(1).unwrap().prompt(),
         Some("new-prompt")
@@ -381,7 +385,8 @@ fn replace_multiple_line_option_prompt_with_single() {
         OptionItem::with_id("0", "0"),
         OptionItem::new("line1\nline2"),
     ]);
-    list.replace_option_prompt_at_index(1, "new-prompt").unwrap();
+    list.replace_option_prompt_at_index(1, "new-prompt")
+        .unwrap();
     assert_eq!(
         list.get_option_at_index(1).unwrap().prompt(),
         Some("new-prompt")
@@ -392,8 +397,11 @@ fn replace_multiple_line_option_prompt_with_single() {
 fn replace_prompt_clears_rich_content() {
     // Python `_set_prompt` replaces the whole visual; the Rust equivalent
     // clears the rich content so the new prompt is what renders.
-    let mut list =
-        OptionList::with_items(vec![OptionItem::rich_with_id("label", rich_rs::Text::plain("x"), "r")]);
+    let mut list = OptionList::with_items(vec![OptionItem::rich_with_id(
+        "label",
+        rich_rs::Text::plain("x"),
+        "r",
+    )]);
     list.replace_option_prompt("r", "plain now").unwrap();
     let item = list.get_option_by_id("r").unwrap();
     assert_eq!(item.prompt(), Some("plain now"));
@@ -607,12 +615,13 @@ fn selection_add_duplicate_id_is_rejected() {
     );
     assert_eq!(list.item_count(), 5);
     // Batch atomicity holds at the wrapper level too: values stay in sync.
-    assert!(list
-        .add_selections(vec![
+    assert!(
+        list.add_selections(vec![
             Selection::new("x", 100).with_id("x"),
             Selection::new("dupe", 101).with_id("4"),
         ])
-        .is_err());
+        .is_err()
+    );
     assert_eq!(list.item_count(), 5);
     assert_eq!(list.value_at(4), Some(&4));
     assert!(list.value_at(5).is_none());

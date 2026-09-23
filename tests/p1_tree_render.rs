@@ -9,8 +9,8 @@ use rich_rs::Console;
 use rusty_textual::compose;
 use rusty_textual::prelude::*;
 use rusty_textual::render::FrameBuffer;
-use rusty_textual::style::{Offset, OffsetValue, Position, Scalar};
 use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame, run_layout_pass};
+use rusty_textual::style::{Offset, OffsetValue, Position, Scalar};
 
 // ===========================================================================
 // Helpers
@@ -822,8 +822,8 @@ Horizontal > VerticalScroll {
     let widths: Vec<u16> = children
         .into_iter()
         .map(|id| {
-            let (layout, _content) =
-                rusty_textual::layout::inspect_node_rects(&tree, id).expect("child rects should exist");
+            let (layout, _content) = rusty_textual::layout::inspect_node_rects(&tree, id)
+                .expect("child rects should exist");
             layout.2.saturating_sub(layout.0)
         })
         .collect();

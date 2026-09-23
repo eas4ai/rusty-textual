@@ -4,13 +4,13 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rich_rs::Console;
-use slotmap::SlotMap;
 use rusty_textual::document::{Cursor, Selection};
 use rusty_textual::event::EventCtx;
 use rusty_textual::node_id::NodeId;
 use rusty_textual::prelude::*;
 use rusty_textual::render::FrameBuffer;
 use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
+use slotmap::SlotMap;
 
 fn key(code: KeyCode) -> Event {
     Event::Key(KeyEventData::from_crossterm(KeyEvent::new(

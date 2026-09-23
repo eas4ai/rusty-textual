@@ -99,7 +99,8 @@ fn auto_width_derives_from_child_layout() {
     // The scoped widths live in the framework default sheet; install it as
     // the live style context for this headless layout pass (the runtime does
     // the same around its layout/render passes).
-    let _guard = rusty_textual::css::set_style_context(rusty_textual::css::default_widget_stylesheet());
+    let _guard =
+        rusty_textual::css::set_style_context(rusty_textual::css::default_widget_stylesheet());
     let mut tree = tree_with_progress_bar(ProgressBar::new(Some(100.0)));
     let root = tree.root().expect("root");
     resolve_layout(&mut tree, root, Region::new(0, 0, 120, 24), (120, 24));

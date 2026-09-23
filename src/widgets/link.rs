@@ -153,19 +153,20 @@ impl Interactive for Link {
                 ctx.request_repaint();
                 ctx.set_handled();
             }
-            Event::MouseUp(mouse)
-                if self.pressed => {
-                    self.pressed = false;
-                    ctx.request_repaint();
-                    if mouse.target.is_some_and(|t| t == crate::widgets::Widget::node_id(self)) {
-                        self.activate(ctx);
-                    }
+            Event::MouseUp(mouse) if self.pressed => {
+                self.pressed = false;
+                ctx.request_repaint();
+                if mouse
+                    .target
+                    .is_some_and(|t| t == crate::widgets::Widget::node_id(self))
+                {
+                    self.activate(ctx);
                 }
-            Event::AppFocus(false)
-                if self.pressed => {
-                    self.pressed = false;
-                    ctx.request_repaint();
-                }
+            }
+            Event::AppFocus(false) if self.pressed => {
+                self.pressed = false;
+                ctx.request_repaint();
+            }
             Event::Action(Action::Toggle) if focused => {
                 self.activate(ctx);
             }
@@ -353,7 +354,13 @@ mod tests {
     fn activate_posts_link_clicked() {
         let mut link = Link::new("text").with_url("https://example.com");
         let mut ctx = EventCtx::default();
-        { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); link.activate(&mut __w) };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            link.activate(&mut __w)
+        };
         assert!(ctx.handled());
         let messages = ctx.take_messages();
         assert_eq!(messages.len(), 1);
@@ -369,7 +376,13 @@ mod tests {
         let mut link = Link::new("text");
         link.set_url("");
         let mut ctx = EventCtx::default();
-        { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); link.activate(&mut __w) };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            link.activate(&mut __w)
+        };
         let messages = ctx.take_messages();
         assert!(messages.is_empty());
     }
@@ -388,7 +401,10 @@ mod tests {
         let mut ctx = EventCtx::default();
         let event = make_key_event(KeyCode::Enter);
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             link.on_event(&event, &mut __w);
         }
         // Outside dispatch context, node_state().focused == false, so key is not handled.
@@ -401,7 +417,10 @@ mod tests {
         let mut ctx = EventCtx::default();
         let event = make_key_event(KeyCode::Enter);
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             link.on_event(&event, &mut __w);
         }
         assert!(!ctx.handled());

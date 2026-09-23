@@ -8,7 +8,9 @@
 //! `$surface` instead of the tinted `$surface + $foreground 5%`).
 
 use rich_rs::Console;
-use rusty_textual::css::{StyleSheet, default_widget_stylesheet, set_app_active, set_style_context};
+use rusty_textual::css::{
+    StyleSheet, default_widget_stylesheet, set_app_active, set_style_context,
+};
 use rusty_textual::prelude::*;
 use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
 

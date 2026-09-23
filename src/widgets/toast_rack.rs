@@ -28,8 +28,8 @@ use crate::compose::{ChildDecl, ComposeResult};
 use crate::message::NotificationExpired;
 use crate::runtime::TimerHandle;
 
-use super::toast::{Toast, ToastSeverity};
 use super::NodeSeed;
+use super::toast::{Toast, ToastSeverity};
 
 /// CSS id of the system `ToastRack` the runtime mounts on every screen tree
 /// (base app tree + each pushed/modal screen), mirroring Python's
@@ -162,13 +162,8 @@ impl ToastRack {
     ///
     /// Then the `-active` display toggle is updated and a child recompose is
     /// requested so the toast child nodes match the entry set.
-    pub fn sync(
-        &mut self,
-        snapshot: Vec<NotificationSnapshot>,
-        ctx: &mut crate::event::WidgetCtx,
-    ) {
-        let mut old: HashMap<u64, RackEntry> =
-            self.entries.drain(..).map(|e| (e.id, e)).collect();
+    pub fn sync(&mut self, snapshot: Vec<NotificationSnapshot>, ctx: &mut crate::event::WidgetCtx) {
+        let mut old: HashMap<u64, RackEntry> = self.entries.drain(..).map(|e| (e.id, e)).collect();
 
         let mut next: Vec<RackEntry> = Vec::with_capacity(snapshot.len());
         for snap in snapshot {
@@ -179,10 +174,13 @@ impl ToastRack {
                 next.push(entry);
             } else {
                 let id = snap.id;
-                let handle =
-                    ctx.set_interval::<ToastRack, _>(snap.timeout, false, move |rack, ctx, _tick| {
+                let handle = ctx.set_interval::<ToastRack, _>(
+                    snap.timeout,
+                    false,
+                    move |rack, ctx, _tick| {
                         rack.on_auto_dismiss(id, ctx);
-                    });
+                    },
+                );
                 next.push(RackEntry {
                     id: snap.id,
                     title: (!snap.title.is_empty()).then_some(snap.title),
@@ -228,8 +226,8 @@ impl crate::widgets::Render for ToastRack {
         self.entries
             .iter()
             .map(|entry| {
-                let mut toast =
-                    Toast::new(entry.message.clone(), entry.severity).with_notification_id(entry.id);
+                let mut toast = Toast::new(entry.message.clone(), entry.severity)
+                    .with_notification_id(entry.id);
                 if let Some(title) = &entry.title {
                     toast = toast.with_title(title.clone());
                 }

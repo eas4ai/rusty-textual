@@ -59,7 +59,12 @@ pub fn arrange_dock(
             }
             Dock::Bottom => {
                 bottom = bottom.max(widget_height);
-                (0u16, height.saturating_sub(widget_height), widget_width, widget_height)
+                (
+                    0u16,
+                    height.saturating_sub(widget_height),
+                    widget_width,
+                    widget_height,
+                )
             }
             Dock::Left => {
                 left = left.max(widget_width);
@@ -67,7 +72,12 @@ pub fn arrange_dock(
             }
             Dock::Right => {
                 right = right.max(widget_width);
-                (width.saturating_sub(widget_width), 0u16, widget_width, widget_height)
+                (
+                    width.saturating_sub(widget_width),
+                    0u16,
+                    widget_width,
+                    widget_height,
+                )
             }
         };
 
@@ -89,8 +99,7 @@ pub fn arrange_dock(
 
         if let Some(node) = tree.get_mut(child) {
             node.layout_rect = Region::new(layout_x, layout_y, layout_w, layout_h).to_rect();
-            node.content_rect =
-                Region::new(content_x, content_y, content_w, content_h).to_rect();
+            node.content_rect = Region::new(content_x, content_y, content_w, content_h).to_rect();
         }
     }
 

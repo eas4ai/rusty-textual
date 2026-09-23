@@ -340,12 +340,7 @@ impl crate::widgets::Interactive for Row {
         let hit = self.child_at_x(x);
         let new_hovered = hit.map(|(idx, _)| idx);
         let mut changed = false;
-        debug_input(&format!(
-            "[hover][row] x={} y={} hit={:?}",
-            x,
-            y,
-            hit
-        ));
+        debug_input(&format!("[hover][row] x={} y={} hit={:?}", x, y, hit));
 
         // Dispatch Enter/Leave events when the hovered child changes.
         if new_hovered != self.hovered_child {
@@ -2029,8 +2024,11 @@ impl crate::widgets::Interactive for Grid {
 impl crate::widgets::Render for Grid {
     fn compose(&mut self) -> ComposeResult {
         self.cells_extracted = true;
-        let children: Vec<Box<dyn Widget>> =
-            self.cells.iter_mut().filter_map(|cell| cell.take()).collect();
+        let children: Vec<Box<dyn Widget>> = self
+            .cells
+            .iter_mut()
+            .filter_map(|cell| cell.take())
+            .collect();
         crate::compose::zip_child_decls(
             children,
             std::mem::take(&mut self.child_decl_meta),
@@ -2425,7 +2423,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             r.on_event(&Event::Action(Action::FocusNext), &mut __w);
         }
         assert!(!ctx.handled());
@@ -2460,13 +2461,15 @@ mod tests {
         assert_eq!(children.len(), 2);
 
         let footer_style = children[0]
-            .widget().style()
+            .widget()
+            .style()
             .expect("footer child should expose style after dock hinting");
         assert_eq!(footer_style.height, Some(Scalar::Cells(3)));
         assert_eq!(footer_style.box_sizing, Some(BoxSizing::BorderBox));
 
         let side_style = children[1]
-            .widget().style()
+            .widget()
+            .style()
             .expect("side child should expose style after dock hinting");
         assert_eq!(side_style.width, Some(Scalar::Cells(8)));
         assert_eq!(side_style.box_sizing, Some(BoxSizing::BorderBox));
@@ -2495,7 +2498,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             d.on_event(&Event::Action(Action::FocusNext), &mut __w);
         }
         assert!(!ctx.handled());
@@ -2546,7 +2552,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             g.on_event(&Event::Action(Action::FocusNext), &mut __w);
         }
         assert!(!ctx.handled());

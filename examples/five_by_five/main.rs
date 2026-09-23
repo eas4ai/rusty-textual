@@ -202,8 +202,10 @@ pub struct GameCell {
 impl GameCell {
     pub fn new(row: usize, col: usize) -> Self {
         let id = Self::id_for(row, col);
-        let mut seed = NodeSeed::default();
-        seed.css_id = Some(id);
+        let seed = NodeSeed {
+            css_id: Some(id),
+            ..Default::default()
+        };
         Self {
             row,
             col,
@@ -250,10 +252,9 @@ impl Widget for GameCell {
         }
         self.child_extracted = true;
         // Replace inner with a compact sentinel so the field stays valid.
-        vec![rusty_textual::compose::ChildDecl::new(Box::new(std::mem::replace(
-            &mut self.inner,
-            Button::new("").compact(true),
-        )))]
+        vec![rusty_textual::compose::ChildDecl::new(Box::new(
+            std::mem::replace(&mut self.inner, Button::new("").compact(true)),
+        ))]
     }
 
     // Outer wrapper is not itself focusable.
@@ -319,6 +320,12 @@ pub struct GameHeader {
     seed: NodeSeed,
 }
 
+impl Default for GameHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GameHeader {
     pub fn new() -> Self {
         Self {
@@ -379,6 +386,12 @@ pub struct WinnerMessage {
     text: String,
     visible: bool,
     seed: NodeSeed,
+}
+
+impl Default for WinnerMessage {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WinnerMessage {
@@ -553,13 +566,7 @@ impl FiveByFiveApp {
     }
 
     /// Diff old/new cell arrays and update arena node classes for changed cells.
-    fn watch_cells(
-        &mut self,
-        app: &mut App,
-        old: &Cells,
-        new: &Cells,
-        ctx: &mut ReactiveCtx,
-    ) {
+    fn watch_cells(&mut self, app: &mut App, old: &Cells, new: &Cells, ctx: &mut ReactiveCtx) {
         for row in 0..SIZE {
             for col in 0..SIZE {
                 if old[row][col] != new[row][col] {
@@ -599,13 +606,7 @@ impl FiveByFiveApp {
     }
 
     /// Update the moves label. init fires at mount → initializes header to 0.
-    fn watch_moves(
-        &mut self,
-        app: &mut App,
-        _old: &usize,
-        new: &usize,
-        ctx: &mut ReactiveCtx,
-    ) {
+    fn watch_moves(&mut self, app: &mut App, _old: &usize, new: &usize, ctx: &mut ReactiveCtx) {
         let moves = *new;
         let _ = app.with_query_one_mut_as::<Label, _>("#moves", |l| {
             l.set_text(moves_text(moves));
@@ -677,7 +678,12 @@ impl TextualApp for FiveByFiveApp {
         self.new_game(app);
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut rusty_textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut rusty_textual::event::WidgetCtx,
+    ) {
         let handled = match key.name() {
             // Navigation — arrow keys, WASD, hjkl
             "up" | "w" | "k" => {
@@ -847,16 +853,26 @@ mod tests {
     fn game_cell_style_aliases() {
         let cell = GameCell::new(0, 0);
         let aliases = cell.style_type_aliases();
-        assert_eq!(aliases, &["Button"], "GameCell must alias Button for CSS type-selector matching");
+        assert_eq!(
+            aliases,
+            &["Button"],
+            "GameCell must alias Button for CSS type-selector matching"
+        );
     }
 
     #[test]
     fn game_cell_not_focusable() {
         let cell = GameCell::new(0, 0);
-        assert!(!cell.focusable(), "outer GameCell wrapper must not be focusable itself");
+        assert!(
+            !cell.focusable(),
+            "outer GameCell wrapper must not be focusable itself"
+        );
         // Focus traversal is suppressed so the Button child's bindings do not bleed
         // into the footer. All keyboard logic is at the app level (on_key_with_app).
-        assert!(!cell.can_focus_children(), "GameCell must suppress focus into Button child to avoid footer binding bleed");
+        assert!(
+            !cell.can_focus_children(),
+            "GameCell must suppress focus into Button child to avoid footer binding bleed"
+        );
     }
 
     // --- WinnerMessage ---

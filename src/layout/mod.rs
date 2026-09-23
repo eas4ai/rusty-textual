@@ -461,8 +461,7 @@ pub fn resolve_layout(
                 let layer = get_node_style(tree, child)
                     .layer
                     .unwrap_or_else(|| "default".to_string());
-                if let Some((_, group)) = layer_groups.iter_mut().find(|(name, _)| *name == layer)
-                {
+                if let Some((_, group)) = layer_groups.iter_mut().find(|(name, _)| *name == layer) {
                     group.push(child);
                 } else {
                     layer_groups.push((layer, vec![child]));
@@ -1356,7 +1355,10 @@ mod tests {
         layout_horizontal(&mut tree, &[child], available, (80, 50), false);
         let n = tree.get(child).unwrap();
         let h = n.layout_rect.y1 - n.layout_rect.y0;
-        assert_eq!(h, 30, "min-height should clamp the explicit 50% (25) up to 30");
+        assert_eq!(
+            h, 30,
+            "min-height should clamp the explicit 50% (25) up to 30"
+        );
     }
 
     // Counterpart for `min-width` on the cross axis of a vertical layout.
@@ -1377,7 +1379,10 @@ mod tests {
         layout_vertical(&mut tree, &[child], available, (80, 50), false);
         let n = tree.get(child).unwrap();
         let w = n.layout_rect.x1 - n.layout_rect.x0;
-        assert_eq!(w, 60, "min-width should clamp the explicit 50% (40) up to 60");
+        assert_eq!(
+            w, 60,
+            "min-width should clamp the explicit 50% (40) up to 60"
+        );
     }
 
     // Main-axis min on an explicit size: a `height: 2; min-height: 5` child in a
@@ -1399,7 +1404,10 @@ mod tests {
         layout_vertical(&mut tree, &[child], available, (80, 50), false);
         let n = tree.get(child).unwrap();
         let h = n.layout_rect.y1 - n.layout_rect.y0;
-        assert_eq!(h, 5, "min-height should clamp the explicit 2 up to 5 on the main axis");
+        assert_eq!(
+            h, 5,
+            "min-height should clamp the explicit 2 up to 5 on the main axis"
+        );
     }
 
     // Python parity (`docs/examples/styles/min_height.py`): a transparent `Node`
@@ -1460,7 +1468,10 @@ mod tests {
         layout_horizontal(&mut tree, &[wrapper], available, (80, 50), false);
         let n = tree.get(wrapper).unwrap();
         let h = n.layout_rect.y1 - n.layout_rect.y0;
-        assert_eq!(h, 25, "wrapper must adopt the wrapped child's explicit 50% height");
+        assert_eq!(
+            h, 25,
+            "wrapper must adopt the wrapped child's explicit 50% height"
+        );
     }
 
     // No min set → the clamp is a strict no-op (explicit size is preserved).
@@ -1472,7 +1483,9 @@ mod tests {
             root,
             LayoutTestWidget::boxed_with_style(
                 "Child",
-                Style::new().height(Scalar::Cells(7)).width(Scalar::Cells(13)),
+                Style::new()
+                    .height(Scalar::Cells(7))
+                    .width(Scalar::Cells(13)),
             ),
         );
         let available = Region::new(0, 0, 80, 50);
@@ -2145,20 +2158,26 @@ mod tests {
             s.layers = Some(vec!["below".to_string(), "above".to_string()]);
             s
         }));
-        let box1 = tree.mount(root, LayoutTestWidget::boxed_with_style("Box1", {
-            let mut s = Style::new()
-                .width(Scalar::Cells(28))
-                .height(Scalar::Cells(8));
-            s.layer = Some("above".to_string());
-            s
-        }));
-        let box2 = tree.mount(root, LayoutTestWidget::boxed_with_style("Box2", {
-            let mut s = Style::new()
-                .width(Scalar::Cells(28))
-                .height(Scalar::Cells(8));
-            s.layer = Some("below".to_string());
-            s
-        }));
+        let box1 = tree.mount(
+            root,
+            LayoutTestWidget::boxed_with_style("Box1", {
+                let mut s = Style::new()
+                    .width(Scalar::Cells(28))
+                    .height(Scalar::Cells(8));
+                s.layer = Some("above".to_string());
+                s
+            }),
+        );
+        let box2 = tree.mount(
+            root,
+            LayoutTestWidget::boxed_with_style("Box2", {
+                let mut s = Style::new()
+                    .width(Scalar::Cells(28))
+                    .height(Scalar::Cells(8));
+                s.layer = Some("below".to_string());
+                s
+            }),
+        );
 
         resolve_layout(&mut tree, root, Region::new(0, 0, 120, 30), (120, 30));
 

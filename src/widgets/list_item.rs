@@ -320,16 +320,20 @@ mod tests {
         item.set_ordinal(1);
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             item.on_event(
-            &Event::MouseDown(crate::event::MouseDownEvent {
-                target: id,
-                screen_x: 0,
-                screen_y: 0,
-                x: 0,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(crate::event::MouseDownEvent {
+                    target: id,
+                    screen_x: 0,
+                    screen_y: 0,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
         let messages = ctx.take_messages();
         assert_eq!(messages.len(), 1);
@@ -352,16 +356,20 @@ mod tests {
         let mut item = ListItem::from_text("x").disabled(true);
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             item.on_event(
-            &Event::MouseDown(crate::event::MouseDownEvent {
-                target: id,
-                screen_x: 0,
-                screen_y: 0,
-                x: 0,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(crate::event::MouseDownEvent {
+                    target: id,
+                    screen_x: 0,
+                    screen_y: 0,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
         assert!(ctx.take_messages().is_empty());
     }

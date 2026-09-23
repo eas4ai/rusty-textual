@@ -12,8 +12,8 @@ use super::{BindingDecl, NodeSeed, ScrollView, Widget};
 mod node;
 mod render;
 
-pub use node::{NodeRef, TreeError, TreeNode, TreeNodeId};
 use node::TreeNodeData;
+pub use node::{NodeRef, TreeError, TreeNode, TreeNodeId};
 use render::VisibleNode;
 
 #[derive(Debug, Clone)]
@@ -291,7 +291,9 @@ impl Tree {
     /// Read-only view of a node by id, or `None` for a stale/unknown id
     /// (non-erroring twin of [`Tree::get_node_by_id`]).
     pub fn node(&self, id: TreeNodeId) -> Option<NodeRef<'_>> {
-        self.nodes.contains_key(id).then_some(NodeRef { tree: self, id })
+        self.nodes
+            .contains_key(id)
+            .then_some(NodeRef { tree: self, id })
     }
 
     /// Look up a node by id (Python `get_node_by_id`, typed
@@ -339,9 +341,7 @@ impl Tree {
 
     /// Whether `id` is a live root node (Python `is_root`).
     pub fn is_root(&self, id: TreeNodeId) -> bool {
-        self.nodes
-            .get(id)
-            .is_some_and(|n| n.parent.is_none())
+        self.nodes.get(id).is_some_and(|n| n.parent.is_none())
     }
 
     /// Whether `id` is the last of its siblings (Python `is_last`).
@@ -796,7 +796,12 @@ impl Tree {
         }
     }
 
-    fn emit_activated(&self, ctx: &mut crate::event::WidgetCtx, index: usize, nodes: &[VisibleNode]) {
+    fn emit_activated(
+        &self,
+        ctx: &mut crate::event::WidgetCtx,
+        index: usize,
+        nodes: &[VisibleNode],
+    ) {
         if let Some(node) = nodes.get(index) {
             if node.disabled {
                 return;
@@ -836,9 +841,17 @@ impl Tree {
             node_id,
         });
         if expanded {
-            ctx.post_message(TreeNodeExpanded { index, label, node_id });
+            ctx.post_message(TreeNodeExpanded {
+                index,
+                label,
+                node_id,
+            });
         } else {
-            ctx.post_message(TreeNodeCollapsed { index, label, node_id });
+            ctx.post_message(TreeNodeCollapsed {
+                index,
+                label,
+                node_id,
+            });
         }
     }
 
@@ -1074,10 +1087,7 @@ impl Tree {
             return;
         }
         let parent_path = &info.path[..info.path.len() - 1];
-        let Some(parent_idx) = nodes
-            .iter()
-            .position(|n| n.path.as_slice() == parent_path)
-        else {
+        let Some(parent_idx) = nodes.iter().position(|n| n.path.as_slice() == parent_path) else {
             return;
         };
         let parent_depth = nodes[parent_idx].depth;
@@ -1089,8 +1099,7 @@ impl Tree {
         for (i, n) in nodes.iter().enumerate().skip(parent_idx + 1) {
             if n.depth == parent_depth
                 && n.path.len() == parent_path.len()
-                && (grandparent_path.is_empty()
-                    || n.path[..n.path.len() - 1] == *grandparent_path)
+                && (grandparent_path.is_empty() || n.path[..n.path.len() - 1] == *grandparent_path)
                 && !n.disabled
             {
                 self.select_index(i, ctx);
@@ -1565,6 +1574,19 @@ impl crate::widgets::Scrollable for Tree {
     }
 }
 
+impl crate::widgets::Components for Tree {
+    fn component_classes(&self) -> &[&'static str] {
+        &[
+            "tree--cursor",
+            "tree--guides",
+            "tree--guides-hover",
+            "tree--guides-selected",
+            "tree--highlight",
+            "tree--highlight-line",
+            "tree--label",
+        ]
+    }
+}
 
 // ── Free helpers for recursive tree operations ──────────────────────────
 
@@ -1649,19 +1671,24 @@ mod tests {
     fn shift_right_moves_to_parent_next_sibling() {
         use crate::action::ParsedAction;
         use crate::widgets::Widget;
-        let mut tree = Tree::new(vec![TreeNode::new("Root")
-            .expanded(true)
-            .with_child(
-                TreeNode::new("A")
-                    .expanded(true)
-                    .with_child(TreeNode::new("a1")),
-            )
-            .with_child(TreeNode::new("B"))]);
+        let mut tree = Tree::new(vec![
+            TreeNode::new("Root")
+                .expanded(true)
+                .with_child(
+                    TreeNode::new("A")
+                        .expanded(true)
+                        .with_child(TreeNode::new("a1")),
+                )
+                .with_child(TreeNode::new("B")),
+        ]);
         let _guard = set_dispatch_recipient(make_node_id(), focused_state());
         tree.on_layout(24, 6);
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.select_index(2, &mut __w);
         }
         assert_eq!(tree.selected(), 2);
@@ -1671,10 +1698,17 @@ mod tests {
             arguments: vec![],
         };
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             assert!(tree.execute_action(&action, &mut __w));
         }
-        assert_eq!(tree.selected(), 3, "must land on B (parent A's next sibling)");
+        assert_eq!(
+            tree.selected(),
+            3,
+            "must land on B (parent A's next sibling)"
+        );
         let bindings = tree.bindings();
         assert!(bindings.iter().any(|b| b.key == "shift+right"
             && b.action == "cursor_parent_next_sibling"
@@ -1694,7 +1728,10 @@ mod tests {
         let key = KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.on_event(&Event::Key(key), &mut __w);
         }
 
@@ -1734,16 +1771,20 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: id,
-                screen_x: 0,
-                screen_y: 0,
-                x: 0,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: id,
+                    screen_x: 0,
+                    screen_y: 0,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
         let messages = ctx.take_messages();
         // emit_toggled now posts TreeNodeToggled + TreeNodeCollapsed (2 messages)
@@ -1777,16 +1818,20 @@ mod tests {
 
         let mut down_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut down_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut down_ctx,
+            );
             tree.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: id,
-                screen_x: 1,
-                screen_y: 1,
-                x: 1,
-                y: 1,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: id,
+                    screen_x: 1,
+                    screen_y: 1,
+                    x: 1,
+                    y: 1,
+                }),
+                &mut __w,
+            );
         }
         assert!(down_ctx.handled());
         // select_index emits TreeNodeSelected + TreeNodeHighlighted (2 messages)
@@ -1794,16 +1839,20 @@ mod tests {
 
         let mut up_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut up_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut up_ctx,
+            );
             tree.on_event(
-            &Event::MouseUp(MouseUpEvent {
-                target: Some(id),
-                screen_x: 1,
-                screen_y: 1,
-                x: 1,
-                y: 1,
-            }),
-            &mut __w);
+                &Event::MouseUp(MouseUpEvent {
+                    target: Some(id),
+                    screen_x: 1,
+                    screen_y: 1,
+                    x: 1,
+                    y: 1,
+                }),
+                &mut __w,
+            );
         }
         let messages = up_ctx.take_messages();
         assert_eq!(messages.len(), 1);
@@ -1832,7 +1881,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.on_event(&Event::AppFocus(false), &mut __w);
         }
 
@@ -1890,7 +1942,13 @@ mod tests {
             name: "cursor_down".to_string(),
             arguments: vec![],
         };
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); tree.execute_action(&action, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            tree.execute_action(&action, &mut __w)
+        });
     }
 
     #[test]
@@ -2054,7 +2112,8 @@ mod tests {
         let mut tree = Tree::new(vec![TreeNode::new("Root")]);
         let root_id = tree.root_id().expect("should have a root");
         assert_eq!(tree.label_of(root_id), Some("Root"));
-        tree.set_label(root_id, "NewRoot").expect("root id resolves");
+        tree.set_label(root_id, "NewRoot")
+            .expect("root id resolves");
         assert_eq!(tree.root().unwrap().label(), "NewRoot");
     }
 
@@ -2194,7 +2253,10 @@ mod tests {
         let leaf = tree.root().unwrap().child_ids()[0];
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.select_node_by_id(leaf, &mut __w).expect("live id");
         }
         let messages = ctx.take_messages();
@@ -2211,7 +2273,10 @@ mod tests {
         assert_eq!(highlighted.node_id, leaf);
         // The message id round-trips into a lookup (the live-borrow-safe
         // handler idiom: capture the Copy key, defer the mutation).
-        assert_eq!(tree.get_node_by_id(selected.node_id).unwrap().label(), "leaf");
+        assert_eq!(
+            tree.get_node_by_id(selected.node_id).unwrap().label(),
+            "leaf"
+        );
     }
 
     #[test]
@@ -2221,7 +2286,10 @@ mod tests {
         tree.remove(leaf).expect("leaf removable");
         let mut ctx = EventCtx::default();
         let result = {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.select_node_by_id(leaf, &mut __w)
         };
         assert_eq!(result, Err(super::TreeError::UnknownNode(leaf)));
@@ -2251,7 +2319,10 @@ mod tests {
         let root_id = tree.root_id().expect("root");
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.toggle_selected(&mut __w);
         }
         let messages = ctx.take_messages();
@@ -2270,7 +2341,10 @@ mod tests {
         // Collapsing posts TreeNodeCollapsed with the same id.
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.toggle_selected(&mut __w);
         }
         let messages = ctx.take_messages();
@@ -2279,19 +2353,5 @@ mod tests {
             .find_map(|m| m.downcast_ref::<TreeNodeCollapsed>())
             .expect("TreeNodeCollapsed posted");
         assert_eq!(collapsed.node_id, root_id);
-    }
-}
-
-impl crate::widgets::Components for Tree {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "tree--cursor",
-            "tree--guides",
-            "tree--guides-hover",
-            "tree--guides-selected",
-            "tree--highlight",
-            "tree--highlight-line",
-            "tree--label",
-        ]
     }
 }

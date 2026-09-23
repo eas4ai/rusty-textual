@@ -7,8 +7,8 @@
 //!   handled, suppressing the action-map fallback (here: Tab/Shift-Tab
 //!   focus movement).
 use rich_rs::{Console, ConsoleOptions, Segments};
-use std::sync::{Arc, Mutex};
 use rusty_textual::prelude::*;
+use std::sync::{Arc, Mutex};
 
 /// Shared probe state: key names seen by `handle_key_name`, in order, plus
 /// actions served by `execute_action`.

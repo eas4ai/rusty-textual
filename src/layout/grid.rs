@@ -702,7 +702,11 @@ mod tests {
     #[test]
     fn fr_tracks_split_by_weight() {
         // `2fr 1fr 1fr` over 120 cells, no gutter → 60 / 30 / 30.
-        let scalars = [Scalar::Fraction(2.0), Scalar::Fraction(1.0), Scalar::Fraction(1.0)];
+        let scalars = [
+            Scalar::Fraction(2.0),
+            Scalar::Fraction(1.0),
+            Scalar::Fraction(1.0),
+        ];
         let tracks = resolve_tracks(&scalars, 120, 0, 120, 80);
         assert_eq!(tracks, vec![(0, 60), (60, 30), (90, 30)]);
     }
@@ -723,7 +727,11 @@ mod tests {
         // Verify the fixed (`6`) and percent (`25%` of 40 = 10) tracks are exact
         // and the fr tracks absorb the remainder.
         let scalars = repeat_scalars(
-            Some(&[Scalar::Fraction(1.0), Scalar::Cells(6), Scalar::Percent(25.0)]),
+            Some(&[
+                Scalar::Fraction(1.0),
+                Scalar::Cells(6),
+                Scalar::Percent(25.0),
+            ]),
             5,
             Scalar::Fraction(1.0),
         );
@@ -769,7 +777,11 @@ mod tests {
         // After auto-track measurement, an `auto` column becomes `Cells(n)`; the
         // resolver must treat it as a fixed track that does not absorb fr space.
         // `auto(=14) 1fr 1fr` over 120, no gutter → 14 / 53 / 53.
-        let scalars = [Scalar::Cells(14), Scalar::Fraction(1.0), Scalar::Fraction(1.0)];
+        let scalars = [
+            Scalar::Cells(14),
+            Scalar::Fraction(1.0),
+            Scalar::Fraction(1.0),
+        ];
         let tracks = resolve_tracks(&scalars, 120, 0, 120, 24);
         assert_eq!(tracks, vec![(0, 14), (14, 53), (67, 53)]);
     }

@@ -222,7 +222,8 @@ pub fn layout_vertical(
                 .height
                 .saturating_sub(style.effective_margin().top + style.effective_margin().bottom)
                 .saturating_sub(own_v_chrome);
-            intrinsic_height = measure_intrinsic_content_height(tree, child, viewport, avail_content_h);
+            intrinsic_height =
+                measure_intrinsic_content_height(tree, child, viewport, avail_content_h);
         }
         let mut spec = extract_child_spec(
             &style,

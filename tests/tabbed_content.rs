@@ -1,9 +1,9 @@
 use rich_rs::Console;
 use rusty_textual::action::ParsedAction;
-use rusty_textual::event::EventCtx;
 use rusty_textual::css::{
     AppRuntimePseudos, default_widget_stylesheet, set_app_runtime_pseudos, set_style_context,
 };
+use rusty_textual::event::EventCtx;
 use rusty_textual::event::MouseDownEvent;
 use rusty_textual::prelude::*;
 use rusty_textual::render::FrameBuffer;
@@ -25,7 +25,10 @@ fn tabbed_content_honors_initial_pane_id() {
         .with_pane(TabPane::new("Jessica", Label::new("second")).id("jessica"));
     {
         let mut __e = rusty_textual::event::EventCtx::default();
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut __e,
+        );
         tabs.on_mount(&mut __w);
     }
     assert_eq!(tabs.active_id(), Some("jessica"));
@@ -48,7 +51,13 @@ fn tabbed_content_keyboard_changes_active_pane() {
         crossterm::event::KeyModifiers::NONE,
     ));
     let mut ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(&Event::Key(key), &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        tabs.on_event(&Event::Key(key), &mut __w)
+    };
     assert!(ctx.handled());
     assert_eq!(tabs.active_id(), Some("two"));
 }
@@ -61,15 +70,22 @@ fn tabbed_content_mouse_click_header_changes_active_pane() {
     tabs.on_layout(40, 5);
     let id = NodeId::default();
     let mut ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(
-        &Event::MouseDown(MouseDownEvent {
-            target: id,
-            screen_x: 5,
-            screen_y: 0,
-            x: 5,
-            y: 0,
-        }),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        tabs.on_event(
+            &Event::MouseDown(MouseDownEvent {
+                target: id,
+                screen_x: 5,
+                screen_y: 0,
+                x: 5,
+                y: 0,
+            }),
+            &mut __w,
+        )
+    };
     assert!(ctx.handled());
     assert_eq!(tabs.active_id(), Some("two"));
 }
@@ -263,12 +279,24 @@ fn tabbed_content_keyboard_navigation_skips_disabled_and_hidden_panes() {
         crossterm::event::KeyModifiers::NONE,
     ));
     let mut ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(&Event::Key(right.clone()), &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        tabs.on_event(&Event::Key(right.clone()), &mut __w)
+    };
     assert!(ctx.handled());
     assert_eq!(tabs.active_id(), Some("four"));
 
     let mut wrap_ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut wrap_ctx); tabs.on_event(&Event::Key(right), &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut wrap_ctx,
+        );
+        tabs.on_event(&Event::Key(right), &mut __w)
+    };
     assert!(wrap_ctx.handled());
     assert_eq!(tabs.active_id(), Some("one"));
 }
@@ -311,15 +339,22 @@ fn tabbed_content_mouse_click_disabled_pane_tab_does_not_activate() {
     tabs.on_layout(40, 5);
     let id = NodeId::default();
     let mut ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); tabs.on_event(
-        &Event::MouseDown(MouseDownEvent {
-            target: id,
-            screen_x: 6,
-            screen_y: 0,
-            x: 6,
-            y: 0,
-        }),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        tabs.on_event(
+            &Event::MouseDown(MouseDownEvent {
+                target: id,
+                screen_x: 6,
+                screen_y: 0,
+                x: 6,
+                y: 0,
+            }),
+            &mut __w,
+        )
+    };
     assert!(!ctx.handled());
     assert_eq!(tabs.active_id(), Some("one"));
 }
@@ -332,10 +367,18 @@ fn tabbed_content_show_tab_action_switches_active_pane() {
     let action = ParsedAction {
         namespace: None,
         name: "show_tab".to_string(),
-        arguments: vec![rusty_textual::action::ActionArgument::Str("two".to_string())],
+        arguments: vec![rusty_textual::action::ActionArgument::Str(
+            "two".to_string(),
+        )],
     };
     let mut ctx = EventCtx::default();
-    assert!({ let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); tabs.execute_action(&action, &mut __w) });
+    assert!({
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        tabs.execute_action(&action, &mut __w)
+    });
     assert!(ctx.handled());
     assert!(ctx.repaint_requested());
     assert_eq!(tabs.active_id(), Some("two"));

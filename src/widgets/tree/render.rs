@@ -120,8 +120,13 @@ impl Tree {
     pub(super) fn max_line_width(&self) -> usize {
         let mut max_width = 1usize;
         for node in self.visible_nodes() {
-            let prefix =
-                Self::row_prefix(&node, false, self.show_guides, self.guide_depth, self.hide_twisty);
+            let prefix = Self::row_prefix(
+                &node,
+                false,
+                self.show_guides,
+                self.guide_depth,
+                self.hide_twisty,
+            );
             let width = rich_rs::cell_len(&prefix).saturating_add(rich_rs::cell_len(&node.label));
             max_width = max_width.max(width);
         }

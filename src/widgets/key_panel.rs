@@ -547,6 +547,17 @@ impl crate::widgets::Render for KeyPanel {
         out
     }
 }
+
+impl crate::widgets::Components for BindingsTable {
+    fn component_classes(&self) -> &[&'static str] {
+        &[
+            "bindings-table--key",
+            "bindings-table--description",
+            "bindings-table--divider",
+            "bindings-table--header",
+        ]
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::{KEY_PANEL_VSCROLLBAR_ID, KeyPanel};
@@ -569,15 +580,19 @@ mod tests {
         let mut panel = KeyPanel::new();
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             panel.on_event(
-            &Event::BindingsChanged(vec![BindingHint::new("ctrl+p", "Palette")]),
-            &mut __w);
+                &Event::BindingsChanged(vec![BindingHint::new("ctrl+p", "Palette")]),
+                &mut __w,
+            );
         }
         let messages = ctx.take_messages();
         assert!(messages.iter().any(|m| {
             m.downcast_ref::<KeyPanelBindingsUpdated>()
-                .map_or(false, |k| k.count == 1)
+                .is_some_and(|k| k.count == 1)
         }));
     }
 
@@ -622,7 +637,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             panel.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
         let messages = ctx.take_messages();
@@ -643,18 +661,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             panel.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 2.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 2.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert!(ctx.handled());
         assert!(ctx.repaint_requested());
@@ -684,31 +706,24 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             panel.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 2.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 2.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert!(ctx.handled());
         assert_eq!(panel.offset_y, 2);
-    }
-}
-
-impl crate::widgets::Components for BindingsTable {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "bindings-table--key",
-            "bindings-table--description",
-            "bindings-table--divider",
-            "bindings-table--header",
-        ]
     }
 }

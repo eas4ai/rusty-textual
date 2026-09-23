@@ -45,7 +45,12 @@ fn long_line_auto_width_label_does_not_inflate_scroll_geometry() {
     // (rows 1..=10, the "short" lines) may contain a scrollbar thumb block glyph:
     // a thumb fragment there is the signature of the inflated-virtual-height bug
     // (the vertical thumb is mis-sized/mis-placed because the long line wrapped).
-    for (i, row) in rows.iter().enumerate().take(rows.len().saturating_sub(1)).skip(1) {
+    for (i, row) in rows
+        .iter()
+        .enumerate()
+        .take(rows.len().saturating_sub(1))
+        .skip(1)
+    {
         let stray_thumb = row.chars().any(|c| THUMB_GLYPHS.contains(&c));
         assert!(
             !stray_thumb,

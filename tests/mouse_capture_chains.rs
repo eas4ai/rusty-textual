@@ -5,8 +5,8 @@
 //! - `capture_mouse(node)` retargets down/up to the captured widget
 //!   regardless of pointer position; `capture_mouse(None)` releases.
 use rich_rs::{Console, ConsoleOptions, Segments};
-use std::sync::{Arc, Mutex};
 use rusty_textual::prelude::*;
+use std::sync::{Arc, Mutex};
 
 /// Records MouseDown/MouseUp/Click deliveries with click chains.
 #[derive(Debug, Default)]

@@ -159,53 +159,6 @@ pub(super) fn style_debug_meta_label(meta: &SelectorMeta) -> String {
     label
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::css::selectors::ast::{SelectorStates, StyleSelector};
-
-    #[test]
-    fn selector_chain_string_renders_new_pseudos() {
-        let chain = SelectorChain {
-            parts: vec![
-                StyleSelector::new("App")
-                    .pseudo(PseudoClass::Blur)
-                    .pseudo(PseudoClass::Inline)
-                    .pseudo(PseudoClass::Ansi)
-                    .pseudo(PseudoClass::NoColor),
-            ],
-            combinators: Vec::new(),
-        };
-        assert_eq!(
-            selector_chain_string(&chain),
-            "App:blur:inline:ansi:nocolor"
-        );
-    }
-
-    #[test]
-    fn style_debug_meta_label_includes_new_active_states_and_blur() {
-        let meta = SelectorMeta {
-            type_name: "App".to_string(),
-            type_aliases: Vec::new(),
-            id: None,
-            classes: Vec::new(),
-            states: SelectorStates {
-                focused: false,
-                inline: true,
-                ansi: true,
-                nocolor: true,
-                ..Default::default()
-            },
-            component_phantom: false,
-        };
-        let label = style_debug_meta_label(&meta);
-        assert!(label.contains(":blur"));
-        assert!(label.contains(":inline"));
-        assert!(label.contains(":ansi"));
-        assert!(label.contains(":nocolor"));
-    }
-}
-
 pub(super) fn style_debug_summary(style: &Style) -> String {
     let fg = style
         .fg
@@ -272,4 +225,51 @@ fn style_debug_color(color: crate::style::Color) -> String {
         color.b,
         color.alpha_u8()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::css::selectors::ast::{SelectorStates, StyleSelector};
+
+    #[test]
+    fn selector_chain_string_renders_new_pseudos() {
+        let chain = SelectorChain {
+            parts: vec![
+                StyleSelector::new("App")
+                    .pseudo(PseudoClass::Blur)
+                    .pseudo(PseudoClass::Inline)
+                    .pseudo(PseudoClass::Ansi)
+                    .pseudo(PseudoClass::NoColor),
+            ],
+            combinators: Vec::new(),
+        };
+        assert_eq!(
+            selector_chain_string(&chain),
+            "App:blur:inline:ansi:nocolor"
+        );
+    }
+
+    #[test]
+    fn style_debug_meta_label_includes_new_active_states_and_blur() {
+        let meta = SelectorMeta {
+            type_name: "App".to_string(),
+            type_aliases: Vec::new(),
+            id: None,
+            classes: Vec::new(),
+            states: SelectorStates {
+                focused: false,
+                inline: true,
+                ansi: true,
+                nocolor: true,
+                ..Default::default()
+            },
+            component_phantom: false,
+        };
+        let label = style_debug_meta_label(&meta);
+        assert!(label.contains(":blur"));
+        assert!(label.contains(":inline"));
+        assert!(label.contains(":ansi"));
+        assert!(label.contains(":nocolor"));
+    }
 }

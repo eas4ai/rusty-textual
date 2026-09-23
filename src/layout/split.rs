@@ -295,8 +295,13 @@ pub(crate) fn carve_edge(
     if let Some(node) = tree.get_mut(child) {
         node.layout_rect =
             Region::new(i32::from(layout_x), i32::from(layout_y), layout_w, layout_h).to_rect();
-        node.content_rect =
-            Region::new(i32::from(content_x), i32::from(content_y), content_w, content_h).to_rect();
+        node.content_rect = Region::new(
+            i32::from(content_x),
+            i32::from(content_y),
+            content_w,
+            content_h,
+        )
+        .to_rect();
     }
 }
 

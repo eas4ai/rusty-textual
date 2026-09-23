@@ -1,9 +1,9 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use slotmap::SlotMap;
-use rusty_textual::node_id::NodeId;
 use rusty_textual::event::EventCtx;
+use rusty_textual::node_id::NodeId;
 use rusty_textual::prelude::*;
 use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
+use slotmap::SlotMap;
 
 fn key(code: KeyCode) -> Event {
     Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
@@ -35,15 +35,24 @@ fn text_area_backspace_deletes_full_emoji_cluster() {
     let mut ctx = EventCtx::default();
 
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::End), &mut __w);
     }
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::Left), &mut __w);
     }
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::Backspace), &mut __w);
     }
 
@@ -57,15 +66,24 @@ fn text_area_backspace_deletes_combining_cluster_as_unit() {
     let mut ctx = EventCtx::default();
 
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::End), &mut __w);
     }
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::Left), &mut __w);
     }
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::Backspace), &mut __w);
     }
 
@@ -79,17 +97,27 @@ fn text_area_shift_selection_then_backspace_deletes_selected_text() {
     let mut ctx = EventCtx::default();
 
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::End), &mut __w);
     }
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(
-        &key_with_modifiers(KeyCode::Left, KeyModifiers::SHIFT),
-        &mut __w);
+            &key_with_modifiers(KeyCode::Left, KeyModifiers::SHIFT),
+            &mut __w,
+        );
     }
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::Backspace), &mut __w);
     }
 
@@ -103,14 +131,21 @@ fn text_area_ctrl_backspace_deletes_previous_word() {
     let mut ctx = EventCtx::default();
 
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::End), &mut __w);
     }
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(
-        &key_with_modifiers(KeyCode::Backspace, KeyModifiers::CONTROL),
-        &mut __w);
+            &key_with_modifiers(KeyCode::Backspace, KeyModifiers::CONTROL),
+            &mut __w,
+        );
     }
 
     assert_eq!(text_area.text(), "alpha ");
@@ -123,26 +158,40 @@ fn text_area_super_left_and_alt_backspace_shortcuts_work() {
     let mut ctx = EventCtx::default();
 
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::End), &mut __w);
     }
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(
-        &key_with_modifiers(KeyCode::Left, KeyModifiers::SUPER),
-        &mut __w);
+            &key_with_modifiers(KeyCode::Left, KeyModifiers::SUPER),
+            &mut __w,
+        );
     }
     assert_eq!(text_area.text(), "alpha beta");
 
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::End), &mut __w);
     }
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(
-        &key_with_modifiers(KeyCode::Backspace, KeyModifiers::ALT),
-        &mut __w);
+            &key_with_modifiers(KeyCode::Backspace, KeyModifiers::ALT),
+            &mut __w,
+        );
     }
     assert_eq!(text_area.text(), "alpha ");
 }
@@ -213,15 +262,24 @@ fn text_area_crlf_document_keeps_grapheme_cluster_editing() {
     let mut ctx = EventCtx::default();
 
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::End), &mut __w);
     }
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::Left), &mut __w);
     }
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         text_area.on_event(&key(KeyCode::Backspace), &mut __w);
     }
 

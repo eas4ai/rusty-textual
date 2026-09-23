@@ -348,12 +348,18 @@ fn blend_rgb(a: Color, b: Color, t: f64) -> Color {
     Color::rgb(mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b))
 }
 
+impl crate::widgets::Components for Sparkline {
+    fn component_classes(&self) -> &[&'static str] {
+        &["sparkline--min-color", "sparkline--max-color"]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widgets::Widget;
     use crate::node_id::NodeId;
     use crate::reactive::ReactiveCtx;
+    use crate::widgets::Widget;
     use slotmap::SlotMap;
 
     fn make_node_id() -> NodeId {
@@ -557,14 +563,5 @@ mod tests {
         let b = Color::rgb(100, 100, 100);
         let result = blend_rgb(a, b, -0.5); // clamped to 0.0
         assert_eq!(result.r, 50);
-    }
-}
-
-impl crate::widgets::Components for Sparkline {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "sparkline--min-color",
-            "sparkline--max-color",
-        ]
     }
 }

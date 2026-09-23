@@ -663,11 +663,8 @@ fn keymap_clash_reports_verbatim_self_clash() {
     let count: Arc<Mutex<i32>> = Arc::new(Mutex::new(0));
     let clashes: Arc<Mutex<Vec<BindingClash>>> = Arc::new(Mutex::new(Vec::new()));
     let calls: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
-    let (count_o, clashes_o, calls_o) = (
-        Arc::clone(&count),
-        Arc::clone(&clashes),
-        Arc::clone(&calls),
-    );
+    let (count_o, clashes_o, calls_o) =
+        (Arc::clone(&count), Arc::clone(&clashes), Arc::clone(&calls));
     run_test(
         ClashApp {
             count,
@@ -678,7 +675,11 @@ fn keymap_clash_reports_verbatim_self_clash() {
             pilot.press(&["d"])?;
 
             let observed = clashes_o.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            assert_eq!(observed.len(), 1, "exactly one clash reported: {observed:?}");
+            assert_eq!(
+                observed.len(),
+                1,
+                "exactly one clash reported: {observed:?}"
+            );
             let clash = &observed[0];
             assert_eq!(clash.binding.key, "d");
             assert_eq!(clash.binding.action, "increment");
@@ -690,7 +691,10 @@ fn keymap_clash_reports_verbatim_self_clash() {
                 .app()
                 .query_one("ClashApp")
                 .expect("app root node addressable by its type name");
-            assert_eq!(clash.node, app_node, "the clashed node must be the app node");
+            assert_eq!(
+                clash.node, app_node,
+                "the clashed node must be the app node"
+            );
             // The remapped increment binding fired on "d".
             assert_eq!(*count_o.lock().unwrap_or_else(|e| e.into_inner()), 1);
             assert_eq!(*calls_o.lock().unwrap_or_else(|e| e.into_inner()), 1);
@@ -751,7 +755,11 @@ fn keymap_clash_under_active_screen_reports_app_root_source() {
             pilot.press(&["d"])?;
 
             let observed = clashes_o.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            assert_eq!(observed.len(), 1, "exactly one clash reported: {observed:?}");
+            assert_eq!(
+                observed.len(),
+                1,
+                "exactly one clash reported: {observed:?}"
+            );
             let clash = &observed[0];
             assert_eq!(
                 clash.source,

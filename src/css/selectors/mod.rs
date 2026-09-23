@@ -15,9 +15,9 @@ pub use context::{
     set_app_runtime_pseudos, set_style_context,
 };
 // Re-exported for future use by the event loop / monolithic render path.
+pub(crate) use context::ancestor_selector_fingerprint;
 #[allow(unused_imports)]
 pub use context::{FocusWithinGuard, set_focus_within};
-pub(crate) use context::ancestor_selector_fingerprint;
 pub(crate) use parser::parse_selector_list;
 
 // Public re-export: component-class resolution for custom widgets.
@@ -31,12 +31,11 @@ pub(crate) use component::{
 pub(crate) use context::mark_live_widget_meta;
 pub(crate) use resolver::{
     apply_display_visibility_to_tree, begin_style_render_pass, cover_selector_meta,
-    current_ancestor_composited_background, current_composited_background,
-    current_host_style, current_parent_style, current_self_style, frozen_ancestor_bg_override,
-    layout_fields_equal, node_selector_meta, node_selector_meta_from_node, pop_style_context,
-    push_style_context, resolve_node_style, resolve_style, resolve_style_for_meta,
-    selector_meta_generic, set_frozen_ancestor_bg_override,
-    take_layout_affected_style_changes, with_style_stack,
+    current_ancestor_composited_background, current_composited_background, current_host_style,
+    current_parent_style, current_self_style, frozen_ancestor_bg_override, layout_fields_equal,
+    node_selector_meta, node_selector_meta_from_node, pop_style_context, push_style_context,
+    resolve_node_style, resolve_style, resolve_style_for_meta, selector_meta_generic,
+    set_frozen_ancestor_bg_override, take_layout_affected_style_changes, with_style_stack,
 };
 pub(crate) use segments::{
     apply_ansi_truecolor_to_segments, apply_style_to_segments, apply_widget_opacity_to_segments,
@@ -390,12 +389,7 @@ mod tests {
         let parent_style = Style::new().bg(parent_bg);
         let seg_style = rich_rs::Style::new().with_bgcolor(raw_bg.to_simple_opaque());
         let segments = Segments::from(vec![Segment::styled("x", seg_style)]);
-        let out = apply_style_to_segments(
-            node_id_from_ffi(1),
-            segments,
-            style,
-            Some(parent_style),
-        );
+        let out = apply_style_to_segments(node_id_from_ffi(1), segments, style, Some(parent_style));
         let color = out
             .into_iter()
             .next()
@@ -427,12 +421,7 @@ mod tests {
         let parent_style = Style::new().bg(parent_bg);
         let seg_style = rich_rs::Style::new().with_bgcolor(raw_bg.to_simple_opaque());
         let segments = Segments::from(vec![Segment::styled("x", seg_style)]);
-        let out = apply_style_to_segments(
-            node_id_from_ffi(1),
-            segments,
-            style,
-            Some(parent_style),
-        );
+        let out = apply_style_to_segments(node_id_from_ffi(1), segments, style, Some(parent_style));
         let color = out
             .into_iter()
             .next()

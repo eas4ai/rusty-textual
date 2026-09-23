@@ -234,10 +234,7 @@ fn call_from_thread_bridge() -> &'static CallFromThreadBridge {
 /// detect (and reject) calls made from the UI thread itself.
 pub(crate) fn register_ui_thread() {
     let bridge = call_from_thread_bridge();
-    *bridge
-        .ui_thread
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(std::thread::current().id());
+    *bridge.ui_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::thread::current().id());
     bridge.generation.fetch_add(1, Ordering::SeqCst);
     bridge.running.store(true, Ordering::SeqCst);
 }
@@ -250,10 +247,7 @@ pub(crate) fn register_ui_thread() {
 pub(crate) fn unregister_ui_thread() {
     let bridge = call_from_thread_bridge();
     bridge.running.store(false, Ordering::SeqCst);
-    *bridge
-        .ui_thread
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = None;
+    *bridge.ui_thread.lock().unwrap_or_else(|e| e.into_inner()) = None;
     // Drop any pending jobs so blocked workers unblock (their result senders
     // are dropped inside the job closures we discard here).
     bridge
@@ -342,7 +336,9 @@ where
 
     // Block until the UI thread runs the job and sends the result, or until the
     // app shuts down and drops the job (closing the channel).
-    result_rx.recv().map_err(|_| CallFromThreadError::Disconnected)
+    result_rx
+        .recv()
+        .map_err(|_| CallFromThreadError::Disconnected)
 }
 
 /// Drain and return all pending `call_from_thread` jobs.
@@ -529,9 +525,22 @@ fn read_directory_request(path: String, show_hidden: bool) -> AsyncTaskResult {
     AsyncTaskResult::DirectoryEntries { path, entries }
 }
 
+/// Serialize windows that observe or mutate process-global UI-thread state.
+///
+/// The `call_from_thread` bridge (`running` + UI thread id) is process-wide,
+/// and the `debug_assert!` in `enqueue_widget_command` reads it: a worker
+/// pump (or live loop) registering the bridge on one thread would otherwise
+/// trip an unrelated test enqueueing a widget command on another thread.
+/// Holders: the headless worker-pump window (`App::headless_bridge_guard`)
+/// and any test that registers the bridge, asserts on it, or enqueues/flushes
+/// widget commands without pumping. Never hold this across a worker pump on
+/// the same thread — the pump takes it itself (re-acquiring would deadlock).
+pub(crate) static UI_THREAD_BRIDGE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::AsyncTaskRuntime;
+    use super::UI_THREAD_BRIDGE_LOCK;
     use crate::message::{AsyncTaskCancelled, AsyncTaskCompleted, AsyncTaskRequest};
     use crate::node_id::node_id_from_ffi;
     use std::fs;
@@ -605,16 +614,13 @@ mod tests {
         CallFromThreadError, call_from_thread, drain_call_from_thread_jobs, is_ui_thread,
         register_ui_thread, ui_thread_running, unregister_ui_thread,
     };
-    use std::sync::Mutex as StdMutex;
     use std::sync::mpsc;
-
-    /// Serialize bridge tests: the bridge is process-global, so concurrent
-    /// register/unregister from parallel tests would interfere.
-    static BRIDGE_TEST_LOCK: StdMutex<()> = StdMutex::new(());
 
     #[test]
     fn call_from_thread_not_running_returns_error_without_blocking() {
-        let _guard = BRIDGE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // Ensure no app registered.
         unregister_ui_thread();
         assert!(!ui_thread_running());
@@ -624,7 +630,9 @@ mod tests {
 
     #[test]
     fn call_from_thread_same_thread_is_rejected() {
-        let _guard = BRIDGE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         register_ui_thread();
         assert!(is_ui_thread());
         // Calling on the UI thread itself must not deadlock; it errors instead.
@@ -635,7 +643,9 @@ mod tests {
 
     #[test]
     fn call_from_thread_round_trips_value_and_runs_with_app() {
-        let _guard = BRIDGE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         // This thread plays the role of the UI/event-loop thread, holding the
         // single `&mut App`.
@@ -688,7 +698,9 @@ mod tests {
 
     #[test]
     fn unregister_drops_pending_jobs_and_unblocks_worker() {
-        let _guard = BRIDGE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         register_ui_thread();
 
         // Worker posts a job but the UI thread never drains it — instead the app
@@ -787,7 +799,9 @@ mod tests {
     /// `push_screen_wait` outside a running app errors without blocking.
     #[test]
     fn push_screen_wait_not_running_errors() {
-        let _guard = BRIDGE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         unregister_ui_thread();
         assert!(!ui_thread_running());
         let result = push_screen_wait(Box::new(AnswerScreen));
@@ -798,7 +812,9 @@ mod tests {
     /// `NoActiveWorker` (Python parity) rather than deadlocking.
     #[test]
     fn push_screen_wait_on_ui_thread_is_rejected() {
-        let _guard = BRIDGE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         register_ui_thread();
         assert!(is_ui_thread());
         let result = push_screen_wait(Box::new(AnswerScreen));
@@ -818,7 +834,9 @@ mod tests {
     /// resumes the worker.
     #[test]
     fn push_screen_wait_resumes_worker_with_dismiss_value() {
-        let _guard = BRIDGE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         let mut app = crate::runtime::App::new().expect("app should initialize");
         register_ui_thread();

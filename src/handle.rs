@@ -190,7 +190,11 @@ impl<W: Widget> Handle<W> {
     /// Typed wrapper over the same arena access as `with_widget_mut_as`;
     /// for imperative widget APIs. Application state belongs in reactive
     /// fields/signals (RA-3).
-    pub fn read<R>(self, app: &crate::runtime::App, f: impl FnOnce(&W) -> R) -> Result<R, QueryError> {
+    pub fn read<R>(
+        self,
+        app: &crate::runtime::App,
+        f: impl FnOnce(&W) -> R,
+    ) -> Result<R, QueryError> {
         app.handle_read(self, f)
     }
 
@@ -355,7 +359,10 @@ mod tests {
         let (tree, root) = build_tree_with_probe(1);
         let result = Handle::<Other>::resolve(&tree, root);
         match result {
-            Err(QueryError::TypeMismatch { expected: _, actual }) => {
+            Err(QueryError::TypeMismatch {
+                expected: _,
+                actual,
+            }) => {
                 assert_eq!(actual, "Probe");
             }
             other => panic!("expected TypeMismatch, got {:?}", other),
@@ -410,7 +417,10 @@ mod tests {
         // Run without dispatch and verify the result carries repaint flag.
         let mut entries = entries;
         let result = entries[0].run_without_dispatch();
-        assert!(result.needs_repaint, "ReactiveFlags::default has repaint=true");
+        assert!(
+            result.needs_repaint,
+            "ReactiveFlags::default has repaint=true"
+        );
 
         // Verify the widget was actually mutated by the closure.
         let val = handle.read_in(&tree, |p| p.value).unwrap();
@@ -428,7 +438,11 @@ mod tests {
         let _ = handle.update_in(&mut tree, |_probe, _ctx| {});
 
         let entries = take_runtime_reactive_entries();
-        assert_eq!(entries.len(), 0, "no entry should be enqueued when nothing changed");
+        assert_eq!(
+            entries.len(),
+            0,
+            "no entry should be enqueued when nothing changed"
+        );
     }
 
     // Compile-time trait bounds check.
@@ -531,7 +545,9 @@ mod tests {
 
         let log: Arc<Mutex<Vec<(u32, u32)>>> = Arc::new(Mutex::new(Vec::new()));
         let mut tree = WidgetTree::new();
-        let root = tree.set_root(Box::new(Watcher { watched: Arc::clone(&log) }));
+        let root = tree.set_root(Box::new(Watcher {
+            watched: Arc::clone(&log),
+        }));
 
         let handle = Handle::<Watcher>::resolve(&tree, root).unwrap();
 

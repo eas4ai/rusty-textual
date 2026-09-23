@@ -7,10 +7,10 @@
 use rich_rs::{Console, ConsoleOptions, Segments};
 use rusty_textual::layout::{Region, inspect_node_rects, resolve_layout};
 use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame, run_layout_pass};
 use rusty_textual::style::{BoxSizing, Scalar, Spacing, Style};
 use rusty_textual::widget_tree::WidgetTree;
 use rusty_textual::widgets::Widget;
-use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame, run_layout_pass};
 
 struct IntrinsicWidget {
     style: Style,

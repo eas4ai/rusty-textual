@@ -18,8 +18,8 @@
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use rusty_textual::prelude::*;
 use rusty_textual::render::FrameBuffer;
-use rusty_textual::style::{BorderEdge, BorderType, Color, Layout, Scalar, Style};
 use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
+use rusty_textual::style::{BorderEdge, BorderType, Color, Layout, Scalar, Style};
 
 /// Leaf widget that paints a solid block of `glyph` across its whole box.
 ///
@@ -113,34 +113,30 @@ fn bordered_horizontal_keeps_both_borders_when_children_overflow() {
 
     // Every interior row (1..=4) keeps BOTH border columns, even though the
     // children overflow horizontally past the content box.
-    for row in 1..=4usize {
-        let chars: Vec<char> = lines[row].chars().collect();
+    for (row, line) in lines.iter().enumerate().skip(1).take(4) {
+        let chars: Vec<char> = line.chars().collect();
         assert_eq!(
             chars.first().copied(),
             Some(left),
-            "row {row} must keep its LEFT border column: {:?}",
-            lines[row]
+            "row {row} must keep its LEFT border column: {line:?}"
         );
         // Right border lives at column 11 (0-indexed) of the 12-wide box.
         assert_eq!(
             chars.get(11).copied(),
             Some(right),
             "row {row} must keep its RIGHT border column (child overflow must be \
-             clipped to the content box): {:?}",
-            lines[row]
+             clipped to the content box): {line:?}"
         );
         // Child content must not bleed into the border columns.
         assert_ne!(
             chars.first().copied(),
             Some('a'),
-            "left border overwritten by child content: {:?}",
-            lines[row]
+            "left border overwritten by child content: {line:?}"
         );
         assert_ne!(
             chars.get(11).copied(),
             Some('c'),
-            "right border overwritten by overflowing child content: {:?}",
-            lines[row]
+            "right border overwritten by overflowing child content: {line:?}"
         );
     }
 }

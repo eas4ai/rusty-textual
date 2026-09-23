@@ -127,11 +127,8 @@ pub(crate) fn apply_style_to_segments(
                     if let (Some(bg_simple), Some(surface)) = (s.bgcolor, own_surface_bg) {
                         let bg = crate::style::color_from_simple(bg_simple);
                         if bg == surface {
-                            let blended = Tint::<()>::blend_color_with_percent(
-                                bg,
-                                tint.color,
-                                tint.percent,
-                            );
+                            let blended =
+                                Tint::<()>::blend_color_with_percent(bg, tint.color, tint.percent);
                             let flat = blended.flatten_over(under_bg);
                             under_bg = flat;
                             s.bgcolor = Some(flat.to_simple_opaque());
@@ -152,12 +149,10 @@ pub(crate) fn apply_style_to_segments(
                 .map(|value| f32::from(value) / 100.0)
                 .map(|o| o.clamp(0.0, 1.0))
                 .filter(|o| *o < 1.0);
-            let opacity_parent =
-                parent_bg.unwrap_or(crate::style::Color::rgb(0, 0, 0));
+            let opacity_parent = parent_bg.unwrap_or(crate::style::Color::rgb(0, 0, 0));
             let fold_base = |bg: crate::style::Color| -> crate::style::Color {
                 match fold_opacity {
-                    Some(o) => TextOpacity::<()>::apply_alpha(bg, o)
-                        .flatten_over(opacity_parent),
+                    Some(o) => TextOpacity::<()>::apply_alpha(bg, o).flatten_over(opacity_parent),
                     None => bg,
                 }
             };
@@ -223,9 +218,7 @@ pub(crate) fn apply_style_to_segments(
                     // (identity without text-opacity).
                     let flat = match text_opacity {
                         Some(o) => {
-                            TextOpacity::<()>::blend_foreground_over_background(
-                                base, fold_bg, o,
-                            )
+                            TextOpacity::<()>::blend_foreground_over_background(base, fold_bg, o)
                         }
                         None => base,
                     };
@@ -321,6 +314,71 @@ pub(crate) fn apply_ansi_truecolor_to_segments(segments: Segments) -> Segments {
         .collect()
 }
 
+pub(crate) fn apply_widget_opacity_to_segments(
+    segments: Segments,
+    opacity_percent: u8,
+    parent_style: Option<Style>,
+) -> Segments {
+    if opacity_percent >= 100 {
+        return segments;
+    }
+    let opacity = (opacity_percent as f32 / 100.0).clamp(0.0, 1.0);
+    let fallback_bg = crate::style::parse_color_like("$background");
+    let parent_bg = crate::css::current_composited_background()
+        .or_else(|| parent_style.and_then(|style| style.bg))
+        .or(fallback_bg)
+        .unwrap_or(crate::style::Color::rgb(0, 0, 0));
+
+    segments
+        .into_iter()
+        .map(|mut seg| {
+            if seg.control.is_some() {
+                return seg;
+            }
+            let mut style_changed = false;
+            let mut style = seg.style.unwrap_or_else(rich_rs::Style::new);
+            let original_bg = style.bgcolor.map(crate::style::color_from_simple);
+            let original_fg = style.color.map(crate::style::color_from_simple);
+
+            if let Some(bg) = original_bg {
+                // Python parity: background opacity is applied TWICE — once in
+                // widget.background_colors (bg = parent.blend(widget_bg, opacity)) and then
+                // again in _apply_opacity (blends those pre-composited segments at opacity).
+                // Net result: parent.blend(parent.blend(widget_bg, opacity), opacity).
+                let intermediate =
+                    TextOpacity::<()>::apply_alpha(bg, opacity).flatten_over(parent_bg);
+                let flat_bg =
+                    TextOpacity::<()>::apply_alpha(intermediate, opacity).flatten_over(parent_bg);
+                style.bgcolor = Some(flat_bg.to_simple_opaque());
+                style_changed = true;
+            }
+
+            if let Some(fg) = original_fg {
+                let fg_source = fg;
+                // Python parity: fg is only processed once — background_colors only composites
+                // the bg, not the fg. _apply_opacity then applies fg once. So fg gets ONE blend.
+                let fg = TextOpacity::<()>::apply_alpha(fg, opacity);
+                let mut flat_fg = fg.flatten_over(parent_bg);
+                if let (Some(src_bg), Some(dst_bg)) = (
+                    original_bg,
+                    style.bgcolor.map(crate::style::color_from_simple),
+                ) {
+                    if src_bg == fg_source {
+                        flat_fg = dst_bg;
+                    }
+                }
+                style.color = Some(flat_fg.to_simple_opaque());
+                style_changed = true;
+            }
+
+            if style_changed || seg.style.is_some() {
+                seg.style = Some(style);
+            }
+            seg
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod ansi_truecolor_tests {
     use super::apply_ansi_truecolor_to_segments;
@@ -354,7 +412,14 @@ mod ansi_truecolor_tests {
             Some(SimpleColor::Standard(5)),
             None,
         )));
-        assert_eq!(out.color, Some(SimpleColor::Rgb { r: 244, g: 0, b: 95 }));
+        assert_eq!(
+            out.color,
+            Some(SimpleColor::Rgb {
+                r: 244,
+                g: 0,
+                b: 95
+            })
+        );
     }
 
     /// Light theme (ALABASTER): magenta slot 5 is rgb(122, 62, 157).
@@ -411,67 +476,4 @@ mod ansi_truecolor_tests {
         )));
         assert_eq!(out.color, Some(SimpleColor::Standard(5)));
     }
-}
-
-pub(crate) fn apply_widget_opacity_to_segments(
-    segments: Segments,
-    opacity_percent: u8,
-    parent_style: Option<Style>,
-) -> Segments {
-    if opacity_percent >= 100 {
-        return segments;
-    }
-    let opacity = (opacity_percent as f32 / 100.0).clamp(0.0, 1.0);
-    let fallback_bg = crate::style::parse_color_like("$background");
-    let parent_bg = crate::css::current_composited_background()
-        .or_else(|| parent_style.and_then(|style| style.bg))
-        .or(fallback_bg)
-        .unwrap_or(crate::style::Color::rgb(0, 0, 0));
-
-    segments
-        .into_iter()
-        .map(|mut seg| {
-            if seg.control.is_some() {
-                return seg;
-            }
-            let mut style_changed = false;
-            let mut style = seg.style.unwrap_or_else(rich_rs::Style::new);
-            let original_bg = style.bgcolor.map(crate::style::color_from_simple);
-            let original_fg = style.color.map(crate::style::color_from_simple);
-
-            if let Some(bg) = original_bg {
-                // Python parity: background opacity is applied TWICE — once in
-                // widget.background_colors (bg = parent.blend(widget_bg, opacity)) and then
-                // again in _apply_opacity (blends those pre-composited segments at opacity).
-                // Net result: parent.blend(parent.blend(widget_bg, opacity), opacity).
-                let intermediate = TextOpacity::<()>::apply_alpha(bg, opacity).flatten_over(parent_bg);
-                let flat_bg = TextOpacity::<()>::apply_alpha(intermediate, opacity).flatten_over(parent_bg);
-                style.bgcolor = Some(flat_bg.to_simple_opaque());
-                style_changed = true;
-            }
-
-            if let Some(fg) = original_fg {
-                let fg_source = fg;
-                // Python parity: fg is only processed once — background_colors only composites
-                // the bg, not the fg. _apply_opacity then applies fg once. So fg gets ONE blend.
-                let fg = TextOpacity::<()>::apply_alpha(fg, opacity);
-                let mut flat_fg = fg.flatten_over(parent_bg);
-                if let (Some(src_bg), Some(dst_bg)) = (
-                    original_bg,
-                    style.bgcolor.map(crate::style::color_from_simple),
-                ) {
-                    if src_bg == fg_source {
-                        flat_fg = dst_bg;
-                    }
-                }
-                style.color = Some(flat_fg.to_simple_opaque());
-                style_changed = true;
-            }
-
-            if style_changed || seg.style.is_some() {
-                seg.style = Some(style);
-            }
-            seg
-        })
-        .collect()
 }

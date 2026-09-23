@@ -128,10 +128,19 @@ fn pushed_modal_is_query_and_click_reachable() {
         assert_eq!(pilot.app().screen_count(), 1, "`a` must push the modal");
 
         // Type queries against the pushed screen tree.
-        assert!(pilot.app().query_one("ModalRoot").is_ok(), "screen root style_type");
+        assert!(
+            pilot.app().query_one("ModalRoot").is_ok(),
+            "screen root style_type"
+        );
         assert!(pilot.app().query_one("Input").is_ok(), "Input by type");
-        assert!(pilot.app().query_one("#foo").is_ok(), "#foo seed id under a container");
-        assert!(pilot.app().query_one("#p-high").is_ok(), "#p-high seed id under a container");
+        assert!(
+            pilot.app().query_one("#foo").is_ok(),
+            "#foo seed id under a container"
+        );
+        assert!(
+            pilot.app().query_one("#p-high").is_ok(),
+            "#p-high seed id under a container"
+        );
 
         // Click a button inside the pushed modal → routes to the screen handler.
         pilot.click("#p-high")?;
@@ -177,7 +186,11 @@ fn centered_pushed_modal_is_reachable() {
         assert_eq!(pilot.app().screen_count(), 1);
         assert!(pilot.app().query_one("#p-high").is_ok(), "#p-high resolves");
         pilot.click("#p-high")?;
-        assert_eq!(pilot.app().screen_count(), 0, "centered modal click must dismiss");
+        assert_eq!(
+            pilot.app().screen_count(),
+            0,
+            "centered modal click must dismiss"
+        );
         Ok(())
     })
     .unwrap();
@@ -190,7 +203,10 @@ fn pushed_modal_reachable_over_dense_root() {
     run_test(app(true, true), |pilot| {
         pilot.press(&["a"])?;
         assert_eq!(pilot.app().screen_count(), 1);
-        assert!(pilot.app().query_one("#p-high").is_ok(), "#p-high resolves over a dense root");
+        assert!(
+            pilot.app().query_one("#p-high").is_ok(),
+            "#p-high resolves over a dense root"
+        );
         pilot.click("#p-high")?;
         assert_eq!(
             pilot.app().screen_count(),

@@ -32,8 +32,8 @@ pub mod runtime;
 pub mod screen;
 pub mod signal;
 pub mod style;
-pub mod theme;
 pub mod textual_app;
+pub mod theme;
 pub mod validation;
 pub mod widget_tree;
 pub mod widgets;
@@ -47,11 +47,10 @@ pub use keys::KeyEventData;
 pub use node_id::{NodeId, node_id_from_ffi, node_id_to_ffi};
 pub use reactive::ReactiveCtx;
 pub use reactive::ReactiveWidget;
+pub use runtime::Pilot;
 pub use runtime::{App, DomQuery, DomQueryMut, ScreenRef, TimerHandle, TimerTick};
 pub use screen::{Screen, ScreenMessageCtx, ScreenResult, ScreenResultCallback, ScreenStack};
 pub use style::{Color, Style, Theme};
-pub use theme::{NamedTheme, available_theme_names, get_theme, register_theme};
-pub use runtime::Pilot;
 pub use textual_app::{
     OverlayScreenStack, TextualApp, run, run_snapshot, run_snapshot_with_output, run_sync,
     run_sync_snapshot, run_sync_snapshot_with_output, run_sync_with_output, run_test,
@@ -61,6 +60,7 @@ pub use textual_app::{
 pub use textual_macros::Reactive;
 pub use textual_macros::on;
 pub use textual_macros::widget;
+pub use theme::{NamedTheme, available_theme_names, get_theme, register_theme};
 pub use widgets::BindingDecl;
 pub use widgets::WidgetStyles;
 
@@ -73,12 +73,12 @@ pub mod prelude {
     pub use crate::compose::{ChildDecl, ComposeResult, WidgetBuilder};
     // NOTE: `HandleSink` is intentionally NOT in the prelude (RA2.6b) — it is
     // compose-pipeline plumbing; reach it via `crate::handle::HandleSink`.
-    pub use crate::handle::{Handle, HandleSlot};
     pub use crate::css::{
         StyleSelector, StyleSheet, resolve_component_style, resolve_component_style_merged,
         resolve_component_style_partial, set_style_context,
     };
     pub use crate::debug::DebugLayout;
+    pub use crate::handle::{Handle, HandleSlot};
     // NOTE: `EventCtx` is intentionally NOT in the prelude (RA2.2). It is now
     // internal/structural — the runtime synthesizes it and `WidgetCtx` wraps it;
     // widget handlers receive `WidgetCtx`. Reach `EventCtx` via `crate::event::EventCtx`
@@ -99,6 +99,8 @@ pub mod prelude {
     // `focused_node_id_tree`) and `DispatchOutcome` are runtime internals, NOT user
     // API — user apps go through `TextualApp`/`Pilot`/`run_test`. Harness-level code
     // that drives trees directly imports them via `rusty_textual::runtime::{...}`.
+    pub use crate::content::Content;
+    pub use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
     pub use crate::runtime::{
         App, AppResumed, AppSuspended, AwaitRemove, BindingClash, BindingSource,
         CallFromThreadError, DomQuery, DomQueryMut, PushScreenWaitError, ScreenRef, SuspendGuard,
@@ -107,29 +109,27 @@ pub mod prelude {
     pub use crate::screen::{
         Screen, ScreenMessageCtx, ScreenResult, ScreenResultCallback, ScreenStack,
     };
-    pub use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
     pub use crate::signal::{Signal, SignalResponse};
-    pub use crate::content::Content;
     // Render-time resolved-style / theme-token access for custom `render()`
     // bodies (public seam; the component-classes work consumes it). Exposed as
     // the module so call sites read `render_context::resolved_style()`.
     pub use crate::render_context;
-    pub use crate::style::{Color, Style, TextAlign, Theme};
-    pub use crate::theme::{NamedTheme, available_theme_names, get_theme, register_theme};
-    pub use textual_macros::Reactive;
-    pub use textual_macros::widget;
     pub use crate::runtime::Pilot;
+    pub use crate::style::{Color, Style, TextAlign, Theme};
     pub use crate::textual_app::{
         OverlayScreenStack, TextualApp, run, run_snapshot, run_snapshot_with_output, run_sync,
         run_sync_snapshot, run_sync_snapshot_with_output, run_sync_with_output, run_test,
         run_test_sized, run_textual_app, run_textual_app_or_snapshot,
         run_textual_app_or_snapshot_with_output, run_textual_app_with_output,
     };
+    pub use crate::theme::{NamedTheme, available_theme_names, get_theme, register_theme};
     pub use crate::validation::{
         Failure, FailureKind, Function, Integer, Length, Number, Regex, Url, ValidationResult,
         Validator, ValidatorRef,
     };
     pub use crate::widget_tree::{LifecycleEvent, QueryError, WidgetNode, WidgetTree};
+    pub use textual_macros::Reactive;
+    pub use textual_macros::widget;
     // NOTE (Widget trait split): the authoring capability traits (`Render`,
     // `Interactive`, `Layout`, `Scrollable`, `Focus`, `Selectable`, `HasTooltip`,
     // `Components`, `AppHooks`, `StyleIdentity`) are intentionally NOT in the
@@ -140,27 +140,128 @@ pub mod prelude {
     // `crate::widgets::` (e.g. `use rusty_textual::widgets::Layout;`). This keeps
     // `use rusty_textual::prelude::*` unambiguous for the common `dyn Widget` surface.
     pub use crate::widgets::{
-        AppRoot, BindingDecl, BindingsTable, Button, ButtonVariant,
-        Cell as DataTableCell, CellJustify, Center,
-        CenterMiddle, Checkbox, Collapsible, CollapsibleTitle,
-        Constrained, DateInput, DateOrder,
-        Container, ContentSwitcher, CursorType, DataTable, Digits, DirectoryTree, Dock, Footer,
-        FooterBinding, Frame, FuzzyMatcher, Grid, Header, HeaderClock, HeaderClockSpace,
-        HeaderIcon, HeaderTitle, HelpPanel, Horizontal, HorizontalGroup, HorizontalScroll, Input,
-        InputType, ItemGrid, KeyPanel, Label, LabelVariant, LayoutConstraints, LineStyle, Link,
-        ListItem, ListView, LoadingIndicator, Log, Markdown, MarkdownTableOfContents,
-        MarkdownViewer, MaskedInput, Middle, NodeSeed, NodeState, OptionContent, OptionId,
-        OptionItem, OptionList, OptionListError,
-        Overlay, PaletteCommand, Panel, Placeholder, PlaceholderVariant, Pretty, ProgressBar,
-        RadioButton, RadioSet, RichLog, Right, Row, RowAlign, Rule, RuleOrientation, ScrollBar,
-        ScrollBarCorner, ScrollBarRender, ScrollDirectionMessage, ScrollTo, ScrollView,
-        ScrollableContainer, Select, Selection, SelectionList, SelectionListString, SortKey, Spacer,
-        Sparkline, Static, StyleChangeKind, Styled, SuggestFromList, Suggester, SuggestionCache,
+        AppRoot,
+        BindingDecl,
+        BindingsTable,
+        Button,
+        ButtonVariant,
+        Cell as DataTableCell,
+        CellJustify,
+        Center,
+        CenterMiddle,
+        Checkbox,
+        Collapsible,
+        CollapsibleTitle,
+        Constrained,
+        Container,
+        ContentSwitcher,
+        CursorType,
+        DataTable,
+        DateInput,
+        DateOrder,
+        Digits,
+        DirectoryTree,
+        Dock,
+        Footer,
+        FooterBinding,
+        Frame,
+        FuzzyMatcher,
+        Grid,
+        Header,
+        HeaderClock,
+        HeaderClockSpace,
+        HeaderIcon,
+        HeaderTitle,
+        HelpPanel,
+        Horizontal,
+        HorizontalGroup,
+        HorizontalScroll,
+        Input,
+        InputType,
+        ItemGrid,
+        KeyPanel,
+        Label,
+        LabelVariant,
+        LayoutConstraints,
+        LineStyle,
+        Link,
+        ListItem,
+        ListView,
+        LoadingIndicator,
+        Log,
+        Markdown,
+        MarkdownTableOfContents,
+        MarkdownViewer,
+        MaskedInput,
+        Middle,
+        NodeSeed,
+        NodeState,
+        OptionContent,
+        OptionId,
+        OptionItem,
+        OptionList,
+        OptionListError,
+        Overlay,
+        PaletteCommand,
+        Panel,
+        Placeholder,
+        PlaceholderVariant,
+        Pretty,
+        ProgressBar,
+        RadioButton,
+        RadioSet,
+        RichLog,
+        Right,
+        Row,
+        RowAlign,
+        Rule,
+        RuleOrientation,
+        ScrollBar,
+        ScrollBarCorner,
+        ScrollBarRender,
+        ScrollDirectionMessage,
+        ScrollTo,
+        ScrollView,
+        ScrollableContainer,
+        Select,
+        Selection,
+        SelectionList,
+        SelectionListString,
+        SortKey,
+        Spacer,
+        Sparkline,
+        Static,
+        StyleChangeKind,
+        Styled,
+        SuggestFromList,
+        Suggester,
+        SuggestionCache,
         SummaryFunction,
-        Switch, SystemModalScreen, TabPane, TabbedContent, Tabs, TextArea, TextAreaCursor,
-        TextAreaSelection, TextAreaTheme, Toast, ToastHolder, ToastRack, ToastSeverity, Tooltip,
-        Tree, TreeError, TreeNode, TreeNodeId, Vertical,
-        VerticalGroup, VerticalScroll, Welcome, Widget, WidgetRenderable, WidgetStyles,
+        Switch,
+        SystemModalScreen,
+        TabPane,
+        TabbedContent,
+        Tabs,
+        TextArea,
+        TextAreaCursor,
+        TextAreaSelection,
+        TextAreaTheme,
+        Toast,
+        ToastHolder,
+        ToastRack,
+        ToastSeverity,
+        Tooltip,
+        Tree,
+        TreeError,
+        TreeNode,
+        TreeNodeId,
+        Vertical,
+        VerticalGroup,
+        VerticalScroll,
+        Welcome,
+        Widget,
+        WidgetRenderable,
+        WidgetStyles,
         // NOTE (RA2.6b): the legacy delegate macros (`delegate_widget_to`,
         // `delegate_widget_method`, `delegate_renderable`) and
         // `classify_style_change` are out of the prelude — `#[widget(base = ...)]`
@@ -168,8 +269,12 @@ pub mod prelude {
         // system modal (opened by `ctrl+p`); `CommandPaletteScreen` is out of the
         // prelude but reachable via `crate::widgets::`. The legacy always-mounted
         // `CommandPalette` wrapper widget was removed in Wave 2.
-        preview_root, preview_root_with_bottom, preview_root_with_top_bottom, summary_max,
-        summary_mean, summary_min,
+        preview_root,
+        preview_root_with_bottom,
+        preview_root_with_top_bottom,
+        summary_max,
+        summary_mean,
+        summary_min,
     };
     pub use crate::worker::{
         CancellationToken, WorkerId, WorkerRegistry, WorkerRequest, WorkerState,

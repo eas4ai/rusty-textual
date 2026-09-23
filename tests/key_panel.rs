@@ -1,6 +1,6 @@
 use rich_rs::Console;
-use rusty_textual::prelude::*;
 use rusty_textual::event::EventCtx;
+use rusty_textual::prelude::*;
 use rusty_textual::render::FrameBuffer;
 
 fn options_for(console: &Console, width: usize, height: usize) -> rich_rs::ConsoleOptions {
@@ -41,9 +41,30 @@ fn key_panel_scrolls_with_actions() {
     let before_lines = before.as_plain_lines();
     assert!(before_lines.iter().all(|line| !line.contains("four")));
 
-    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); panel.on_event(&Event::Action(Action::ScrollDown), &mut __w) };
-    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); panel.on_event(&Event::Action(Action::ScrollDown), &mut __w) };
-    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); panel.on_event(&Event::Action(Action::ScrollDown), &mut __w) };
+    {
+        let mut __e = rusty_textual::event::EventCtx::default();
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut __e,
+        );
+        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w)
+    };
+    {
+        let mut __e = rusty_textual::event::EventCtx::default();
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut __e,
+        );
+        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w)
+    };
+    {
+        let mut __e = rusty_textual::event::EventCtx::default();
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut __e,
+        );
+        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w)
+    };
 
     let after = FrameBuffer::from_renderable(&console, &options, &panel, None);
     let after_lines = after.as_plain_lines();
@@ -56,9 +77,17 @@ fn key_panel_updates_on_bindings_changed_event() {
     let options = options_for(&console, 36, 4);
     let mut panel = KeyPanel::new().with_bindings(vec![FooterBinding::new("a", "alpha")]);
 
-    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); panel.on_event(
-        &Event::BindingsChanged(vec![BindingHint::new("x, y", "Updated action")]),
-        &mut __w) };
+    {
+        let mut __e = rusty_textual::event::EventCtx::default();
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut __e,
+        );
+        panel.on_event(
+            &Event::BindingsChanged(vec![BindingHint::new("x, y", "Updated action")]),
+            &mut __w,
+        )
+    };
 
     let buf = FrameBuffer::from_renderable(&console, &options, &panel, None);
     let lines = buf.as_plain_lines();
@@ -79,7 +108,13 @@ fn bindings_table_layout_height_matches_row_count_without_synthetic_header() {
 fn key_panel_does_not_consume_scroll_actions_without_overflow() {
     let mut panel = KeyPanel::new().with_bindings(vec![FooterBinding::new("a", "alpha")]);
     let mut ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); panel.on_event(&Event::Action(Action::ScrollDown), &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w)
+    };
     assert!(!ctx.handled());
 }
 
@@ -100,17 +135,24 @@ fn key_panel_supports_scrollbar_drag() {
     let _ = panel.render(&console, &options);
 
     let mut ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); panel.on_message(
-        &MessageEvent::new(
-            NodeId::default(),
-            ScrollbarScrollTo {
-                axis: ScrollbarAxis::Vertical,
-                offset: 10.0,
-                animate: false,
-                scroll_duration: None,
-            },
-        ),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        panel.on_message(
+            &MessageEvent::new(
+                NodeId::default(),
+                ScrollbarScrollTo {
+                    axis: ScrollbarAxis::Vertical,
+                    offset: 10.0,
+                    animate: false,
+                    scroll_duration: None,
+                },
+            ),
+            &mut __w,
+        )
+    };
     assert!(ctx.handled());
     assert!(ctx.repaint_requested());
 

@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
-use rusty_textual::message::MessageEvent;
 use rusty_textual::event::EventCtx;
+use rusty_textual::message::MessageEvent;
 use rusty_textual::prelude::*;
 
 #[derive(Clone)]
@@ -58,7 +58,12 @@ impl Widget for ProbeWidget {
         self.handles.message_calls.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn on_mouse_scroll(&mut self, _delta_x: i32, _delta_y: i32, _ctx: &mut rusty_textual::event::WidgetCtx) {
+    fn on_mouse_scroll(
+        &mut self,
+        _delta_x: i32,
+        _delta_y: i32,
+        _ctx: &mut rusty_textual::event::WidgetCtx,
+    ) {
         self.handles.scroll_calls.fetch_add(1, Ordering::Relaxed);
     }
 }
@@ -77,7 +82,13 @@ fn panel_forwards_layout_and_messages() {
 
     let message = MessageEvent::new(NodeId::default(), ClearRequested);
     let mut ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); panel.on_message(&message, &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        panel.on_message(&message, &mut __w)
+    };
     assert_eq!(handles.message_calls.load(Ordering::Relaxed), 1);
 }
 
@@ -95,9 +106,21 @@ fn frame_forwards_layout_messages_and_scroll() {
 
     let message = MessageEvent::new(NodeId::default(), ClearRequested);
     let mut ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); frame.on_message(&message, &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        frame.on_message(&message, &mut __w)
+    };
     assert_eq!(handles.message_calls.load(Ordering::Relaxed), 1);
 
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); frame.on_mouse_scroll(0, 1, &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        frame.on_mouse_scroll(0, 1, &mut __w)
+    };
     assert_eq!(handles.scroll_calls.load(Ordering::Relaxed), 1);
 }

@@ -45,7 +45,13 @@ fn ensure_docs_examples_built() {
 fn profile_dir_name() -> String {
     let exe = std::env::current_exe().expect("current_exe");
     exe.parent()
-        .and_then(|p| if p.ends_with("deps") { p.parent() } else { Some(p) })
+        .and_then(|p| {
+            if p.ends_with("deps") {
+                p.parent()
+            } else {
+                Some(p)
+            }
+        })
         .and_then(|p| p.file_name())
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "debug".to_string())
@@ -172,7 +178,10 @@ fn click_at_click_span_fires_action_and_changes_background() {
     cmd.env("TEXTUAL_KEYBOARD_PROTOCOL", "off");
     cmd.env("TEXTUAL_SYNC_OUTPUT", "0");
 
-    let mut child = pty.slave.spawn_command(cmd).expect("spawn actions03 in pty");
+    let mut child = pty
+        .slave
+        .spawn_command(cmd)
+        .expect("spawn actions03 in pty");
     drop(pty.slave);
 
     let mut reader = pty.master.try_clone_reader().expect("pty reader");

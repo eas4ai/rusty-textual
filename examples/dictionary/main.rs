@@ -1,6 +1,7 @@
 // `Node` is deprecated (RA2.6) but intentionally exercised here until the 1.x
 // container seed-builder unification migrates these off the wrapper.
 #![allow(deprecated)]
+use rusty_textual::prelude::*;
 /// Port of Python Textual `examples/dictionary.py`.
 ///
 /// A word search app that demonstrates workers with async UI updates:
@@ -22,7 +23,6 @@
 /// DEFERRED: Real HTTP lookup — requires a blocking HTTP client (e.g. `reqwest` with the
 /// `blocking` feature). Simulated here with a short delay and built-in word list.
 use std::sync::{Arc, Mutex};
-use rusty_textual::prelude::*;
 
 const CSS: &str = r#"
 Screen {
@@ -201,11 +201,20 @@ impl TextualApp for DictionaryApp {
         ctx.request_repaint();
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, _ctx: &mut rusty_textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        _ctx: &mut rusty_textual::event::WidgetCtx,
+    ) {
         if let Some(w) = message.downcast_ref::<WorkerStateChanged>() {
             if matches!(w.state, WorkerState::Success) {
-                let markdown =
-                    { self.lookup_result.lock().unwrap_or_else(|e| e.into_inner()).take() };
+                let markdown = {
+                    self.lookup_result
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .take()
+                };
                 if let Some(markdown) = markdown {
                     // Python: `self.results.update(markdown)` on the queried widget.
                     if let Some(h) = self.results {

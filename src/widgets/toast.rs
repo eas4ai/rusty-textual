@@ -17,10 +17,7 @@ fn tag_segment_no_text_style(seg: &mut Segment) {
         .as_ref()
         .map(|m| (**m).clone())
         .unwrap_or_default();
-    map.insert(
-        "textual:no_text_style".to_string(),
-        MetaValue::Bool(true),
-    );
+    map.insert("textual:no_text_style".to_string(), MetaValue::Bool(true));
     meta.meta = Some(std::sync::Arc::new(map));
     seg.meta = Some(meta);
 }
@@ -237,11 +234,10 @@ impl crate::widgets::Render for Toast {
 
         // Flatten widget's own bg over the composited ancestor background so
         // transparent-bg toasts still get the correct surface color baked in.
-        let parent_bg =
-            crate::css::current_ancestor_composited_background().unwrap_or_else(|| {
-                crate::style::parse_color_like("$background")
-                    .unwrap_or(crate::style::Color::rgb(0, 0, 0))
-            });
+        let parent_bg = crate::css::current_ancestor_composited_background().unwrap_or_else(|| {
+            crate::style::parse_color_like("$background")
+                .unwrap_or(crate::style::Color::rgb(0, 0, 0))
+        });
         let effective_bg = visual_style
             .bg
             .map(|c| c.flatten_over(parent_bg))
@@ -309,6 +305,12 @@ impl crate::widgets::Render for Toast {
 
     fn style_type(&self) -> &'static str {
         "Toast"
+    }
+}
+
+impl crate::widgets::Components for Toast {
+    fn component_classes(&self) -> &[&'static str] {
+        &["toast--title"]
     }
 }
 #[cfg(test)]
@@ -455,7 +457,10 @@ mod tests {
         // border/padding chrome is added by the layout side (height-chrome
         // keystone), not baked into `layout_height()`.
         let height = toast.layout_height().expect("toast layout height");
-        assert_eq!(height, 3, "wrapped toast content is 3 rows (title + 2 wrapped lines)");
+        assert_eq!(
+            height, 3,
+            "wrapped toast content is 3 rows (title + 2 wrapped lines)"
+        );
 
         // Render with chrome headroom so the padded box is not clipped.
         let render_h = height + 4;
@@ -474,20 +479,14 @@ mod tests {
 
         // The message must break before OPERATIONAL, not truncate it.
         assert!(
-            rows.iter().any(|r| r.contains("ARMED and") && !r.contains("OPERATIONAL")),
+            rows.iter()
+                .any(|r| r.contains("ARMED and") && !r.contains("OPERATIONAL")),
             "first message line should end at 'ARMED and': {rows:?}"
         );
         assert!(
-            rows.iter().any(|r| r.contains("OPERATIONAL battle station!")),
+            rows.iter()
+                .any(|r| r.contains("OPERATIONAL battle station!")),
             "wrapped continuation line should be present: {rows:?}"
         );
-    }
-}
-
-impl crate::widgets::Components for Toast {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "toast--title",
-        ]
     }
 }

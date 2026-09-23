@@ -132,7 +132,11 @@ fn render_can_read_resolved_style_composited_bg_and_theme_token() {
         // the leading `$`.
         let expected_accent =
             rusty_textual::style::parse_color_like("$accent").expect("$accent resolves");
-        assert_eq!(s.accent, Some(expected_accent), "$accent resolves in render");
+        assert_eq!(
+            s.accent,
+            Some(expected_accent),
+            "$accent resolves in render"
+        );
         assert_eq!(
             s.accent_no_dollar,
             Some(expected_accent),
@@ -165,7 +169,10 @@ fn render_can_read_resolved_style_composited_bg_and_theme_token() {
             None,
             "composited_background is render-scoped"
         );
-        assert_eq!(render_context::theme_color("$accent"), Some(expected_accent));
+        assert_eq!(
+            render_context::theme_color("$accent"),
+            Some(expected_accent)
+        );
         assert_eq!(
             render_context::theme_color("$no-such-token"),
             None,

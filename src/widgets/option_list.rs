@@ -293,8 +293,7 @@ impl OptionList {
             let mut incoming: std::collections::HashSet<&str> = std::collections::HashSet::new();
             for item in &items {
                 if let Some(id) = item.id() {
-                    if self.id_to_index.contains_key(id.as_str()) || !incoming.insert(id.as_str())
-                    {
+                    if self.id_to_index.contains_key(id.as_str()) || !incoming.insert(id.as_str()) {
                         return Err(OptionListError::DuplicateId(id.clone()));
                     }
                 }
@@ -669,7 +668,10 @@ impl OptionList {
         content_options.max_width = width;
         content_options.max_height = 40;
 
-        let segs: Vec<Segment> = renderable.render(console, &content_options).into_iter().collect();
+        let segs: Vec<Segment> = renderable
+            .render(console, &content_options)
+            .into_iter()
+            .collect();
         let split = Segment::split_and_crop_lines(segs, width, None, true, false);
         if split.is_empty() {
             return vec![adjust_line_length_no_bg(&[], width)];
@@ -707,7 +709,10 @@ impl OptionList {
         if prompt.is_empty() {
             return 1;
         }
-        let content_w = self.layout_width.saturating_sub(self.option_pad_left).max(1);
+        let content_w = self
+            .layout_width
+            .saturating_sub(self.option_pad_left)
+            .max(1);
         // Fast path: a single-line prompt that fits the content width never
         // wraps — skip the (expensive) Console render. Keeps `total_lines`
         // (called per item on every scroll clamp) cheap for the common case.
@@ -722,15 +727,23 @@ impl OptionList {
             ..Default::default()
         };
         let text = rich_rs::Text::from(prompt);
-        self.render_rich_lines(&text, rich_rs::Style::default(), content_w, &console, &options)
-            .len()
-            .max(1)
+        self.render_rich_lines(
+            &text,
+            rich_rs::Style::default(),
+            content_w,
+            &console,
+            &options,
+        )
+        .len()
+        .max(1)
     }
 
     fn item_height(&self, item: &OptionItem) -> usize {
         match item {
             OptionItem::Separator => 1,
-            OptionItem::Option { prompt, content, .. } => match content {
+            OptionItem::Option {
+                prompt, content, ..
+            } => match content {
                 Some(OptionContent::Text(text)) => text.plain_text().split('\n').count().max(1),
                 Some(OptionContent::Renderable(r)) => {
                     let console = Console::new();
@@ -834,7 +847,8 @@ impl OptionList {
     }
 
     fn max_offset(&self) -> usize {
-        self.total_lines().saturating_sub(self.viewport_height.max(1))
+        self.total_lines()
+            .saturating_sub(self.viewport_height.max(1))
     }
 
     fn clamp_offsets(&mut self) {
@@ -1164,10 +1178,11 @@ impl crate::widgets::Interactive for OptionList {
                 _ => {}
             },
             Event::AppFocus(false)
-                if (self.node_state().hovered || self.hovered_index.is_some()) => {
-                    self.hovered_index = None;
-                    ctx.request_repaint();
-                }
+                if (self.node_state().hovered || self.hovered_index.is_some()) =>
+            {
+                self.hovered_index = None;
+                ctx.request_repaint();
+            }
             _ => {}
         }
     }
@@ -1291,8 +1306,7 @@ impl crate::widgets::Render for OptionList {
         // flatten over `$background`/black and shift the result.
         let surface_bg = crate::css::current_composited_background();
         let surface_flat = surface_bg.unwrap_or_else(|| {
-            crate::style::parse_color_like("$surface")
-                .unwrap_or(crate::style::Color::rgb(0, 0, 0))
+            crate::style::parse_color_like("$surface").unwrap_or(crate::style::Color::rgb(0, 0, 0))
         });
 
         // Resolve option component styles through the canonical API with
@@ -1393,13 +1407,14 @@ impl crate::widgets::Render for OptionList {
                             // width used in `item_height`.
                             let pad_left = self.option_pad_left;
                             let content_w = width.saturating_sub(pad_left).max(1);
-                            let style = style_crate.to_rich_over(surface_flat).unwrap_or(base_style);
+                            let style =
+                                style_crate.to_rich_over(surface_flat).unwrap_or(base_style);
 
                             let lines = rendered_items.entry(index).or_insert_with(|| {
                                 let mut raw = match content {
-                                    Some(OptionContent::Text(rich)) => {
-                                        self.render_rich_lines(rich, style, content_w, console, options)
-                                    }
+                                    Some(OptionContent::Text(rich)) => self.render_rich_lines(
+                                        rich, style, content_w, console, options,
+                                    ),
                                     Some(OptionContent::Renderable(r)) => {
                                         // Render at renderable_width (< width when scrollbar
                                         // is visible) so the table/renderable doesn't bleed
@@ -1407,7 +1422,13 @@ impl crate::widgets::Render for OptionList {
                                         // scrollable_content_region.width which already
                                         // subtracts scrollbar_size_vertical (default 2).
                                         let rw = renderable_width.saturating_sub(pad_left).max(1);
-                                        self.render_renderable_lines(r.as_ref(), style, rw, console, options)
+                                        self.render_renderable_lines(
+                                            r.as_ref(),
+                                            style,
+                                            rw,
+                                            console,
+                                            options,
+                                        )
                                     }
                                     None => {
                                         // Plain text, word-wrapped to the (inset)
@@ -1416,7 +1437,9 @@ impl crate::widgets::Render for OptionList {
                                         // renderer so wrapping matches `item_height`'s
                                         // measurement exactly.
                                         let text = rich_rs::Text::from(prompt.as_str());
-                                        self.render_rich_lines(&text, style, content_w, console, options)
+                                        self.render_rich_lines(
+                                            &text, style, content_w, console, options,
+                                        )
                                     }
                                 };
                                 // Prepend the option's left padding as styled blanks so
@@ -1472,6 +1495,18 @@ impl crate::widgets::Render for OptionList {
         vec![crate::compose::ChildDecl::new(Box::new(vbar))]
     }
 }
+
+impl crate::widgets::Components for OptionList {
+    fn component_classes(&self) -> &[&'static str] {
+        &[
+            "option-list--option",
+            "option-list--option-disabled",
+            "option-list--option-highlighted",
+            "option-list--option-hover",
+            "option-list--separator",
+        ]
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1525,7 +1560,10 @@ mod tests {
                 ("up", "cursor_up"),
             ]
         );
-        assert!(bindings.iter().all(|b| !b.show), "Python declares show=False");
+        assert!(
+            bindings.iter().all(|b| !b.show),
+            "Python declares show=False"
+        );
     }
 
     /// Dim text under the block cursor keeps its dimming as a pre-blended
@@ -1567,10 +1605,7 @@ mod tests {
         assert_eq!(style.bgcolor, fill.bgcolor);
 
         // A non-dim segment keeps the cursor fg at full strength.
-        let plain = [Segment::styled(
-            "Select".to_string(),
-            rich_rs::Style::new(),
-        )];
+        let plain = [Segment::styled("Select".to_string(), rich_rs::Style::new())];
         let out = finalize_highlight_line(&plain, 10, fill);
         assert_eq!(out[0].style.expect("styled").color, fill.color);
     }
@@ -1617,7 +1652,13 @@ mod tests {
         assert_eq!(list.highlighted(), Some(0));
 
         let mut ctx = EventCtx::default();
-        { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); list.step_highlight(1, &mut __w) };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            list.step_highlight(1, &mut __w)
+        };
         // Should skip the separator and land on Beta (index 2).
         assert_eq!(list.highlighted(), Some(2));
     }
@@ -1635,7 +1676,13 @@ mod tests {
         assert_eq!(list.highlighted(), Some(0));
 
         let mut ctx = EventCtx::default();
-        { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); list.step_highlight(1, &mut __w) };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            list.step_highlight(1, &mut __w)
+        };
         assert_eq!(list.highlighted(), Some(2));
     }
 
@@ -1653,13 +1700,25 @@ mod tests {
         // End goes to last selectable
         let mut ctx = EventCtx::default();
         if let Some(last) = list.last_selectable() {
-            { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); list.highlight_index(last, &mut __w) };
+            {
+                let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                    crate::node_id::NodeId::default(),
+                    &mut ctx,
+                );
+                list.highlight_index(last, &mut __w)
+            };
         }
         assert_eq!(list.highlighted(), Some(3));
 
         // Home goes to first selectable
         if let Some(first) = list.first_selectable() {
-            { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); list.highlight_index(first, &mut __w) };
+            {
+                let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                    crate::node_id::NodeId::default(),
+                    &mut ctx,
+                );
+                list.highlight_index(first, &mut __w)
+            };
         }
         assert_eq!(list.highlighted(), Some(0));
     }
@@ -1671,7 +1730,13 @@ mod tests {
         list.on_layout(40, 10);
 
         let mut ctx = EventCtx::default();
-        { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); list.confirm_selection(&mut __w) };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            list.confirm_selection(&mut __w)
+        };
         let messages = ctx.take_messages();
         assert!(messages.iter().any(|m| {
             m.downcast_ref::<OptionSelected>()
@@ -1687,16 +1752,20 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_event(
-            &Event::MouseDown(crate::event::MouseDownEvent {
-                target: NodeId::default(),
-                screen_x: 0,
-                screen_y: 1,
-                x: 0,
-                y: 1,
-            }),
-            &mut __w);
+                &Event::MouseDown(crate::event::MouseDownEvent {
+                    target: NodeId::default(),
+                    screen_x: 0,
+                    screen_y: 1,
+                    x: 0,
+                    y: 1,
+                }),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -1743,7 +1812,13 @@ mod tests {
         list.on_layout(40, 10);
 
         let mut ctx = EventCtx::default();
-        { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); list.step_highlight(-1, &mut __w) };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            list.step_highlight(-1, &mut __w)
+        };
         assert_eq!(list.highlighted(), Some(2));
     }
 
@@ -1840,7 +1915,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_event(&Event::AppFocus(false), &mut __w);
         }
 
@@ -1863,7 +1941,7 @@ mod tests {
     fn option_item_with_content_builder() {
         let item = OptionItem::new("Plain").with_content(rich_rs::Text::plain("Rich"));
         assert!(item.content().is_some());
-        assert_eq!(item.text_content().map(|t| t.plain_text()).as_deref(), Some("Rich"));
+        assert_eq!(item.text_content().map(|t| t.plain_text()), Some("Rich"));
     }
 
     #[test]
@@ -1957,8 +2035,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w =
-                crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_event(
                 &Event::MouseDown(crate::event::MouseDownEvent {
                     target: NodeId::default(),
@@ -1994,8 +2074,10 @@ mod tests {
         list.on_layout(40, 10);
         let mut ctx = EventCtx::default();
         {
-            let mut __w =
-                crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_event(
                 &Event::MouseDown(crate::event::MouseDownEvent {
                     target: NodeId::default(),
@@ -2132,16 +2214,20 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_event(
-            &Event::MouseDown(crate::event::MouseDownEvent {
-                target: id,
-                screen_x: 0,
-                screen_y: 1,
-                x: 0,
-                y: 1,
-            }),
-            &mut __w);
+                &Event::MouseDown(crate::event::MouseDownEvent {
+                    target: id,
+                    screen_x: 0,
+                    screen_y: 1,
+                    x: 0,
+                    y: 1,
+                }),
+                &mut __w,
+            );
         }
         assert!(ctx.handled());
     }
@@ -2161,16 +2247,20 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_event(
-            &Event::MouseDown(crate::event::MouseDownEvent {
-                target: other_id,
-                screen_x: 0,
-                screen_y: 1,
-                x: 0,
-                y: 1,
-            }),
-            &mut __w);
+                &Event::MouseDown(crate::event::MouseDownEvent {
+                    target: other_id,
+                    screen_x: 0,
+                    screen_y: 1,
+                    x: 0,
+                    y: 1,
+                }),
+                &mut __w,
+            );
         }
         assert!(!ctx.handled());
     }
@@ -2210,18 +2300,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 4.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 4.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert!(ctx.handled());
         assert_eq!(list.offset_for_click(), 4);
@@ -2238,18 +2332,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 999.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 999.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert_eq!(list.offset_for_click(), 4);
     }
@@ -2260,32 +2358,24 @@ mod tests {
         list.on_layout(40, 5);
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Horizontal,
-                    offset: 1.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Horizontal,
+                        offset: 1.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert!(!ctx.handled());
         assert_eq!(list.offset_for_click(), 0);
-    }
-}
-
-impl crate::widgets::Components for OptionList {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "option-list--option",
-            "option-list--option-disabled",
-            "option-list--option-highlighted",
-            "option-list--option-hover",
-            "option-list--separator",
-        ]
     }
 }

@@ -14,23 +14,34 @@ use crate::widget_tree::WidgetTree;
 use crate::widgets::{
     APP_ROOT_HSCROLLBAR_ID, APP_ROOT_SCROLLBAR_CORNER_ID, APP_ROOT_VSCROLLBAR_ID,
     CONTAINER_HSCROLLBAR_ID, CONTAINER_SCROLLBAR_CORNER_ID, CONTAINER_VSCROLLBAR_ID, Container,
-    DATA_TABLE_HSCROLLBAR_ID, KEY_PANEL_VSCROLLBAR_ID, LOG_HSCROLLBAR_ID,
-    LOG_SCROLLBAR_CORNER_ID, LOG_VSCROLLBAR_ID,
-    OPTION_LIST_VSCROLLBAR_ID, OutlineCell, RICH_LOG_VSCROLLBAR_ID,
+    DATA_TABLE_HSCROLLBAR_ID, KEY_PANEL_VSCROLLBAR_ID, LOG_HSCROLLBAR_ID, LOG_SCROLLBAR_CORNER_ID,
+    LOG_VSCROLLBAR_ID, OPTION_LIST_VSCROLLBAR_ID, OutlineCell, RICH_LOG_VSCROLLBAR_ID,
     SCROLL_VIEW_HSCROLLBAR_ID, SCROLL_VIEW_SCROLLBAR_CORNER_ID, SCROLL_VIEW_VSCROLLBAR_ID,
     ScrollBar, ScrollBarCorner, ScrollbarPolicy, Widget, border_spacing_from_style,
     crop_line_horizontal, outline_edge_cells,
 };
 
-use rich_rs::{ControlType, MetaValue, Renderable, Segment, Segments, StyleMeta};
+use rich_rs::{ControlType, MetaValue, Renderable, Segment, Segments};
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
 use super::App;
 use super::dispatch_ctx::set_dispatch_recipient;
-use super::types::{
-    HitTestMap, SYNC_END, SYNC_START, SegmentStreamStats, resize_trace_enabled,
-};
+use super::types::{HitTestMap, SYNC_END, SYNC_START, SegmentStreamStats, resize_trace_enabled};
+
+/// Console options sized to a `(width, height)` render area.
+fn sized_console_options(w: usize, h: usize) -> rich_rs::ConsoleOptions {
+    rich_rs::ConsoleOptions {
+        size: (w, h),
+        max_width: w,
+        max_height: h,
+        ..Default::default()
+    }
+}
+
+/// Deferred `hatch` fill: glyph, optional background override, destination,
+/// size, and clip. Boxed in `Option` at the render call site.
+type DeferredHatch = (Hatch, Option<Color>, i32, i32, usize, usize, ClipRect);
 
 // ===========================================================================
 // Frozen ancestor-composited background (Python `visual_style` caching parity)
@@ -190,7 +201,9 @@ fn compose_own_content_surface(resolved: &crate::style::Style, ancestor: Color) 
             let flat = bg.flatten_over(ancestor);
             if let Some(tint) = resolved.background_tint {
                 crate::renderables::Tint::<()>::blend_color_with_percent(
-                    flat, tint.color, tint.percent,
+                    flat,
+                    tint.color,
+                    tint.percent,
                 )
             } else {
                 flat
@@ -849,10 +862,10 @@ fn render_tree_node(
         let (cx, cy) = resolve_axis_constrain(&resolved);
         overlays.push(QueuedOverlay {
             node_id,
-            natural_x: i32::from(rect.x0) + ctx.origin_x,
-            natural_y: i32::from(rect.y0) + ctx.origin_y,
-            rect_x0: i32::from(rect.x0),
-            rect_y0: i32::from(rect.y0),
+            natural_x: rect.x0 + ctx.origin_x,
+            natural_y: rect.y0 + ctx.origin_y,
+            rect_x0: rect.x0,
+            rect_y0: rect.y0,
             w,
             h,
             cx,
@@ -891,17 +904,14 @@ fn render_tree_node(
     // lets the child's blank content line overpaint (un-hatch) the first inner
     // row. Defer the fill until after children render (it only touches blank
     // cells, preserving real content), mirroring Python's whole-inner-area hatch.
-    let mut deferred_hatch: Option<(Hatch, Option<Color>, i32, i32, usize, usize, ClipRect)> = None;
+    let mut deferred_hatch: Option<DeferredHatch> = None;
 
     if should_render {
-        let dest_x = i32::from(rect.x0) + ctx.origin_x;
-        let dest_y = i32::from(rect.y0) + ctx.origin_y;
+        let dest_x = rect.x0 + ctx.origin_x;
+        let dest_y = rect.y0 + ctx.origin_y;
 
         // Create options sized to this widget's layout rect.
-        let mut opts = rich_rs::ConsoleOptions::default();
-        opts.size = (w, h);
-        opts.max_width = w;
-        opts.max_height = h;
+        let opts = sized_console_options(w, h);
 
         // Build the debug label from the node record (css_id, classes).
         let debug_label = {
@@ -1128,11 +1138,16 @@ fn render_tree_node(
             if let Some(bg) = resolved.bg {
                 if bg.a >= 1.0 {
                     let content = node_content_or_layout_rect(node);
-                    let cx0 = i32::from(content.x0) + ctx.origin_x;
-                    let cy0 = i32::from(content.y0) + ctx.origin_y;
-                    let cx1 = i32::from(content.x1) + ctx.origin_x;
-                    let cy1 = i32::from(content.y1) + ctx.origin_y;
-                    let content_clip = ClipRect { x0: cx0, y0: cy0, x1: cx1, y1: cy1 };
+                    let cx0 = content.x0 + ctx.origin_x;
+                    let cy0 = content.y0 + ctx.origin_y;
+                    let cx1 = content.x1 + ctx.origin_x;
+                    let cy1 = content.y1 + ctx.origin_y;
+                    let content_clip = ClipRect {
+                        x0: cx0,
+                        y0: cy0,
+                        x1: cx1,
+                        y1: cy1,
+                    };
                     if let Some(fill_clip) = paint_clip.intersect(content_clip) {
                         fill_rect_with_background(frame, fill_clip, bg);
                     }
@@ -1187,17 +1202,17 @@ fn render_tree_node(
         // is unchanged.
         if let Some(ref hatch) = resolved.hatch {
             let content = node_content_or_layout_rect(node);
-            let hx = i32::from(content.x0) + ctx.origin_x;
-            let hy = i32::from(content.y0) + ctx.origin_y;
+            let hx = content.x0 + ctx.origin_x;
+            let hy = content.y0 + ctx.origin_y;
             let hw = content.x1.saturating_sub(content.x0) as usize;
             let hh = content.y1.saturating_sub(content.y0) as usize;
-            deferred_hatch = Some((hatch.clone(), resolved.bg, hx, hy, hw, hh, ctx.clip));
+            deferred_hatch = Some((*hatch, resolved.bg, hx, hy, hw, hh, ctx.clip));
         }
     }
     // Clone keyline/layout before push_style_context takes ownership of resolved.
     // These are already folded into `resolved` via resolve_node_style, so no
     // separate inline-style read is needed.
-    let node_keyline = resolved.keyline.clone();
+    let node_keyline = resolved.keyline;
     let node_layout = resolved.layout;
     // Effective layer order, not just the cascaded value: the walk root always
     // carries the programmatic system layers (`_loading`/`_toastrack`/
@@ -1227,11 +1242,16 @@ fn render_tree_node(
             });
             if let Some(parent_node) = tree.get(node_id) {
                 let content_rect = node_content_or_layout_rect(parent_node);
-                let cx0 = i32::from(content_rect.x0) + ctx.origin_x;
-                let cy0 = i32::from(content_rect.y0) + ctx.origin_y;
-                let cx1 = i32::from(content_rect.x1) + ctx.origin_x;
-                let cy1 = i32::from(content_rect.y1) + ctx.origin_y;
-                let region_clip = ClipRect { x0: cx0, y0: cy0, x1: cx1, y1: cy1 };
+                let cx0 = content_rect.x0 + ctx.origin_x;
+                let cy0 = content_rect.y0 + ctx.origin_y;
+                let cx1 = content_rect.x1 + ctx.origin_x;
+                let cy1 = content_rect.y1 + ctx.origin_y;
+                let region_clip = ClipRect {
+                    x0: cx0,
+                    y0: cy0,
+                    x1: cx1,
+                    y1: cy1,
+                };
                 if let Some(paint_clip) = ctx.clip.intersect(region_clip) {
                     fill_rect_solid_fg_bg(frame, paint_clip, canvas_bg);
                 }
@@ -1256,10 +1276,10 @@ fn render_tree_node(
     if node.widget.clips_descendants_to_content() || node_has_gutter(node) {
         let clip_rect = node_content_or_layout_rect(node);
         let node_clip = ClipRect {
-            x0: i32::from(clip_rect.x0) + ctx.origin_x,
-            y0: i32::from(clip_rect.y0) + ctx.origin_y,
-            x1: i32::from(clip_rect.x1) + ctx.origin_x,
-            y1: i32::from(clip_rect.y1) + ctx.origin_y,
+            x0: clip_rect.x0 + ctx.origin_x,
+            y0: clip_rect.y0 + ctx.origin_y,
+            x1: clip_rect.x1 + ctx.origin_x,
+            y1: clip_rect.y1 + ctx.origin_y,
         };
         if let Some(intersection) = child_ctx.clip.intersect(node_clip) {
             child_ctx.clip = intersection;
@@ -1290,10 +1310,10 @@ fn render_tree_node(
         if let Some((viewport_w, viewport_h)) = node.widget.scroll_viewport_size() {
             let content_rect = node_content_or_layout_rect(node);
             let clip = ClipRect {
-                x0: i32::from(content_rect.x0) + ctx.origin_x,
-                y0: i32::from(content_rect.y0) + ctx.origin_y,
-                x1: i32::from(content_rect.x0) + ctx.origin_x + viewport_w as i32,
-                y1: i32::from(content_rect.y0) + ctx.origin_y + viewport_h as i32,
+                x0: content_rect.x0 + ctx.origin_x,
+                y0: content_rect.y0 + ctx.origin_y,
+                x1: content_rect.x0 + ctx.origin_x + viewport_w as i32,
+                y1: content_rect.y0 + ctx.origin_y + viewport_h as i32,
             };
             if let Some(intersection) = scrolled_child_ctx.clip.intersect(clip) {
                 scrolled_child_ctx.clip = intersection;
@@ -1324,10 +1344,10 @@ fn render_tree_node(
                 let rect = child.layout_rect;
                 let frame_clip = ClipRect::for_frame(frame);
                 let lane_clip = ClipRect {
-                    x0: i32::from(rect.x0) + unclipped_child_ctx.origin_x,
-                    y0: i32::from(rect.y0) + unclipped_child_ctx.origin_y,
-                    x1: i32::from(rect.x1) + unclipped_child_ctx.origin_x,
-                    y1: i32::from(rect.y1) + unclipped_child_ctx.origin_y,
+                    x0: rect.x0 + unclipped_child_ctx.origin_x,
+                    y0: rect.y0 + unclipped_child_ctx.origin_y,
+                    x1: rect.x1 + unclipped_child_ctx.origin_x,
+                    y1: rect.y1 + unclipped_child_ctx.origin_y,
                 };
                 if let Some(lane_clip) = lane_clip.intersect(frame_clip) {
                     next_ctx.clip = ClipRect {
@@ -1351,10 +1371,10 @@ fn render_tree_node(
                 // host scrolled (offset != 0): the on-screen child was culled
                 // (empty clip intersection) and the viewport went blank.
                 let child_clip = ClipRect {
-                    x0: i32::from(rect.x0) + next_ctx.origin_x,
-                    y0: i32::from(rect.y0) + next_ctx.origin_y,
-                    x1: i32::from(rect.x1) + next_ctx.origin_x,
-                    y1: i32::from(rect.y1) + next_ctx.origin_y,
+                    x0: rect.x0 + next_ctx.origin_x,
+                    y0: rect.y0 + next_ctx.origin_y,
+                    x1: rect.x1 + next_ctx.origin_x,
+                    y1: rect.y1 + next_ctx.origin_y,
                 };
                 if let Some(intersection) = next_ctx.clip.intersect(child_clip) {
                     next_ctx.clip = intersection;
@@ -1524,10 +1544,7 @@ fn render_app_root_tree_layer(
     let height = frame.height;
     let root_node_id = tree.root().unwrap_or_default();
 
-    let mut opts = rich_rs::ConsoleOptions::default();
-    opts.size = (width, height);
-    opts.max_width = width;
-    opts.max_height = height;
+    let opts = sized_console_options(width, height);
 
     let root_segments = root_widget.render_styled_dyn_obj(console, &opts, debug, root_node_id);
     let root_lines = Segment::split_and_crop_lines(root_segments, width, None, true, false);
@@ -1603,7 +1620,15 @@ fn render_app_root_tree_layer(
         } else {
             base_ctx
         };
-        render_tree_node(tree, child_id, child_ctx, frame, console, debug, &mut overlays);
+        render_tree_node(
+            tree,
+            child_id,
+            child_ctx,
+            frame,
+            console,
+            debug,
+            &mut overlays,
+        );
     }
 
     // Drain `overlay: screen` escapes at top z with the root style context still
@@ -1706,7 +1731,15 @@ fn render_screen_tree_layer(
         } else {
             base_ctx
         };
-        render_tree_node(tree, child_id, child_ctx, frame, console, debug, &mut overlays);
+        render_tree_node(
+            tree,
+            child_id,
+            child_ctx,
+            frame,
+            console,
+            debug,
+            &mut overlays,
+        );
     }
 
     // Drain `overlay: screen` escapes at top z (see `render_app_root_tree_layer`).
@@ -1742,14 +1775,10 @@ fn paint_deferred_overlays(
         let item = overlays[i];
         i += 1;
         let (px, py) = constrain_overlay_position(
-            item.natural_x,
-            item.natural_y,
-            item.w,
-            item.h,
-            vw,
-            vh,
-            item.cx,
-            item.cy,
+            (item.natural_x, item.natural_y),
+            (item.w, item.h),
+            (vw, vh),
+            (item.cx, item.cy),
         );
         let ctx = TreeRenderCtx {
             origin_x: px - item.rect_x0,
@@ -1767,10 +1796,10 @@ fn clip_rect_from_tree_rect(
 ) -> Option<ClipRect> {
     let frame_clip = ClipRect::for_frame(frame);
     let rect_clip = ClipRect {
-        x0: i32::from(rect.x0),
-        y0: i32::from(rect.y0),
-        x1: i32::from(rect.x1),
-        y1: i32::from(rect.y1),
+        x0: rect.x0,
+        y0: rect.y0,
+        x1: rect.x1,
+        y1: rect.y1,
     };
     frame_clip.intersect(rect_clip)
 }
@@ -1836,7 +1865,7 @@ fn stamp_owner_meta_in_rect(frame: &mut FrameBuffer, clip: ClipRect, owner: Node
                 .map(|meta| (**meta).clone())
                 .unwrap_or_default();
             map.insert("textual:widget_id".to_string(), MetaValue::Int(owner_value));
-            let mut meta = cell.meta.unwrap_or_else(StyleMeta::new);
+            let mut meta = cell.meta.unwrap_or_default();
             meta.meta = Some(std::sync::Arc::new(map));
             cell.meta = Some(meta);
             frame.set_cell(x, y, cell);
@@ -2028,7 +2057,7 @@ fn apply_hatch_fill(
                     .unwrap_or(fallback_bg);
                 let fg = hatch.color.flatten_over(under);
                 cell.text = hatch.character.to_string();
-                let mut style = cell.style.unwrap_or_else(rich_rs::Style::new);
+                let mut style = cell.style.unwrap_or_default();
                 style.color = Some(fg.to_simple_opaque());
                 cell.style = Some(style);
             }
@@ -2067,11 +2096,8 @@ fn paint_keylines(
     }
 
     if layout == Layout::Grid {
-        let (h_char, v_char) = match keyline.keyline_type {
-            KeylineType::None => return,
-            KeylineType::Thin => ('─', '│'),
-            KeylineType::Heavy => ('━', '┃'),
-            KeylineType::Double => ('═', '║'),
+        let Some(stroke) = KeylineStroke::new(line_style, keyline.keyline_type) else {
+            return;
         };
         // Python (`layout.py::render_keyline`) draws a `Rectangle` per VISIBLE
         // child, inset by 1 cell into the surrounding gutter, and combines the
@@ -2079,17 +2105,7 @@ fn paint_keylines(
         // `row-span` child is a SINGLE bigger region, so no interior divider is
         // drawn through it — unlike a cross-product of every column/row boundary,
         // which would bleed a lower row's cell edge up through a spanned cell.
-        paint_grid_keyline_rectangles(
-            tree,
-            &child_ids,
-            parent_rect,
-            ctx,
-            frame,
-            line_style,
-            keyline.keyline_type,
-            h_char,
-            v_char,
-        );
+        paint_grid_keyline_rectangles(tree, &child_ids, parent_rect, ctx, frame, stroke);
         return;
     }
 
@@ -2103,18 +2119,15 @@ fn paint_keylines(
     //     child's bottom edge (except the last).
     // We then delegate to the same junction-aware rasteriser used for Grid.
 
-    let (h_char, v_char) = match keyline.keyline_type {
-        KeylineType::None => return,
-        KeylineType::Thin => ('─', '│'),
-        KeylineType::Heavy => ('━', '┃'),
-        KeylineType::Double => ('═', '║'),
+    let Some(stroke) = KeylineStroke::new(line_style, keyline.keyline_type) else {
+        return;
     };
 
-    let x_start = i32::from(parent_rect.x0) + ctx.origin_x;
-    let y_start = i32::from(parent_rect.y0) + ctx.origin_y;
+    let x_start = parent_rect.x0 + ctx.origin_x;
+    let y_start = parent_rect.y0 + ctx.origin_y;
     // x_end / y_end are inclusive pixel positions of the last column/row.
-    let x_end = (i32::from(parent_rect.x1) + ctx.origin_x).saturating_sub(1);
-    let y_end = (i32::from(parent_rect.y1) + ctx.origin_y).saturating_sub(1);
+    let x_end = (parent_rect.x1 + ctx.origin_x).saturating_sub(1);
+    let y_end = (parent_rect.y1 + ctx.origin_y).saturating_sub(1);
     if x_start > x_end || y_start > y_end {
         return;
     }
@@ -2139,7 +2152,7 @@ fn paint_keylines(
                 let Some(child) = tree.get(*child_id) else {
                     continue;
                 };
-                let x = i32::from(child.layout_rect.x1) + ctx.origin_x;
+                let x = child.layout_rect.x1 + ctx.origin_x;
                 verticals.insert(x.clamp(x_start, x_end));
             }
         }
@@ -2150,7 +2163,7 @@ fn paint_keylines(
                 let Some(child) = tree.get(*child_id) else {
                     continue;
                 };
-                let y = i32::from(child.layout_rect.y1) + ctx.origin_y;
+                let y = child.layout_rect.y1 + ctx.origin_y;
                 horizontals.insert(y.clamp(y_start, y_end));
             }
         }
@@ -2162,10 +2175,7 @@ fn paint_keylines(
         parent_rect,
         ctx,
         frame,
-        line_style,
-        keyline.keyline_type,
-        h_char,
-        v_char,
+        stroke,
         Some((&verticals, &horizontals)),
     );
 }
@@ -2251,26 +2261,49 @@ fn keyline_junction_char(
 /// `(-1,-1)` / `+2`), so a `column-span` / `row-span` child draws ONE region
 /// boundary instead of internal dividers, and a `visibility:hidden` cell
 /// contributes no keyline of its own (its neighbours still bound the gutter).
-#[allow(clippy::too_many_arguments)]
+/// Keyline stroke shared by the grid rasterisers: line style, box-drawing
+/// type, and the horizontal/vertical glyphs derived from it.
+struct KeylineStroke {
+    line_style: rich_rs::Style,
+    keyline_type: KeylineType,
+    h_char: char,
+    v_char: char,
+}
+
+impl KeylineStroke {
+    /// Build a stroke, or `None` for [`KeylineType::None`] (nothing to draw).
+    fn new(line_style: rich_rs::Style, keyline_type: KeylineType) -> Option<Self> {
+        let (h_char, v_char) = match keyline_type {
+            KeylineType::None => return None,
+            KeylineType::Thin => ('─', '│'),
+            KeylineType::Heavy => ('━', '┃'),
+            KeylineType::Double => ('═', '║'),
+        };
+        Some(Self {
+            line_style,
+            keyline_type,
+            h_char,
+            v_char,
+        })
+    }
+}
+
 fn paint_grid_keyline_rectangles(
     tree: &WidgetTree,
     child_ids: &[NodeId],
     parent_rect: crate::widget_tree::Rect,
     ctx: TreeRenderCtx,
     frame: &mut FrameBuffer,
-    line_style: rich_rs::Style,
-    keyline_type: KeylineType,
-    h_char: char,
-    v_char: char,
+    stroke: KeylineStroke,
 ) {
     use std::collections::HashMap;
 
     let frame_w = frame.width as i32;
     let frame_h = frame.height as i32;
-    let parent_x0 = i32::from(parent_rect.x0) + ctx.origin_x;
-    let parent_y0 = i32::from(parent_rect.y0) + ctx.origin_y;
-    let parent_x1 = (i32::from(parent_rect.x1) + ctx.origin_x).saturating_sub(1);
-    let parent_y1 = (i32::from(parent_rect.y1) + ctx.origin_y).saturating_sub(1);
+    let parent_x0 = parent_rect.x0 + ctx.origin_x;
+    let parent_y0 = parent_rect.y0 + ctx.origin_y;
+    let parent_x1 = (parent_rect.x1 + ctx.origin_x).saturating_sub(1);
+    let parent_y1 = (parent_rect.y1 + ctx.origin_y).saturating_sub(1);
     if parent_x0 > parent_x1 || parent_y0 > parent_y1 {
         return;
     }
@@ -2316,10 +2349,10 @@ fn paint_grid_keyline_rectangles(
         let rect = child.layout_rect;
         // Rectangle inset 1 cell into the gutter: spans columns [x0-1 ..= x1],
         // rows [y0-1 ..= y1] in frame coordinates (x1/y1 are exclusive edges).
-        let rx0 = i32::from(rect.x0) + ctx.origin_x - 1;
-        let ry0 = i32::from(rect.y0) + ctx.origin_y - 1;
-        let rx1 = i32::from(rect.x1) + ctx.origin_x;
-        let ry1 = i32::from(rect.y1) + ctx.origin_y;
+        let rx0 = rect.x0 + ctx.origin_x - 1;
+        let ry0 = rect.y0 + ctx.origin_y - 1;
+        let rx1 = rect.x1 + ctx.origin_x;
+        let ry1 = rect.y1 + ctx.origin_y;
         if rx1 <= rx0 || ry1 <= ry0 {
             continue;
         }
@@ -2360,21 +2393,21 @@ fn paint_grid_keyline_rectangles(
             continue;
         }
         let ch = keyline_junction_char(
-            keyline_type,
+            stroke.keyline_type,
             dir.up,
             dir.down,
             dir.left,
             dir.right,
-            h_char,
-            v_char,
+            stroke.h_char,
+            stroke.v_char,
         );
         let cell = frame.get_mut(x as usize, y as usize);
         cell.text = ch.to_string();
         let existing_bg = cell.style.and_then(|s| s.bgcolor);
         let merged = if let Some(bg) = existing_bg {
-            line_style.with_bgcolor(bg)
+            stroke.line_style.with_bgcolor(bg)
         } else {
-            line_style
+            stroke.line_style
         };
         cell.style = Some(merged);
         cell.continuation = false;
@@ -2393,20 +2426,19 @@ fn paint_grid_keylines(
     parent_rect: crate::widget_tree::Rect,
     ctx: TreeRenderCtx,
     frame: &mut FrameBuffer,
-    line_style: rich_rs::Style,
-    keyline_type: KeylineType,
-    h_char: char,
-    v_char: char,
+    stroke: KeylineStroke,
     precomputed: Option<(&BTreeSet<i32>, &BTreeSet<i32>)>,
 ) {
     let frame_w = frame.width as i32;
     let frame_h = frame.height as i32;
-    let x_start = i32::from(parent_rect.x0) + ctx.origin_x;
-    let y_start = i32::from(parent_rect.y0) + ctx.origin_y;
-    let x_end = i32::from(parent_rect.x1)
+    let x_start = parent_rect.x0 + ctx.origin_x;
+    let y_start = parent_rect.y0 + ctx.origin_y;
+    let x_end = parent_rect
+        .x1
         .saturating_add(ctx.origin_x)
         .saturating_sub(1);
-    let y_end = i32::from(parent_rect.y1)
+    let y_end = parent_rect
+        .y1
         .saturating_add(ctx.origin_y)
         .saturating_sub(1);
     if x_start > x_end || y_start > y_end {
@@ -2430,8 +2462,8 @@ fn paint_grid_keylines(
                 continue;
             };
             let rect = child.layout_rect;
-            let x = i32::from(rect.x1) + ctx.origin_x;
-            let y = i32::from(rect.y1) + ctx.origin_y;
+            let x = rect.x1 + ctx.origin_x;
+            let y = rect.y1 + ctx.origin_y;
             v.insert(x.clamp(x_start, x_end));
             h.insert(y.clamp(y_start, y_end));
         }
@@ -2461,11 +2493,19 @@ fn paint_grid_keylines(
                 let down = v_ref.contains(&x) && y < y_end;
                 let left = h_ref.contains(&y) && x > x_start;
                 let right = h_ref.contains(&y) && x < x_end;
-                keyline_junction_char(keyline_type, up, down, left, right, h_char, v_char)
+                keyline_junction_char(
+                    stroke.keyline_type,
+                    up,
+                    down,
+                    left,
+                    right,
+                    stroke.h_char,
+                    stroke.v_char,
+                )
             } else if on_h {
-                h_char
+                stroke.h_char
             } else {
-                v_char
+                stroke.v_char
             };
             let cell = frame.get_mut(x as usize, y as usize);
             cell.text = ch.to_string();
@@ -2475,9 +2515,9 @@ fn paint_grid_keylines(
             // stays whatever the surface beneath already painted.
             let existing_bg = cell.style.and_then(|s| s.bgcolor);
             let merged = if let Some(bg) = existing_bg {
-                line_style.with_bgcolor(bg)
+                stroke.line_style.with_bgcolor(bg)
             } else {
-                line_style
+                stroke.line_style
             };
             cell.style = Some(merged);
             cell.continuation = false;
@@ -2562,18 +2602,18 @@ pub fn resolve_axis_constrain(resolved: &crate::style::Style) -> (Constrain, Con
 
 /// Apply axis-specific constrain to an overlay position.
 ///
-/// Given a proposed overlay position `(x, y)` with size `(w, h)` inside a
-/// viewport `(vw, vh)`, clamp or inflect the position based on constrain mode.
+/// Given a proposed overlay position with a size inside a viewport, clamp or
+/// inflect the position based on the per-axis constrain modes.
 pub fn constrain_overlay_position(
-    x: i32,
-    y: i32,
-    w: usize,
-    h: usize,
-    vw: usize,
-    vh: usize,
-    cx: Constrain,
-    cy: Constrain,
+    pos: (i32, i32),
+    size: (usize, usize),
+    viewport: (usize, usize),
+    modes: (Constrain, Constrain),
 ) -> (i32, i32) {
+    let (x, y) = pos;
+    let (w, h) = size;
+    let (vw, vh) = viewport;
+    let (cx, cy) = modes;
     let mut out_x = x;
     let mut out_y = y;
 
@@ -2591,7 +2631,7 @@ pub fn constrain_overlay_position(
         Constrain::Inflect => {
             // If overflowing right, flip to the left side.
             if out_x + w as i32 > vw as i32 {
-                out_x = out_x - w as i32;
+                out_x -= w as i32;
                 if out_x < 0 {
                     out_x = 0;
                 }
@@ -2611,7 +2651,7 @@ pub fn constrain_overlay_position(
         }
         Constrain::Inflect => {
             if out_y + h as i32 > vh as i32 {
-                out_y = out_y - h as i32;
+                out_y -= h as i32;
                 if out_y < 0 {
                     out_y = 0;
                 }
@@ -2656,8 +2696,7 @@ fn node_has_gutter(node: &crate::widget_tree::WidgetNode) -> bool {
 /// runtime-set inline bg on the Screen node composites even when the surface
 /// widget baked a stale per-seed background (see the empty-Screen fill above).
 fn node_is_screen_surface(node: &crate::widget_tree::WidgetNode) -> bool {
-    node.widget.style_type() == "Screen"
-        || node.widget.style_type_aliases().contains(&"Screen")
+    node.widget.style_type() == "Screen" || node.widget.style_type_aliases().contains(&"Screen")
 }
 
 // ===========================================================================
@@ -2740,10 +2779,7 @@ fn render_tree_to_frame_with_debug_and_stylesheet(
     let root_node_id = tree.root().unwrap_or_default();
 
     // Render root widget chrome (children extracted — only own border/bg/padding).
-    let mut opts = rich_rs::ConsoleOptions::default();
-    opts.size = (width, height);
-    opts.max_width = width;
-    opts.max_height = height;
+    let opts = sized_console_options(width, height);
     let root_segments = root.render_styled_dyn_obj(console, &opts, debug, root_node_id);
     let root_lines =
         rich_rs::Segment::split_and_crop_lines(root_segments, width, None, true, false);
@@ -2793,7 +2829,15 @@ fn render_tree_to_frame_with_debug_and_stylesheet(
             } else {
                 base_ctx
             };
-            render_tree_node(tree, child_id, child_ctx, &mut frame, console, debug, &mut overlays);
+            render_tree_node(
+                tree,
+                child_id,
+                child_ctx,
+                &mut frame,
+                console,
+                debug,
+                &mut overlays,
+            );
         }
 
         // Drain `overlay: screen` escapes at top z (see `render_app_root_tree_layer`).
@@ -2969,9 +3013,7 @@ fn host_content_extent(
                 && !node_is_docked(tree, c)
                 && tree.get(c).map(|n| n.display).unwrap_or(false)
         })
-        .map(|&c| {
-            super::helpers::resolve_style_in_tree(tree, c).and_then(|style| style.layer)
-        })
+        .map(|&c| super::helpers::resolve_style_in_tree(tree, c).and_then(|style| style.layer))
         .collect();
     for &child_id in tree.children(node_id) {
         if Some(child_id) == scrollbar_children.vertical
@@ -3341,9 +3383,7 @@ fn apply_host_scrollbar_layout(tree: &mut WidgetTree, viewport: (u16, u16)) {
             set_runtime_display(tree, c_id, show && paint);
             // Corner RECT is driven by lane reservation (both lanes reserved),
             // matching the vertical/horizontal lane-rect policy.
-            let rect = if geometry.vertical_lane_width > 0
-                && geometry.horizontal_lane_height > 0
-            {
+            let rect = if geometry.vertical_lane_width > 0 && geometry.horizontal_lane_height > 0 {
                 crate::widget_tree::Rect {
                     x0: content_rect.x0 + geometry.viewport_width as i32,
                     y0: content_rect.y0 + geometry.viewport_height as i32,
@@ -3750,7 +3790,12 @@ mod tests {
         // gutter cell must carry fg == bg == the surface color, NOT fg=default.
         let mut frame = FrameBuffer::new(6, 3, None);
         let bg = Color::rgb(0x12, 0x12, 0x12);
-        let clip = ClipRect { x0: 1, y0: 1, x1: 4, y1: 2 };
+        let clip = ClipRect {
+            x0: 1,
+            y0: 1,
+            x1: 4,
+            y1: 2,
+        };
         fill_rect_solid_fg_bg(&mut frame, clip, bg);
 
         // Inside the clip: fg and bg both set to the surface color.
@@ -4049,17 +4094,9 @@ mod tests {
         };
         let line_style = rich_rs::Style::new();
         let child_ids = vec![wide, narrow];
-        paint_grid_keyline_rectangles(
-            &tree,
-            &child_ids,
-            parent_rect,
-            ctx,
-            &mut frame,
-            line_style,
-            KeylineType::Heavy,
-            '━',
-            '┃',
-        );
+        let stroke =
+            KeylineStroke::new(line_style, KeylineType::Heavy).expect("heavy keyline draws");
+        paint_grid_keyline_rectangles(&tree, &child_ids, parent_rect, ctx, &mut frame, stroke);
 
         // The narrow cell's right edge sits at x=38 (rect.x1). Its vertical line
         // spans only the narrow cell's gutter rows (y in [10..19]). It must NOT
@@ -4366,10 +4403,20 @@ mod tests {
         // Both occupy row 0. Manual layout rects (skip run_layout_pass) so the
         // geometry is deterministic; the overlap is cols 0..6.
         if let Some(n) = tree.get_mut(overlay) {
-            n.layout_rect = Rect { x0: 0, y0: 0, x1: 6, y1: 1 };
+            n.layout_rect = Rect {
+                x0: 0,
+                y0: 0,
+                x1: 6,
+                y1: 1,
+            };
         }
         if let Some(n) = tree.get_mut(sibling) {
-            n.layout_rect = Rect { x0: 0, y0: 0, x1: 20, y1: 1 };
+            n.layout_rect = Rect {
+                x0: 0,
+                y0: 0,
+                x1: 20,
+                y1: 1,
+            };
         }
         tree.update_styles(overlay, |s| {
             s.style.overlay = Some(crate::style::OverlayMode::Screen);
@@ -4389,13 +4436,29 @@ mod tests {
 
         // Walk in DOM order: overlay escapes (queued, paints nothing), then the
         // sibling paints across the whole row.
-        render_tree_node(&tree, overlay, ctx, &mut frame, &console, None, &mut overlays);
+        render_tree_node(
+            &tree,
+            overlay,
+            ctx,
+            &mut frame,
+            &console,
+            None,
+            &mut overlays,
+        );
         assert_eq!(
             overlays.len(),
             1,
             "the overlay: screen node must be queued, not painted inline"
         );
-        render_tree_node(&tree, sibling, ctx, &mut frame, &console, None, &mut overlays);
+        render_tree_node(
+            &tree,
+            sibling,
+            ctx,
+            &mut frame,
+            &console,
+            None,
+            &mut overlays,
+        );
         assert_eq!(
             frame.get(0, 0).text,
             "R",
@@ -4464,11 +4527,21 @@ mod tests {
         // Both children fully overlap on row 0; manual rects keep the geometry
         // deterministic (this test is about PAINT order, not layout).
         if let Some(n) = tree.get_mut(root) {
-            n.layout_rect = Rect { x0: 0, y0: 0, x1: 20, y1: 1 };
+            n.layout_rect = Rect {
+                x0: 0,
+                y0: 0,
+                x1: 20,
+                y1: 1,
+            };
         }
         for id in [above, below] {
             if let Some(n) = tree.get_mut(id) {
-                n.layout_rect = Rect { x0: 0, y0: 0, x1: 6, y1: 1 };
+                n.layout_rect = Rect {
+                    x0: 0,
+                    y0: 0,
+                    x1: 6,
+                    y1: 1,
+                };
             }
         }
 
@@ -4623,10 +4696,12 @@ mod tests {
         apply_layout_info_tree_from_layout_rects(&mut tree);
 
         let console = Console::default();
-        let mut options = ConsoleOptions::default();
-        options.size = (40, 10);
-        options.max_width = 40;
-        options.max_height = 10;
+        let options = ConsoleOptions {
+            size: (40, 10),
+            max_width: 40,
+            max_height: 10,
+            ..Default::default()
+        };
 
         let root = tree.get(root_id).expect("root exists");
         let rendered = root.widget.render_styled(&console, &options);
@@ -4950,10 +5025,7 @@ Parent.show > Child { display: block; }
         let title_symbol = |tree: &WidgetTree, id| -> String {
             let node = tree.get(id).expect("title node exists");
             let console = rich_rs::Console::new();
-            let mut opts = rich_rs::ConsoleOptions::default();
-            opts.size = (20, 1);
-            opts.max_width = 20;
-            opts.max_height = 1;
+            let opts = sized_console_options(20, 1);
             Widget::render(node.widget.as_ref(), &console, &opts)
                 .iter()
                 .map(|s| s.text.to_string())
@@ -4970,7 +5042,9 @@ Parent.show > Child { display: block; }
         // Toggle the parent to collapsed; the title child must follow (▶) after
         // the next layout pass, mirroring Python `_update_collapsed`.
         {
-            let node = tree.get_mut(collapsible_id).expect("collapsible node exists");
+            let node = tree
+                .get_mut(collapsible_id)
+                .expect("collapsible node exists");
             let any = node.widget.as_mut() as &mut dyn std::any::Any;
             any.downcast_mut::<Collapsible>()
                 .expect("node is a Collapsible")
@@ -5089,12 +5163,13 @@ Parent.show > Child { display: block; }
         app.build_widget_tree(&mut root);
         app.render_widget(&mut root)
             .expect("baseline render should succeed");
-        let baseline = app.frame.get(0, 0).style.clone().unwrap_or_default();
+        let baseline = app.frame.get(0, 0).style.unwrap_or_default();
 
-        app.push_screen(Box::new(ModalOverlayScreen)).expect("test screen push succeeds");
+        app.push_screen(Box::new(ModalOverlayScreen))
+            .expect("test screen push succeeds");
         app.render_widget(&mut root)
             .expect("modal render should succeed");
-        let modal = app.frame.get(0, 0).style.clone().unwrap_or_default();
+        let modal = app.frame.get(0, 0).style.unwrap_or_default();
 
         assert!(
             modal.bgcolor != baseline.bgcolor || modal.color != baseline.color,

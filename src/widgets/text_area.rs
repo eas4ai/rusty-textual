@@ -2064,6 +2064,22 @@ fn cursor_lt(a: Cursor, b: Cursor) -> bool {
     a.row < b.row || (a.row == b.row && a.col < b.col)
 }
 
+impl crate::widgets::Components for TextArea {
+    fn component_classes(&self) -> &[&'static str] {
+        &[
+            "text-area--cursor",
+            "text-area--cursor-gutter",
+            "text-area--cursor-line",
+            "text-area--gutter",
+            "text-area--gutter-active",
+            "text-area--matching-bracket",
+            "text-area--placeholder",
+            "text-area--selection",
+            "text-area--suggestion",
+        ]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2314,21 +2330,5 @@ mod tests {
         }
         assert!(!ctx.handled());
         assert_eq!(ta.text(), "abc");
-    }
-}
-
-impl crate::widgets::Components for TextArea {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "text-area--cursor",
-            "text-area--cursor-gutter",
-            "text-area--cursor-line",
-            "text-area--gutter",
-            "text-area--gutter-active",
-            "text-area--matching-bracket",
-            "text-area--placeholder",
-            "text-area--selection",
-            "text-area--suggestion",
-        ]
     }
 }

@@ -361,7 +361,9 @@ pub(crate) fn extract_child_spec(
     let min_h_cells = style
         .min_height
         .as_ref()
-        .map(|s| resolve_scalar_to_cells_2d(s, parent_height, parent_width, parent_height, viewport))
+        .map(|s| {
+            resolve_scalar_to_cells_2d(s, parent_height, parent_width, parent_height, viewport)
+        })
         .unwrap_or(0);
     let min_w_cells = style
         .min_width
@@ -369,14 +371,12 @@ pub(crate) fn extract_child_spec(
         .map(|s| resolve_scalar_to_cells_2d(s, parent_width, parent_width, parent_height, viewport))
         .unwrap_or(0);
 
-    let max_h_cells = style
-        .max_height
-        .as_ref()
-        .map(|s| resolve_scalar_to_cells_2d(s, parent_height, parent_width, parent_height, viewport));
-    let max_w_cells = style
-        .max_width
-        .as_ref()
-        .map(|s| resolve_scalar_to_cells_2d(s, parent_width, parent_width, parent_height, viewport));
+    let max_h_cells = style.max_height.as_ref().map(|s| {
+        resolve_scalar_to_cells_2d(s, parent_height, parent_width, parent_height, viewport)
+    });
+    let max_w_cells = style.max_width.as_ref().map(|s| {
+        resolve_scalar_to_cells_2d(s, parent_width, parent_width, parent_height, viewport)
+    });
 
     // Margin-adjusted parent dims for `w`/`h` units (Python resolves these
     // against `container - margin.totals` on BOTH axes).
@@ -716,11 +716,7 @@ pub(crate) fn extract_child_spec(
 /// the widget is rendered at; trailing padding on each rendered line is trimmed so
 /// a widget that pads its output to the render width (e.g. `Static`/`Label`) still
 /// reports its true content width.
-fn measure_rendered_leaf(
-    tree: &WidgetTree,
-    node: NodeId,
-    render_width: u16,
-) -> Option<(u16, u16)> {
+fn measure_rendered_leaf(tree: &WidgetTree, node: NodeId, render_width: u16) -> Option<(u16, u16)> {
     let node_ref = tree.get(node)?;
     let console = rich_rs::Console::new();
     let mut opts = rich_rs::ConsoleOptions::default();
@@ -1015,8 +1011,7 @@ fn measure_child_outer_height(
             (*n).saturating_add(v_chrome)
         }
         None | Some(Scalar::Auto) | Some(Scalar::Fraction(_)) => {
-            let content =
-                measure_intrinsic_content_height(tree, node, viewport, 0).unwrap_or(0);
+            let content = measure_intrinsic_content_height(tree, node, viewport, 0).unwrap_or(0);
             content.saturating_add(v_chrome)
         }
         Some(other) => resolve_scalar_to_cells(other, 0, viewport).saturating_add(v_chrome),

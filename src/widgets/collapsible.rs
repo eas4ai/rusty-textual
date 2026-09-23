@@ -34,10 +34,7 @@ fn tag_segment_no_text_style(seg: &mut Segment) {
         .as_ref()
         .map(|m| (**m).clone())
         .unwrap_or_default();
-    map.insert(
-        "textual:no_text_style".to_string(),
-        MetaValue::Bool(true),
-    );
+    map.insert("textual:no_text_style".to_string(), MetaValue::Bool(true));
     meta.meta = Some(std::sync::Arc::new(map));
     seg.meta = Some(meta);
 }
@@ -524,7 +521,11 @@ impl crate::widgets::Interactive for Collapsible {
     /// (the focusable node) posts a toggle message on `enter`/click, and the
     /// enclosing `Collapsible` flips its `collapsed` state and stops
     /// propagation (so a nested outer `Collapsible` is not also toggled).
-    fn on_message(&mut self, message: &crate::message::MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+    fn on_message(
+        &mut self,
+        message: &crate::message::MessageEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         if message.is::<CollapsibleTitleToggle>() {
             self.toggle_with_ctx(ctx);
         }
@@ -645,11 +646,12 @@ mod tests {
     use rich_rs::{Console, ConsoleOptions};
 
     fn make_console_options(width: usize, height: usize) -> ConsoleOptions {
-        let mut opts = ConsoleOptions::default();
-        opts.size = (width, height);
-        opts.max_width = width;
-        opts.max_height = height;
-        opts
+        ConsoleOptions {
+            size: (width, height),
+            max_width: width,
+            max_height: height,
+            ..Default::default()
+        }
     }
 
     // ── CollapsibleTitle tests ──────────────────────────────────────────
@@ -823,13 +825,21 @@ mod tests {
             },
         );
         let mut ctx = EventCtx::default();
-        let key = KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
+        let key =
+            KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             title.on_event(&Event::Key(key), &mut __w);
         }
         let messages = ctx.take_messages();
-        assert_eq!(messages.len(), 1, "focused title must post one toggle message");
+        assert_eq!(
+            messages.len(),
+            1,
+            "focused title must post one toggle message"
+        );
         assert!(messages[0].is::<CollapsibleTitleToggle>());
     }
 
@@ -841,9 +851,13 @@ mod tests {
 
         let mut title = CollapsibleTitle::new("Section", "\u{25b6}", "\u{25bc}", true);
         let mut ctx = EventCtx::default();
-        let key = KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
+        let key =
+            KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             title.on_event(&Event::Key(key), &mut __w);
         }
         assert!(
@@ -863,10 +877,16 @@ mod tests {
         let sender = crate::node_id::node_id_from_ffi(1);
         let msg = MessageEvent::new(sender, CollapsibleTitleToggle);
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             c.on_message(&msg, &mut __w);
         }
-        assert!(!c.is_collapsed(), "toggle message must flip collapsed state");
+        assert!(
+            !c.is_collapsed(),
+            "toggle message must flip collapsed state"
+        );
         assert!(ctx.handled(), "handling the toggle must stop propagation");
     }
 

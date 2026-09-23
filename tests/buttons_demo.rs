@@ -9,7 +9,11 @@ fn load_button_css() -> String {
     std::fs::read_to_string(css_path).expect("read button.tcss")
 }
 
-fn render_tree(root: &mut dyn Widget, width: usize, height: usize) -> rusty_textual::render::FrameBuffer {
+fn render_tree(
+    root: &mut dyn Widget,
+    width: usize,
+    height: usize,
+) -> rusty_textual::render::FrameBuffer {
     let console = Console::new();
     let mut tree = build_widget_tree_from_root(root).expect("tree should build");
     render_tree_to_frame(&mut tree, root, &console, width, height)

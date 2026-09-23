@@ -1,9 +1,9 @@
 use crossterm::event::KeyCode;
 use rich_rs::{Console, ConsoleOptions, MetaValue, Renderable, Segment, Segments};
-use textual_macros::widget;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use textual_macros::widget;
 
 use crate::action::ParsedAction;
 use crate::compose::{ChildDecl, ComposeResult};
@@ -15,8 +15,8 @@ use crate::message::{
 };
 use crate::style::{Dock, TransitionTiming};
 
-use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
 use crate::content::Content;
+use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
 
 use super::{BindingDecl, Container, Horizontal, NodeSeed, Vertical, Widget};
 
@@ -30,10 +30,7 @@ fn tag_segment_no_text_style(seg: &mut Segment) {
         .as_ref()
         .map(|m| (**m).clone())
         .unwrap_or_default();
-    map.insert(
-        "textual:no_text_style".to_string(),
-        MetaValue::Bool(true),
-    );
+    map.insert("textual:no_text_style".to_string(), MetaValue::Bool(true));
     meta.meta = Some(Arc::new(map));
     seg.meta = Some(meta);
 }
@@ -1259,7 +1256,11 @@ impl crate::widgets::Interactive for Tabs {
         }
     }
 
-    fn on_message(&mut self, message: &crate::message::MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+    fn on_message(
+        &mut self,
+        message: &crate::message::MessageEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         if let Some(clicked) = message.downcast_ref::<TabClicked>() {
             if clicked.id.is_empty() {
                 return;
@@ -1365,6 +1366,18 @@ impl From<String> for Tab {
     }
 }
 
+impl crate::widgets::Components for Underline {
+    fn component_classes(&self) -> &[&'static str] {
+        &["underline--bar"]
+    }
+}
+
+impl crate::widgets::Components for Tabs {
+    fn component_classes(&self) -> &[&'static str] {
+        &["tabs--underline"]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1387,13 +1400,17 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tabs.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Right,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Right,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -1410,8 +1427,14 @@ mod tests {
         let tabs = Tabs::new().with_tab("One").with_tab("Two");
         let bindings = tabs.bindings();
         assert_eq!(bindings.len(), 2);
-        let prev = bindings.iter().find(|b| b.action == "previous_tab").expect("prev");
-        let next = bindings.iter().find(|b| b.action == "next_tab").expect("next");
+        let prev = bindings
+            .iter()
+            .find(|b| b.action == "previous_tab")
+            .expect("prev");
+        let next = bindings
+            .iter()
+            .find(|b| b.action == "next_tab")
+            .expect("next");
         assert_eq!(prev.key, "left");
         assert_eq!(next.key, "right");
         assert!(!prev.show && !next.show);
@@ -1433,7 +1456,10 @@ mod tests {
             arguments: vec![],
         };
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             assert!(tabs.execute_action(&next, &mut __w));
         }
         assert!(tabs.is_active("two"));
@@ -1446,13 +1472,17 @@ mod tests {
             },
         );
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tabs.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Char('h'),
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Char('h'),
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
         assert!(tabs.is_active("two"), "h must not navigate (no vim extras)");
     }
@@ -1464,16 +1494,20 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tabs.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: crate::node_id::NodeId::default(),
-                screen_x: 1,
-                screen_y: 0,
-                x: 1,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: crate::node_id::NodeId::default(),
+                    screen_x: 1,
+                    screen_y: 0,
+                    x: 1,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -1517,19 +1551,5 @@ mod tests {
         assert!(tabs.activate(2, None));
         let (start, end) = tabs.current_underline_range();
         assert_eq!((end - start).round() as usize, rich_rs::cell_len("Paul"));
-    }
-}
-
-impl crate::widgets::Components for Underline {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "underline--bar",
-        ]
-    }
-}
-
-impl crate::widgets::Components for Tabs {
-    fn component_classes(&self) -> &[&'static str] {
-        &["tabs--underline"]
     }
 }

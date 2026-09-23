@@ -168,7 +168,12 @@ pub trait TextualApp: Send + 'static {
     ///
     /// This mirrors Python Textual-style app callbacks where action handlers can
     /// query/mutate application state via the runtime handle.
-    fn on_action_with_app(&mut self, app: &mut App, action: Action, ctx: &mut crate::event::WidgetCtx) {
+    fn on_action_with_app(
+        &mut self,
+        app: &mut App,
+        action: Action,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         let _ = app;
         self.on_action(action, ctx);
     }
@@ -180,7 +185,13 @@ pub trait TextualApp: Send + 'static {
     /// Override this instead of `on_key_with_app` for actions tied to declarative
     /// bindings.  The `action` string is exactly what was declared as the action
     /// in `BindingDecl::new(key, action, description)`.
-    fn on_app_action_str(&mut self, _app: &mut App, _action: &str, _ctx: &mut crate::event::WidgetCtx) {}
+    fn on_app_action_str(
+        &mut self,
+        _app: &mut App,
+        _action: &str,
+        _ctx: &mut crate::event::WidgetCtx,
+    ) {
+    }
 
     /// App-level key hook.
     ///
@@ -192,7 +203,12 @@ pub trait TextualApp: Send + 'static {
     ///
     /// This is the Python Textual-aligned surface for app callbacks that need
     /// query/mutation APIs (`query_one`, `query_mut`, etc.) while handling keys.
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut crate::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         let _ = app;
         self.on_key(key, ctx);
     }
@@ -213,7 +229,12 @@ pub trait TextualApp: Send + 'static {
     fn on_message(&mut self, _message: &MessageEvent, _ctx: &mut crate::event::WidgetCtx) {}
 
     /// App-level message hook with mutable runtime handle.
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         let _ = app;
         self.on_message(message, ctx);
     }
@@ -251,13 +272,31 @@ pub trait TextualApp: Send + 'static {
     fn on_checkbox_changed(&mut self, _checked: bool, _ctx: &mut crate::event::WidgetCtx) {}
 
     /// Typed convenience hook for list-view-selection-changed messages.
-    fn on_list_view_selection_changed(&mut self, _index: usize, _item: &str, _ctx: &mut crate::event::WidgetCtx) {}
+    fn on_list_view_selection_changed(
+        &mut self,
+        _index: usize,
+        _item: &str,
+        _ctx: &mut crate::event::WidgetCtx,
+    ) {
+    }
 
     /// Typed convenience hook for list-view-activation messages.
-    fn on_list_view_item_activated(&mut self, _index: usize, _item: &str, _ctx: &mut crate::event::WidgetCtx) {}
+    fn on_list_view_item_activated(
+        &mut self,
+        _index: usize,
+        _item: &str,
+        _ctx: &mut crate::event::WidgetCtx,
+    ) {
+    }
 
     /// Typed convenience hook for tab-activated messages.
-    fn on_tab_activated(&mut self, _index: usize, _title: &str, _ctx: &mut crate::event::WidgetCtx) {}
+    fn on_tab_activated(
+        &mut self,
+        _index: usize,
+        _title: &str,
+        _ctx: &mut crate::event::WidgetCtx,
+    ) {
+    }
 
     /// Typed convenience hook for command palette open.
     fn on_command_palette_opened(&mut self, _ctx: &mut crate::event::WidgetCtx) {}
@@ -346,7 +385,12 @@ impl OverlayScreenStack {
         self.stack.last().copied()
     }
 
-    pub fn push(&mut self, _sender: NodeId, overlay: NodeId, ctx: &mut crate::event::WidgetCtx) -> bool {
+    pub fn push(
+        &mut self,
+        _sender: NodeId,
+        overlay: NodeId,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> bool {
         if self.current() == Some(overlay) {
             return false;
         }
@@ -404,7 +448,6 @@ fn build_textual_app_runtime_root<T: TextualApp>(
     state: Arc<Mutex<T>>,
     composed: AppRoot,
 ) -> TextualAppAdapter<T> {
-    
     TextualAppAdapter::new(state, composed)
 }
 
@@ -518,7 +561,11 @@ impl<T: TextualApp> TextualAppAdapter<T> {
         self.publish_command_palette_commands(ctx);
     }
 
-    fn handle_command_palette_selection(&mut self, command_id: &str, ctx: &mut crate::event::WidgetCtx) {
+    fn handle_command_palette_selection(
+        &mut self,
+        command_id: &str,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         let Some((provider_index, original_command_id)) =
             self.command_palette_provider_index.get(command_id).cloned()
         else {
@@ -703,11 +750,7 @@ impl<T: TextualApp> TextualAppAdapter<T> {
         // state), re-invoke the app's `compose()` and rebuild the app-content
         // subtree via `App::recompose_app`. A recompose implies layout + repaint.
         if needs_recompose {
-            let fresh_root = self
-                .app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .compose();
+            let fresh_root = self.app.lock().unwrap_or_else(|e| e.into_inner()).compose();
             app.recompose_app(fresh_root);
             ctx.request_layout_invalidation();
         }
@@ -1127,7 +1170,12 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         self.dispatch_app_reactive(app, ctx);
     }
 
-    fn on_app_unhandled_action(&mut self, app: &mut App, action: &str, ctx: &mut crate::event::WidgetCtx) {
+    fn on_app_unhandled_action(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         self.app
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -1135,7 +1183,12 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         self.dispatch_app_reactive(app, ctx);
     }
 
-    fn on_app_message(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+    fn on_app_message(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         if message.is::<crate::message::AppCommandPalette>() {
             self.open_command_palette_screen(app, ctx);
             return;
@@ -1294,7 +1347,8 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         // (Block B), so `palette_screen_open` / `help_panel_visible` are already set.
         {
             let mut app = self.app.lock().unwrap_or_else(|e| e.into_inner());
-            self.message_handlers.dispatch(&mut *app, message, ctx.event_ctx_mut());
+            self.message_handlers
+                .dispatch(&mut *app, message, ctx.event_ctx_mut());
         }
         if ctx.handled() {
             return;
@@ -1352,8 +1406,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
                 .unwrap_or_else(|e| e.into_inner())
                 .on_tab_activated(m.index, &m.title, ctx);
         }
-        if ctx.handled() {
-        }
+        if ctx.handled() {}
     }
 }
 
@@ -1602,7 +1655,10 @@ mod tests {
         let mut runtime = App::new().expect("app should initialize");
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_app_mount(&mut runtime, &mut __w);
         }
         assert_eq!(runtime.title(), "DefaultTitleApp");
@@ -1618,7 +1674,10 @@ mod tests {
         let mut runtime = App::new().expect("app should initialize");
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_app_mount(&mut runtime, &mut __w);
         }
         assert_eq!(runtime.title(), "My Explicit Title");
@@ -1808,11 +1867,21 @@ mod tests {
             self.hooks.list_selection = Some((index, item.to_string()));
         }
 
-        fn on_list_view_item_activated(&mut self, index: usize, item: &str, _ctx: &mut crate::event::WidgetCtx) {
+        fn on_list_view_item_activated(
+            &mut self,
+            index: usize,
+            item: &str,
+            _ctx: &mut crate::event::WidgetCtx,
+        ) {
             self.hooks.list_activated = Some((index, item.to_string()));
         }
 
-        fn on_tab_activated(&mut self, index: usize, title: &str, _ctx: &mut crate::event::WidgetCtx) {
+        fn on_tab_activated(
+            &mut self,
+            index: usize,
+            title: &str,
+            _ctx: &mut crate::event::WidgetCtx,
+        ) {
             self.hooks.tab_activated = Some((index, title.to_string()));
         }
 
@@ -1929,7 +1998,12 @@ mod tests {
             crate::widgets::AppRoot::new()
         }
 
-        fn on_action_with_app(&mut self, app: &mut App, _action: Action, _ctx: &mut crate::event::WidgetCtx) {
+        fn on_action_with_app(
+            &mut self,
+            app: &mut App,
+            _action: Action,
+            _ctx: &mut crate::event::WidgetCtx,
+        ) {
             app.set_css_runtime_pseudos(true, false, true);
             self.action_hits.fetch_add(1, Ordering::SeqCst);
         }
@@ -1946,7 +2020,12 @@ mod tests {
             }
         }
 
-        fn on_tick_with_app(&mut self, app: &mut App, _tick: u64, _ctx: &mut crate::event::WidgetCtx) {
+        fn on_tick_with_app(
+            &mut self,
+            app: &mut App,
+            _tick: u64,
+            _ctx: &mut crate::event::WidgetCtx,
+        ) {
             let _ = app.query_one_optional("Button");
             self.tick_hits.fetch_add(1, Ordering::SeqCst);
         }
@@ -1967,10 +2046,14 @@ mod tests {
 
         let mut open_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut open_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut open_ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteOpened),
-            &mut __w);
+                &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteOpened),
+                &mut __w,
+            );
         }
         assert_eq!(state.startup_count.load(Ordering::SeqCst), 1);
         let open_messages = open_ctx.take_messages();
@@ -1982,25 +2065,33 @@ mod tests {
 
         let mut select_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut select_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut select_ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                crate::message::CommandPaletteCommandSelected {
-                    id: "deploy".to_string(),
-                    title: "Deploy".to_string(),
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    crate::message::CommandPaletteCommandSelected {
+                        id: "deploy".to_string(),
+                        title: "Deploy".to_string(),
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert_eq!(state.selected_count.load(Ordering::SeqCst), 1);
 
         let mut close_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut close_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut close_ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteClosed),
-            &mut __w);
+                &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteClosed),
+                &mut __w,
+            );
         }
         assert_eq!(state.shutdown_count.load(Ordering::SeqCst), 1);
     }
@@ -2067,31 +2158,47 @@ mod tests {
 
         let mut first_open_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut first_open_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut first_open_ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteOpened),
-            &mut __w);
+                &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteOpened),
+                &mut __w,
+            );
         }
         let mut first_close_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut first_close_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut first_close_ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteClosed),
-            &mut __w);
+                &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteClosed),
+                &mut __w,
+            );
         }
         let mut second_open_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut second_open_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut second_open_ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteOpened),
-            &mut __w);
+                &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteOpened),
+                &mut __w,
+            );
         }
         let mut second_close_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut second_close_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut second_close_ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteClosed),
-            &mut __w);
+                &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteClosed),
+                &mut __w,
+            );
         }
 
         assert_eq!(state.startup_count.load(Ordering::SeqCst), 2);
@@ -2113,10 +2220,14 @@ mod tests {
 
         let mut open_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut open_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut open_ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteOpened),
-            &mut __w);
+                &MessageEvent::new(NodeId::default(), crate::message::CommandPaletteOpened),
+                &mut __w,
+            );
         }
 
         let open_messages = open_ctx.take_messages();
@@ -2149,10 +2260,14 @@ mod tests {
         // republish-to-a-live-host anymore.
         let mut show_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut show_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut show_ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(NodeId::default(), crate::message::AppShowHelpPanel),
-            &mut __w);
+                &MessageEvent::new(NodeId::default(), crate::message::AppShowHelpPanel),
+                &mut __w,
+            );
         }
         let show_keys_help = adapter
             .system_commands()
@@ -2164,10 +2279,14 @@ mod tests {
 
         let mut hide_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut hide_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut hide_ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(NodeId::default(), crate::message::AppHideHelpPanel),
-            &mut __w);
+                &MessageEvent::new(NodeId::default(), crate::message::AppHideHelpPanel),
+                &mut __w,
+            );
         }
         let hide_keys_help = adapter
             .system_commands()
@@ -2243,7 +2362,10 @@ mod tests {
         for event in typed_events {
             let mut ctx = EventCtx::default();
             {
-                let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+                let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                    crate::node_id::NodeId::default(),
+                    &mut ctx,
+                );
                 adapter.on_message(&event, &mut __w);
             }
         }
@@ -2251,17 +2373,21 @@ mod tests {
         {
             let mut ctx = EventCtx::default();
             {
-                let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+                let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                    crate::node_id::NodeId::default(),
+                    &mut ctx,
+                );
                 adapter.on_message(
-                &MessageEvent::new(
-                    NodeId::default(),
-                    crate::message::TabActivated {
-                        id: "general".to_string(),
-                        index: 1,
-                        title: "General".to_string(),
-                    },
-                ),
-                &mut __w);
+                    &MessageEvent::new(
+                        NodeId::default(),
+                        crate::message::TabActivated {
+                            id: "general".to_string(),
+                            index: 1,
+                            title: "General".to_string(),
+                        },
+                    ),
+                    &mut __w,
+                );
             }
         }
 
@@ -2312,12 +2438,39 @@ mod tests {
         let mut stack = OverlayScreenStack::new();
         let mut ctx = EventCtx::default();
 
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); stack.push(sender, first, &mut __w) });
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); stack.push(sender, second, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            stack.push(sender, first, &mut __w)
+        });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            stack.push(sender, second, &mut __w)
+        });
         assert_eq!(stack.current(), Some(second));
-        assert_eq!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); stack.pop(sender, &mut __w) }, Some(second));
+        assert_eq!(
+            {
+                let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                    crate::node_id::NodeId::default(),
+                    &mut ctx,
+                );
+                stack.pop(sender, &mut __w)
+            },
+            Some(second)
+        );
         assert_eq!(stack.current(), Some(first));
-        { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); stack.clear(sender, &mut __w) };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            stack.clear(sender, &mut __w)
+        };
         assert!(stack.is_empty());
 
         let messages = ctx.take_messages();
@@ -2369,7 +2522,10 @@ mod tests {
             KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_app_key(&mut runtime, &key, &mut __w);
         }
 
@@ -2393,12 +2549,18 @@ mod tests {
             KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_app_key(&mut runtime, &key, &mut __w);
         }
         if !ctx.handled() {
             {
-                let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+                let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                    crate::node_id::NodeId::default(),
+                    &mut ctx,
+                );
                 adapter.on_event_capture(&Event::Key(key), &mut __w);
             }
         }
@@ -2423,25 +2585,35 @@ mod tests {
 
         let mut action_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut action_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut action_ctx,
+            );
             adapter.on_app_action(&mut runtime, Action::HelpQuit, &mut __w);
         }
 
         let mut message_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut message_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut message_ctx,
+            );
             adapter.on_app_message(
-            &mut runtime,
-            &MessageEvent::new(
-                NodeId::default(),
-                crate::message::FooterBindingsUpdated { count: 0 },
-            ),
-            &mut __w);
+                &mut runtime,
+                &MessageEvent::new(
+                    NodeId::default(),
+                    crate::message::FooterBindingsUpdated { count: 0 },
+                ),
+                &mut __w,
+            );
         }
 
         let mut tick_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut tick_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut tick_ctx,
+            );
             adapter.on_app_tick(&mut runtime, 7, &mut __w);
         }
 
@@ -2465,25 +2637,35 @@ mod tests {
 
         let mut action_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut action_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut action_ctx,
+            );
             adapter.on_app_action(&mut runtime, Action::HelpQuit, &mut __w);
         }
 
         let mut message_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut message_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut message_ctx,
+            );
             adapter.on_app_message(
-            &mut runtime,
-            &MessageEvent::new(
-                NodeId::default(),
-                crate::message::FooterBindingsUpdated { count: 0 },
-            ),
-            &mut __w);
+                &mut runtime,
+                &MessageEvent::new(
+                    NodeId::default(),
+                    crate::message::FooterBindingsUpdated { count: 0 },
+                ),
+                &mut __w,
+            );
         }
 
         let mut tick_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut tick_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut tick_ctx,
+            );
             adapter.on_app_tick(&mut runtime, 9, &mut __w);
         }
 
@@ -2511,9 +2693,27 @@ mod tests {
             .expect("remove action should parse");
         let toggle = parse_action("app.toggle_class('Button', 'primary')")
             .expect("toggle action should parse");
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); adapter.execute_action(&add, &mut __w) });
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); adapter.execute_action(&remove, &mut __w) });
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); adapter.execute_action(&toggle, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            adapter.execute_action(&add, &mut __w)
+        });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            adapter.execute_action(&remove, &mut __w)
+        });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            adapter.execute_action(&toggle, &mut __w)
+        });
 
         let messages = ctx.take_messages();
         assert_eq!(messages.len(), 3);
@@ -2778,7 +2978,13 @@ mod tests {
         for action in ok_actions {
             let parsed = parse_action(action).expect("action should parse");
             assert!(
-                { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); adapter.execute_action(&parsed, &mut __w) },
+                {
+                    let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                        crate::node_id::NodeId::default(),
+                        &mut ctx,
+                    );
+                    adapter.execute_action(&parsed, &mut __w)
+                },
                 "expected handled: {action}"
             );
         }
@@ -2827,7 +3033,13 @@ mod tests {
         ] {
             let parsed = parse_action(action).expect("action should parse");
             assert!(
-                !{ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); adapter.execute_action(&parsed, &mut __w) },
+                !{
+                    let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                        crate::node_id::NodeId::default(),
+                        &mut ctx,
+                    );
+                    adapter.execute_action(&parsed, &mut __w)
+                },
                 "expected invalid arity for {action}"
             );
         }
@@ -2846,7 +3058,13 @@ mod tests {
         let mut adapter = TextualAppAdapter::new(app, NoopWidget::new());
         let mut ctx = EventCtx::default();
         let quit = parse_action("app.quit").expect("quit action should parse");
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); adapter.execute_action(&quit, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            adapter.execute_action(&quit, &mut __w)
+        });
         assert!(ctx.stop_requested());
         assert!(ctx.handled());
     }
@@ -2889,15 +3107,30 @@ mod tests {
             AppRoot::new()
         }
 
-        fn on_key_with_app(&mut self, app: &mut App, _key: &KeyEventData, _ctx: &mut crate::event::WidgetCtx) {
+        fn on_key_with_app(
+            &mut self,
+            app: &mut App,
+            _key: &KeyEventData,
+            _ctx: &mut crate::event::WidgetCtx,
+        ) {
             self.set_count(self.count + 1, app.reactive_ctx());
         }
 
-        fn on_action_with_app(&mut self, app: &mut App, _action: Action, _ctx: &mut crate::event::WidgetCtx) {
+        fn on_action_with_app(
+            &mut self,
+            app: &mut App,
+            _action: Action,
+            _ctx: &mut crate::event::WidgetCtx,
+        ) {
             self.set_count(self.count + 10, app.reactive_ctx());
         }
 
-        fn on_tick_with_app(&mut self, app: &mut App, _tick: u64, _ctx: &mut crate::event::WidgetCtx) {
+        fn on_tick_with_app(
+            &mut self,
+            app: &mut App,
+            _tick: u64,
+            _ctx: &mut crate::event::WidgetCtx,
+        ) {
             self.set_count(self.count + 100, app.reactive_ctx());
         }
 
@@ -2940,7 +3173,10 @@ mod tests {
             KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_app_key(&mut runtime, &key, &mut __w);
         }
 
@@ -2961,7 +3197,10 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_app_action(&mut runtime, Action::HelpQuit, &mut __w);
         }
 
@@ -2978,7 +3217,10 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_app_tick(&mut runtime, 0, &mut __w);
         }
 
@@ -2997,7 +3239,10 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_app_mount(&mut runtime, &mut __w);
         }
 
@@ -3022,7 +3267,10 @@ mod tests {
             KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_app_key(&mut runtime, &key, &mut __w);
         }
 
@@ -3045,7 +3293,12 @@ mod tests {
                 AppRoot::new()
             }
 
-            fn on_key_with_app(&mut self, app: &mut App, _key: &KeyEventData, _ctx: &mut crate::event::WidgetCtx) {
+            fn on_key_with_app(
+                &mut self,
+                app: &mut App,
+                _key: &KeyEventData,
+                _ctx: &mut crate::event::WidgetCtx,
+            ) {
                 use crate::reactive::ReactiveFlags;
                 // Even if setter is called, reactive_widget_mut() == None means
                 // no watcher dispatch — changes are just discarded.
@@ -3068,7 +3321,10 @@ mod tests {
             KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_app_key(&mut runtime, &key, &mut __w);
         }
 
@@ -3094,7 +3350,10 @@ mod tests {
         let key =
             KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut key_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut key_ctx,
+            );
             adapter.on_app_key(&mut runtime, &key, &mut __w);
         }
         assert!(
@@ -3106,7 +3365,10 @@ mod tests {
         // and repaint is requested.
         let mut tick_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut tick_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut tick_ctx,
+            );
             adapter.on_app_tick(&mut runtime, 1, &mut __w);
         }
         assert!(
@@ -3134,7 +3396,11 @@ mod tests {
 
     impl ChainedReactiveApp {
         fn new() -> Self {
-            Self { a: 0, b: 0, watch_log: Vec::new() }
+            Self {
+                a: 0,
+                b: 0,
+                watch_log: Vec::new(),
+            }
         }
 
         fn set_a(&mut self, val: i32, ctx: &mut ReactiveCtx) {
@@ -3153,8 +3419,12 @@ mod tests {
     }
 
     impl TextualApp for ChainedReactiveApp {
-        fn compose(&mut self) -> AppRoot { AppRoot::new() }
-        fn reactive_widget_mut(&mut self) -> Option<&mut dyn ReactiveWidget> { Some(self) }
+        fn compose(&mut self) -> AppRoot {
+            AppRoot::new()
+        }
+        fn reactive_widget_mut(&mut self) -> Option<&mut dyn ReactiveWidget> {
+            Some(self)
+        }
     }
 
     impl ReactiveWidget for ChainedReactiveApp {
@@ -3195,14 +3465,26 @@ mod tests {
 
         // set_a records change for 'a'; watcher for 'a' will chain a change for 'b'
         app_state.lock().unwrap().set_a(5, runtime.reactive_ctx());
-        { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); adapter.dispatch_app_reactive(&mut runtime, &mut __w) };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            adapter.dispatch_app_reactive(&mut runtime, &mut __w)
+        };
 
         let guard = app_state.lock().unwrap();
         assert_eq!(guard.a, 5);
         assert_eq!(guard.b, 10, "chained set_b(5*2) should have fired");
         // Both watchers should have run
-        assert!(guard.watch_log.iter().any(|(f, _, _)| *f == "a"), "watcher 'a' should run");
-        assert!(guard.watch_log.iter().any(|(f, _, _)| *f == "b"), "watcher 'b' should run (chained)");
+        assert!(
+            guard.watch_log.iter().any(|(f, _, _)| *f == "a"),
+            "watcher 'a' should run"
+        );
+        assert!(
+            guard.watch_log.iter().any(|(f, _, _)| *f == "b"),
+            "watcher 'b' should run (chained)"
+        );
     }
 
     /// An app whose watcher always re-records a change for the same field (infinite loop).
@@ -3212,7 +3494,12 @@ mod tests {
     }
 
     impl CycleApp {
-        fn new() -> Self { Self { val: 0, dispatch_count: 0 } }
+        fn new() -> Self {
+            Self {
+                val: 0,
+                dispatch_count: 0,
+            }
+        }
 
         fn set_val(&mut self, v: i32, ctx: &mut ReactiveCtx) {
             use crate::reactive::ReactiveFlags;
@@ -3223,8 +3510,12 @@ mod tests {
     }
 
     impl TextualApp for CycleApp {
-        fn compose(&mut self) -> AppRoot { AppRoot::new() }
-        fn reactive_widget_mut(&mut self) -> Option<&mut dyn ReactiveWidget> { Some(self) }
+        fn compose(&mut self) -> AppRoot {
+            AppRoot::new()
+        }
+        fn reactive_widget_mut(&mut self) -> Option<&mut dyn ReactiveWidget> {
+            Some(self)
+        }
     }
 
     impl ReactiveWidget for CycleApp {
@@ -3260,7 +3551,13 @@ mod tests {
 
         app_state.lock().unwrap().set_val(1, runtime.reactive_ctx());
         // Must return (not loop forever)
-        { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); adapter.dispatch_app_reactive(&mut runtime, &mut __w) };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            adapter.dispatch_app_reactive(&mut runtime, &mut __w)
+        };
 
         let guard = app_state.lock().unwrap();
         // Should have run up to MAX_REACTIVE_ITERATIONS times, then stopped
@@ -3275,7 +3572,9 @@ mod tests {
     }
 
     impl StylesRequestApp {
-        fn new() -> Self { Self { val: 0 } }
+        fn new() -> Self {
+            Self { val: 0 }
+        }
 
         fn set_val(&mut self, v: i32, ctx: &mut ReactiveCtx) {
             use crate::reactive::ReactiveFlags;
@@ -3286,8 +3585,12 @@ mod tests {
     }
 
     impl TextualApp for StylesRequestApp {
-        fn compose(&mut self) -> AppRoot { AppRoot::new() }
-        fn reactive_widget_mut(&mut self) -> Option<&mut dyn ReactiveWidget> { Some(self) }
+        fn compose(&mut self) -> AppRoot {
+            AppRoot::new()
+        }
+        fn reactive_widget_mut(&mut self) -> Option<&mut dyn ReactiveWidget> {
+            Some(self)
+        }
     }
 
     impl ReactiveWidget for StylesRequestApp {
@@ -3315,10 +3618,19 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         app_state.lock().unwrap().set_val(1, runtime.reactive_ctx());
-        { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); adapter.dispatch_app_reactive(&mut runtime, &mut __w) };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            adapter.dispatch_app_reactive(&mut runtime, &mut __w)
+        };
 
         assert!(ctx.repaint_requested(), "repaint should be requested");
-        assert!(ctx.invalidation().style, "style invalidation should be requested");
+        assert!(
+            ctx.invalidation().style,
+            "style invalidation should be requested"
+        );
     }
 
     /// An app that logs watcher call order to verify init fires before on_mount_with_app.
@@ -3327,23 +3639,34 @@ mod tests {
     }
 
     impl InitOrderApp {
-        fn new() -> Self { Self { log: Vec::new() } }
+        fn new() -> Self {
+            Self { log: Vec::new() }
+        }
 
         #[allow(dead_code)] // reactive-setter scaffolding for the init-order watcher test
         fn set_count(&mut self, _val: i32, ctx: &mut ReactiveCtx) {
             use crate::reactive::ReactiveFlags;
-            ctx.record_change("count", ReactiveFlags::reactive(), Box::new(0_i32), Box::new(0_i32));
+            ctx.record_change(
+                "count",
+                ReactiveFlags::reactive(),
+                Box::new(0_i32),
+                Box::new(0_i32),
+            );
         }
     }
 
     impl TextualApp for InitOrderApp {
-        fn compose(&mut self) -> AppRoot { AppRoot::new() }
+        fn compose(&mut self) -> AppRoot {
+            AppRoot::new()
+        }
 
         fn on_mount_with_app(&mut self, _app: &mut App, _ctx: &mut crate::event::WidgetCtx) {
             self.log.push("on_mount_with_app");
         }
 
-        fn reactive_widget_mut(&mut self) -> Option<&mut dyn ReactiveWidget> { Some(self) }
+        fn reactive_widget_mut(&mut self) -> Option<&mut dyn ReactiveWidget> {
+            Some(self)
+        }
     }
 
     impl ReactiveWidget for InitOrderApp {
@@ -3382,7 +3705,10 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_app_mount(&mut runtime, &mut __w);
         }
 
@@ -3391,7 +3717,10 @@ mod tests {
         let watcher_pos = guard.log.iter().position(|&s| s == "watcher_count");
         let mount_pos = guard.log.iter().position(|&s| s == "on_mount_with_app");
         assert!(watcher_pos.is_some(), "watcher should have fired");
-        assert!(mount_pos.is_some(), "on_mount_with_app should have been called");
+        assert!(
+            mount_pos.is_some(),
+            "on_mount_with_app should have been called"
+        );
         assert!(
             watcher_pos.unwrap() < mount_pos.unwrap(),
             "init watcher must fire before on_mount_with_app"
@@ -3459,16 +3788,20 @@ mod tests {
         let mut adapter = TextualAppAdapter::new(app.clone(), NoopWidget::new());
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                crate::message::ButtonPressed {
-                    description: "test".to_string(),
-                    button_id: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    crate::message::ButtonPressed {
+                        description: "test".to_string(),
+                        button_id: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         let guard = app.lock().unwrap();
         assert_eq!(guard.typed_handler_count, 1, "typed handler ran");
@@ -3481,16 +3814,20 @@ mod tests {
         let mut adapter = TextualAppAdapter::new(app.clone(), NoopWidget::new());
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             adapter.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                crate::message::ButtonPressed {
-                    description: "test".to_string(),
-                    button_id: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    crate::message::ButtonPressed {
+                        description: "test".to_string(),
+                        button_id: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         let guard = app.lock().unwrap();
         assert_eq!(guard.typed_handler_count, 1, "typed handler ran");
@@ -3571,7 +3908,13 @@ mod tests {
         // Set n = 3 (records a recompose change), then run the bridge.
         app_state.lock().unwrap().set_n(3, runtime.reactive_ctx());
         let mut ctx = EventCtx::default();
-        { let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); adapter_for_state.dispatch_app_reactive(&mut runtime, &mut __w) };
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            adapter_for_state.dispatch_app_reactive(&mut runtime, &mut __w)
+        };
 
         // The app-content subtree was recomposed: now three Labels.
         let after = runtime

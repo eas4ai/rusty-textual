@@ -97,11 +97,7 @@ fn transact_with(
             Err(_) => break,
         }
     }
-    if buf.is_empty() {
-        None
-    } else {
-        Some(buf)
-    }
+    if buf.is_empty() { None } else { Some(buf) }
 }
 
 #[cfg(test)]

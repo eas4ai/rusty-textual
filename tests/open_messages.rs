@@ -293,7 +293,11 @@ fn t5_5_builtin_and_custom_coexist_in_same_queue() {
         fn render(&self, _console: &Console, _options: &ConsoleOptions) -> rich_rs::Segments {
             rich_rs::Segments::new()
         }
-        fn on_message(&mut self, message: &MessageEvent, _ctx: &mut rusty_textual::event::WidgetCtx) {
+        fn on_message(
+            &mut self,
+            message: &MessageEvent,
+            _ctx: &mut rusty_textual::event::WidgetCtx,
+        ) {
             if message.is::<Ping>() {
                 self.ping_log.lock().unwrap().push(Received {
                     is_ping: true,

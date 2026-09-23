@@ -52,9 +52,9 @@ impl StyleSelector {
                 .classes
                 .iter()
                 .all(|class| meta.classes.iter().any(|value| value == class))
-            {
-                return false;
-            }
+        {
+            return false;
+        }
         if !self.pseudos.is_empty() {
             for pseudo in &self.pseudos {
                 let ok = match pseudo {
@@ -247,7 +247,14 @@ mod tests {
         // In Rust, concrete widgets never have type_name=="Widget"; the selector
         // "Widget" must match ALL widgets regardless of their type name.
         let selector = StyleSelector::new("Widget");
-        for type_name in ["Button", "Input", "Screen", "Label", "DataTable", "MyCustomWidget"] {
+        for type_name in [
+            "Button",
+            "Input",
+            "Screen",
+            "Label",
+            "DataTable",
+            "MyCustomWidget",
+        ] {
             let meta = SelectorMeta {
                 type_name: type_name.to_string(),
                 type_aliases: Vec::new(),
@@ -269,7 +276,10 @@ mod tests {
         // (id, class, pseudo) still apply.
         let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Focus);
         let unfocused = meta_with_states(SelectorStates::default());
-        let focused = meta_with_states(SelectorStates { focused: true, ..Default::default() });
+        let focused = meta_with_states(SelectorStates {
+            focused: true,
+            ..Default::default()
+        });
         assert!(!selector.matches(&unfocused));
         assert!(selector.matches(&focused));
     }

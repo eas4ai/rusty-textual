@@ -164,7 +164,11 @@ fn derive_composes_with_reactive() {
     assert_eq!(*card.count(), 0);
     card.set_count(5, &mut ctx);
     assert_eq!(*card.count(), 5);
-    assert_eq!(ctx.changes().len(), 1, "reactive setter must record a change");
+    assert_eq!(
+        ctx.changes().len(),
+        1,
+        "reactive setter must record a change"
+    );
 
     // The `reactive` opt-in routes reactive_widget to SELF (so the compound's
     // own reactive fields are reachable), not to the base.
@@ -200,7 +204,12 @@ impl TextualApp for CardApp {
         AppRoot::new().with_child(StatCard::new())
     }
 
-    fn on_message_with_app(&mut self, _app: &mut App, message: &MessageEvent, ctx: &mut rusty_textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        _app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut rusty_textual::event::WidgetCtx,
+    ) {
         if let Some(bp) = message.downcast_ref::<ButtonPressed>() {
             if bp.button_id.as_deref() == Some("go") {
                 self.presses.fetch_add(1, Ordering::SeqCst);

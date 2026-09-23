@@ -81,8 +81,10 @@ impl crate::widgets::Render for SelectCurrent {
     /// label update on selection) regenerates rather than clears.
     fn compose(&mut self) -> ComposeResult {
         vec![
-            ChildDecl::new(Box::new(Static::new(self.label_text().to_string()).without_markup()))
-                .with_id("label"),
+            ChildDecl::new(Box::new(
+                Static::new(self.label_text().to_string()).without_markup(),
+            ))
+            .with_id("label"),
             ChildDecl::new(Box::new(Static::new("▼").without_markup()))
                 .with_classes(&["arrow", "down-arrow"]),
             ChildDecl::new(Box::new(Static::new("▲").without_markup()))

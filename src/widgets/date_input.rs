@@ -1,12 +1,17 @@
 //! Segmented date input with an inline spinner strip.
 //!
 //! A `DateInput` edits one calendar date through day/month/year segments in
-//! locale order ([`DateOrder::Dmy`], [`DateOrder::Mdy`], [`DateOrder::Ymd`]).
+//! locale order ([`DateOrder::Dmy`], [`DateOrder::Mdy`], [`DateOrder::Ymd`]);
+//! the default is year / month / day ([`DateOrder::Ymd`]).
 //! There are two entry paths, as designed:
 //!
-//! - **Direct entry**: typing digits fills the focused segment (2 digits for
-//!   day/month, 4 for year; a digit that would overflow the range restarts
-//!   the segment).
+//! - **Direct entry**: typing digits fills an edit buffer for the focused
+//!   segment (2 digits for day/month, 4 for year; a digit that would
+//!   overflow the range restarts the segment). The buffer commits when it
+//!   is full or when moving to another segment — partial input never touches
+//!   committed state, so typing a year while Feb 29 is selected keeps day
+//!   29 until the year actually commits. Leaving the widget (blur), picking
+//!   the strip, or Escape discards partial input; Backspace pops one digit.
 //! - **Spinner strip**: focusing the widget opens a strip below the input,
 //!   the same width as the input, showing `prev | current | next` for the
 //!   focused segment with `<` / `>` ends (`[< 29 | 30 | 31 >]`). Up/Down
@@ -31,11 +36,11 @@ pub const YEAR_MAX: i32 = 2100;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DateOrder {
     /// Day / month / year.
-    #[default]
     Dmy,
     /// Month / day / year.
     Mdy,
-    /// Year / month / day.
+    /// Year / month / day (default).
+    #[default]
     Ymd,
 }
 
@@ -87,7 +92,7 @@ impl DateInput {
     pub fn new(year: i32, month: u8, day: u8) -> Self {
         let mut input = Self {
             seed: NodeSeed::default(),
-            order: DateOrder::Dmy,
+            order: DateOrder::default(),
             year: year.clamp(YEAR_MIN, YEAR_MAX),
             month: month.clamp(1, 12),
             day: day.clamp(1, 31),
@@ -190,7 +195,7 @@ impl DateInput {
             SegmentKind::Year => self.year = wrapped,
         }
         self.clamp_day();
-        changed || self.seg_value(kind) != wrapped
+        changed
     }
 
     fn post_change(&self, ctx: &mut WidgetCtx) {
@@ -218,6 +223,13 @@ impl DateInput {
     }
 
     /// Type one digit into the focused segment (direct entry).
+    ///
+    /// Digits accumulate in an edit buffer that is separate from the
+    /// committed date: the segment commits when the buffer is full, or when
+    /// focus leaves the segment ([`Self::commit_typing`]). Partial input
+    /// never touches state, so typing a year while Feb 29 is selected keeps
+    /// day 29 until the year actually commits (then [`Self::clamp_day`]
+    /// revalidates once).
     fn type_digit(&mut self, ctx: &mut WidgetCtx, digit: char) {
         let kind = self.focused_kind();
         let width = Self::seg_width(kind);
@@ -232,7 +244,26 @@ impl DateInput {
             self.typing = digit.to_string();
             parsed = self.typing.parse().unwrap_or(0);
         }
+        if self.typing.len() >= width {
+            let (min, _) = self.seg_range(kind);
+            if self.write_seg(kind, parsed.max(min)) {
+                self.changed(ctx);
+                return;
+            }
+        }
+        ctx.request_repaint();
+    }
+
+    /// Commit a partial edit buffer (called when focus leaves the segment).
+    /// A no-op when the buffer is empty.
+    fn commit_typing(&mut self, ctx: &mut WidgetCtx) {
+        if self.typing.is_empty() {
+            return;
+        }
+        let kind = self.focused_kind();
         let (min, _) = self.seg_range(kind);
+        let parsed: i32 = self.typing.parse().unwrap_or(min);
+        self.typing.clear();
         if self.write_seg(kind, parsed.max(min)) {
             self.changed(ctx);
         } else {
@@ -242,7 +273,7 @@ impl DateInput {
 
     /// Move segment focus by `dir` with wrap, committing in-progress typing.
     fn move_seg(&mut self, ctx: &mut WidgetCtx, dir: i32) {
-        self.typing.clear();
+        self.commit_typing(ctx);
         self.seg = wrap_range(self.seg as i32 + dir, 0, 2) as usize;
         ctx.request_repaint();
     }
@@ -309,8 +340,11 @@ impl DateInput {
 
     fn set_open(&mut self, ctx: &mut WidgetCtx, open: bool) {
         if self.open != open {
-            self.open = open;
+            // Partial input is scratch: moving between segments commits it,
+            // but leaving the widget (blur) or picking the strip discards
+            // it — the strip is its own entry path.
             self.typing.clear();
+            self.open = open;
         }
         ctx.request_repaint();
     }
@@ -446,7 +480,8 @@ impl Widget for DateInput {
         }
         match event {
             Event::Focus(focus) if focus.node == ctx.node_id() => {
-                self.seg = 0;
+                // Segment position survives refocus; a fresh widget starts
+                // at segment 0 via `new`.
                 self.set_open(ctx, true);
                 ctx.set_handled();
             }
@@ -464,6 +499,13 @@ impl Widget for DateInput {
                     "escape" => {
                         self.typing.clear();
                         ctx.request_repaint();
+                    }
+                    "backspace" => {
+                        // Pop one digit off the edit buffer; committed
+                        // state is untouched.
+                        if self.typing.pop().is_some() {
+                            ctx.request_repaint();
+                        }
                     }
                     _ => {
                         if let Some(ch) = key.character {
@@ -485,8 +527,9 @@ impl Widget for DateInput {
                     let x = down.x as usize;
                     for (i, (start, end)) in spans.iter().enumerate() {
                         if x >= *start && x < *end {
+                            // Clicking another segment commits partial input.
+                            self.commit_typing(ctx);
                             self.seg = i;
-                            self.typing.clear();
                             ctx.request_repaint();
                             ctx.set_handled();
                             return;
@@ -522,7 +565,9 @@ mod tests {
     #[test]
     fn leap_year_rule() {
         assert!(is_leap_year(2024));
+        assert!(is_leap_year(2028));
         assert!(!is_leap_year(2023));
+        assert!(!is_leap_year(2100));
         assert!(!is_leap_year(1900));
         assert!(is_leap_year(2000));
     }
@@ -553,15 +598,17 @@ mod tests {
 
     #[test]
     fn segment_orders_cover_locales() {
-        let mut dmy = DateInput::new(2024, 3, 5);
-        let (row, _) = dmy.display_row();
-        assert_eq!(row, "05 / 03 / 2024");
-        dmy.order = DateOrder::Mdy;
-        let (row, _) = dmy.display_row();
-        assert_eq!(row, "03 / 05 / 2024");
-        dmy.order = DateOrder::Ymd;
-        let (row, _) = dmy.display_row();
+        // Year / month / day is the default order.
+        let mut input = DateInput::new(2024, 3, 5);
+        assert_eq!(input.order_of(), DateOrder::Ymd);
+        let (row, _) = input.display_row();
         assert_eq!(row, "2024 / 03 / 05");
+        input.order = DateOrder::Mdy;
+        let (row, _) = input.display_row();
+        assert_eq!(row, "03 / 05 / 2024");
+        input.order = DateOrder::Dmy;
+        let (row, _) = input.display_row();
+        assert_eq!(row, "05 / 03 / 2024");
     }
 
     /// Manual entry scrolls the strip to the typed number, ignoring
@@ -589,10 +636,129 @@ mod tests {
         );
     }
 
+    /// The user changed the year, so the dependent day adapts:
+    /// 2024/02/29 -> year 2025 -> 2025/02/28 (never rejects the change).
+    #[test]
+    fn changing_year_clamps_dependent_day() {
+        let mut input = DateInput::new(2024, 2, 29);
+        assert!(input.write_seg(SegmentKind::Year, 2025));
+        assert_eq!(input.date(), (2025, 2, 28));
+    }
+
+    /// Same hierarchical rule for months: 2026/01/31 -> April -> 2026/04/30.
+    #[test]
+    fn changing_month_clamps_dependent_day() {
+        let mut input = DateInput::new(2026, 1, 31);
+        assert!(input.write_seg(SegmentKind::Month, 4));
+        assert_eq!(input.date(), (2026, 4, 30));
+    }
+
+    /// The day scroller is dynamic: Feb 2025 centers on 28 with next
+    /// wrapping to 01, while Feb 2024 offers 29.
+    #[test]
+    fn feb_strip_follows_leap_year() {
+        let mut leap = DateInput::new(2024, 2, 29);
+        leap.seg = 2; // day strip (position 2 in YMD)
+        let (strip, _) = leap.strip_row(14);
+        assert!(strip.contains("28 | 29 | 01"), "got {strip:?}");
+        let mut flat = DateInput::new(2024, 2, 29);
+        assert!(flat.write_seg(SegmentKind::Year, 2025));
+        flat.seg = 2;
+        let (strip, _) = flat.strip_row(14);
+        assert!(strip.contains("27 | 28 | 01"), "got {strip:?}");
+    }
+
+    /// Edit buffer vs committed state: typing `202` over the year while Feb
+    /// 29 is selected must leave the committed date untouched; only the
+    /// full `2028` commits (leap, so day 29 survives).
+    #[test]
+    fn partial_year_typing_preserves_feb_29_until_commit() {
+        use crate::event::EventCtx;
+        use crate::node_id::node_id_from_ffi;
+        let mut input = DateInput::new(2024, 2, 29);
+        input.seg = 0; // year is position 0 in the default YMD order
+        input.open = true;
+        let mut ctx = EventCtx::default();
+        let node = node_id_from_ffi(1);
+        ctx.set_node_id(node);
+        let mut wctx = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+        for ch in ['2', '0', '2'] {
+            input.type_digit(&mut wctx, ch);
+            assert_eq!(
+                input.date(),
+                (2024, 2, 29),
+                "partial year {ch} must not revalidate the day"
+            );
+        }
+        input.type_digit(&mut wctx, '8');
+        assert_eq!(input.date(), (2028, 2, 29));
+    }
+
+    /// Committing a non-leap year revalidates once: full `2025` clamps the
+    /// day 29 -> 28.
+    #[test]
+    fn full_year_typing_revalidates_day_on_commit() {
+        use crate::event::EventCtx;
+        use crate::node_id::node_id_from_ffi;
+        let mut input = DateInput::new(2024, 2, 29);
+        input.seg = 0; // year is position 0 in the default YMD order
+        input.open = true;
+        let mut ctx = EventCtx::default();
+        let node = node_id_from_ffi(1);
+        ctx.set_node_id(node);
+        let mut wctx = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+        for ch in ['2', '0', '2', '5'] {
+            input.type_digit(&mut wctx, ch);
+        }
+        assert_eq!(input.date(), (2025, 2, 28));
+    }
+
+    /// Leaving the segment commits the partial buffer: `202` clamps to the
+    /// minimum year and revalidates the day exactly once.
+    #[test]
+    fn leaving_segment_commits_partial_year() {
+        use crate::event::EventCtx;
+        use crate::node_id::node_id_from_ffi;
+        let mut input = DateInput::new(2024, 2, 29);
+        input.seg = 0; // year is position 0 in the default YMD order
+        input.open = true;
+        let mut ctx = EventCtx::default();
+        let node = node_id_from_ffi(1);
+        ctx.set_node_id(node);
+        let mut wctx = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+        for ch in ['2', '0', '2'] {
+            input.type_digit(&mut wctx, ch);
+        }
+        input.move_seg(&mut wctx, -1);
+        assert_eq!(input.date(), (YEAR_MIN, 2, 28));
+        assert_eq!(input.focused_segment(), 2);
+    }
+
+    /// Leaving the widget discards scratch input: `202` + blur leaves the
+    /// committed leap-day date untouched.
+    #[test]
+    fn blur_discards_partial_year() {
+        use crate::event::EventCtx;
+        use crate::node_id::node_id_from_ffi;
+        let mut input = DateInput::new(2024, 2, 29);
+        input.seg = 0;
+        input.open = true;
+        let mut ctx = EventCtx::default();
+        let node = node_id_from_ffi(1);
+        ctx.set_node_id(node);
+        let mut wctx = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+        for ch in ['2', '0', '2'] {
+            input.type_digit(&mut wctx, ch);
+        }
+        input.set_open(&mut wctx, false);
+        assert_eq!(input.date(), (2024, 2, 29));
+        assert!(input.typing.is_empty());
+    }
+
     #[test]
     fn strip_row_marks_three_values() {
-        let input = DateInput::new(2024, 3, 30);
-        // Focused segment defaults to day (position 0 in DMY).
+        let mut input = DateInput::new(2024, 3, 30);
+        input.seg = 2; // day is position 2 in the default YMD order.
         let (strip, zones) = input.strip_row(14);
         assert!(strip.starts_with('<'));
         assert!(strip.ends_with('>'));

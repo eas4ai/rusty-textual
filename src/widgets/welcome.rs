@@ -104,8 +104,9 @@ impl Render for Welcome {
         let text_node = crate::compose::ChildDecl::new(Box::new(md)).with_id("text");
 
         let container = Container::new();
-        let md_container =
-            crate::compose::ChildDecl::new(Box::new(container)).with_id("md").with_children(vec![text_node]);
+        let md_container = crate::compose::ChildDecl::new(Box::new(container))
+            .with_id("md")
+            .with_children(vec![text_node]);
 
         let button = Button::new(self.close_label.clone()).variant(ButtonVariant::Success);
         let close_node = crate::compose::ChildDecl::new(Box::new(button)).with_id("close");
@@ -210,16 +211,20 @@ mod tests {
         let mut ctx = EventCtx::default();
         // Send ButtonPressed from *any* sender (simulates arena child button).
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             welcome.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ButtonPressed {
-                    description: "Button".to_string(),
-                    button_id: None,
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ButtonPressed {
+                        description: "Button".to_string(),
+                        button_id: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -244,10 +249,20 @@ mod tests {
         let mut ctx = EventCtx::default();
         // A non-ButtonPressed message should not be handled.
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             welcome.on_message(
-            &MessageEvent::new(NodeId::default(), InputChanged { value: "x".to_string(), validation: crate::validation::ValidationResult::success() }),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    InputChanged {
+                        value: "x".to_string(),
+                        validation: crate::validation::ValidationResult::success(),
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert!(!ctx.handled());
     }

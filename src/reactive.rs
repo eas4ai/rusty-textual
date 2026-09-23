@@ -1551,8 +1551,7 @@ mod tests {
         // Record the change INSIDE the prevent scope (this is what a handler's
         // `Handle::update` inside `ctx.prevent::<M, _>(...)` does).
         let mut ctx = {
-            let _scope =
-                crate::message::enter_prevent_scope(&[TypeId::of::<PreventPing>()]);
+            let _scope = crate::message::enter_prevent_scope(&[TypeId::of::<PreventPing>()]);
             let mut ctx = ReactiveCtx::new(id);
             ctx.record_change(
                 "value",

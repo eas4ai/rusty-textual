@@ -422,7 +422,11 @@ impl crate::widgets::Interactive for ContentSwitcher {
         }
     }
 
-    fn on_message(&mut self, message: &crate::message::MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+    fn on_message(
+        &mut self,
+        message: &crate::message::MessageEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         if let Some(child) = self.visible_child_mut() {
             child.on_message(message, ctx);
         }

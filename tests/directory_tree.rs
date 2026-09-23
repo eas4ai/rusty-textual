@@ -4,12 +4,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rich_rs::Console;
-use slotmap::SlotMap;
-use rusty_textual::message::{AsyncDirectoryEntry, AsyncTaskResult, MessageEvent};
 use rusty_textual::event::EventCtx;
+use rusty_textual::message::{AsyncDirectoryEntry, AsyncTaskResult, MessageEvent};
 use rusty_textual::prelude::*;
 use rusty_textual::render::FrameBuffer;
 use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
+use slotmap::SlotMap;
 
 fn make_node_id() -> NodeId {
     let mut sm: SlotMap<NodeId, ()> = SlotMap::new();
@@ -92,17 +92,24 @@ fn directory_tree_lazy_loads_children_on_expand_message_flow() {
     tree.on_layout(60, 8);
 
     let mut message_ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut message_ctx); tree.on_message(
-        &MessageEvent::new(
-            tree.tree_id(),
-            TreeNodeToggled {
-                index: 1,
-                label: "nested".to_string(),
-                expanded: true,
-                node_id: rusty_textual::widgets::TreeNodeId::default(),
-            },
-        ),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut message_ctx,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                tree.tree_id(),
+                TreeNodeToggled {
+                    index: 1,
+                    label: "nested".to_string(),
+                    expanded: true,
+                    node_id: rusty_textual::widgets::TreeNodeId::default(),
+                },
+            ),
+            &mut __w,
+        )
+    };
     assert!(message_ctx.handled());
 
     let console = Console::new();
@@ -115,23 +122,31 @@ fn directory_tree_lazy_loads_children_on_expand_message_flow() {
             .any(|line| line.contains("leaf.txt"))
     );
 
-    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); tree.on_message(
-        &MessageEvent::new(
-            NodeId::default(),
-            AsyncTaskCompleted {
-                task_id: 1,
-                target: NodeId::default(),
-                result: AsyncTaskResult::DirectoryEntries {
-                    path: nested_dir.display().to_string(),
-                    entries: vec![AsyncDirectoryEntry {
-                        path: nested_dir.join("leaf.txt").display().to_string(),
-                        label: "leaf.txt".to_string(),
-                        is_dir: false,
-                    }],
+    {
+        let mut __e = rusty_textual::event::EventCtx::default();
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut __e,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                NodeId::default(),
+                AsyncTaskCompleted {
+                    task_id: 1,
+                    target: NodeId::default(),
+                    result: AsyncTaskResult::DirectoryEntries {
+                        path: nested_dir.display().to_string(),
+                        entries: vec![AsyncDirectoryEntry {
+                            path: nested_dir.join("leaf.txt").display().to_string(),
+                            label: "leaf.txt".to_string(),
+                            is_dir: false,
+                        }],
+                    },
                 },
-            },
-        ),
-        &mut __w) };
+            ),
+            &mut __w,
+        )
+    };
 
     let after_tick = FrameBuffer::from_renderable(&console, &options, &tree, None);
     let lines = after_tick.as_plain_lines();
@@ -150,17 +165,24 @@ fn directory_tree_refresh_preserves_expanded_paths() {
     tree.on_layout(60, 8);
 
     let mut message_ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut message_ctx); tree.on_message(
-        &MessageEvent::new(
-            tree.tree_id(),
-            TreeNodeToggled {
-                index: 1,
-                label: "nested".to_string(),
-                expanded: true,
-                node_id: rusty_textual::widgets::TreeNodeId::default(),
-            },
-        ),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut message_ctx,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                tree.tree_id(),
+                TreeNodeToggled {
+                    index: 1,
+                    label: "nested".to_string(),
+                    expanded: true,
+                    node_id: rusty_textual::widgets::TreeNodeId::default(),
+                },
+            ),
+            &mut __w,
+        )
+    };
     assert!(message_ctx.handled());
 
     tree.refresh();
@@ -184,50 +206,72 @@ fn directory_tree_collapsing_node_cancels_pending_lazy_load() {
     tree.on_layout(60, 8);
 
     let mut expand_ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut expand_ctx); tree.on_message(
-        &MessageEvent::new(
-            tree.tree_id(),
-            TreeNodeToggled {
-                index: 1,
-                label: "nested".to_string(),
-                expanded: true,
-                node_id: rusty_textual::widgets::TreeNodeId::default(),
-            },
-        ),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut expand_ctx,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                tree.tree_id(),
+                TreeNodeToggled {
+                    index: 1,
+                    label: "nested".to_string(),
+                    expanded: true,
+                    node_id: rusty_textual::widgets::TreeNodeId::default(),
+                },
+            ),
+            &mut __w,
+        )
+    };
     assert!(expand_ctx.handled());
 
     let mut collapse_ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut collapse_ctx); tree.on_message(
-        &MessageEvent::new(
-            tree.tree_id(),
-            TreeNodeToggled {
-                index: 1,
-                label: "nested".to_string(),
-                expanded: false,
-                node_id: rusty_textual::widgets::TreeNodeId::default(),
-            },
-        ),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut collapse_ctx,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                tree.tree_id(),
+                TreeNodeToggled {
+                    index: 1,
+                    label: "nested".to_string(),
+                    expanded: false,
+                    node_id: rusty_textual::widgets::TreeNodeId::default(),
+                },
+            ),
+            &mut __w,
+        )
+    };
     assert!(collapse_ctx.handled());
 
-    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); tree.on_message(
-        &MessageEvent::new(
-            NodeId::default(),
-            AsyncTaskCompleted {
-                task_id: 1,
-                target: NodeId::default(),
-                result: AsyncTaskResult::DirectoryEntries {
-                    path: nested_dir.display().to_string(),
-                    entries: vec![AsyncDirectoryEntry {
-                        path: nested_dir.join("leaf.txt").display().to_string(),
-                        label: "leaf.txt".to_string(),
-                        is_dir: false,
-                    }],
+    {
+        let mut __e = rusty_textual::event::EventCtx::default();
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut __e,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                NodeId::default(),
+                AsyncTaskCompleted {
+                    task_id: 1,
+                    target: NodeId::default(),
+                    result: AsyncTaskResult::DirectoryEntries {
+                        path: nested_dir.display().to_string(),
+                        entries: vec![AsyncDirectoryEntry {
+                            path: nested_dir.join("leaf.txt").display().to_string(),
+                            label: "leaf.txt".to_string(),
+                            is_dir: false,
+                        }],
+                    },
                 },
-            },
-        ),
-        &mut __w) };
+            ),
+            &mut __w,
+        )
+    };
 
     let console = Console::new();
     let options = options_for(&console, 60, 8);
@@ -246,17 +290,24 @@ fn directory_tree_handles_forwarded_selection_messages() {
     tree.on_layout(40, 4);
 
     let mut message_ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut message_ctx); tree.on_message(
-        &MessageEvent::new(
-            tree.tree_id(),
-            TreeNodeSelected {
-                index: 1,
-                label: "alpha.txt".to_string(),
-                data: None,
-                node_id: rusty_textual::widgets::TreeNodeId::default(),
-            },
-        ),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut message_ctx,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                tree.tree_id(),
+                TreeNodeSelected {
+                    index: 1,
+                    label: "alpha.txt".to_string(),
+                    data: None,
+                    node_id: rusty_textual::widgets::TreeNodeId::default(),
+                },
+            ),
+            &mut __w,
+        )
+    };
 
     assert!(message_ctx.handled());
 }
@@ -270,17 +321,24 @@ fn directory_tree_emits_directory_selected_message_for_directory_nodes() {
     tree.on_layout(40, 4);
 
     let mut message_ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut message_ctx); tree.on_message(
-        &MessageEvent::new(
-            tree.tree_id(),
-            TreeNodeSelected {
-                index: 1,
-                label: "nested".to_string(),
-                data: None,
-                node_id: rusty_textual::widgets::TreeNodeId::default(),
-            },
-        ),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut message_ctx,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                tree.tree_id(),
+                TreeNodeSelected {
+                    index: 1,
+                    label: "nested".to_string(),
+                    data: None,
+                    node_id: rusty_textual::widgets::TreeNodeId::default(),
+                },
+            ),
+            &mut __w,
+        )
+    };
 
     assert!(message_ctx.handled());
 }
@@ -297,7 +355,13 @@ fn directory_tree_keyboard_navigation_is_forwarded_to_inner_tree() {
 
     let down = KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     let mut ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); tree.on_event(&Event::Key(down), &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        tree.on_event(&Event::Key(down), &mut __w)
+    };
     assert!(ctx.handled());
 }
 
@@ -336,37 +400,52 @@ fn directory_tree_unmount_clears_focus_hover_and_pending_loads() {
     tree.on_node_state_changed(NodeState::default(), hovered_state());
 
     let mut expand_ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut expand_ctx); tree.on_message(
-        &MessageEvent::new(
-            tree.tree_id(),
-            TreeNodeToggled {
-                index: 1,
-                label: "nested".to_string(),
-                expanded: true,
-                node_id: rusty_textual::widgets::TreeNodeId::default(),
-            },
-        ),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut expand_ctx,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                tree.tree_id(),
+                TreeNodeToggled {
+                    index: 1,
+                    label: "nested".to_string(),
+                    expanded: true,
+                    node_id: rusty_textual::widgets::TreeNodeId::default(),
+                },
+            ),
+            &mut __w,
+        )
+    };
     assert!(expand_ctx.handled());
 
     tree.on_unmount();
-    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); tree.on_message(
-        &MessageEvent::new(
-            NodeId::default(),
-            AsyncTaskCompleted {
-                task_id: 1,
-                target: NodeId::default(),
-                result: AsyncTaskResult::DirectoryEntries {
-                    path: nested_dir.display().to_string(),
-                    entries: vec![AsyncDirectoryEntry {
-                        path: nested_dir.join("leaf.txt").display().to_string(),
-                        label: "leaf.txt".to_string(),
-                        is_dir: false,
-                    }],
+    {
+        let mut __e = rusty_textual::event::EventCtx::default();
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut __e,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                NodeId::default(),
+                AsyncTaskCompleted {
+                    task_id: 1,
+                    target: NodeId::default(),
+                    result: AsyncTaskResult::DirectoryEntries {
+                        path: nested_dir.display().to_string(),
+                        entries: vec![AsyncDirectoryEntry {
+                            path: nested_dir.join("leaf.txt").display().to_string(),
+                            label: "leaf.txt".to_string(),
+                            is_dir: false,
+                        }],
+                    },
                 },
-            },
-        ),
-        &mut __w) };
+            ),
+            &mut __w,
+        )
+    };
 
     // Focus/hover are now in the node record; without a dispatch guard they read as false.
     assert!(!tree.node_state().focused);
@@ -385,8 +464,8 @@ fn directory_tree_unmount_clears_focus_hover_and_pending_loads() {
 /// Mirrors Python `FilteredDirectoryTree.filter_paths`, whose filter runs inside
 /// the single `_load_directory` worker used for every load (initial + lazy expand
 /// + reload). Here we expand a subdirectory (spawning an async `ReadDirectory`),
-/// deliver an async result containing BOTH a filtered-out entry and a kept entry,
-/// and assert the filtered entry never reaches the rendered tree.
+///   deliver an async result containing BOTH a filtered-out entry and a kept entry,
+///   and assert the filtered entry never reaches the rendered tree.
 #[test]
 fn directory_tree_filter_applies_on_async_lazy_subdir_load() {
     fn no_dotfiles(path: &std::path::Path) -> bool {
@@ -408,30 +487,44 @@ fn directory_tree_filter_applies_on_async_lazy_subdir_load() {
     // Collapse the auto-expanded "nested" node, then re-expand to force a fresh
     // async lazy load (the path exercised by real subdir expansion).
     let mut collapse_ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut collapse_ctx); tree.on_message(
-        &MessageEvent::new(
-            tree.tree_id(),
-            TreeNodeToggled {
-                index: 1,
-                label: "nested".to_string(),
-                expanded: false,
-                node_id: rusty_textual::widgets::TreeNodeId::default(),
-            },
-        ),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut collapse_ctx,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                tree.tree_id(),
+                TreeNodeToggled {
+                    index: 1,
+                    label: "nested".to_string(),
+                    expanded: false,
+                    node_id: rusty_textual::widgets::TreeNodeId::default(),
+                },
+            ),
+            &mut __w,
+        )
+    };
 
     let mut expand_ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut expand_ctx); tree.on_message(
-        &MessageEvent::new(
-            tree.tree_id(),
-            TreeNodeToggled {
-                index: 1,
-                label: "nested".to_string(),
-                expanded: true,
-                node_id: rusty_textual::widgets::TreeNodeId::default(),
-            },
-        ),
-        &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut expand_ctx,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                tree.tree_id(),
+                TreeNodeToggled {
+                    index: 1,
+                    label: "nested".to_string(),
+                    expanded: true,
+                    node_id: rusty_textual::widgets::TreeNodeId::default(),
+                },
+            ),
+            &mut __w,
+        )
+    };
     assert!(expand_ctx.handled());
 
     // Task IDs increment from 1 with each spawn. The initial sync build and the
@@ -442,30 +535,38 @@ fn directory_tree_filter_applies_on_async_lazy_subdir_load() {
 
     // Deliver an async result for the lazy load with both a kept file and a
     // dotfile that the custom filter must exclude.
-    { let mut __e = rusty_textual::event::EventCtx::default(); let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut __e); tree.on_message(
-        &MessageEvent::new(
-            NodeId::default(),
-            AsyncTaskCompleted {
-                task_id,
-                target: NodeId::default(),
-                result: AsyncTaskResult::DirectoryEntries {
-                    path: nested_dir.display().to_string(),
-                    entries: vec![
-                        AsyncDirectoryEntry {
-                            path: nested_dir.join("keep.txt").display().to_string(),
-                            label: "keep.txt".to_string(),
-                            is_dir: false,
-                        },
-                        AsyncDirectoryEntry {
-                            path: nested_dir.join(".secret").display().to_string(),
-                            label: ".secret".to_string(),
-                            is_dir: false,
-                        },
-                    ],
+    {
+        let mut __e = rusty_textual::event::EventCtx::default();
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut __e,
+        );
+        tree.on_message(
+            &MessageEvent::new(
+                NodeId::default(),
+                AsyncTaskCompleted {
+                    task_id,
+                    target: NodeId::default(),
+                    result: AsyncTaskResult::DirectoryEntries {
+                        path: nested_dir.display().to_string(),
+                        entries: vec![
+                            AsyncDirectoryEntry {
+                                path: nested_dir.join("keep.txt").display().to_string(),
+                                label: "keep.txt".to_string(),
+                                is_dir: false,
+                            },
+                            AsyncDirectoryEntry {
+                                path: nested_dir.join(".secret").display().to_string(),
+                                label: ".secret".to_string(),
+                                is_dir: false,
+                            },
+                        ],
+                    },
                 },
-            },
-        ),
-        &mut __w) };
+            ),
+            &mut __w,
+        )
+    };
 
     let console = Console::new();
     let options = options_for(&console, 60, 10);

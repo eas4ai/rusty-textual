@@ -25,17 +25,16 @@ use super::devtools::DevtoolsCommand;
 use super::dispatch_ctx::set_dispatch_recipient;
 use super::helpers::{
     any_widget_active_tree, call_on_mouse_move_tree, collect_focus_chain_tree_sorted,
-    generate_enter_leave_events, mouse_scroll_deltas, pointer_shape_for_hover_tree, should_quit_key,
-    tree_content_local_coords, widget_at_tree_layout,
+    generate_enter_leave_events, mouse_scroll_deltas, pointer_shape_for_hover_tree,
+    should_quit_key, tree_content_local_coords, widget_at_tree_layout,
 };
 use super::render::apply_layout_info_tree_from_layout_rects;
 use super::routing::{
-    active_binding_hints_tree, dispatch_event_broadcast_tree, dispatch_event_to_node_tree,
-    dispatch_event_to_target_tree, dispatch_event_tree, dispatch_message_queue_tree,
-    dispatch_mouse_scroll,
-    dispatch_mouse_scroll_to_target_tree, dispatch_scroll_action_tree, focused_help_metadata_tree,
-    focused_node_id_tree, is_priority_action, is_scroll_action, match_binding_chain,
-    BindingSource,
+    BindingSource, active_binding_hints_tree, dispatch_event_broadcast_tree,
+    dispatch_event_to_node_tree, dispatch_event_to_target_tree, dispatch_event_tree,
+    dispatch_message_queue_tree, dispatch_mouse_scroll, dispatch_mouse_scroll_to_target_tree,
+    dispatch_scroll_action_tree, focused_help_metadata_tree, focused_node_id_tree,
+    is_priority_action, is_scroll_action, match_binding_chain,
 };
 use super::types::{DispatchOutcome, PendingInvalidation, StylesheetReload};
 use crate::node_id::{NodeId, node_id_to_ffi};
@@ -408,9 +407,12 @@ fn dispatch_action_string(
             let tree_ref = &*tree_mut;
             resolve_from.and_then(|start| {
                 crate::action::resolve_action(&parsed, tree_ref, start, |nid| {
-                    tree_ref
-                        .get(nid)
-                        .map(|node| (node.widget.action_namespace(), node.widget.action_registry()))
+                    tree_ref.get(nid).map(|node| {
+                        (
+                            node.widget.action_namespace(),
+                            node.widget.action_registry(),
+                        )
+                    })
                 })
             })
         };
@@ -602,12 +604,8 @@ fn dispatch_simulated_key_like_input(
             let target = resolved.map(|ra| ra.node).unwrap_or(binding_node_id);
             if let Some(node) = tree_mut.get_mut(target) {
                 let mut ctx = EventCtx::default();
-                if execute_action_with_dispatch_target(
-                    &mut *node.widget,
-                    &parsed,
-                    &mut ctx,
-                    target,
-                ) || ctx.handled()
+                if execute_action_with_dispatch_target(&mut *node.widget, &parsed, &mut ctx, target)
+                    || ctx.handled()
                 {
                     pass.repaint_requested |= ctx.repaint_requested();
                     pass.invalidation.merge(ctx.invalidation());
@@ -1384,9 +1382,8 @@ fn snapshot_for(
     app_active: bool,
     app_pseudos: AppRuntimePseudos,
 ) -> SelectorSnapshot {
-    let is_screen = widget.style_type() == "Screen"
-        || widget
-            .style_type_aliases().contains(&"Screen");
+    let is_screen =
+        widget.style_type() == "Screen" || widget.style_type_aliases().contains(&"Screen");
     SelectorSnapshot {
         type_name: widget.style_type().to_string(),
         // Step 6: identity/state now lives on the node record; this off-tree
@@ -1415,9 +1412,8 @@ fn snapshot_for_node(
     app_pseudos: AppRuntimePseudos,
 ) -> SelectorSnapshot {
     let widget = node.widget.as_ref();
-    let is_screen = widget.style_type() == "Screen"
-        || widget
-            .style_type_aliases().contains(&"Screen");
+    let is_screen =
+        widget.style_type() == "Screen" || widget.style_type_aliases().contains(&"Screen");
     let style_id = node.css_id.clone();
     let classes: Vec<String> = node.classes.iter().cloned().collect();
     SelectorSnapshot {
@@ -1453,9 +1449,9 @@ fn selector_matches_snapshot(
             .classes()
             .iter()
             .all(|class| meta.classes.iter().any(|value| value == class))
-        {
-            return false;
-        }
+    {
+        return false;
+    }
     for pseudo in selector.pseudos() {
         let ok = match pseudo {
             crate::css::PseudoClass::Disabled => meta.disabled,
@@ -2020,7 +2016,9 @@ impl App {
     /// Used by binding resolution so `App::BINDINGS` stay in the chain beneath
     /// an active screen (Python `App._check_bindings` always appends the App's
     /// own bindings after the screen chain).
-    pub(crate) fn app_root_tree_when_screen_active(&self) -> Option<&crate::widget_tree::WidgetTree> {
+    pub(crate) fn app_root_tree_when_screen_active(
+        &self,
+    ) -> Option<&crate::widget_tree::WidgetTree> {
         if self.screen_stack.top().is_some() {
             self.widget_tree.as_ref()
         } else {
@@ -2325,6 +2323,7 @@ impl App {
         root: &mut dyn Widget,
         initial: Vec<MessageEvent>,
     ) -> DispatchOutcome {
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         let mut aggregate = DispatchOutcome::default();
         let mut queue = initial;
         loop {
@@ -2332,18 +2331,12 @@ impl App {
             aggregate.repaint_requested |= pass.repaint_requested;
             aggregate.invalidation.merge(pass.invalidation);
             aggregate.stop_requested |= pass.stop_requested;
-            aggregate
-                .animation_requests
-                .extend(pass.animation_requests);
+            aggregate.animation_requests.extend(pass.animation_requests);
             aggregate
                 .style_animation_requests
                 .extend(pass.style_animation_requests);
-            aggregate
-                .worker_requests
-                .extend(pass.worker_requests);
-            aggregate
-                .recompose_nodes
-                .extend(pass.recompose_nodes);
+            aggregate.worker_requests.extend(pass.worker_requests);
+            aggregate.recompose_nodes.extend(pass.recompose_nodes);
             aggregate.class_ops.extend(pass.class_ops);
             let mut next_queue =
                 collect_clipboard_runtime_messages(&mut self.clipboard, &pass.deliver);
@@ -2804,7 +2797,8 @@ impl App {
                         // App-level key hook with runtime handle (Textual-style).
                         let mut app_key_ctx = EventCtx::default();
                         {
-                            let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut app_key_ctx);
+                            let mut __wctx =
+                                WidgetCtx::__from_dispatch(NodeId::default(), &mut app_key_ctx);
                             root.on_app_key(self, &key, &mut __wctx);
                             __wctx.__enqueue_reactive_if_dirty();
                         }
@@ -2964,8 +2958,7 @@ impl App {
                                         )
                                     })
                                 };
-                                let target =
-                                    resolved.map(|ra| ra.node).unwrap_or(binding_node_id);
+                                let target = resolved.map(|ra| ra.node).unwrap_or(binding_node_id);
                                 if let Some(node) = tree_mut.get_mut(target) {
                                     let mut ctx = EventCtx::default();
                                     let handled = execute_action_with_dispatch_target(
@@ -2985,7 +2978,8 @@ impl App {
                                             stop_requested: ctx.stop_requested(),
                                             messages: ctx.take_messages(),
                                             animation_requests: ctx.take_animation_requests(),
-                                            style_animation_requests: ctx.take_style_animation_requests(),
+                                            style_animation_requests: ctx
+                                                .take_style_animation_requests(),
                                             worker_requests: ctx.take_worker_requests(),
                                             recompose_nodes: ctx.take_recompose_nodes(),
                                             default_prevented: false,
@@ -3051,7 +3045,8 @@ impl App {
                                     stop_requested: root_ctx.stop_requested(),
                                     messages: root_ctx.take_messages(),
                                     animation_requests: root_ctx.take_animation_requests(),
-                                    style_animation_requests: root_ctx.take_style_animation_requests(),
+                                    style_animation_requests: root_ctx
+                                        .take_style_animation_requests(),
                                     worker_requests: root_ctx.take_worker_requests(),
                                     recompose_nodes: root_ctx.take_recompose_nodes(),
                                     default_prevented: false,
@@ -3100,7 +3095,10 @@ impl App {
                             {
                                 let mut fallback_ctx = EventCtx::default();
                                 {
-                                    let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut fallback_ctx);
+                                    let mut __wctx = WidgetCtx::__from_dispatch(
+                                        NodeId::default(),
+                                        &mut fallback_ctx,
+                                    );
                                     root.on_app_unhandled_action(self, &action_str, &mut __wctx);
                                     __wctx.__enqueue_reactive_if_dirty();
                                 }
@@ -3112,7 +3110,8 @@ impl App {
                                         stop_requested: fallback_ctx.stop_requested(),
                                         messages: fallback_ctx.take_messages(),
                                         animation_requests: fallback_ctx.take_animation_requests(),
-                                        style_animation_requests: fallback_ctx.take_style_animation_requests(),
+                                        style_animation_requests: fallback_ctx
+                                            .take_style_animation_requests(),
                                         worker_requests: fallback_ctx.take_worker_requests(),
                                         recompose_nodes: fallback_ctx.take_recompose_nodes(),
                                         default_prevented: false,
@@ -3658,12 +3657,11 @@ impl App {
                                     // focus the nearest focusable widget under the
                                     // pointer BEFORE forwarding the event
                                     // (`get_focusable_widget_at` + `set_focus`).
-                                    let focus_target =
-                                        self.active_widget_tree().and_then(|tree| {
-                                            crate::runtime::helpers::focusable_node_for_click(
-                                                tree, target,
-                                            )
-                                        });
+                                    let focus_target = self.active_widget_tree().and_then(|tree| {
+                                        crate::runtime::helpers::focusable_node_for_click(
+                                            tree, target,
+                                        )
+                                    });
                                     if let Some(focus_target) = focus_target
                                         && self.set_focus_node(focus_target)
                                     {
@@ -3824,9 +3822,8 @@ impl App {
                                     InvalidationScope::Global,
                                 );
                                 // Synthesize Click if mouseup target matches mousedown target.
-                                if let Some((click_target, click_event)) = self
-                                    .click_tracker
-                                    .on_mouse_up(
+                                if let Some((click_target, click_event)) =
+                                    self.click_tracker.on_mouse_up(
                                         target,
                                         x,
                                         y,
@@ -4100,10 +4097,7 @@ impl App {
                     // crossterm decodes to a single Paste event — dispatched
                     // to focus like a key, not as raw keystrokes.
                     CrosstermEvent::Paste(text) => {
-                        debug_input(&format!(
-                            "[event] Paste({} chars)",
-                            text.chars().count()
-                        ));
+                        debug_input(&format!("[event] Paste({} chars)", text.chars().count()));
                         if self.dispatch_paste_event(root, text, &mut pending_invalidation) {
                             break 'event_loop;
                         }
@@ -4467,7 +4461,8 @@ impl App {
 
                 let mut app_tick_ctx = EventCtx::default();
                 {
-                    let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut app_tick_ctx);
+                    let mut __wctx =
+                        WidgetCtx::__from_dispatch(NodeId::default(), &mut app_tick_ctx);
                     root.on_app_tick(self, tick, &mut __wctx);
                     __wctx.__enqueue_reactive_if_dirty();
                 }
@@ -4671,7 +4666,11 @@ impl App {
         // observe it via `headless_stop_requested()`.
         if !root_mount_outcome.is_empty() {
             let messages = std::mem::take(&mut root_mount_outcome.messages);
-            self.absorb_outcome(&mut root_mount_outcome, &mut pending, InvalidationScope::Global);
+            self.absorb_outcome(
+                &mut root_mount_outcome,
+                &mut pending,
+                InvalidationScope::Global,
+            );
             let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, messages);
             self.absorb_outcome(&mut msg_outcome, &mut pending, InvalidationScope::Global);
         }
@@ -4709,8 +4708,7 @@ impl App {
                 &Event::Mount(MountEvent { node: node_id }),
             );
             self.absorb_outcome(&mut outcome, &mut pending, InvalidationScope::Global);
-            let mut msg_outcome =
-                self.dispatch_message_queue_with_runtime(root, outcome.messages);
+            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
             self.absorb_outcome(&mut msg_outcome, &mut pending, InvalidationScope::Global);
             // RA2.2: the merged `on_mount(ctx)` for these initial nodes already
             // fired during tree build (`WidgetTree::fire_mount_callbacks`), so it
@@ -4723,8 +4721,7 @@ impl App {
         {
             let mut outcome = self.dispatch_event_auto(root, Event::Ready(ReadyEvent));
             self.absorb_outcome(&mut outcome, &mut pending, InvalidationScope::Global);
-            let mut msg_outcome =
-                self.dispatch_message_queue_with_runtime(root, outcome.messages);
+            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
             self.absorb_outcome(&mut msg_outcome, &mut pending, InvalidationScope::Global);
         }
 
@@ -4743,6 +4740,7 @@ impl App {
         root: &mut dyn Widget,
         pending: &mut PendingInvalidation,
     ) -> crate::Result<()> {
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         const MAX_ITERATIONS: usize = 10_000;
         for _ in 0..MAX_ITERATIONS {
             let mut progressed = false;
@@ -4786,8 +4784,7 @@ impl App {
             let timer_messages = self.drain_ready_timers();
             if !timer_messages.is_empty() {
                 progressed = true;
-                let mut outcome =
-                    self.dispatch_message_queue_with_runtime(root, timer_messages);
+                let mut outcome = self.dispatch_message_queue_with_runtime(root, timer_messages);
                 self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
             }
             if self.has_pending_timer_fires() {
@@ -4825,8 +4822,7 @@ impl App {
             let task_messages = self.async_tasks.drain_completed();
             if !task_messages.is_empty() {
                 progressed = true;
-                let mut outcome =
-                    self.dispatch_message_queue_with_runtime(root, task_messages);
+                let mut outcome = self.dispatch_message_queue_with_runtime(root, task_messages);
                 self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
             }
 
@@ -4961,9 +4957,8 @@ impl App {
                 let regions = pending
                     .content_regions
                     .as_render_regions(self.frame.width, self.frame.height);
-                let layout_invalidation = pending.flags.layout
-                    || pending.flags.style
-                    || self.resized_since_last_render;
+                let layout_invalidation =
+                    pending.flags.layout || pending.flags.style || self.resized_since_last_render;
                 self.render_widget_with_regions(root, regions.as_deref(), layout_invalidation)?;
                 self.apply_layout_info_to_tree();
                 *pending = PendingInvalidation::default();
@@ -5010,6 +5005,15 @@ impl App {
             if !self.headless_ui_thread_registered {
                 crate::runtime::tasks::register_ui_thread();
                 self.headless_ui_thread_registered = true;
+                // Serialize the whole registration window against tests
+                // observing the process-global bridge (see the field docs).
+                // Never hold the test-level guard across this pump on the
+                // same thread — this acquisition would deadlock.
+                self.headless_bridge_guard = Some(
+                    crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner()),
+                );
             }
         }
 
@@ -5133,7 +5137,11 @@ impl App {
                 __wctx.__enqueue_reactive_if_dirty();
             }
             let mut app_tick_outcome = DispatchOutcome::from_event_ctx(&mut app_tick_ctx);
-            self.absorb_outcome(&mut app_tick_outcome, &mut pending, InvalidationScope::Global);
+            self.absorb_outcome(
+                &mut app_tick_outcome,
+                &mut pending,
+                InvalidationScope::Global,
+            );
             let mut msg_outcome =
                 self.dispatch_message_queue_with_runtime(root, app_tick_outcome.messages);
             self.absorb_outcome(&mut msg_outcome, &mut pending, InvalidationScope::Global);
@@ -5148,6 +5156,7 @@ impl App {
         root: &mut dyn Widget,
         text: String,
     ) -> crate::Result<()> {
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         let mut pending = PendingInvalidation::default();
         self.with_headless_style_context(|app| {
             app.headless_process_paste(root, text, &mut pending);
@@ -5162,13 +5171,12 @@ impl App {
         root: &mut dyn Widget,
         key: KeyEvent,
     ) -> crate::Result<()> {
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return Ok(());
         }
         let mut pending = PendingInvalidation::default();
-        self.with_headless_style_context(|app| {
-            app.headless_process_key(root, key, &mut pending)
-        });
+        self.with_headless_style_context(|app| app.headless_process_key(root, key, &mut pending));
         self.headless_pump(root, &mut pending)
     }
 
@@ -5186,8 +5194,7 @@ impl App {
         let mut outcome =
             self.dispatch_event_auto(root, Event::Paste(crate::event::PasteEvent { text }));
         self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-        let mut msg_outcome =
-            self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
         self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
         outcome.stop_requested || msg_outcome.stop_requested
     }
@@ -5262,8 +5269,7 @@ impl App {
                 self.dispatch_event_auto(root, Event::Action(action))
             };
             self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-            let mut msg_outcome =
-                self.dispatch_message_queue_with_runtime(root, outcome.messages);
+            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
             self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
             if outcome.handled || matches!(action, Action::CommandPalette) {
                 return;
@@ -5331,12 +5337,20 @@ impl App {
                             prevented: Vec::new(),
                             class_ops: ctx.take_class_ops(),
                         };
-                        self.absorb_outcome(&mut binding_outcome, pending, InvalidationScope::Global);
+                        self.absorb_outcome(
+                            &mut binding_outcome,
+                            pending,
+                            InvalidationScope::Global,
+                        );
                         let messages = binding_outcome.messages;
                         if !messages.is_empty() {
                             let mut msg_outcome =
                                 self.dispatch_message_queue_with_runtime(root, messages);
-                            self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
+                            self.absorb_outcome(
+                                &mut msg_outcome,
+                                pending,
+                                InvalidationScope::Global,
+                            );
                         }
                         return;
                     }
@@ -5361,11 +5375,14 @@ impl App {
                     prevented: Vec::new(),
                     class_ops: root_ctx.take_class_ops(),
                 };
-                self.absorb_outcome(&mut root_binding_outcome, pending, InvalidationScope::Global);
+                self.absorb_outcome(
+                    &mut root_binding_outcome,
+                    pending,
+                    InvalidationScope::Global,
+                );
                 let messages = root_binding_outcome.messages;
                 if !messages.is_empty() {
-                    let mut msg_outcome =
-                        self.dispatch_message_queue_with_runtime(root, messages);
+                    let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, messages);
                     self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
                 }
                 return;
@@ -5396,8 +5413,7 @@ impl App {
                 self.absorb_outcome(&mut fallback_outcome, pending, InvalidationScope::Global);
                 let messages = fallback_outcome.messages;
                 if !messages.is_empty() {
-                    let mut msg_outcome =
-                        self.dispatch_message_queue_with_runtime(root, messages);
+                    let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, messages);
                     self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
                 }
                 return;
@@ -5417,8 +5433,7 @@ impl App {
         // Raw key dispatch so focused widgets (Input etc.) can consume it.
         let mut key_outcome = self.dispatch_event_auto(root, Event::Key(key.clone()));
         self.absorb_outcome(&mut key_outcome, pending, InvalidationScope::Global);
-        let mut msg_outcome =
-            self.dispatch_message_queue_with_runtime(root, key_outcome.messages);
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, key_outcome.messages);
         self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
         if key_outcome.handled || key_name_handled {
             return;
@@ -5446,8 +5461,7 @@ impl App {
                 self.dispatch_event_auto(root, Event::Action(action))
             };
             self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-            let mut msg_outcome =
-                self.dispatch_message_queue_with_runtime(root, outcome.messages);
+            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
             self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
         }
     }
@@ -5461,6 +5475,7 @@ impl App {
         screen_x: u16,
         screen_y: u16,
     ) -> crate::Result<()> {
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         let mut pending = PendingInvalidation::default();
         self.with_headless_style_context(|app| {
             app.headless_process_mouse_down(root, screen_x, screen_y, &mut pending);
@@ -5478,6 +5493,7 @@ impl App {
         screen_x: u16,
         screen_y: u16,
     ) -> crate::Result<()> {
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         let mut pending = PendingInvalidation::default();
         self.with_headless_style_context(|app| {
             app.headless_process_mouse_down(root, screen_x, screen_y, &mut pending);
@@ -5495,6 +5511,7 @@ impl App {
         screen_x: u16,
         screen_y: u16,
     ) -> crate::Result<()> {
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         let mut pending = PendingInvalidation::default();
         self.with_headless_style_context(|app| {
             app.headless_process_mouse_up(root, screen_x, screen_y, &mut pending);
@@ -5545,8 +5562,7 @@ impl App {
             });
             let mut outcome = self.dispatch_event_to_target_auto(root, target, &down_event);
             self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-            let mut msg_outcome =
-                self.dispatch_message_queue_with_runtime(root, outcome.messages);
+            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
             self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
         }
     }
@@ -5620,15 +5636,12 @@ impl App {
             // there, dispatch it with the clicked widget as the default action
             // namespace — so headless clicks on action-link spans (actions03's
             // `app.set_background('red')`) fire the action, not just MouseUp/Click.
-            if !click_stopped
-                && let Some(action) = self.click_action_at(screen_x, screen_y)
-            {
+            if !click_stopped && let Some(action) = self.click_action_at(screen_x, screen_y) {
                 let msg = MessageEvent::new(
                     click_target,
                     crate::message::ActionDispatchRequested { action },
                 );
-                let mut action_outcome =
-                    self.dispatch_message_queue_with_runtime(root, vec![msg]);
+                let mut action_outcome = self.dispatch_message_queue_with_runtime(root, vec![msg]);
                 self.absorb_outcome(&mut action_outcome, pending, InvalidationScope::Global);
             }
 
@@ -5636,8 +5649,7 @@ impl App {
                 self.dispatch_message_queue_with_runtime(root, click_outcome.messages);
             self.absorb_outcome(&mut click_msg_outcome, pending, InvalidationScope::Global);
         }
-        let mut msg_outcome =
-            self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
         self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
     }
 
@@ -5651,6 +5663,7 @@ impl App {
         screen_x: u16,
         screen_y: u16,
     ) -> crate::Result<()> {
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         let mut pending = PendingInvalidation::default();
         self.with_headless_style_context(|app| {
             app.headless_process_mouse_move(root, screen_x, screen_y, &mut pending);
@@ -5685,7 +5698,12 @@ impl App {
                 pending.request_full_content();
             }
             let enter_leave = generate_enter_leave_events(
-                before, self.hovered, screen_x, screen_y, screen_x, screen_y,
+                before,
+                self.hovered,
+                screen_x,
+                screen_y,
+                screen_x,
+                screen_y,
             );
             for (target, event) in enter_leave {
                 let mut outcome = self.dispatch_event_to_target_auto(root, target, &event);
@@ -5716,8 +5734,7 @@ impl App {
             });
             let mut outcome = self.dispatch_event_to_target_auto(root, target, &move_event);
             self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-            let mut msg_outcome =
-                self.dispatch_message_queue_with_runtime(root, outcome.messages);
+            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
             self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
             if changed {
                 pending.request_full_content();
@@ -5953,6 +5970,9 @@ impl App {
         if self.headless_ui_thread_registered {
             crate::runtime::tasks::unregister_ui_thread();
             self.headless_ui_thread_registered = false;
+            // Release only after unregistering: a test acquiring the lock in
+            // between would otherwise still observe `running`.
+            self.headless_bridge_guard = None;
         }
         self.finish()
     }
@@ -6443,8 +6463,7 @@ impl App {
             };
             let mut outcome = self.dispatch_event_to_target_auto(root, node_id, &event);
             self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-            let mut msg_outcome =
-                self.dispatch_message_queue_with_runtime(root, outcome.messages);
+            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
             self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
             // Widget-owned mount hook (registers set_interval timers, posts any
             // mount-time messages via `ctx.post_message` — e.g. Select/ListView
@@ -6490,6 +6509,7 @@ impl App {
         root: &mut dyn Widget,
         pending: &mut PendingInvalidation,
     ) {
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         for _round in 0..crate::reactive::MAX_REACTIVE_ITERATIONS {
             let queued = crate::reactive::take_runtime_reactive_entries();
             let commands = crate::runtime::commands::take_widget_commands();
@@ -6868,7 +6888,8 @@ impl App {
         let mut root_capture_ctx = EventCtx::default();
         if matches!(&event, Event::Key(..)) {
             {
-                let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut root_capture_ctx);
+                let mut __wctx =
+                    WidgetCtx::__from_dispatch(NodeId::default(), &mut root_capture_ctx);
                 root.on_event_capture(&event, &mut __wctx);
                 __wctx.__enqueue_reactive_if_dirty();
             }
@@ -7352,7 +7373,11 @@ mod tests {
             ACTIONS
         }
 
-        fn execute_action(&mut self, action: &ParsedAction, ctx: &mut crate::event::WidgetCtx) -> bool {
+        fn execute_action(
+            &mut self,
+            action: &ParsedAction,
+            ctx: &mut crate::event::WidgetCtx,
+        ) -> bool {
             if action.name != "select" || action.arguments.len() != 1 {
                 return false;
             }
@@ -7412,7 +7437,12 @@ mod tests {
             }
         }
 
-        fn on_app_action(&mut self, _app: &mut App, _action: Action, ctx: &mut crate::event::WidgetCtx) {
+        fn on_app_action(
+            &mut self,
+            _app: &mut App,
+            _action: Action,
+            ctx: &mut crate::event::WidgetCtx,
+        ) {
             self.app_action_hits.fetch_add(1, Ordering::SeqCst);
             ctx.set_handled();
         }
@@ -7424,7 +7454,12 @@ mod tests {
             }
         }
 
-        fn on_app_message(&mut self, _app: &mut App, _message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+        fn on_app_message(
+            &mut self,
+            _app: &mut App,
+            _message: &MessageEvent,
+            ctx: &mut crate::event::WidgetCtx,
+        ) {
             self.app_message_hits.fetch_add(1, Ordering::SeqCst);
             ctx.set_handled();
         }
@@ -8524,6 +8559,9 @@ mod tests {
 
     #[test]
     fn worker_full_pipeline_ctx_to_registry() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         use crate::event::EventCtx;
         use crate::worker::{WorkerRegistry, WorkerState, process_worker_requests};
         let _ = super::drain_accumulated_worker_requests();
@@ -8575,6 +8613,9 @@ mod tests {
 
     #[test]
     fn worker_request_processing_in_runtime_hot_path_is_non_blocking() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         use crate::worker::{WorkerRegistry, WorkerRequest, WorkerRequestPayload, WorkerState};
 
         let owner = node_id_from_ffi(90);
@@ -8645,6 +8686,9 @@ mod tests {
 
     #[test]
     fn worker_state_changes_route_to_owning_widgets_via_message_pipeline() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         use crate::worker::{
             WorkerRegistry, WorkerRequest, WorkerRequestPayload, WorkerState,
             process_worker_requests,
@@ -8739,6 +8783,9 @@ mod tests {
 
     #[test]
     fn worker_state_runtime_messages_fallback_to_runtime_sender_when_owner_missing() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let registry = crate::worker::WorkerRegistry::new();
         let orphan_change = crate::worker::WorkerStateChanged {
             worker_id: crate::worker::WorkerId::new(),
@@ -9131,7 +9178,11 @@ mod tests {
             ACTIONS
         }
 
-        fn execute_action(&mut self, action: &ParsedAction, ctx: &mut crate::event::WidgetCtx) -> bool {
+        fn execute_action(
+            &mut self,
+            action: &ParsedAction,
+            ctx: &mut crate::event::WidgetCtx,
+        ) -> bool {
             if action.name != "add_class" || action.arguments.len() != 2 {
                 return false;
             }
@@ -9178,7 +9229,13 @@ mod tests {
         if let Some(tree_mut) = app.widget_tree.as_mut()
             && let Some(node) = tree_mut.get_mut(resolved.node)
         {
-            assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); node.widget.execute_action(&parsed, &mut __w) });
+            assert!({
+                let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                    crate::node_id::NodeId::default(),
+                    &mut ctx,
+                );
+                node.widget.execute_action(&parsed, &mut __w)
+            });
         }
         let messages = ctx.take_messages();
         assert_eq!(messages.len(), 1);
@@ -9777,6 +9834,9 @@ mod tests {
     /// by a handler is deferred, then applied by that shared flush.
     #[test]
     fn widget_command_applied_by_flush_live_loop_path() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -9815,6 +9875,9 @@ mod tests {
     /// same shared flush under `headless_pump` — no reactive entry required.
     #[test]
     fn widget_command_applied_by_flush_headless_pump_path() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -9845,6 +9908,9 @@ mod tests {
     /// budget's worth of rounds, and drains the residue so the queue is empty.
     #[test]
     fn shared_flush_round_budget_terminates_on_cycle() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -9948,6 +10014,9 @@ mod tests {
     /// closure with a fresh WidgetCtx, then dispatches B's reactive fixpoint).
     #[test]
     fn query_one_update_via_fires_target_watcher_same_pass() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -9990,6 +10059,9 @@ mod tests {
     /// NOT panic (generational id → `get`/resolve returns `None`).
     #[test]
     fn update_via_removed_target_drops_no_panic() {
+        // No bridge lock: every queue touched here is thread-local, and the
+        // `update_via` handler token marks this thread draining (see
+        // `WidgetQuery::update_via`), so a foreign live loop is harmless.
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -10030,6 +10102,7 @@ mod tests {
     /// logged loudly and dropped — no panic, no mutation.
     #[test]
     fn update_via_downcast_miss_drops_no_panic() {
+        // No bridge lock: see `update_via_removed_target_drops_no_panic`.
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -10069,6 +10142,7 @@ mod tests {
     /// `needs_recompose()`/`needs_styles()`, so a recompose-only ctx was discarded.
     #[test]
     fn update_via_recompose_only_reactive_ctx_is_not_dropped() {
+        // No bridge lock: see `update_via_removed_target_drops_no_panic`.
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -10135,6 +10209,9 @@ mod tests {
 
     #[test]
     fn post_up_bubbles_closure_posted_message_to_ancestor() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -10176,6 +10253,9 @@ mod tests {
     // dispatch_simulated_key_like_input is private; test lives here where it is in scope.
     #[test]
     fn on_app_unhandled_action_fires_for_custom_binding() {
+        // No test-level bridge guard here: this test drives a worker pump via
+        // `headless_startup`, and the pump takes UI_THREAD_BRIDGE_LOCK itself
+        // for its registration window — holding it here would deadlock.
         use std::sync::Mutex;
 
         // A widget tree node with a declarative binding x->frob but no action_registry entry.

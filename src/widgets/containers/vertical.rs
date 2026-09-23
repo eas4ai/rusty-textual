@@ -91,12 +91,16 @@ mod tests {
         use crate::widgets::{Container, Widget};
 
         // Base container.
-        let c = Container::new().with_border_title("ct").with_border_subtitle("cs");
+        let c = Container::new()
+            .with_border_title("ct")
+            .with_border_subtitle("cs");
         assert_eq!(Widget::border_title(&c), Some("ct"));
         assert_eq!(Widget::border_subtitle(&c), Some("cs"));
 
         // Non-scroll wrapper delegating to Container.
-        let v = Vertical::new().with_border_title("vt").with_border_subtitle("vs");
+        let v = Vertical::new()
+            .with_border_title("vt")
+            .with_border_subtitle("vs");
         assert_eq!(Widget::border_title(&v), Some("vt"));
         assert_eq!(Widget::border_subtitle(&v), Some("vs"));
 
@@ -106,7 +110,9 @@ mod tests {
 
         // Scroll family: reader chain VerticalScroll -> ScrollableContainer ->
         // ScrollView must surface the border title.
-        let vsc = VerticalScroll::new().with_border_title("st").with_border_subtitle("ss");
+        let vsc = VerticalScroll::new()
+            .with_border_title("st")
+            .with_border_subtitle("ss");
         assert_eq!(Widget::border_title(&vsc), Some("st"));
         assert_eq!(Widget::border_subtitle(&vsc), Some("ss"));
     }

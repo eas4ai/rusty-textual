@@ -18,8 +18,8 @@ use std::marker::PhantomData;
 use std::time::Duration;
 
 use super::commands::{
-    CommandTarget, RootRef, TimerTick, TreeScope, WidgetCommand, WidgetTimerCallback,
-    alloc_widget_timer_id, enqueue_widget_command,
+    CommandTarget, DispatchDrainGuard, RootRef, TimerTick, TreeScope, WidgetCommand,
+    WidgetTimerCallback, alloc_widget_timer_id, enqueue_widget_command,
 };
 use super::{ScreenRef, TimerHandle};
 use crate::event::WidgetCtx;
@@ -68,6 +68,10 @@ impl<W: Widget> WidgetQuery<W> {
     where
         F: FnOnce(&mut W, &mut WidgetCtx) + Send + 'static,
     {
+        // The `&mut WidgetCtx` token proves handler context: this thread does
+        // dispatch-like work and drains its own thread-local queue, so mark it
+        // draining — a foreign test's live loop must not trip the enqueue assert.
+        let _drain = DispatchDrainGuard::enter();
         enqueue_widget_command(WidgetCommand::UpdateWidget {
             target: self.target,
             apply: make_update_apply::<W, F>(f),
@@ -82,6 +86,8 @@ impl<W: Widget> WidgetQuery<W> {
     where
         F: FnOnce(&mut W, &mut WidgetCtx) + Send + 'static,
     {
+        // Same handler-context proof as `update_via` (screen-handler token).
+        let _drain = DispatchDrainGuard::enter();
         enqueue_widget_command(WidgetCommand::UpdateWidget {
             target: self.target,
             apply: make_update_apply::<W, F>(f),
@@ -161,6 +167,8 @@ impl<'a> WidgetCtx<'a> {
     /// `absorb_outcome` path. This inherent method shadows `ReactiveCtx::add_class`
     /// (reachable via `Deref`, which only sets reactive flags).
     pub fn add_class(&mut self, class: &str) {
+        // Handler-context token (`&mut self` on `WidgetCtx`): see `update_via`.
+        let _drain = DispatchDrainGuard::enter();
         enqueue_widget_command(WidgetCommand::AddClass {
             target: self_node_target(self.node_id()),
             class: class.to_string(),
@@ -169,6 +177,8 @@ impl<'a> WidgetCtx<'a> {
 
     /// Remove a CSS class from this widget's own node (command-queue path).
     pub fn remove_class(&mut self, class: &str) {
+        // Handler-context token (`&mut self` on `WidgetCtx`): see `update_via`.
+        let _drain = DispatchDrainGuard::enter();
         enqueue_widget_command(WidgetCommand::RemoveClass {
             target: self_node_target(self.node_id()),
             class: class.to_string(),
@@ -191,6 +201,8 @@ impl<'a> WidgetCtx<'a> {
     /// Add a CSS class to an arbitrary node (command-queue path). Footgun closer
     /// for `ReactiveCtx::add_class_to`.
     pub fn add_class_to(&mut self, node: crate::node_id::NodeId, class: &str) {
+        // Handler-context token (`&mut self` on `WidgetCtx`): see `update_via`.
+        let _drain = DispatchDrainGuard::enter();
         enqueue_widget_command(WidgetCommand::AddClass {
             target: self_node_target(node),
             class: class.to_string(),
@@ -200,6 +212,8 @@ impl<'a> WidgetCtx<'a> {
     /// Remove a CSS class from an arbitrary node (command-queue path). Footgun
     /// closer for `ReactiveCtx::remove_class_from`.
     pub fn remove_class_from(&mut self, node: crate::node_id::NodeId, class: &str) {
+        // Handler-context token (`&mut self` on `WidgetCtx`): see `update_via`.
+        let _drain = DispatchDrainGuard::enter();
         enqueue_widget_command(WidgetCommand::RemoveClass {
             target: self_node_target(node),
             class: class.to_string(),
@@ -217,6 +231,8 @@ impl<'a> WidgetCtx<'a> {
     where
         F: FnOnce(&mut crate::widgets::WidgetStyles) + Send + 'static,
     {
+        // Handler-context token (`&mut self` on `WidgetCtx`): see `update_via`.
+        let _drain = DispatchDrainGuard::enter();
         enqueue_widget_command(WidgetCommand::UpdateStyles {
             target: self_node_target(self.node_id()),
             apply: Box::new(f),
@@ -239,17 +255,21 @@ impl<'a> WidgetCtx<'a> {
         W: Widget,
         F: FnMut(&mut W, &mut WidgetCtx, TimerTick) + Send + 'static,
     {
+        // Handler-context token (`&mut self` on `WidgetCtx`): see `update_via`.
+        let _drain = DispatchDrainGuard::enter();
         let timer_id = alloc_widget_timer_id();
-        let callback: WidgetTimerCallback =
-            Box::new(move |widget: &mut dyn Widget, wctx: &mut WidgetCtx, tick: TimerTick| {
-                match (widget as &mut dyn Any).downcast_mut::<W>() {
-                    Some(concrete) => f(concrete, wctx, tick),
-                    None => crate::debug::debug_render(&format!(
-                        "[widget-timer] fire downcast miss: node is not {}",
-                        std::any::type_name::<W>()
-                    )),
-                }
-            });
+        let callback: WidgetTimerCallback = Box::new(
+            move |widget: &mut dyn Widget, wctx: &mut WidgetCtx, tick: TimerTick| match (widget
+                as &mut dyn Any)
+                .downcast_mut::<W>()
+            {
+                Some(concrete) => f(concrete, wctx, tick),
+                None => crate::debug::debug_render(&format!(
+                    "[widget-timer] fire downcast miss: node is not {}",
+                    std::any::type_name::<W>()
+                )),
+            },
+        );
         enqueue_widget_command(WidgetCommand::RegisterTimer {
             node: self.node_id(),
             timer_id,
@@ -279,13 +299,15 @@ impl<'a> WidgetCtx<'a> {
         W: Widget,
         F: FnOnce(&mut W, &mut WidgetCtx, TimerTick) + Send + 'static,
     {
+        // Handler-context token (`&mut self` on `WidgetCtx`): see `update_via`.
+        let _drain = DispatchDrainGuard::enter();
         let timer_id = alloc_widget_timer_id();
         // The runtime callback type is `FnMut` (repeating timers); adapt the
         // one-shot `FnOnce` through an `Option` take. The runtime never calls
         // it twice (`repeat = Some(1)` removes the timer at its first fire).
         let mut once = Some(f);
-        let callback: WidgetTimerCallback =
-            Box::new(move |widget: &mut dyn Widget, wctx: &mut WidgetCtx, tick: TimerTick| {
+        let callback: WidgetTimerCallback = Box::new(
+            move |widget: &mut dyn Widget, wctx: &mut WidgetCtx, tick: TimerTick| {
                 let Some(f) = once.take() else {
                     return;
                 };
@@ -296,7 +318,8 @@ impl<'a> WidgetCtx<'a> {
                         std::any::type_name::<W>()
                     )),
                 }
-            });
+            },
+        );
         enqueue_widget_command(WidgetCommand::RegisterTimer {
             node: self.node_id(),
             timer_id,
@@ -340,6 +363,8 @@ impl<W: Widget> Handle<W> {
     where
         F: FnOnce(&mut W, &mut WidgetCtx) + Send + 'static,
     {
+        // Handler-context token (`_ctx`): see `WidgetQuery::update_via`.
+        let _drain = DispatchDrainGuard::enter();
         enqueue_widget_command(WidgetCommand::UpdateWidget {
             // Stamp the handle's carried tree identity: screens own separate
             // trees whose slotmap keys collide, so an unstamped NodeId drained
@@ -449,6 +474,9 @@ mod tests {
     /// the command passed `contains()` against the unrelated tree.
     #[test]
     fn handle_update_via_does_not_alias_across_trees() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _ = take_widget_commands();
 
         // Tree A (NOT installed in the app) and a handle to its root.
@@ -485,6 +513,9 @@ mod tests {
     /// commands resolve against (the normal same-tree case).
     #[test]
     fn handle_update_via_applies_in_owning_tree() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _ = take_widget_commands();
 
         let (tree_a, root_a) = build_probe_tree(1);
@@ -521,6 +552,9 @@ mod tests {
     /// no-aliasing guarantee, which this keeps).
     #[test]
     fn handle_update_via_applies_to_owning_tree_while_other_screen_active() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _ = take_widget_commands();
 
         let (tree_a, root_a) = build_probe_tree(1);
@@ -528,7 +562,8 @@ mod tests {
         let handle_a = crate::handle::Handle::<Probe>::resolve(&tree_a, root_a).unwrap();
         let mut app = test_app_with_tree(tree_a);
 
-        app.push_screen(Box::new(ModalScreenStub)).expect("test screen push succeeds");
+        app.push_screen(Box::new(ModalScreenStub))
+            .expect("test screen push succeeds");
         // Screen build may enqueue its own commands; flush them first.
         flush_commands(&mut app);
         assert_ne!(
@@ -566,6 +601,12 @@ mod tests {
     /// against the active tree exactly as before the tree-stamp.
     #[test]
     fn unstamped_node_target_resolves_against_active_tree() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        // Direct queue write (simulates what dispatch would enqueue): mark this
+        // thread draining so a foreign test's live loop can't trip the assert.
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         let _ = take_widget_commands();
 
         let (tree, root) = build_probe_tree(1);
@@ -590,6 +631,9 @@ mod tests {
     /// dispatch scope (and `None` outside one).
     #[test]
     fn ctx_class_ops_stamp_dispatching_tree() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _ = take_widget_commands();
 
         let (_tree, root) = build_probe_tree(1);

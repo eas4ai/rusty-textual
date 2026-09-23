@@ -96,7 +96,9 @@ impl HelpPanel {
             return (0, height);
         }
 
-        let markdown_intrinsic = crate::widgets::Widget::layout_height(&self.markdown).unwrap_or(1).max(1);
+        let markdown_intrinsic = crate::widgets::Widget::layout_height(&self.markdown)
+            .unwrap_or(1)
+            .max(1);
         let max_help = (height / 2).max(1);
         let help_height = markdown_intrinsic
             .min(max_help)
@@ -137,8 +139,8 @@ impl crate::widgets::Interactive for HelpPanel {
 
     fn on_unmount(&mut self) {
         self.app_active = true;
-        crate::widgets::Widget::on_unmount(&mut self.markdown, );
-        crate::widgets::Widget::on_unmount(&mut self.key_panel, );
+        crate::widgets::Widget::on_unmount(&mut self.markdown);
+        crate::widgets::Widget::on_unmount(&mut self.key_panel);
     }
 
     fn on_tick(&mut self, tick: u64) {
@@ -216,8 +218,12 @@ impl crate::widgets::Interactive for HelpPanel {
 impl crate::widgets::Layout for HelpPanel {
     fn layout_height(&self) -> Option<usize> {
         if self.show_help {
-            let markdown_height = crate::widgets::Widget::layout_height(&self.markdown).unwrap_or(1).max(1);
-            let key_panel_height = crate::widgets::Widget::layout_height(&self.key_panel).unwrap_or(1).max(1);
+            let markdown_height = crate::widgets::Widget::layout_height(&self.markdown)
+                .unwrap_or(1)
+                .max(1);
+            let key_panel_height = crate::widgets::Widget::layout_height(&self.key_panel)
+                .unwrap_or(1)
+                .max(1);
             return Some(markdown_height.saturating_add(key_panel_height));
         }
         crate::widgets::Widget::layout_height(&self.key_panel).or(Some(1))
@@ -325,7 +331,10 @@ mod tests {
             },
         );
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             panel.on_message(&msg, &mut __w);
         }
         assert!(panel.showing_help());
@@ -344,7 +353,10 @@ mod tests {
             HelpPanelFocusedHelpCleared,
         );
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             panel.on_message(&msg, &mut __w);
         }
         assert!(!panel.showing_help());
@@ -360,7 +372,10 @@ mod tests {
         ];
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             panel.on_event(&Event::BindingsChanged(hints), &mut __w);
         }
         assert!(ctx.repaint_requested());

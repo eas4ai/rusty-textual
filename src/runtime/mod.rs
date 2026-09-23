@@ -11,33 +11,33 @@ pub mod dispatch_ctx;
 mod event_loop;
 #[cfg(test)]
 mod frozen_bg_regression;
-#[cfg(test)]
-mod loading_cover_regression;
-#[cfg(test)]
-mod toast_rack_regression;
-#[cfg(test)]
-mod tooltip_regression;
+mod helpers;
 #[cfg(test)]
 mod hidden_focus_reset_regression;
-mod overlay_focus_regression;
-mod pointer_focus_regression;
-mod widget_ctx;
-mod helpers;
 mod layers;
+#[cfg(test)]
+mod loading_cover_regression;
+mod overlay_focus_regression;
 pub mod pilot;
+mod pointer_focus_regression;
 mod render;
 mod routing;
 mod tasks;
 mod timers;
+#[cfg(test)]
+mod toast_rack_regression;
+#[cfg(test)]
+mod tooltip_regression;
 mod types;
+mod widget_ctx;
 
 // Public re-exports for integration testing via `rusty_textual::runtime::*`.
 pub(crate) use event_loop::accumulate_worker_request;
 pub use event_loop::resolve_transition_for_property;
 #[doc(hidden)]
 pub use event_loop::take_unhandled_binding_reports;
-pub use pilot::{Pilot, parse_key};
 pub use helpers::{call_on_mouse_move_tree, tree_content_local_coords, widget_at_tree_layout};
+pub use pilot::{Pilot, parse_key};
 pub use render::{
     apply_text_overflow_to_line, constrain_overlay_position, render_tree_to_frame,
     render_tree_to_frame_with_debug, render_tree_to_frame_with_stylesheet, resolve_axis_constrain,
@@ -88,8 +88,8 @@ pub use tasks::CallFromThreadError;
 pub use tasks::PushScreenWaitError;
 use timers::{TimerCallback, TimerRuntime};
 use types::{
-    AppNotification, BindingHintEntry, DEFAULT_NOTIFICATION_TIMEOUT, HitTestMap, PendingInvalidation,
-    StylesheetReload, StylesheetWatcher,
+    AppNotification, BindingHintEntry, DEFAULT_NOTIFICATION_TIMEOUT, HitTestMap,
+    PendingInvalidation, StylesheetReload, StylesheetWatcher,
 };
 
 use helpers::{ClickTracker, apply_size, collect_focus_chain_tree_sorted, default_action_map};
@@ -927,6 +927,12 @@ pub struct App {
     /// `run_test` runs, which would otherwise contend with other tests sharing
     /// the singleton. Unregistered in `headless_finish`.
     headless_ui_thread_registered: bool,
+    /// Holds [`crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK`] across the
+    /// registration window above, so a concurrent test enqueueing a widget
+    /// command never observes this pump's foreign registration (the
+    /// `debug_assert!` in `enqueue_widget_command` reads process-global
+    /// bridge state). Released in `headless_finish`, after unregistering.
+    headless_bridge_guard: Option<std::sync::MutexGuard<'static, ()>>,
     /// Opt-in: deliver the per-frame widget tick (`Widget::on_tick`) to
     /// inactive screens too: the app-root tree under a pushed screen stack
     /// plus every stacked screen below the top. Off by default (active-screen
@@ -1069,6 +1075,7 @@ impl App {
             lifecycle_drain_generation: 0,
             headless_tick: 0,
             headless_ui_thread_registered: false,
+            headless_bridge_guard: None,
             tick_inactive_screens: env_flag("TEXTUAL_TICK_INACTIVE_SCREENS"),
             headless_worker_registry: None,
             pending_highlight_clear: None,
@@ -1280,8 +1287,7 @@ impl App {
                 elapsed,
                 fire_count: new_count,
             };
-            let ran =
-                self.run_on_node_widget(node, |w, ctx| callback(w, ctx, tick), pending);
+            let ran = self.run_on_node_widget(node, |w, ctx| callback(w, ctx, tick), pending);
             if !ran {
                 // Node unmounted since scheduling: purge (backstop), drop callback.
                 self.timers.cancel(timer_id);
@@ -1905,7 +1911,9 @@ impl App {
         let (parent, mut index) = {
             let tree = self.active_widget_tree().ok_or(QueryError::NoMatch)?;
             let parent = tree.parent(sibling).ok_or(QueryError::Unmounted)?;
-            let index = tree.child_index(parent, sibling).ok_or(QueryError::Unmounted)?;
+            let index = tree
+                .child_index(parent, sibling)
+                .ok_or(QueryError::Unmounted)?;
             (parent, index)
         };
         if after {
@@ -1932,10 +1940,7 @@ impl App {
     ///
     /// The returned [`AwaitRemove`] completes once the event loop has drained
     /// this removal's unmount work (PR-14).
-    pub fn remove(
-        &mut self,
-        selector: &str,
-    ) -> std::result::Result<AwaitRemove, QueryError> {
+    pub fn remove(&mut self, selector: &str) -> std::result::Result<AwaitRemove, QueryError> {
         let node_id = self.query_one(selector)?;
         self.remove_node(node_id)
     }
@@ -1948,10 +1953,7 @@ impl App {
     ///
     /// The returned [`AwaitRemove`] completes once the event loop has drained
     /// this removal's unmount work (PR-14).
-    pub fn remove_node(
-        &mut self,
-        node_id: NodeId,
-    ) -> std::result::Result<AwaitRemove, QueryError> {
+    pub fn remove_node(&mut self, node_id: NodeId) -> std::result::Result<AwaitRemove, QueryError> {
         let generation = self.lifecycle_drain_generation();
         let (parent, removed) = {
             let tree = self.active_widget_tree_mut().ok_or(QueryError::NoMatch)?;
@@ -2316,7 +2318,8 @@ impl App {
             if changed {
                 let mut selection_ctx = EventCtx::default();
                 selection_ctx.set_node_id(target);
-                let mut __wctx = crate::event::WidgetCtx::__from_dispatch(target, &mut selection_ctx);
+                let mut __wctx =
+                    crate::event::WidgetCtx::__from_dispatch(target, &mut selection_ctx);
                 widget.selection_updated(&mut __wctx);
                 __wctx.__enqueue_reactive_if_dirty();
             }
@@ -2339,7 +2342,8 @@ impl App {
             if changed {
                 let mut selection_ctx = EventCtx::default();
                 selection_ctx.set_node_id(target);
-                let mut __wctx = crate::event::WidgetCtx::__from_dispatch(target, &mut selection_ctx);
+                let mut __wctx =
+                    crate::event::WidgetCtx::__from_dispatch(target, &mut selection_ctx);
                 widget.selection_updated(&mut __wctx);
                 __wctx.__enqueue_reactive_if_dirty();
             }
@@ -2418,7 +2422,8 @@ impl App {
             if changed {
                 let mut selection_ctx = EventCtx::default();
                 selection_ctx.set_node_id(target);
-                let mut __wctx = crate::event::WidgetCtx::__from_dispatch(target, &mut selection_ctx);
+                let mut __wctx =
+                    crate::event::WidgetCtx::__from_dispatch(target, &mut selection_ctx);
                 widget.selection_updated(&mut __wctx);
                 __wctx.__enqueue_reactive_if_dirty();
             }
@@ -2438,7 +2443,8 @@ impl App {
             if changed {
                 let mut selection_ctx = EventCtx::default();
                 selection_ctx.set_node_id(target);
-                let mut __wctx = crate::event::WidgetCtx::__from_dispatch(target, &mut selection_ctx);
+                let mut __wctx =
+                    crate::event::WidgetCtx::__from_dispatch(target, &mut selection_ctx);
                 widget.selection_updated(&mut __wctx);
                 __wctx.__enqueue_reactive_if_dirty();
             }
@@ -3204,7 +3210,8 @@ impl App {
             found
         };
 
-        let (anc_id, widget_rect, anc_rect, (offset_x, offset_y), (vp_w, vp_h)) = match scroll_info {
+        let (anc_id, widget_rect, anc_rect, (offset_x, offset_y), (vp_w, vp_h)) = match scroll_info
+        {
             Some(info) => info,
             None => return false,
         };
@@ -3262,15 +3269,33 @@ impl App {
             };
             let any = widget as &mut dyn std::any::Any;
             if let Some(sv) = any.downcast_mut::<ScrollView>() {
-                if delta_x != 0 { sv.scroll_by_x(delta_x); scrolled = true; }
-                if delta_y != 0 { sv.scroll_by(delta_y); scrolled = true; }
+                if delta_x != 0 {
+                    sv.scroll_by_x(delta_x);
+                    scrolled = true;
+                }
+                if delta_y != 0 {
+                    sv.scroll_by(delta_y);
+                    scrolled = true;
+                }
             } else if let Some(sc) = any.downcast_mut::<ScrollableContainer>() {
-                if delta_x != 0 { sc.scroll_by_x(delta_x); scrolled = true; }
-                if delta_y != 0 { sc.scroll_by(delta_y); scrolled = true; }
+                if delta_x != 0 {
+                    sc.scroll_by_x(delta_x);
+                    scrolled = true;
+                }
+                if delta_y != 0 {
+                    sc.scroll_by(delta_y);
+                    scrolled = true;
+                }
             } else if let Some(hs) = any.downcast_mut::<HorizontalScroll>() {
-                if delta_x != 0 { hs.scroll_by_x(delta_x); scrolled = true; }
+                if delta_x != 0 {
+                    hs.scroll_by_x(delta_x);
+                    scrolled = true;
+                }
             } else if let Some(vs) = any.downcast_mut::<VerticalScroll>() {
-                if delta_y != 0 { vs.scroll_by(delta_y); scrolled = true; }
+                if delta_y != 0 {
+                    vs.scroll_by(delta_y);
+                    scrolled = true;
+                }
             }
         });
         scrolled
@@ -3378,7 +3403,10 @@ impl App {
     /// Typed wrapper over the same arena access as `with_widget_mut_as`;
     /// for imperative widget APIs. Application state belongs in reactive
     /// fields/signals (RA-3).
-    pub fn query_one_typed<W: Widget>(&self, selector: &str) -> std::result::Result<crate::handle::Handle<W>, QueryError> {
+    pub fn query_one_typed<W: Widget>(
+        &self,
+        selector: &str,
+    ) -> std::result::Result<crate::handle::Handle<W>, QueryError> {
         let node_id = self.query_one(selector)?;
         self.typed_handle::<W>(node_id)
     }
@@ -3387,14 +3415,20 @@ impl App {
     ///
     /// Typed wrapper over the same arena access as `with_widget_mut_as`;
     /// for one-off access to a `NodeId` from a message (e.g. `MessageEvent.sender`).
-    pub fn typed_handle<W: Widget>(&self, node_id: NodeId) -> std::result::Result<crate::handle::Handle<W>, QueryError> {
+    pub fn typed_handle<W: Widget>(
+        &self,
+        node_id: NodeId,
+    ) -> std::result::Result<crate::handle::Handle<W>, QueryError> {
         let tree = self.active_widget_tree().ok_or(QueryError::Unmounted)?;
         crate::handle::Handle::<W>::resolve(tree, node_id)
     }
 
     /// Mount a widget as a direct child of the active tree root and return a
     /// typed handle to it (typed twin of `App::mount`, src/runtime/mod.rs:882).
-    pub fn mount_typed<W: Widget>(&mut self, widget: W) -> std::result::Result<crate::handle::Handle<W>, QueryError> {
+    pub fn mount_typed<W: Widget>(
+        &mut self,
+        widget: W,
+    ) -> std::result::Result<crate::handle::Handle<W>, QueryError> {
         let node_id = self.mount(widget).map_err(|_| QueryError::Unmounted)?;
         let tree = self.active_widget_tree().ok_or(QueryError::Unmounted)?;
         Ok(crate::handle::Handle::new(node_id, tree.tree_id()))
@@ -3678,7 +3712,9 @@ impl App {
             return false;
         }
         self.theme_name = name.to_string();
-        self.dark_mode = crate::theme::get_theme(name).map(|t| t.dark).unwrap_or(true);
+        self.dark_mode = crate::theme::get_theme(name)
+            .map(|t| t.dark)
+            .unwrap_or(true);
         self.rebuild_base_from_active_theme();
         self.refresh_css_for_theme();
         true
@@ -4183,8 +4219,7 @@ impl App {
         self.driver.start()?;
         // SYNC stays off unless the startup negotiation proved support
         // (PR-15b): the env opt-out alone no longer wraps every frame.
-        self.sync_output =
-            self.sync_output && self.driver.negotiated_modes().sync_supported;
+        self.sync_output = self.sync_output && self.driver.negotiated_modes().sync_supported;
         self.refresh_size()?;
         debug_render(&format!("[app] sync_output={}", self.sync_output));
         debug_render(&format!(
@@ -4220,12 +4255,7 @@ impl App {
     /// [`App::exit_message`], marks the headless stop flag so Pilot tests can
     /// observe the request, and stops the live loop. The message (if any) is
     /// printed after the driver shuts down (see [`App::finish`]).
-    pub fn exit(
-        &mut self,
-        result: Option<String>,
-        return_code: i32,
-        message: Option<String>,
-    ) {
+    pub fn exit(&mut self, result: Option<String>, return_code: i32, message: Option<String>) {
         self.return_value = result;
         self.return_code = return_code;
         self.exit_message = message;
@@ -4343,10 +4373,7 @@ impl App {
     /// Returns `Err` and pushes nothing when the screen's stylesheet path
     /// is missing/unreadable ([`Error::StylesheetError`], PR-11) instead of
     /// silently rendering unstyled.
-    pub fn push_screen(
-        &mut self,
-        screen: Box<dyn crate::screen::Screen>,
-    ) -> Result<()> {
+    pub fn push_screen(&mut self, screen: Box<dyn crate::screen::Screen>) -> Result<()> {
         self.dispatch_screen_lifecycle_event(Event::ScreenSuspend);
         self.screen_stack.push(screen)?;
         self.honor_screen_auto_focus();
@@ -5425,7 +5452,9 @@ mod tests {
                 Vec::new()
             } else {
                 self.extracted = true;
-                vec![crate::compose::ChildDecl::new(Box::new(Label::new("child")))]
+                vec![crate::compose::ChildDecl::new(Box::new(Label::new(
+                    "child",
+                )))]
             }
         }
     }
@@ -5608,7 +5637,8 @@ mod tests {
         let adapter_root = tree.set_root(Box::new(AppRoot::new()));
         // App-content AppRoot mounted as first child, carrying one initial Label.
         let initial = AppRoot::new().with_child(Label::new("before"));
-        let app_content = App::mount_extracted_recursive(&mut tree, adapter_root, Box::new(initial));
+        let app_content =
+            App::mount_extracted_recursive(&mut tree, adapter_root, Box::new(initial));
 
         let mut app = App::new().expect("app should initialize");
         app.widget_tree = Some(tree);
@@ -5617,11 +5647,12 @@ mod tests {
         assert_eq!(app.app_content_node_id(), Some(app_content));
 
         // Before: exactly one Label with text "before".
-        let before_labels = app
-            .query("Label")
-            .map(|q| q.into_ids())
-            .unwrap_or_default();
-        assert_eq!(before_labels.len(), 1, "expected one Label before recompose");
+        let before_labels = app.query("Label").map(|q| q.into_ids()).unwrap_or_default();
+        assert_eq!(
+            before_labels.len(),
+            1,
+            "expected one Label before recompose"
+        );
 
         // Recompose with a fresh AppRoot carrying two different Labels.
         let fresh = AppRoot::new()
@@ -5635,10 +5666,7 @@ mod tests {
             Some(app_content),
             "app-content node id is stable across recompose"
         );
-        let after_labels = app
-            .query("Label")
-            .map(|q| q.into_ids())
-            .unwrap_or_default();
+        let after_labels = app.query("Label").map(|q| q.into_ids()).unwrap_or_default();
         assert_eq!(after_labels.len(), 2, "expected two Labels after recompose");
         assert!(
             after_labels.iter().all(|id| !before_labels.contains(id)),
@@ -5716,9 +5744,8 @@ mod tests {
 
         let mut tree = WidgetTree::new();
         let adapter_root = tree.set_root(Box::new(AppRoot::new()));
-        let initial = AppRoot::new().with_compose(vec![
-            ChildDecl::from(Label::new("first")).with_id("row-0"),
-        ]);
+        let initial = AppRoot::new()
+            .with_compose(vec![ChildDecl::from(Label::new("first")).with_id("row-0")]);
         let app_content =
             App::mount_extracted_recursive(&mut tree, adapter_root, Box::new(initial));
 
@@ -5803,13 +5830,24 @@ mod tests {
 
         // Exactly one node was mounted under the root (no interposed wrapper).
         let children = tree.children(root).to_vec();
-        assert_eq!(children.len(), 1, "a classed leaf must not create a wrapper node");
+        assert_eq!(
+            children.len(),
+            1,
+            "a classed leaf must not create a wrapper node"
+        );
         let leaf = children[0];
         let node = tree.get(leaf).expect("leaf node");
         // The id, the class, AND the widget type all live on the SAME node.
         assert_eq!(node.css_id.as_deref(), Some("s"));
-        assert!(node.classes.contains("box"), "class must be on the leaf's own node");
-        assert_eq!(node.widget.style_type(), "Static", "the node IS the Static, not a wrapper");
+        assert!(
+            node.classes.contains("box"),
+            "class must be on the leaf's own node"
+        );
+        assert_eq!(
+            node.widget.style_type(),
+            "Static",
+            "the node IS the Static, not a wrapper"
+        );
     }
 
     #[test]
@@ -6596,10 +6634,7 @@ mod tests {
             &mut pending,
         );
         // The post bubbled into the pending widget-post queue (PostUp path).
-        posted |= app
-            .pending_widget_posts
-            .iter()
-            .any(|m| m.is::<MountPing>());
+        posted |= app.pending_widget_posts.iter().any(|m| m.is::<MountPing>());
         assert!(posted, "on_mount should post a MountPing");
     }
 
@@ -6610,8 +6645,12 @@ mod tests {
         let b = app.mount_under("#timers", Button::new("b")).unwrap();
 
         // Insert "before-b" before b, and "after-a" after a.
-        let before = app.mount_before("#timers > Button", Button::new("first")).unwrap();
-        let after_id = app.mount_after("#timers > Button", Button::new("second")).unwrap();
+        let before = app
+            .mount_before("#timers > Button", Button::new("first"))
+            .unwrap();
+        let after_id = app
+            .mount_after("#timers > Button", Button::new("second"))
+            .unwrap();
 
         let tree = app.widget_tree.as_ref().expect("tree exists");
         let kids: Vec<NodeId> = tree.children(parent).to_vec();
@@ -6747,7 +6786,7 @@ mod tests {
 
         let mut tree = WidgetTree::new();
         let root = tree.set_root(Box::new(AppRoot::new()));
-        let probe = tree.mount(root, Box::new(StateProbe::default()));
+        let probe = tree.mount(root, Box::new(StateProbe));
         let mut app = App::new().expect("app should initialize");
         app.widget_tree = Some(tree);
 
@@ -6983,7 +7022,8 @@ mod tests {
         app.add_mode("mode-a", || Box::new(RuntimeModeScreen));
         app.add_mode("mode-b", || Box::new(RuntimeModeScreen));
 
-        app.push_screen(Box::new(RuntimeModeScreen)).expect("test screen push succeeds");
+        app.push_screen(Box::new(RuntimeModeScreen))
+            .expect("test screen push succeeds");
         app.pop_screen();
         assert_eq!(
             log.lock().expect("log lock").as_slice(),
@@ -7157,8 +7197,11 @@ mod tests {
     // (event_loop.rs `dispatch_message_queue_auto_calls_app_message_when_root_message_unhandled`).
     #[test]
     fn screen_callback_defers_app_message_via_widget_command_on_dismiss() {
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         use crate::message::CommandPaletteCommandSelected;
-        use crate::runtime::commands::{take_widget_commands, WidgetCommand};
+        use crate::runtime::commands::{WidgetCommand, take_widget_commands};
         use crate::screen::{Screen, ScreenMessageCtx, ScreenResult};
         use crate::widgets::Widget;
 
@@ -7221,18 +7264,16 @@ mod tests {
                 }
             }),
         )
-            .expect("test screen push succeeds");
+        .expect("test screen push succeeds");
 
         // Drive a key into the active screen tree so the screen's `on_event`
         // handler stages the dismissal (writes the dismiss slot), mirroring a
         // real selection gesture.
         {
-            let esc = crate::keys::KeyEventData::from_crossterm(
-                crossterm::event::KeyEvent::new(
-                    crossterm::event::KeyCode::Enter,
-                    crossterm::event::KeyModifiers::NONE,
-                ),
-            );
+            let esc = crate::keys::KeyEventData::from_crossterm(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Enter,
+                crossterm::event::KeyModifiers::NONE,
+            ));
             let tree = app.active_widget_tree_mut().expect("screen tree active");
             let _ = crate::runtime::dispatch_event_tree(tree, None, &Event::Key(esc));
         }

@@ -425,7 +425,10 @@ mod tests {
             fires += runtime.drain_ready(runtime.now()).len();
         }
         assert_eq!(fires, 3, "bounded interval fires exactly repeat times");
-        assert!(!runtime.contains(11), "bounded interval removed after limit");
+        assert!(
+            !runtime.contains(11),
+            "bounded interval removed after limit"
+        );
     }
 
     #[test]

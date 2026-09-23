@@ -1,11 +1,11 @@
 use rich_rs::Console;
-use slotmap::SlotMap;
-use rusty_textual::prelude::*;
 use rusty_textual::event::EventCtx;
+use rusty_textual::prelude::*;
 use rusty_textual::reactive::ReactiveCtx;
 use rusty_textual::render::FrameBuffer;
 use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
 use rusty_textual::widgets::SortKey;
+use slotmap::SlotMap;
 
 fn make_node_id() -> NodeId {
     let mut sm: SlotMap<NodeId, ()> = SlotMap::new();
@@ -139,7 +139,13 @@ fn data_table_row_cursor_actions_can_scroll_horizontal_viewport() {
     table.on_layout(12, 4);
 
     let mut ctx = EventCtx::default();
-    { let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx); table.on_event(&Event::Action(Action::ScrollRight), &mut __w) };
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        table.on_event(&Event::Action(Action::ScrollRight), &mut __w)
+    };
     assert!(ctx.handled());
 
     let console = Console::new();
@@ -182,7 +188,10 @@ fn data_table_styled_cell_renders_color_and_italic() {
         for x in 0..24 {
             let cell = buf.get(x, y);
             if cell.text == "G" || cell.text == "o" {
-                let style = cell.style.as_ref().expect("styled glyph must carry a style");
+                let style = cell
+                    .style
+                    .as_ref()
+                    .expect("styled glyph must carry a style");
                 assert_eq!(
                     style.italic,
                     Some(true),
@@ -199,7 +208,10 @@ fn data_table_styled_cell_renders_color_and_italic() {
             }
         }
     }
-    assert!(found, "expected to find the styled cell glyph in the render");
+    assert!(
+        found,
+        "expected to find the styled cell glyph in the render"
+    );
 }
 
 /// Numeric-key sort orders rows numerically (so 10 comes after 2, not before).

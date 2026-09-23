@@ -1,10 +1,10 @@
 //! Integration tests for the reactive attribute system.
 
+use rusty_textual::App;
 use rusty_textual::Reactive;
 use rusty_textual::reactive::{
     MAX_REACTIVE_ITERATIONS, ReactiveCtx, ReactiveFlags, ReactiveWidget, run_reactive_phase,
 };
-use rusty_textual::App;
 
 // ── Basic derive + getters/setters ──────────────────────────────────
 
@@ -709,15 +709,31 @@ fn var_init_default_true_and_opt_out() {
         no_init_var: 0,
     };
     let descriptors = w.reactive_field_descriptors();
-    let def = descriptors.iter().find(|d| d.name == "default_var").unwrap();
+    let def = descriptors
+        .iter()
+        .find(|d| d.name == "default_var")
+        .unwrap();
     assert!(!def.flags.repaint);
     assert!(!def.flags.layout);
-    assert!(def.flags.init, "#[var] should have init=true (G4 Python parity)");
+    assert!(
+        def.flags.init,
+        "#[var] should have init=true (G4 Python parity)"
+    );
 
-    let no = descriptors.iter().find(|d| d.name == "no_init_var").unwrap();
+    let no = descriptors
+        .iter()
+        .find(|d| d.name == "no_init_var")
+        .unwrap();
     assert!(!no.flags.repaint);
     assert!(!no.flags.layout);
-    assert!(!no.flags.init, "#[var(init = false)] should have init=false");
+    assert!(
+        !no.flags.init,
+        "#[var(init = false)] should have init=false"
+    );
+
+    // Construction values survive alongside the descriptor checks.
+    assert_eq!(w.default_var, 0);
+    assert_eq!(w.no_init_var, 0);
 }
 
 // ── G1: watch_with_app dispatches with runtime ──────────────────────
@@ -804,18 +820,23 @@ fn var_with_watch_with_app_parses_and_dispatches() {
 #[derive(Reactive)]
 struct RecordInitWidget {
     #[reactive]
-    a: i32,               // init=true
+    a: i32, // init=true
     #[reactive(init = false)]
-    b: i32,               // init=false
+    b: i32, // init=false
     #[var]
-    c: i32,               // init=true (G4 flip)
+    c: i32, // init=true (G4 flip)
     #[var(init = false)]
-    d: i32,               // init=false
+    d: i32, // init=false
 }
 
 #[test]
 fn record_init_emits_old_eq_new_for_init_fields_only() {
-    let w = RecordInitWidget { a: 10, b: 20, c: 30, d: 40 };
+    let w = RecordInitWidget {
+        a: 10,
+        b: 20,
+        c: 30,
+        d: 40,
+    };
     let mut ctx = make_ctx();
     w.reactive_record_init(&mut ctx);
 
@@ -834,6 +855,9 @@ fn record_init_emits_old_eq_new_for_init_fields_only() {
     // b and d must NOT be present
     assert!(changes.iter().find(|c| c.field_name == "b").is_none());
     assert!(changes.iter().find(|c| c.field_name == "d").is_none());
+
+    // Recording init must not mutate the fields themselves.
+    assert_eq!((w.a, w.b, w.c, w.d), (10, 20, 30, 40));
 }
 
 // ── G1: mixed plain-watch and watch_with_app in one dispatch call ──
@@ -859,7 +883,10 @@ impl MixedWatchWidget {
 
 #[test]
 fn mixed_watch_kinds_one_dispatch_with_app() {
-    let mut w = MixedWatchWidget { plain: 0, with_app: 0 };
+    let mut w = MixedWatchWidget {
+        plain: 0,
+        with_app: 0,
+    };
     let mut app = App::new().expect("runtime init");
 
     use rusty_textual::reactive::ReactiveChange;
@@ -888,7 +915,10 @@ fn mixed_watch_kinds_one_dispatch_with_app() {
     // reactive_dispatch_with_app fires both watchers
     let mut ctx2 = make_ctx();
     w.reactive_dispatch_with_app(&mut app, &changes, &mut ctx2);
-    assert!(ctx2.needs_repaint(), "plain watch in _with_app should still request repaint");
+    assert!(
+        ctx2.needs_repaint(),
+        "plain watch in _with_app should still request repaint"
+    );
     assert_eq!(app.title(), "with_app=99");
 }
 

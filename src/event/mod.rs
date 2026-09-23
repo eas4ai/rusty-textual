@@ -1318,7 +1318,8 @@ impl<'a> WidgetCtx<'a> {
     /// Post a boxed message (sender = this widget's node).
     #[inline]
     pub fn post_message_boxed(&mut self, message: Box<dyn Message>) {
-        self.event_ctx.post_message_boxed_from(self.node_id, message);
+        self.event_ctx
+            .post_message_boxed_from(self.node_id, message);
     }
 
     /// Post a message on behalf of an explicit sender node.
@@ -1442,7 +1443,8 @@ impl<'a> WidgetCtx<'a> {
         name: Option<&str>,
         task: impl FnOnce(CancellationToken) -> Result<(), String> + Send + 'static,
     ) {
-        self.event_ctx.request_exclusive_worker_task(key, name, task);
+        self.event_ctx
+            .request_exclusive_worker_task(key, name, task);
     }
 
     /// Run `f` with message type `M` prevented from being emitted (Python

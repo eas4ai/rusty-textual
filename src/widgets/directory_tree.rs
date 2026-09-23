@@ -222,7 +222,12 @@ impl DirectoryTree {
         self.tree = tree;
     }
 
-    fn update_node_expanded_state(&mut self, index: usize, expanded: bool, ctx: &mut crate::event::WidgetCtx) {
+    fn update_node_expanded_state(
+        &mut self,
+        index: usize,
+        expanded: bool,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         let Some(entry) = self.visible_entries.get(index).cloned() else {
             return;
         };
@@ -506,7 +511,9 @@ impl DirectoryTree {
         std::mem::take(&mut self.seed)
     }
 
-    fn style_type_aliases(&self) -> &[&'static str] { self.tree.style_type_aliases() }
+    fn style_type_aliases(&self) -> &[&'static str] {
+        self.tree.style_type_aliases()
+    }
 }
 fn read_children(
     path: &Path,
@@ -687,18 +694,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.on_message(
-            &MessageEvent::new(
-                tree.tree_id(),
-                TreeNodeSelected {
-                    index: 1,
-                    label: "alpha.txt".to_string(),
-                    data: None,
-                    node_id: crate::widgets::TreeNodeId::default(),
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    tree.tree_id(),
+                    TreeNodeSelected {
+                        index: 1,
+                        label: "alpha.txt".to_string(),
+                        data: None,
+                        node_id: crate::widgets::TreeNodeId::default(),
+                    },
+                ),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -720,18 +731,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.on_message(
-            &MessageEvent::new(
-                tree.tree_id(),
-                TreeNodeSelected {
-                    index: 1,
-                    label: "nested".to_string(),
-                    data: None,
-                    node_id: crate::widgets::TreeNodeId::default(),
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    tree.tree_id(),
+                    TreeNodeSelected {
+                        index: 1,
+                        label: "nested".to_string(),
+                        data: None,
+                        node_id: crate::widgets::TreeNodeId::default(),
+                    },
+                ),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -753,18 +768,22 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.on_message(
-            &MessageEvent::new(
-                tree.tree_id(),
-                TreeNodeToggled {
-                    index: 1,
-                    label: "nested".to_string(),
-                    expanded: true,
-                    node_id: crate::widgets::TreeNodeId::default(),
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    tree.tree_id(),
+                    TreeNodeToggled {
+                        index: 1,
+                        label: "nested".to_string(),
+                        expanded: true,
+                        node_id: crate::widgets::TreeNodeId::default(),
+                    },
+                ),
+                &mut __w,
+            );
         }
 
         let emitted = ctx.take_messages();
@@ -795,35 +814,43 @@ mod tests {
         // Simulate expanding "nested" — first collapse it (the sync build expanded it) then expand.
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.on_message(
-            &MessageEvent::new(
-                tree.tree_id(),
-                TreeNodeToggled {
-                    index: 1,
-                    label: "nested".to_string(),
-                    expanded: false,
-                    node_id: crate::widgets::TreeNodeId::default(),
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    tree.tree_id(),
+                    TreeNodeToggled {
+                        index: 1,
+                        label: "nested".to_string(),
+                        expanded: false,
+                        node_id: crate::widgets::TreeNodeId::default(),
+                    },
+                ),
+                &mut __w,
+            );
         }
         let _ = ctx.take_messages();
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.on_message(
-            &MessageEvent::new(
-                tree.tree_id(),
-                TreeNodeToggled {
-                    index: 1,
-                    label: "nested".to_string(),
-                    expanded: true,
-                    node_id: crate::widgets::TreeNodeId::default(),
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    tree.tree_id(),
+                    TreeNodeToggled {
+                        index: 1,
+                        label: "nested".to_string(),
+                        expanded: true,
+                        node_id: crate::widgets::TreeNodeId::default(),
+                    },
+                ),
+                &mut __w,
+            );
         }
         let spawn_msgs = ctx.take_messages();
         let task_id = spawn_msgs
@@ -835,26 +862,29 @@ mod tests {
         let nested_path = temp.path.join("nested");
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tree.apply_directory_load_result(
-            task_id.unwrap(),
-            &AsyncTaskResult::DirectoryEntries {
-                path: nested_path.display().to_string(),
-                entries: vec![
-                    AsyncDirectoryEntry {
-                        path: temp.path.join("nested/keep.rs").display().to_string(),
-                        label: "keep.rs".to_string(),
-                        is_dir: false,
-                    },
-                    AsyncDirectoryEntry {
-                        path: temp.path.join("nested/skip.txt").display().to_string(),
-                        label: "skip.txt".to_string(),
-                        is_dir: false,
-                    },
-                ],
-            },
-            &mut __w,
-        );
+                task_id.unwrap(),
+                &AsyncTaskResult::DirectoryEntries {
+                    path: nested_path.display().to_string(),
+                    entries: vec![
+                        AsyncDirectoryEntry {
+                            path: temp.path.join("nested/keep.rs").display().to_string(),
+                            label: "keep.rs".to_string(),
+                            is_dir: false,
+                        },
+                        AsyncDirectoryEntry {
+                            path: temp.path.join("nested/skip.txt").display().to_string(),
+                            label: "skip.txt".to_string(),
+                            is_dir: false,
+                        },
+                    ],
+                },
+                &mut __w,
+            );
         }
 
         // The filter should have excluded skip.txt.
@@ -877,35 +907,43 @@ mod tests {
 
         let mut expand_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut expand_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut expand_ctx,
+            );
             tree.on_message(
-            &MessageEvent::new(
-                tree.tree_id(),
-                TreeNodeToggled {
-                    index: 1,
-                    label: "nested".to_string(),
-                    expanded: true,
-                    node_id: crate::widgets::TreeNodeId::default(),
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    tree.tree_id(),
+                    TreeNodeToggled {
+                        index: 1,
+                        label: "nested".to_string(),
+                        expanded: true,
+                        node_id: crate::widgets::TreeNodeId::default(),
+                    },
+                ),
+                &mut __w,
+            );
         }
         let _ = expand_ctx.take_messages();
 
         let mut collapse_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut collapse_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut collapse_ctx,
+            );
             tree.on_message(
-            &MessageEvent::new(
-                tree.tree_id(),
-                TreeNodeToggled {
-                    index: 1,
-                    label: "nested".to_string(),
-                    expanded: false,
-                    node_id: crate::widgets::TreeNodeId::default(),
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    tree.tree_id(),
+                    TreeNodeToggled {
+                        index: 1,
+                        label: "nested".to_string(),
+                        expanded: false,
+                        node_id: crate::widgets::TreeNodeId::default(),
+                    },
+                ),
+                &mut __w,
+            );
         }
 
         let emitted = collapse_ctx.take_messages();

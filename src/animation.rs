@@ -495,9 +495,7 @@ pub fn interpolate_scalar(from: &Scalar, to: &Scalar, t: f32) -> Option<Scalar> 
             Some(Scalar::Fraction(interpolate_f32(*a, *b, t)))
         }
         (Scalar::Width(a), Scalar::Width(b)) => Some(Scalar::Width(interpolate_f32(*a, *b, t))),
-        (Scalar::Height(a), Scalar::Height(b)) => {
-            Some(Scalar::Height(interpolate_f32(*a, *b, t)))
-        }
+        (Scalar::Height(a), Scalar::Height(b)) => Some(Scalar::Height(interpolate_f32(*a, *b, t))),
         (Scalar::ViewWidth(a), Scalar::ViewWidth(b)) => {
             Some(Scalar::ViewWidth(interpolate_f32(*a, *b, t)))
         }

@@ -282,6 +282,12 @@ impl crate::widgets::Render for Tooltip {
         "Tooltip"
     }
 }
+
+impl crate::widgets::Components for Tooltip {
+    fn component_classes(&self) -> &[&'static str] {
+        &["tooltip--text"]
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -330,17 +336,6 @@ mod tests {
     #[test]
     fn auto_width_tracks_widest_line() {
         let tooltip = Tooltip::new("short\nmuch longer line");
-        assert_eq!(
-            tooltip.auto_content_width(),
-            Some("much longer line".len())
-        );
-    }
-}
-
-impl crate::widgets::Components for Tooltip {
-    fn component_classes(&self) -> &[&'static str] {
-        &[
-            "tooltip--text",
-        ]
+        assert_eq!(tooltip.auto_content_width(), Some("much longer line".len()));
     }
 }

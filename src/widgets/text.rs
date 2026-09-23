@@ -2,8 +2,8 @@ use pulldown_cmark::{
     Event as MdEvent, Options as MdOptions, Parser as MdParser, Tag as MdTag, TagEnd as MdTagEnd,
 };
 use rich_rs::{Console, ConsoleOptions, MetaValue, Renderable, Segment, Segments, Text};
-use textual_macros::widget;
 use std::sync::{Arc, RwLock};
+use textual_macros::widget;
 use unicode_width::UnicodeWidthChar;
 
 use crate::event::Event;
@@ -1227,7 +1227,10 @@ impl crate::widgets::Render for MarkdownFenceBlock {
                 // Python's `highlight()` lays a base `$text` span under the
                 // whole code, so unstyled runs are $text — not the fence CSS
                 // `color`.
-                let color = span.style.color.unwrap_or(crate::highlight::HighlightColor::Text);
+                let color = span
+                    .style
+                    .color
+                    .unwrap_or(crate::highlight::HighlightColor::Text);
                 if let Some(resolved) = resolve(color, span.style.alpha) {
                     style = style.with_color(resolved.to_simple_opaque());
                 }
@@ -2847,9 +2850,7 @@ I must not fear. Fear is the mind-killer. Fear is the little-death that brings t
     fn inline_text_doc_marks_link_runs_with_link_class() {
         let doc = super::InlineTextDoc::parse("See [example.md](./example.md) for details.");
         assert!(
-            doc.runs
-                .iter()
-                .any(|run| run.classes.iter().any(|class| *class == "link")),
+            doc.runs.iter().any(|run| run.classes.contains(&"link")),
             "expected at least one inline run to carry the link class"
         );
     }

@@ -94,7 +94,7 @@ fn search_commands(commands: &[CommandPaletteCommand], query: &str) -> Vec<Comma
                 ranges: Vec::new(),
             })
             .collect();
-        rows.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        rows.sort_by_key(|a| a.title.to_lowercase());
         return rows;
     }
     let mut scored: Vec<(f64, CommandRow)> = commands
@@ -211,7 +211,10 @@ pub(crate) struct CommandPaletteBody {
 }
 
 impl CommandPaletteBody {
-    pub(crate) fn new(commands: Vec<CommandPaletteCommand>, placeholder: impl Into<String>) -> Self {
+    pub(crate) fn new(
+        commands: Vec<CommandPaletteCommand>,
+        placeholder: impl Into<String>,
+    ) -> Self {
         let placeholder = placeholder.into();
         let results = search_commands(&commands, "");
         Self {
@@ -375,7 +378,7 @@ CommandPalette LoadingIndicator { height: auto; display: none; }
         // Escape (or a click that reached the screen root, i.e. on the dimmed
         // backdrop rather than a palette child) dismisses without a result.
         match event {
-            Event::Key(key) if key.aliases().iter().any(|a| *a == "escape") => {
+            Event::Key(key) if key.aliases().contains(&"escape") => {
                 ctx.dismiss_none();
             }
             Event::MouseDown(_) => {
@@ -432,7 +435,10 @@ mod tests {
         let rows = search_commands(&sample(), "bell");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "bell");
-        assert!(!rows[0].ranges.is_empty(), "matched title should carry highlight ranges");
+        assert!(
+            !rows[0].ranges.is_empty(),
+            "matched title should carry highlight ranges"
+        );
     }
 
     #[test]
@@ -451,7 +457,13 @@ mod tests {
         let mut ectx = EventCtx::default();
         let mut ctx = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ectx);
         body.on_message(
-            &MessageEvent::new(NodeId::default(), OptionSelected { index: 1, option_id: None }),
+            &MessageEvent::new(
+                NodeId::default(),
+                OptionSelected {
+                    index: 1,
+                    option_id: None,
+                },
+            ),
             &mut ctx,
         );
         let msgs = ectx.take_messages();
@@ -479,10 +491,16 @@ mod tests {
             ),
             &mut sctx,
         );
-        let staged = slot.lock().unwrap().take().expect("execute should stage a dismissal");
+        let staged = slot
+            .lock()
+            .unwrap()
+            .take()
+            .expect("execute should stage a dismissal");
         match staged {
             ScreenResult::Value(v) => {
-                let sel = v.downcast_ref::<SelectedCommandId>().expect("SelectedCommandId");
+                let sel = v
+                    .downcast_ref::<SelectedCommandId>()
+                    .expect("SelectedCommandId");
                 assert_eq!(sel.id, "bell");
                 assert_eq!(sel.title, "Bell");
             }

@@ -181,7 +181,11 @@ impl ScrollableContainer {
         bindings
     }
 
-    fn execute_action(&mut self, action: &crate::action::ParsedAction, ctx: &mut crate::event::WidgetCtx) -> bool {
+    fn execute_action(
+        &mut self,
+        action: &crate::action::ParsedAction,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> bool {
         match action.name.as_str() {
             "page_left" => {
                 let before = self.inner.offset_x();
@@ -294,18 +298,22 @@ mod tests {
         sc.set_virtual_content_size(20, 100);
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
-            sc.on_message(
-            &MessageEvent::new(
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
                 crate::node_id::NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 6.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            ),
-            &mut __w);
+                &mut ctx,
+            );
+            sc.on_message(
+                &MessageEvent::new(
+                    crate::node_id::NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 6.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert_eq!(sc.scroll_offset().1, 6);
         assert!(

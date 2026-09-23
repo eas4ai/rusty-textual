@@ -9,9 +9,7 @@ use crate::compose::ComposeResult;
 use crate::css;
 use crate::debug::DebugLayout;
 use crate::debug::debug_input;
-use crate::event::{
-    AnimationEase, AnimationLevel, AnimationRequest, AnimationValueEvent, Event,
-};
+use crate::event::{AnimationEase, AnimationLevel, AnimationRequest, AnimationValueEvent, Event};
 use crate::message::{MessageEvent, ScrollbarAxis, ScrollbarScrollTo};
 use crate::node_id::NodeId;
 use crate::style::parse_color_like;
@@ -627,8 +625,8 @@ impl crate::widgets::Render for AppRoot {
 #[cfg(test)]
 mod focus_tests {
     use super::*;
-    use crate::event::EventCtx;
     use crate::css::{StyleSheet, set_style_context};
+    use crate::event::EventCtx;
     use crate::widgets::containers::{Container, Panel, ScrollView};
     use crate::widgets::{Button, Horizontal, Input, ListView, VerticalScroll};
     use rich_rs::Console;
@@ -695,7 +693,10 @@ mod focus_tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             scroll.on_mouse_scroll(0, 1, &mut __w);
         }
         assert!(ctx.handled());
@@ -725,7 +726,10 @@ mod focus_tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             scroll.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
         let requests = ctx.take_animation_requests();
@@ -755,7 +759,10 @@ mod focus_tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             panel.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
         assert!(ctx.handled());
@@ -781,7 +788,10 @@ mod focus_tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             panel.on_mouse_scroll(0, 1, &mut __w);
         }
         assert!(ctx.handled());
@@ -829,7 +839,10 @@ mod focus_tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             root.on_event(&Event::Action(Action::FocusNext), &mut __w);
         }
         // In tree mode, events are a no-op — not handled.
@@ -866,7 +879,10 @@ mod focus_tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             root.on_mouse_scroll(0, 1, &mut __w);
         }
 
@@ -882,19 +898,23 @@ mod focus_tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             root.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 24.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            )
-            .with_control(NodeId::default()),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 24.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                )
+                .with_control(NodeId::default()),
+                &mut __w,
+            );
         }
 
         assert!(
@@ -920,19 +940,23 @@ mod focus_tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             root.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 24.5,
-                    animate: true,
-                    scroll_duration: None,
-                },
-            )
-            .with_control(NodeId::default()),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 24.5,
+                        animate: true,
+                        scroll_duration: None,
+                    },
+                )
+                .with_control(NodeId::default()),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -957,19 +981,23 @@ mod focus_tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             root.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 999.0,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            )
-            .with_control(NodeId::default()),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 999.0,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                )
+                .with_control(NodeId::default()),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -988,19 +1016,23 @@ mod focus_tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             root.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ScrollbarScrollTo {
-                    axis: ScrollbarAxis::Vertical,
-                    offset: 24.5,
-                    animate: false,
-                    scroll_duration: None,
-                },
-            )
-            .with_control(NodeId::default()),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 24.5,
+                        animate: false,
+                        scroll_duration: None,
+                    },
+                )
+                .with_control(NodeId::default()),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());

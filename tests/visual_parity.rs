@@ -522,7 +522,7 @@ fn visual_parity_batch() {
             .join(&case.name);
         let actual = capture(CommandBuilder::new(bin.to_str().unwrap()), repo());
         let matches = actual.trim() == golden.trim();
-        if !matches && std::env::var("DEBUG_CASE").map_or(false, |d| d == case.name || d == "ALL") {
+        if !matches && std::env::var("DEBUG_CASE").is_ok_and(|d| d == case.name || d == "ALL") {
             let (gl, al): (Vec<&str>, Vec<&str>) =
                 (golden.lines().collect(), actual.lines().collect());
             eprintln!("--- DEBUG {} (py vs rust), first 12 diffs ---", case.name);
@@ -541,7 +541,7 @@ fn visual_parity_batch() {
                 }
             }
         }
-        if std::env::var("DUMP_CASE").map_or(false, |d| d == case.name) {
+        if std::env::var("DUMP_CASE").is_ok_and(|d| d == case.name) {
             eprintln!("--- DUMP {} actual (rust) ---", case.name);
             for line in actual.lines().take(50) {
                 eprintln!("  {line}");
@@ -549,7 +549,7 @@ fn visual_parity_batch() {
         }
         // DUMP_FILE=<name>: write the full actual + golden captures side-by-side to
         // /tmp for offline structural diffing (no take() truncation).
-        if std::env::var("DUMP_FILE").map_or(false, |d| d == case.name) {
+        if std::env::var("DUMP_FILE").is_ok_and(|d| d == case.name) {
             std::fs::write(format!("/tmp/vp_{}_actual.txt", case.name), &actual).ok();
             std::fs::write(format!("/tmp/vp_{}_golden.txt", case.name), &golden).ok();
             eprintln!(

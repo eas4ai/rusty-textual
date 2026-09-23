@@ -187,11 +187,9 @@ impl BindingsMap {
     /// Get the bindings for a key, or a typed [`NoBinding`] error on a miss
     /// (Python `get_bindings_for_key`, which raises).
     pub fn get_bindings_for_key(&self, key: &str) -> Result<&[BindingDecl], NoBinding> {
-        self.get(key)
-            .map(Vec::as_slice)
-            .ok_or_else(|| NoBinding {
-                key: key.to_string(),
-            })
+        self.get(key).map(Vec::as_slice).ok_or_else(|| NoBinding {
+            key: key.to_string(),
+        })
     }
 
     /// Bindings with `show == true`, in map order (Python `shown_keys`).
@@ -262,7 +260,8 @@ impl BindingsMap {
                 }
 
                 for keymap_key in &keymap_keys {
-                    if self.contains_key(keymap_key) || entries_get(&new_bindings, keymap_key).is_some()
+                    if self.contains_key(keymap_key)
+                        || entries_get(&new_bindings, keymap_key).is_some()
                     {
                         // The key is already mapped either by default or by the
                         // keymap, so there's a clash unless the existing binding
@@ -277,8 +276,10 @@ impl BindingsMap {
                                 .id
                                 .as_deref()
                                 .filter(|id| !id.is_empty())
-                                .map(|id| keymap.get(id).map(String::as_str)
-                                    != Some(clashed_binding.key.as_str()))
+                                .map(|id| {
+                                    keymap.get(id).map(String::as_str)
+                                        != Some(clashed_binding.key.as_str())
+                                })
                                 .unwrap_or(false);
                             if !rebound_away && !clashed_bindings.contains(&clashed_binding) {
                                 clashed_bindings.push(clashed_binding);
@@ -506,7 +507,7 @@ mod tests {
     #[test]
     fn id_propagates_across_comma_expansion() {
         let map = BindingsMap::from_decls([
-            BindingDecl::new("i,up", "increment", "").with_id("app.increment"),
+            BindingDecl::new("i,up", "increment", "").with_id("app.increment")
         ])
         .expect("valid");
         for key in ["i", "up"] {
@@ -552,7 +553,10 @@ mod tests {
         ]);
         let keys: Vec<&str> = map.entries().iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(keys, ["a", "b", "c", "z"]);
-        assert_eq!(map.get_bindings_for_key("b").expect("binding")[0].action, "TWO");
+        assert_eq!(
+            map.get_bindings_for_key("b").expect("binding")[0].action,
+            "TWO"
+        );
     }
 
     #[test]
@@ -619,7 +623,7 @@ mod tests {
     #[test]
     fn apply_keymap_unknown_id_is_noop() {
         let mut map = BindingsMap::from_decls([
-            BindingDecl::new("i,up", "increment", "").with_id("app.increment"),
+            BindingDecl::new("i,up", "increment", "").with_id("app.increment")
         ])
         .expect("valid");
         let before = map.clone();
@@ -664,10 +668,8 @@ mod tests {
     // Normalization is set_keymap's job alone.
     #[test]
     fn apply_keymap_raw_splits_values_without_strip_or_normalize() {
-        let mut map = BindingsMap::from_decls([
-            BindingDecl::new("x", "act", "").with_id("act.id"),
-        ])
-        .expect("valid");
+        let mut map = BindingsMap::from_decls([BindingDecl::new("x", "act", "").with_id("act.id")])
+            .expect("valid");
         map.apply_keymap(&keymap(&[("act.id", "a, b")]));
         assert!(map.get_bindings_for_key("a").is_ok());
         assert!(map.get_bindings_for_key(" b").is_ok());
@@ -685,8 +687,14 @@ mod tests {
         // one -> b (displaces two), two -> c (rebound away): no clash.
         let result = map.apply_keymap(&keymap(&[("one.id", "b"), ("two.id", "c")]));
         assert!(result.clashed_bindings.is_empty());
-        assert_eq!(map.get_bindings_for_key("b").expect("binding")[0].action, "one");
-        assert_eq!(map.get_bindings_for_key("c").expect("binding")[0].action, "two");
+        assert_eq!(
+            map.get_bindings_for_key("b").expect("binding")[0].action,
+            "one"
+        );
+        assert_eq!(
+            map.get_bindings_for_key("c").expect("binding")[0].action,
+            "two"
+        );
     }
 
     // A displaced binding withOUT an id (not addressable by the keymap) IS a
@@ -706,10 +714,8 @@ mod tests {
     // An empty-string keymap value is falsy in Python's walrus check: no-op.
     #[test]
     fn apply_keymap_empty_value_is_noop() {
-        let mut map = BindingsMap::from_decls([
-            BindingDecl::new("a", "one", "").with_id("one.id"),
-        ])
-        .expect("valid");
+        let mut map = BindingsMap::from_decls([BindingDecl::new("a", "one", "").with_id("one.id")])
+            .expect("valid");
         let before = map.clone();
         let result = map.apply_keymap(&keymap(&[("one.id", "")]));
         assert!(result.clashed_bindings.is_empty());

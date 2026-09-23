@@ -6,9 +6,9 @@ use crate::reactive::ReactiveCtx;
 use crate::widgets::delegate::{delegate_renderable, delegate_widget_method};
 use crate::widgets::{Container, NodeSeed, Widget};
 use rich_rs::{Console, ConsoleOptions, Segments};
-use textual_macros::widget;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use textual_macros::widget;
 
 use super::tabs::{Tab, Tabs};
 
@@ -202,7 +202,11 @@ impl crate::widgets::Interactive for TabPane {
         }
     }
 
-    fn on_message(&mut self, message: &crate::message::MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+    fn on_message(
+        &mut self,
+        message: &crate::message::MessageEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         if !self.is_tree_mode() {
             crate::widgets::Widget::on_message(&mut self.inner, message, ctx);
         }
@@ -275,7 +279,11 @@ impl TabbedContent {
         self.active.as_deref()
     }
 
-    pub fn set_active_id(&mut self, pane_id: &str, ctx: Option<&mut crate::event::WidgetCtx>) -> bool {
+    pub fn set_active_id(
+        &mut self,
+        pane_id: &str,
+        ctx: Option<&mut crate::event::WidgetCtx>,
+    ) -> bool {
         if self.active.as_deref() == Some(pane_id) {
             return false;
         }
@@ -755,7 +763,11 @@ impl crate::widgets::Interactive for TabbedContent {
         }
     }
 
-    fn on_message(&mut self, message: &crate::message::MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+    fn on_message(
+        &mut self,
+        message: &crate::message::MessageEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
         if let Some(m) = message.downcast_ref::<TabActivated>() {
             if let Some(pane_id) = Self::sans_content_tab_id(&m.id) {
                 if self.set_active_id(&pane_id, Some(ctx)) {
@@ -805,13 +817,17 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tabs.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Right,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Right,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -826,16 +842,20 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tabs.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: crate::node_id::NodeId::default(),
-                screen_x: 1,
-                screen_y: 0,
-                x: 1,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: crate::node_id::NodeId::default(),
+                    screen_x: 1,
+                    screen_y: 0,
+                    x: 1,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
 
         assert!(ctx.handled());
@@ -935,7 +955,13 @@ mod tests {
         );
 
         let mut ctx = EventCtx::default();
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); tabs.set_active_id("paul", Some(&mut __w)) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            tabs.set_active_id("paul", Some(&mut __w))
+        });
         apply_runtime_class_messages(&mut tree, ctx.take_messages());
 
         let after = render_tree_to_frame(&mut tree, &mut tabs, &console, 60, 8);
@@ -995,7 +1021,13 @@ mod tests {
             arguments: vec![crate::action::ActionArgument::Str("paul".to_string())],
         };
         let mut ctx = EventCtx::default();
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); tabs.execute_action(&parsed, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            tabs.execute_action(&parsed, &mut __w)
+        });
         apply_runtime_class_messages(&mut tree, ctx.take_messages());
 
         let after = render_tree_to_frame(&mut tree, &mut tabs, &console, 60, 8);
@@ -1043,7 +1075,13 @@ mod tests {
             arguments: vec![crate::action::ActionArgument::Str("paul".to_string())],
         };
         let mut ctx = EventCtx::default();
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); tabs.execute_action(&parsed, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            tabs.execute_action(&parsed, &mut __w)
+        });
 
         apply_runtime_class_messages(&mut tree, ctx.take_messages());
         let animation_requests = ctx.take_animation_requests();
@@ -1063,15 +1101,19 @@ mod tests {
         for request in animation_requests {
             let mut anim_ctx = EventCtx::default();
             {
-                let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut anim_ctx);
+                let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                    crate::node_id::NodeId::default(),
+                    &mut anim_ctx,
+                );
                 tabs.on_event(
-                &Event::AnimationValue(crate::event::AnimationValueEvent {
-                    target: request.target,
-                    attribute: request.attribute,
-                    value: request.end,
-                    done: true,
-                }),
-                &mut __w);
+                    &Event::AnimationValue(crate::event::AnimationValueEvent {
+                        target: request.target,
+                        attribute: request.attribute,
+                        value: request.end,
+                        done: true,
+                    }),
+                    &mut __w,
+                );
             }
         }
 
@@ -1176,7 +1218,10 @@ mod tests {
         .with_control(crate::node_id::NodeId::default());
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             tabs.on_message(&event, &mut __w);
         }
 

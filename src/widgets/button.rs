@@ -85,10 +85,7 @@ fn tag_segment_no_text_style(seg: &mut Segment) {
         .as_ref()
         .map(|m| (**m).clone())
         .unwrap_or_default();
-    map.insert(
-        "textual:no_text_style".to_string(),
-        MetaValue::Bool(true),
-    );
+    map.insert("textual:no_text_style".to_string(), MetaValue::Bool(true));
     meta.meta = Some(std::sync::Arc::new(map));
     seg.meta = Some(meta);
 }
@@ -536,26 +533,28 @@ impl Interactive for Button {
                 ctx.request_repaint();
                 ctx.set_handled();
             }
-            Event::MouseUp(mouse)
-                if self.pressed == PressedState::Mouse => {
-                    // Activate only on click (mouse released while still over the button).
-                    if mouse.target.is_some_and(|t| t == crate::widgets::Widget::node_id(self)) {
-                        debug_message(&format!(
-                            "[button] emit mouse_up sender={} label=\"{}\"",
-                            0u64, self.label
-                        ));
-                        self.dispatch_press(ctx);
-                        ctx.set_handled();
-                    } else {
-                        debug_message(&format!(
-                            "[button] cancel mouse_up sender={} label=\"{}\" up_target={:?}",
-                            0u64, self.label, mouse.target
-                        ));
-                    }
-                    self.pressed = PressedState::None;
-                    ctx.remove_class("-active");
-                    ctx.request_repaint();
+            Event::MouseUp(mouse) if self.pressed == PressedState::Mouse => {
+                // Activate only on click (mouse released while still over the button).
+                if mouse
+                    .target
+                    .is_some_and(|t| t == crate::widgets::Widget::node_id(self))
+                {
+                    debug_message(&format!(
+                        "[button] emit mouse_up sender={} label=\"{}\"",
+                        0u64, self.label
+                    ));
+                    self.dispatch_press(ctx);
+                    ctx.set_handled();
+                } else {
+                    debug_message(&format!(
+                        "[button] cancel mouse_up sender={} label=\"{}\" up_target={:?}",
+                        0u64, self.label, mouse.target
+                    ));
                 }
+                self.pressed = PressedState::None;
+                ctx.remove_class("-active");
+                ctx.request_repaint();
+            }
             Event::Action(Action::Toggle) if crate::widgets::Widget::node_state(self).focused => {
                 self.pressed = PressedState::KeyboardPending;
                 ctx.add_class("-active");
@@ -651,11 +650,10 @@ impl Render for Button {
 
         // Resolve background: flatten widget's own bg over ancestor composited bg
         // so transparent-bg buttons still get the correct surface color baked in.
-        let parent_bg =
-            crate::css::current_ancestor_composited_background().unwrap_or_else(|| {
-                crate::style::parse_color_like("$background")
-                    .unwrap_or(crate::style::Color::rgb(0, 0, 0))
-            });
+        let parent_bg = crate::css::current_ancestor_composited_background().unwrap_or_else(|| {
+            crate::style::parse_color_like("$background")
+                .unwrap_or(crate::style::Color::rgb(0, 0, 0))
+        });
         let effective_bg = visual_style
             .bg
             .map(|c| c.flatten_over(parent_bg))
@@ -800,13 +798,17 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             button.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Enter,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
 
         let messages = ctx.take_messages();
@@ -831,7 +833,13 @@ mod tests {
             name: "press".to_string(),
             arguments: vec![],
         };
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); button.execute_action(&action, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            button.execute_action(&action, &mut __w)
+        });
         let messages = ctx.take_messages();
         assert!(messages.iter().any(|m| m.is::<ButtonPressed>()));
     }
@@ -851,13 +859,17 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             button.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Enter,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
 
         let messages = ctx.take_messages();
@@ -884,7 +896,13 @@ mod tests {
             name: "press".to_string(),
             arguments: vec![],
         };
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); button.execute_action(&action, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            button.execute_action(&action, &mut __w)
+        });
 
         let messages = ctx.take_messages();
         assert!(
@@ -906,13 +924,17 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             button.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Enter,
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
 
         let messages = ctx.take_messages();
@@ -931,13 +953,17 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             button.on_event(
-            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
-                KeyCode::Char(' '),
-                KeyModifiers::NONE,
-            ))),
-            &mut __w);
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Char(' '),
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
         }
 
         let messages = ctx.take_messages();
@@ -965,16 +991,20 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             button.on_event(
-            &Event::MouseDown(crate::event::MouseDownEvent {
-                target: id,
-                screen_x: 1,
-                screen_y: 1,
-                x: 0,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(crate::event::MouseDownEvent {
+                    target: id,
+                    screen_x: 1,
+                    screen_y: 1,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
 
         assert!(button.pressed(), "mouse down should set pressed state");
@@ -994,28 +1024,36 @@ mod tests {
         let mut ctx = EventCtx::default();
 
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             button.on_event(
-            &Event::MouseDown(crate::event::MouseDownEvent {
-                target: NodeId::default(),
-                screen_x: 1,
-                screen_y: 1,
-                x: 0,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseDown(crate::event::MouseDownEvent {
+                    target: NodeId::default(),
+                    screen_x: 1,
+                    screen_y: 1,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             button.on_event(
-            &Event::MouseUp(crate::event::MouseUpEvent {
-                target: Some(NodeId::default()),
-                screen_x: 1,
-                screen_y: 1,
-                x: 0,
-                y: 0,
-            }),
-            &mut __w);
+                &Event::MouseUp(crate::event::MouseUpEvent {
+                    target: Some(NodeId::default()),
+                    screen_x: 1,
+                    screen_y: 1,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
         }
 
         let description = ctx

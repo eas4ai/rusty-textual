@@ -858,11 +858,12 @@ mod tests {
                 name: name.to_string(),
                 arguments: vec![],
             };
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(
-                crate::node_id::NodeId::default(),
-                ctx,
+            let mut __w =
+                crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), ctx);
+            assert!(
+                list.execute_action(&action, &mut __w),
+                "{name} must dispatch"
             );
-            assert!(list.execute_action(&action, &mut __w), "{name} must dispatch");
         };
         assert_eq!(list.selected(), 0);
         dispatch(&mut list, &mut ctx, "page_down");
@@ -985,7 +986,10 @@ mod tests {
         let key = KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_event(&Event::Key(key), &mut __w);
         }
 
@@ -1004,16 +1008,20 @@ mod tests {
         let _guard = set_dispatch_recipient(make_node_id(), NodeState::default());
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_message(
-            &MessageEvent::new(
-                NodeId::default(),
-                ListItemChildClicked {
-                    ordinal: 1,
-                    item: "two".to_string(),
-                },
-            ),
-            &mut __w);
+                &MessageEvent::new(
+                    NodeId::default(),
+                    ListItemChildClicked {
+                        ordinal: 1,
+                        item: "two".to_string(),
+                    },
+                ),
+                &mut __w,
+            );
         }
         assert_eq!(list.selected(), 1);
         let messages = ctx.take_messages();
@@ -1039,32 +1047,40 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_event(
-            &Event::MouseDown(MouseDownEvent {
-                target: id,
-                screen_x: 0,
-                screen_y: 1,
-                x: 0,
-                y: 1,
-            }),
-            &mut __w);
+                &Event::MouseDown(MouseDownEvent {
+                    target: id,
+                    screen_x: 0,
+                    screen_y: 1,
+                    x: 0,
+                    y: 1,
+                }),
+                &mut __w,
+            );
         }
         assert!(ctx.handled());
         assert_eq!(list.selected(), 1);
 
         let mut up_ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut up_ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut up_ctx,
+            );
             list.on_event(
-            &Event::MouseUp(MouseUpEvent {
-                target: Some(id),
-                screen_x: 0,
-                screen_y: 1,
-                x: 0,
-                y: 1,
-            }),
-            &mut __w);
+                &Event::MouseUp(MouseUpEvent {
+                    target: Some(id),
+                    screen_x: 0,
+                    screen_y: 1,
+                    x: 0,
+                    y: 1,
+                }),
+                &mut __w,
+            );
         }
         let messages = up_ctx.take_messages();
         assert_eq!(messages.len(), 1);
@@ -1079,7 +1095,10 @@ mod tests {
 
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_event(&Event::AppFocus(false), &mut __w);
         }
 
@@ -1107,7 +1126,13 @@ mod tests {
             name: "cursor_down".to_string(),
             arguments: vec![],
         };
-        assert!({ let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx); list.execute_action(&action, &mut __w) });
+        assert!({
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            list.execute_action(&action, &mut __w)
+        });
         assert_eq!(list.selected(), 1);
     }
 
@@ -1190,7 +1215,10 @@ mod tests {
         list.on_layout(20, 3);
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_event(&Event::Action(crate::event::Action::ScrollDown), &mut __w);
         }
         assert_eq!(list.selected(), 2);
@@ -1202,7 +1230,10 @@ mod tests {
         list.on_layout(20, 3);
         let mut ctx = EventCtx::default();
         {
-            let mut __w = crate::event::WidgetCtx::__from_dispatch(crate::node_id::NodeId::default(), &mut ctx);
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_mouse_scroll(0, 100, &mut __w);
         }
         assert!(ctx.handled());

@@ -5,12 +5,12 @@
 //! node workers on unmount. Pre-fix, unmount purged only timers, so the
 //! parked worker ran forever and the job never observed cancellation.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rich_rs::{Console, ConsoleOptions, Segments};
 use rusty_textual::prelude::*;
-use rusty_textual::reactive::{enqueue_runtime_reactive_entry, ReactiveCtx, RuntimeReactiveEntry};
+use rusty_textual::reactive::{ReactiveCtx, RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
 use rusty_textual::runtime::Pilot;
 use rusty_textual::widgets::Widget;
 

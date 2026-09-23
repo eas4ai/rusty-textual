@@ -67,7 +67,9 @@ fn focus_opens_strip_and_typing_fills_day() {
         let node = pilot.app().query_one("#date").expect("date node");
         // Mount auto-focus opens the strip (headless startup posts Focus).
         assert!(is_open(pilot, node), "mount focus must open the strip");
-        // Day segment is position 0 in DMY: type 2 then 8 -> day 28.
+        // Day is position 2 in the default YMD order: left wraps 0 -> 2,
+        // then type 2 then 8 -> day 28.
+        pilot.press_key("left")?;
         pilot.press_key("2")?;
         pilot.press_key("8")?;
         assert_eq!(read_date(pilot, node).2, 28);
@@ -91,16 +93,61 @@ fn stepping_wraps_and_segments_move() {
         let node = pilot.app().query_one("#date").expect("date node");
         pilot.app_mut().action_focus("date").expect("focus date");
         pilot.pause()?;
-        // Type 31 into the day segment, step up -> wraps to 1.
+        // Left wraps year (0) -> day (2): type 31, step up -> wraps to 1.
+        pilot.press_key("left")?;
         pilot.press_key("3")?;
         pilot.press_key("1")?;
         assert_eq!(read_date(pilot, node).2, 31);
         pilot.press_key("up")?;
         assert_eq!(read_date(pilot, node).2, 1, "day must wrap");
         // Move to the month segment and step it.
-        pilot.press_key("right")?;
+        pilot.press_key("left")?;
         pilot.press_key("up")?;
-        assert_eq!(read_date(pilot, node).1, 2, "right must reach month");
+        assert_eq!(read_date(pilot, node).1, 2, "left must reach month");
+        let _ = log;
+        Ok(())
+    })
+    .expect("run_test");
+}
+
+/// Backspace pops one buffer digit without committing: 2, backspace, 3, 1
+/// lands on day 31 (a broken backspace would commit the stale "23").
+#[test]
+fn backspace_pops_buffer_digit() {
+    let log = Arc::new(Mutex::new(DateLog::default()));
+    let app = DateApp { log: log.clone() };
+    run_test(app, |pilot| {
+        pilot.pause()?;
+        let node = pilot.app().query_one("#date").expect("date node");
+        pilot.press_key("left")?;
+        pilot.press_key("2")?;
+        assert_eq!(read_date(pilot, node).2, 5, "partial input commits nothing");
+        pilot.press_key("backspace")?;
+        pilot.press_key("3")?;
+        pilot.press_key("1")?;
+        assert_eq!(read_date(pilot, node).2, 31);
+        let _ = log;
+        Ok(())
+    })
+    .expect("run_test");
+}
+
+/// Refocus keeps the segment: moving to day, blurring, and refocusing must
+/// still step the day (a reset to segment 0 would step the year instead).
+#[test]
+fn refocus_preserves_segment() {
+    let log = Arc::new(Mutex::new(DateLog::default()));
+    let app = DateApp { log: log.clone() };
+    run_test(app, |pilot| {
+        pilot.pause()?;
+        let node = pilot.app().query_one("#date").expect("date node");
+        pilot.press_key("left")?;
+        pilot.app_mut().action_focus("other").expect("focus other");
+        pilot.pause()?;
+        pilot.app_mut().action_focus("date").expect("focus date");
+        pilot.pause()?;
+        pilot.press_key("up")?;
+        assert_eq!(read_date(pilot, node), (2024, 1, 6));
         let _ = log;
         Ok(())
     })

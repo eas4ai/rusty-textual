@@ -1,10 +1,12 @@
 use rich_rs::Console;
-use slotmap::SlotMap;
-use rusty_textual::event::MouseDownEvent;
 use rusty_textual::event::EventCtx;
+use rusty_textual::event::MouseDownEvent;
 use rusty_textual::prelude::*;
 use rusty_textual::runtime::dispatch_ctx::set_dispatch_recipient;
-use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame, render_tree_to_frame_with_stylesheet};
+use rusty_textual::runtime::{
+    build_widget_tree_from_root, render_tree_to_frame, render_tree_to_frame_with_stylesheet,
+};
+use slotmap::SlotMap;
 
 fn make_node_id() -> NodeId {
     let mut sm: SlotMap<NodeId, ()> = SlotMap::new();
@@ -104,16 +106,20 @@ fn list_view_mouse_click_selects_row_headless() {
     let id = NodeId::default();
     let mut ctx = EventCtx::default();
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         list.on_event(
-        &Event::MouseDown(MouseDownEvent {
-            target: id,
-            screen_x: 0,
-            screen_y: 1,
-            x: 0,
-            y: 1,
-        }),
-        &mut __w);
+            &Event::MouseDown(MouseDownEvent {
+                target: id,
+                screen_x: 0,
+                screen_y: 1,
+                x: 0,
+                y: 1,
+            }),
+            &mut __w,
+        );
     }
     assert!(ctx.handled());
     assert_eq!(list.selected(), 1);
@@ -127,7 +133,10 @@ fn list_view_scroll_actions_keep_selection_in_state() {
     let mut ctx = EventCtx::default();
     for _ in 0..7 {
         {
-            let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+            let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+                rusty_textual::node_id::NodeId::default(),
+                &mut ctx,
+            );
             list.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
     }
@@ -142,7 +151,10 @@ fn list_view_mouse_scroll_clamps_to_bounds() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         list.on_mouse_scroll(0, 100, &mut __w);
     }
     assert!(ctx.handled());
@@ -150,7 +162,10 @@ fn list_view_mouse_scroll_clamps_to_bounds() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         list.on_mouse_scroll(0, -100, &mut __w);
     }
     assert!(ctx.handled());
@@ -170,7 +185,10 @@ fn list_view_navigation_skips_disabled_items() {
 
     let mut ctx = EventCtx::default();
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         list.on_event(&Event::Action(Action::ScrollDown), &mut __w);
     }
     assert_eq!(list.selected(), 2);
@@ -189,16 +207,20 @@ fn list_view_mouse_click_ignores_disabled_items() {
     let id = NodeId::default();
     let mut ctx = EventCtx::default();
     {
-        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(rusty_textual::node_id::NodeId::default(), &mut ctx);
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
         list.on_event(
-        &Event::MouseDown(MouseDownEvent {
-            target: id,
-            screen_x: 0,
-            screen_y: 1,
-            x: 0,
-            y: 1,
-        }),
-        &mut __w);
+            &Event::MouseDown(MouseDownEvent {
+                target: id,
+                screen_x: 0,
+                screen_y: 1,
+                x: 0,
+                y: 1,
+            }),
+            &mut __w,
+        );
     }
 
     assert!(!ctx.handled());

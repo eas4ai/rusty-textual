@@ -8,8 +8,8 @@ use crate::event::WidgetCtx;
 use crate::message::*;
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
 
-use super::option_list::toggle_option::OptionCursorState;
 use super::option_list::OptionItem;
+use super::option_list::toggle_option::OptionCursorState;
 use super::select_current::SelectCurrent;
 use super::select_overlay::SelectOverlay;
 use super::{BindingDecl, NodeSeed, Widget};
@@ -395,12 +395,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Widget for Select<T> {
     }
 
     fn bindings(&self) -> Vec<BindingDecl> {
-        vec![BindingDecl::new(
-            "enter,down,space,up",
-            "show_overlay",
-            "Show menu",
-        )
-        .hidden()]
+        vec![BindingDecl::new("enter,down,space,up", "show_overlay", "Show menu").hidden()]
     }
 
     fn execute_action(&mut self, action: &ParsedAction, ctx: &mut WidgetCtx) -> bool {
@@ -651,14 +646,20 @@ mod tests {
         let mut ctx = EventCtx::default();
         {
             let mut w = WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
-            sel.on_message(&MessageEvent::new(NodeId::default(), SelectCurrentToggle), &mut w);
+            sel.on_message(
+                &MessageEvent::new(NodeId::default(), SelectCurrentToggle),
+                &mut w,
+            );
         }
         assert!(sel.is_open());
         let mut ctx2 = EventCtx::default();
         {
             let mut w = WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx2);
             sel.on_message(
-                &MessageEvent::new(NodeId::default(), SelectOverlayDismiss { lost_focus: false }),
+                &MessageEvent::new(
+                    NodeId::default(),
+                    SelectOverlayDismiss { lost_focus: false },
+                ),
                 &mut w,
             );
         }
@@ -672,14 +673,26 @@ mod tests {
         let mut open = EventCtx::default();
         {
             let mut w = WidgetCtx::__from_dispatch(NodeId::default(), &mut open);
-            sel.on_message(&MessageEvent::new(NodeId::default(), SelectCurrentToggle), &mut w);
+            sel.on_message(
+                &MessageEvent::new(NodeId::default(), SelectCurrentToggle),
+                &mut w,
+            );
         }
         assert!(sel.is_open());
         // Overlay row 2 (blank row 0, options 1..) => option index 1 (Beta=2).
         let mut selctx = EventCtx::default();
         {
             let mut w = WidgetCtx::__from_dispatch(NodeId::default(), &mut selctx);
-            sel.on_message(&MessageEvent::new(NodeId::default(), OptionSelected { index: 2, option_id: None }), &mut w);
+            sel.on_message(
+                &MessageEvent::new(
+                    NodeId::default(),
+                    OptionSelected {
+                        index: 2,
+                        option_id: None,
+                    },
+                ),
+                &mut w,
+            );
         }
         assert!(!sel.is_open());
         assert_eq!(sel.value(), Some(&2));
@@ -700,7 +713,16 @@ mod tests {
         {
             let mut w = WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
             // Row 0 = blank.
-            sel.on_message(&MessageEvent::new(NodeId::default(), OptionSelected { index: 0, option_id: None }), &mut w);
+            sel.on_message(
+                &MessageEvent::new(
+                    NodeId::default(),
+                    OptionSelected {
+                        index: 0,
+                        option_id: None,
+                    },
+                ),
+                &mut w,
+            );
         }
         assert!(sel.value().is_none());
     }
@@ -743,9 +765,16 @@ mod tests {
     #[test]
     fn child_classes_drive_has_value() {
         let with = make_select_no_blank();
-        assert!(with.child_classes_for_tree(0).contains(&("-has-value", true)));
+        assert!(
+            with.child_classes_for_tree(0)
+                .contains(&("-has-value", true))
+        );
         let without = make_select();
-        assert!(without.child_classes_for_tree(0).contains(&("-has-value", false)));
+        assert!(
+            without
+                .child_classes_for_tree(0)
+                .contains(&("-has-value", false))
+        );
         // Overlay child carries no driven classes.
         assert!(with.child_classes_for_tree(1).is_empty());
     }

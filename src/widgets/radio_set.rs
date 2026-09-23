@@ -497,7 +497,10 @@ mod tests {
         assert!(pairs.contains(&("down,right", "next_button")));
         assert!(pairs.contains(&("enter,space", "toggle_button")));
         assert!(pairs.contains(&("up,left", "previous_button")));
-        assert!(bindings.iter().all(|b| !b.show), "Python declares show=False");
+        assert!(
+            bindings.iter().all(|b| !b.show),
+            "Python declares show=False"
+        );
     }
 
     #[test]
