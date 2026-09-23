@@ -366,6 +366,7 @@ fn dispatch_action_string(
                 worker_requests: ctx.take_worker_requests(),
                 recompose_nodes: ctx.take_recompose_nodes(),
                 default_prevented: false,
+                prevented: Vec::new(),
                 class_ops: ctx.take_class_ops(),
             };
             let handled = outcome.handled;
@@ -392,6 +393,7 @@ fn dispatch_action_string(
             worker_requests: ctx.take_worker_requests(),
             recompose_nodes: ctx.take_recompose_nodes(),
             default_prevented: false,
+            prevented: Vec::new(),
             class_ops: ctx.take_class_ops(),
         };
         let handled = outcome.handled;
@@ -421,6 +423,7 @@ fn dispatch_action_string(
                 worker_requests: ctx.take_worker_requests(),
                 recompose_nodes: ctx.take_recompose_nodes(),
                 default_prevented: false,
+                prevented: Vec::new(),
                 class_ops: ctx.take_class_ops(),
             };
             merge_outcome_into_runtime_pass(pass, &mut outcome);
@@ -2277,6 +2280,9 @@ impl App {
             aggregate.stop_requested |= outcome.stop_requested;
             aggregate.default_prevented |= outcome.default_prevented;
             aggregate
+                .prevented
+                .extend(std::mem::take(&mut outcome.prevented));
+            aggregate
                 .animation_requests
                 .append(&mut outcome.animation_requests);
             aggregate
@@ -2869,6 +2875,7 @@ impl App {
                                             worker_requests: ctx.take_worker_requests(),
                                             recompose_nodes: ctx.take_recompose_nodes(),
                                             default_prevented: false,
+                                            prevented: Vec::new(),
                                             class_ops: ctx.take_class_ops(),
                                         };
                                         self.absorb_outcome(
@@ -2934,6 +2941,7 @@ impl App {
                                     worker_requests: root_ctx.take_worker_requests(),
                                     recompose_nodes: root_ctx.take_recompose_nodes(),
                                     default_prevented: false,
+                                    prevented: Vec::new(),
                                     class_ops: root_ctx.take_class_ops(),
                                 };
                                 self.absorb_outcome(
@@ -2994,6 +3002,7 @@ impl App {
                                         worker_requests: fallback_ctx.take_worker_requests(),
                                         recompose_nodes: fallback_ctx.take_recompose_nodes(),
                                         default_prevented: false,
+                                        prevented: Vec::new(),
                                         class_ops: fallback_ctx.take_class_ops(),
                                     };
                                     self.absorb_outcome(
@@ -5165,6 +5174,7 @@ impl App {
                             worker_requests: ctx.take_worker_requests(),
                             recompose_nodes: ctx.take_recompose_nodes(),
                             default_prevented: false,
+                            prevented: Vec::new(),
                             class_ops: ctx.take_class_ops(),
                         };
                         self.absorb_outcome(&mut binding_outcome, pending, InvalidationScope::Global);
@@ -5194,6 +5204,7 @@ impl App {
                     worker_requests: root_ctx.take_worker_requests(),
                     recompose_nodes: root_ctx.take_recompose_nodes(),
                     default_prevented: false,
+                    prevented: Vec::new(),
                     class_ops: root_ctx.take_class_ops(),
                 };
                 self.absorb_outcome(&mut root_binding_outcome, pending, InvalidationScope::Global);
@@ -5225,6 +5236,7 @@ impl App {
                     worker_requests: fallback_ctx.take_worker_requests(),
                     recompose_nodes: fallback_ctx.take_recompose_nodes(),
                     default_prevented: false,
+                    prevented: Vec::new(),
                     class_ops: fallback_ctx.take_class_ops(),
                 };
                 self.absorb_outcome(&mut fallback_outcome, pending, InvalidationScope::Global);
@@ -5841,6 +5853,11 @@ impl App {
                 nodes
             },
             default_prevented: outcome.default_prevented || msg_outcome.default_prevented,
+            prevented: {
+                let mut prevented = outcome.prevented;
+                prevented.extend(msg_outcome.prevented);
+                prevented
+            },
         }
     }
 
@@ -6152,6 +6169,12 @@ impl App {
             aggregate.stop_requested |= outcome.stop_requested || msg_outcome.stop_requested;
             aggregate.default_prevented |=
                 outcome.default_prevented || msg_outcome.default_prevented;
+            aggregate
+                .prevented
+                .extend(std::mem::take(&mut outcome.prevented));
+            aggregate
+                .prevented
+                .extend(std::mem::take(&mut msg_outcome.prevented));
             aggregate.messages.extend(msg_outcome.messages);
             aggregate
                 .class_ops
@@ -6645,6 +6668,7 @@ impl App {
                     worker_requests: root_capture_ctx.take_worker_requests(),
                     recompose_nodes: root_capture_ctx.take_recompose_nodes(),
                     default_prevented: false,
+                    prevented: Vec::new(),
                     class_ops: root_capture_ctx.take_class_ops(),
                 };
             }
@@ -6838,7 +6862,23 @@ impl App {
                 root.on_message(&message, &mut __wctx);
                 __wctx.__enqueue_reactive_if_dirty();
             }
-            if !ctx.handled() {
+            // P-B (Python `Message.prevent_default`): the `on_app_message`
+            // hook is the runtime default handling for a widget message, so
+            // it is skipped when the tree dispatch prevented this message's
+            // default — or when the root hook itself just prevented it.
+            // Plain `on_message` delivery above is unaffected (bubbling
+            // continues; only the default is skipped).
+            let tree_prevented = outcome.prevented.iter().any(|(sender, type_id)| {
+                *sender == message.sender && *type_id == message.payload_type_id()
+            });
+            let root_prevented = ctx.take_default_prevented();
+            if root_prevented {
+                outcome.default_prevented = true;
+                outcome
+                    .prevented
+                    .push((message.sender, message.payload_type_id()));
+            }
+            if !ctx.handled() && !tree_prevented && !root_prevented {
                 {
                     let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
                     root.on_app_message(self, &message, &mut __wctx);
@@ -7481,6 +7521,59 @@ mod tests {
             !app.update_hover_tooltip(1, 0),
             "command palette open should start a cooldown that suppresses immediate tooltip re-show"
         );
+    }
+
+    // P-B: a widget that prevents a message's default without handling it.
+    struct PreventDefaultProbe {
+        message_hits: Arc<AtomicUsize>,
+        app_message_hits: Arc<AtomicUsize>,
+    }
+
+    impl Widget for PreventDefaultProbe {
+        fn render(&self, _console: &Console, _options: &ConsoleOptions) -> Segments {
+            Segments::new()
+        }
+
+        fn on_message(&mut self, _message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+            self.message_hits.fetch_add(1, Ordering::SeqCst);
+            // Skip the default (app hook) but keep bubbling: no set_handled.
+            ctx.prevent_default();
+        }
+
+        fn on_app_message(
+            &mut self,
+            _app: &mut App,
+            _message: &MessageEvent,
+            ctx: &mut crate::event::WidgetCtx,
+        ) {
+            self.app_message_hits.fetch_add(1, Ordering::SeqCst);
+            ctx.set_handled();
+        }
+    }
+
+    #[test]
+    fn dispatch_message_queue_auto_skips_app_message_when_default_prevented() {
+        let mut app = super::App::new().expect("app should initialize");
+        let mut runtime_root = PreventDefaultProbe {
+            message_hits: Arc::new(AtomicUsize::new(0)),
+            app_message_hits: Arc::new(AtomicUsize::new(0)),
+        };
+
+        let outcome = app.dispatch_message_queue_auto(
+            &mut runtime_root,
+            vec![MessageEvent::new(
+                node_id_from_ffi(7),
+                crate::message::FooterBindingsUpdated { count: 0 },
+            )],
+        );
+
+        assert_eq!(runtime_root.message_hits.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            runtime_root.app_message_hits.load(Ordering::SeqCst),
+            0,
+            "prevented default must skip the on_app_message hook"
+        );
+        assert!(outcome.default_prevented);
     }
 
     #[test]

@@ -212,11 +212,20 @@ pub struct DispatchOutcome {
     /// True when at least one handler called `prevent_default()` on the envelope
     /// during message dispatch, signalling the default action should be skipped.
     ///
-    /// **Note:** Currently widgets receive `&MessageEvent` (not `&mut MessageEnvelope`),
-    /// so this flag cannot be set from widget code yet. It is wired end-to-end
-    /// in preparation for a future Widget trait update that passes envelopes
-    /// directly to `on_message()`.
+    /// Widgets request this from `on_message` via
+    /// [`EventCtx::prevent_default`](crate::event::EventCtx::prevent_default)
+    /// (or [`WidgetCtx::prevent_default`](crate::event::WidgetCtx::prevent_default));
+    /// the bubble loop transfers it onto the envelope. Unlike `handled` (which
+    /// stops bubbling), prevention lets the message keep bubbling and only
+    /// skips the runtime default handling.
     pub default_prevented: bool,
+    /// `(sender, payload type)` of every message whose default was prevented
+    /// during this dispatch. Lets callers skip per-message default handling
+    /// (e.g. the app `on_app_message` hook) with message granularity instead
+    /// of the aggregate [`DispatchOutcome::default_prevented`] flag. Empty in
+    /// the common case. Matching is by `(sender, TypeId)`: twin messages from
+    /// the same sender share an entry (documented over-precision).
+    pub prevented: Vec<(NodeId, std::any::TypeId)>,
     /// Class mutations queued by widget handlers during this dispatch cycle.
     /// Applied to the arena tree by the runtime after dispatch.
     pub class_ops: Vec<(NodeId, ClassOp)>,
@@ -250,6 +259,7 @@ impl DispatchOutcome {
             worker_requests: ctx.take_worker_requests(),
             recompose_nodes: ctx.take_recompose_nodes(),
             default_prevented: false,
+            prevented: Vec::new(),
             class_ops: ctx.take_class_ops(),
         }
     }
@@ -263,6 +273,7 @@ impl DispatchOutcome {
             && !self.repaint_requested
             && !self.stop_requested
             && !self.default_prevented
+            && self.prevented.is_empty()
             && self.invalidation == InvalidationFlags::default()
             && self.messages.is_empty()
             && self.animation_requests.is_empty()
