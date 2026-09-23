@@ -786,6 +786,7 @@ dependencies = [
  "regex",
  "rich-rs",
  "serde_json",
+ "similar",
  "slotmap",
  "syntect",
  "textual-macros",
