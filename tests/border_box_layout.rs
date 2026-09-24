@@ -5,7 +5,7 @@
 //! and the box is `content + gutter`. So a border-box widget whose explicit
 //! size is smaller than its own chrome (border + padding) does NOT collapse
 //! below that chrome — content goes to zero but every border row/column still
-//! renders. The motivating case is the dictionary demo's `Input`
+//! renders. The motivating case was the since-removed dictionary demo's `Input`
 //! (`height: 1; border: tall`, chrome = 2): it must render both border rows,
 //! not just the top one.
 
@@ -37,7 +37,7 @@ fn border_box_height_does_not_collapse_below_chrome() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(StyledLeaf { inline_style: None }));
 
-    // Docked child mirroring the dictionary `Input` (`dock: top`): an explicit
+    // Docked child mirroring that `Input` (`dock: top`): an explicit
     // `height: 1` with a tall (top + bottom) border contributes 2 rows of chrome.
     let docked = tree.mount(
         root,

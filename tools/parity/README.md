@@ -46,7 +46,8 @@ golden.
 ## Regenerating goldens
 
 Requires `tmux`, the Python Textual checkout at `../textual`, and a venv with
-`textual` (+ `httpx` for the dictionary case):
+`textual` (+ `httpx`, which the docs worker/weather and events/dictionary
+examples import):
 
 ```bash
 uv venv /tmp/textual-venv

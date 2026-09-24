@@ -5,7 +5,8 @@
 #
 # Requirements:
 #   - tmux
-#   - a Python interpreter with `textual` (and `httpx` for the dictionary case)
+#   - a Python interpreter with `textual` (and `httpx`, which the docs
+#     worker/weather and events/dictionary examples import)
 #     installed, ideally from the local ../textual checkout:
 #       uv venv /tmp/textual-venv
 #       VIRTUAL_ENV=/tmp/textual-venv uv pip install -e ../textual httpx
@@ -96,7 +97,6 @@ CASE=markdown_toc_toggle   && want "$@" && run_case "$CASE" "$PY_EXAMPLES" "t" "
 CASE=five_by_five_initial  && want "$@" && run_case "$CASE" "$PY_EXAMPLES" ""  "five_by_five.py"
 CASE=json_tree_initial     && want "$@" && run_case "$CASE" "$PY_EXAMPLES" ""  "json_tree.py"
 CASE=json_tree_add_node    && want "$@" && run_case "$CASE" "$PY_EXAMPLES" "a" "json_tree.py"
-CASE=dictionary_initial    && want "$@" && run_case "$CASE" "$PY_EXAMPLES" ""  "dictionary.py"
 CASE=code_browser_initial  && want "$@" && run_case "$CASE" "$FIXTURE_DIR" ""  "$PY_EXAMPLES/code_browser.py" "./"
 
 # Docs examples (../textual/docs/examples/<group>/<name>.py). Golden name is the

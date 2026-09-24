@@ -4,12 +4,15 @@ asciicast v2 file. Ported from reactive-tui's scripts/record-demo.py.
 Usage:
     python3 scripts/record_demo.py /tmp/examples.cast
     agg --font-family "DejaVu Sans Mono" /tmp/examples.cast /tmp/examples.gif
+    python3 scripts/demo_frames.py /tmp/examples.cast /tmp/frames   # one PNG per example
 
 The font flag matters: agg's default font renders U+2800 blank Braille as
 dotted tofu, which looks like a framework bug and is not one.
 
 Segments without keys just boot, settle, and get killed on timeout: enough
 for a layout look. Apps without a quit binding are terminated via timeout.
+Each segment starts with an asciicast marker event naming its example, so
+demo_frames.py can split the recording per example.
 """
 import json
 import os
@@ -35,9 +38,6 @@ PLAN = [
      1.5),
     ("merlin",
      [(6.0, b"1"), (2.0, b"5")],
-     1.5),
-    ("dictionary",
-     [(6.0, b"rust"), (1.5, b"\r")],
      1.5),
     ("five_by_five", [], 2.0),
     ("code_browser", [], 2.0),
@@ -72,6 +72,7 @@ def drain(master, deadline):
 
 
 def run_segment(example, script, settle):
+    events.append([stamp(), "m", example])
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", HEIGHT, WIDTH, 0, 0))
     env = dict(os.environ, TERM="xterm-256color",

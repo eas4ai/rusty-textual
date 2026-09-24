@@ -214,7 +214,8 @@ run_test(QuestionApp { reply: None }, |pilot| {
 ```
 
 The suite holds thousands of tests: unit, integration, snapshot (through `insta`), and
-real-PTY parity harnesses that diff Rust against the actual Python Textual output.
+real-PTY parity harnesses that diff Rust against goldens recorded from Python Textual.
+Running the tests does not need Python.
 
 ## Architecture
 
@@ -228,9 +229,9 @@ real-PTY parity harnesses that diff Rust against the actual Python Textual outpu
 Python Textual is the source of truth for behavior and default styling. The port aligns
 semantics first (event, focus, and message behavior; layout and box-model rules), then
 widget defaults and render-time composition. Parity is a continuously measured
-verification floor: the visual harness holds 87 cell-exact sizing cases against Python,
-the PTY harness holds around 180 cases, and an interactive harness diffs live Python
-cell by cell. Intentional divergences are documented where they occur; the dispatch
+verification floor: the visual harness holds 87 cell-exact cases and the PTY harness
+holds 184 cases, each checked against a golden recorded once from Python Textual.
+Intentional divergences are documented where they occur; the dispatch
 rulings live in `docs/plans/2026-09-23-dispatch-model-rfc.md`. Rust idioms (ownership,
 type safety, modular boundaries) apply throughout while preserving behavioral parity.
 
@@ -266,7 +267,6 @@ cargo run --example diff [OLD NEW]       # unified diff viewer (similar)
 cargo run --example calculator           # working desk calculator
 cargo run --example merlin               # Merlin handheld toggle game
 cargo run --example five_by_five         # 5x5 toggle puzzle
-cargo run --example dictionary           # as-you-type dictionary lookup
 cargo run --example json_tree            # JSON tree viewer
 cargo run --example markdown             # Markdown renderer
 cargo run --example readme_screens       # README screenshots

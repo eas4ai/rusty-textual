@@ -1,21 +1,21 @@
 //! T-visual parity harness (tiered styled layer over the plain-text harness).
 //!
-//! Locked design: exact per-cell match, forced truecolor, no tmux — BOTH the
-//! Rust example and the Python source run through the SAME portable-pty + vt100
-//! path, and goldens store per-cell RGB. Catches color/background bugs the
-//! plain-text `pty_parity` harness is blind to.
+//! Locked design: exact per-cell match, forced truecolor, no tmux. The Rust
+//! example runs through portable-pty + vt100 and is compared against a
+//! committed golden that stores per-cell RGB. The goldens were captured once
+//! from Python Textual and are now fixed references; this harness never runs
+//! Python. Catches color/background bugs the plain-text `pty_parity` harness is
+//! blind to.
 //!
-//! AUTO-DISCOVERS every `styles/` + `guide/styles/` example that has a built
-//! Rust binary + a Python source. Only the `PASSING` allowlist is ASSERTED
-//! (must match Python exactly); the rest are reported as the color-parity
+//! AUTO-DISCOVERS every committed golden in `tests/pty_parity/golden_styled/`
+//! whose Rust example binary is built. Only the `PASSING` allowlist is ASSERTED
+//! (must match its golden exactly); the rest are reported as the color-parity
 //! workstream (PENDING) or flagged READY (matches → promote into PASSING). The
 //! test fails only on a PASSING regression.
 //!
-//!   REGEN_STYLED=1 cargo test --test visual_parity   # (re)gen goldens from Python
 //!   REPORT_ONLY=1  cargo test --test visual_parity   # full tally, never panics
 //!   cargo test --test visual_parity                  # assert PASSING set
 
-use std::collections::HashSet;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -25,7 +25,6 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 const ROWS: u16 = 30;
 const COLS: u16 = 120;
-const PYTHON: &str = "/tmp/textual-venv/bin/python";
 
 /// Styled-verified examples (asserted exact). Grows as color-parity clusters land.
 const PASSING: &[&str] = &[
@@ -342,48 +341,35 @@ const PASSING: &[&str] = &[
 
 struct StyledCase {
     name: String,
-    py_rel: String,
 }
 
 fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// Discover styled candidates: a Python source under styles/ or guide/styles/
-/// that has a matching built Rust example binary.
+/// Discover styled candidates: a committed golden under `golden_styled/` that
+/// has a matching built Rust example binary.
 fn discover() -> Vec<StyledCase> {
-    let mut cases = Vec::new();
-    let mut seen = HashSet::new();
-    for sub in ["styles", "guide/styles"] {
-        let dir = repo().join("../textual/docs/examples").join(sub);
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        let mut paths: Vec<PathBuf> = rd
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().map(|x| x == "py").unwrap_or(false))
-            .collect();
-        paths.sort();
-        for p in paths {
-            let stem = p.file_stem().unwrap().to_string_lossy().to_string();
-            if seen.contains(&stem) {
-                continue;
-            }
-            let bin = repo()
+    let Ok(rd) = std::fs::read_dir(repo().join("tests/pty_parity/golden_styled")) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "styled"))
+        .map(|p| p.file_stem().unwrap().to_string_lossy().to_string())
+        .collect();
+    names.sort();
+    names
+        .into_iter()
+        .filter(|name| {
+            repo()
                 .join("docs/examples/target/debug/examples")
-                .join(&stem);
-            if !bin.exists() {
-                continue;
-            }
-            seen.insert(stem.clone());
-            cases.push(StyledCase {
-                name: stem.clone(),
-                py_rel: format!("{sub}/{stem}.py"),
-            });
-        }
-    }
-    cases
+                .join(name)
+                .exists()
+        })
+        .map(|name| StyledCase { name })
+        .collect()
 }
 
 fn col(c: vt100::Color) -> String {
@@ -488,7 +474,6 @@ fn golden_path(name: &str) -> PathBuf {
 
 #[test]
 fn visual_parity_batch() {
-    let regen = std::env::var("REGEN_STYLED").is_ok();
     let report_only = std::env::var("REPORT_ONLY").is_ok();
     let cases = discover();
     let mut regressions: Vec<String> = Vec::new();
@@ -496,20 +481,6 @@ fn visual_parity_batch() {
     let mut ready: Vec<String> = Vec::new();
 
     for case in &cases {
-        if regen {
-            let script = repo().join("../textual/docs/examples").join(&case.py_rel);
-            let cwd = script.parent().unwrap().to_path_buf();
-            let mut cmd = CommandBuilder::new(PYTHON);
-            cmd.arg(script.to_str().unwrap());
-            let g = capture(cmd, cwd);
-            if g.trim().is_empty() {
-                eprintln!("regen SKIP {} (empty capture)", case.name);
-                continue;
-            }
-            std::fs::create_dir_all(golden_path(&case.name).parent().unwrap()).ok();
-            std::fs::write(golden_path(&case.name), &g).expect("write golden");
-            continue;
-        }
         let golden = match std::fs::read_to_string(golden_path(&case.name)) {
             Ok(g) => g,
             Err(_) => {
@@ -572,20 +543,18 @@ fn visual_parity_batch() {
         }
     }
 
-    if !regen {
+    eprintln!(
+        "\nstyled tally (of {} discovered): {n_pass} PASS, {n_ready} READY-to-promote, \
+         {n_pending} PENDING (workstream), {n_skip} no-golden",
+        cases.len()
+    );
+    if !ready.is_empty() {
         eprintln!(
-            "\nstyled tally (of {} discovered): {n_pass} PASS, {n_ready} READY-to-promote, \
-             {n_pending} PENDING (workstream), {n_skip} no-golden",
-            cases.len()
+            "READY (match Python — add to PASSING): {}",
+            ready.join(", ")
         );
-        if !ready.is_empty() {
-            eprintln!(
-                "READY (match Python — add to PASSING): {}",
-                ready.join(", ")
-            );
-        }
     }
-    if !regen && !report_only && !regressions.is_empty() {
+    if !report_only && !regressions.is_empty() {
         panic!("styled PASSING regressed: {}", regressions.join(", "));
     }
 }

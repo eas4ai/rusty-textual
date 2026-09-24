@@ -5,7 +5,7 @@
 /// Ten sparklines are shown, each with a different color combination.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Sparkline {
     width: 100%;
     margin: 1;
@@ -80,7 +80,7 @@ Sparkline {
 #tnt > .sparkline--min-color {
     color: $success;
 }
-"#;
+";
 
 struct SparklineColorsApp;
 
@@ -91,9 +91,12 @@ impl TextualApp for SparklineColorsApp {
     }
 
     fn compose(&mut self) -> AppRoot {
+        // Python divides by the literal `3.14`, not `math.pi`, and the parity
+        // golden was recorded with that data. Using PI shifts every bar.
+        #[allow(clippy::approx_constant)]
         let nums: Vec<f64> = (0..360 * 6)
             .step_by(20)
-            .map(|x| (x as f64 / std::f64::consts::PI).sin().abs())
+            .map(|x| (f64::from(x) / 3.14_f64).sin().abs())
             .collect();
 
         AppRoot::new().with_compose(vec![

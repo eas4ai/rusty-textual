@@ -142,15 +142,6 @@ const CASES: &[Case] = &[
         golden_replacements: &[],
         status: Status::Pass,
     },
-    Case {
-        name: "dictionary_initial",
-        example: "dictionary",
-        args: &[],
-        cwd: None,
-        keys: "",
-        golden_replacements: &[],
-        status: Status::Pass,
-    },
     // ---- Phase 1A: interactive docs/examples (separate workspace, docs_ prefix) ----
     // Built from docs/examples/ and located in its target dir. Goldens generated
     // from the Python docs examples (../textual/docs/examples/widgets/<name>.py).
@@ -2206,7 +2197,6 @@ pty_case!(
 );
 pty_case!(json_tree_initial, "json_tree_initial");
 pty_case!(json_tree_add_node, "json_tree_add_node");
-pty_case!(dictionary_initial, "dictionary_initial");
 pty_case!(code_browser_initial, "code_browser_initial");
 pty_case!(docs_render_compose, "docs_render_compose");
 pty_case!(docs_layout01, "docs_layout01");

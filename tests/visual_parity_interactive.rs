@@ -1,10 +1,11 @@
 //! Interactive styled-parity harness — extends the styled layer to POST-INTERACTION
 //! frames (focus / hover / active states), which the static `visual_parity` harness
 //! never exercises. Sends keys, waits for re-stabilization, then captures per-cell RGB
-//! and compares against a Python golden. This is how focus-state color bugs (e.g. a
-//! focused Button's `text-style: reverse` band) get caught instead of eyeballed.
+//! and compares against a committed golden. The golden was captured once from Python
+//! Textual and is now a fixed reference; this harness never runs Python. This is how
+//! focus-state color bugs (e.g. a focused Button's `text-style: reverse` band) get
+//! caught instead of eyeballed.
 //!
-//!   REGEN_INTERACTIVE=1 cargo test --test visual_parity_interactive   # gen goldens from Python
 //!   DEBUG_CASE=<name>    cargo test --test visual_parity_interactive   # print first per-cell diffs
 //!   cargo test --test visual_parity_interactive                       # assert
 
@@ -17,12 +18,10 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 const ROWS: u16 = 30;
 const COLS: u16 = 120;
-const PYTHON: &str = "/tmp/textual-venv/bin/python";
 
 struct Case {
     name: &'static str,
     bin: &'static str,
-    py_rel: &'static str,
     keys: &'static str,
 }
 
@@ -34,7 +33,6 @@ struct Case {
 const CASES: &[Case] = &[Case {
     name: "button_focus",
     bin: "button",
-    py_rel: "widgets/button.py",
     keys: "\t",
 }];
 
@@ -166,22 +164,10 @@ fn golden_path(name: &str) -> PathBuf {
 
 #[test]
 fn interactive_parity() {
-    let regen = std::env::var("REGEN_INTERACTIVE").is_ok();
     let debug = std::env::var("DEBUG_CASE").ok();
     let mut failures = Vec::new();
 
     for case in CASES {
-        if regen {
-            let script = repo().join("../textual/docs/examples").join(case.py_rel);
-            let cwd = script.parent().unwrap().to_path_buf();
-            let mut cmd = CommandBuilder::new(PYTHON);
-            cmd.arg(script.to_str().unwrap());
-            let g = capture(cmd, cwd, case.keys);
-            std::fs::create_dir_all(golden_path(case.name).parent().unwrap()).ok();
-            std::fs::write(golden_path(case.name), &g).expect("write golden");
-            eprintln!("regen {} ({} rows)", case.name, g.matches("--row").count());
-            continue;
-        }
         let bin = repo()
             .join("docs/examples/target/debug/examples")
             .join(case.bin);
@@ -192,7 +178,7 @@ fn interactive_parity() {
         let golden = match std::fs::read_to_string(golden_path(case.name)) {
             Ok(g) => g,
             Err(_) => {
-                eprintln!("SKIP {} (no golden; REGEN_INTERACTIVE=1)", case.name);
+                eprintln!("SKIP {} (no golden)", case.name);
                 continue;
             }
         };
