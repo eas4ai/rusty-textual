@@ -1324,11 +1324,14 @@ mod tests {
         // failing — invisible to the gate, which runs `cargo test --no-run`). The
         // trait split adds 12 own-mode-only rows and excludes them from base
         // forwarding, so the base surface is UNCHANGED at 59.
+        //
+        // P-C (90b5dbe5) adds `traps_focus` to the forwarded Focus group, so a
+        // compound widget's focus trap scopes the chain: 59 -> 60.
         let forwarded = method_table()
             .iter()
             .filter(|m| is_default_forwarded(m.name))
             .count();
-        assert_eq!(forwarded, 59, "base delegation surface size");
+        assert_eq!(forwarded, 60, "base delegation surface size");
         // Own mode additionally forwards the own-mode-only rows through the
         // capability traits.
         let own_only = method_table()
