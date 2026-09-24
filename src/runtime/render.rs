@@ -409,93 +409,130 @@ impl App {
         let mut has_underlay = false;
 
         for layer in layers {
-            let debug_label = layer.debug_label();
-            let screen_stylesheet = match layer {
-                CompositedLayer::AppRoot => None,
-                CompositedLayer::Screen(index) => self
-                    .screen_stack
-                    .get(index)
-                    .and_then(|entry| entry.stylesheet.as_ref()),
+            let Some(layer_style_change) = self.render_composed_layer(
+                layer,
+                widget,
+                &mut next,
+                layout_invalidation,
+                has_underlay,
+            ) else {
+                continue;
             };
-            let sheet = self.stylesheet_for_layer(screen_stylesheet);
-            let _style_guard = set_style_context(sheet);
-            begin_style_render_pass();
-
-            let mut tree = match layer {
-                CompositedLayer::AppRoot => match self.widget_tree.take() {
-                    Some(tree) => tree,
-                    None => continue,
-                },
-                CompositedLayer::Screen(index) => {
-                    let Some(entry) = self.screen_stack.get_mut(index) else {
-                        continue;
-                    };
-                    std::mem::take(&mut entry.widget_tree)
-                }
-            };
-
-            if layout_invalidation {
-                let (w, h) = self.options.size;
-                run_layout_pass(&mut tree, (w.to_u16_sat(), h.to_u16_sat()));
-                apply_layout_info_tree_from_layout_rects(&mut tree);
-                let render_nodes = collect_render_nodes(&tree);
-                debug_render(&format!(
-                    "[layout_pass] layer={} viewport={}x{} render_nodes={}",
-                    debug_label,
-                    w,
-                    h,
-                    render_nodes.len()
-                ));
-            }
-
-            apply_root_tree_virtual_content_size_in_tree(&mut tree);
-            sync_host_scrollbar_positions(&mut tree);
-
-            // Install the `:focus-within` set for this layer's tree so rules like
-            // `Collapsible:focus-within { background-tint: $foreground 5% }` resolve.
-            let _focus_within_guard =
-                crate::css::set_focus_within(super::routing::focus_within_ids_tree(&tree));
-
-            match layer {
-                CompositedLayer::AppRoot => render_app_root_tree_layer(
-                    &tree,
-                    widget,
-                    &mut next,
-                    &self.console,
-                    if self.debug_layout.enabled {
-                        Some(&self.debug_layout)
-                    } else {
-                        None
-                    },
-                ),
-                CompositedLayer::Screen(_) => render_screen_tree_layer(
-                    &tree,
-                    &mut next,
-                    &self.console,
-                    if self.debug_layout.enabled {
-                        Some(&self.debug_layout)
-                    } else {
-                        None
-                    },
-                    has_underlay,
-                ),
-            }
-
-            layout_affected_style_change |= take_layout_affected_style_changes();
+            layout_affected_style_change |= layer_style_change;
             has_underlay = true;
+        }
 
-            match layer {
-                CompositedLayer::AppRoot => {
-                    self.widget_tree = Some(tree);
-                }
-                CompositedLayer::Screen(index) => {
-                    if let Some(entry) = self.screen_stack.get_mut(index) {
-                        entry.widget_tree = tree;
-                    }
+        self.present_composed_frame(
+            widget,
+            next,
+            dirty_regions,
+            layout_invalidation,
+            layout_affected_style_change,
+        )
+    }
+
+    /// Render one composited layer (the app root or a screen) into `next`.
+    /// Returns whether a layout-affecting style changed, or `None` when the
+    /// layer has no tree.
+    fn render_composed_layer(
+        &mut self,
+        layer: CompositedLayer,
+        widget: &mut dyn Widget,
+        next: &mut FrameBuffer,
+        layout_invalidation: bool,
+        has_underlay: bool,
+    ) -> Option<bool> {
+        let debug_label = layer.debug_label();
+        let screen_stylesheet = match layer {
+            CompositedLayer::AppRoot => None,
+            CompositedLayer::Screen(index) => self
+                .screen_stack
+                .get(index)
+                .and_then(|entry| entry.stylesheet.as_ref()),
+        };
+        let sheet = self.stylesheet_for_layer(screen_stylesheet);
+        let _style_guard = set_style_context(sheet);
+        begin_style_render_pass();
+
+        let mut tree = match layer {
+            CompositedLayer::AppRoot => self.widget_tree.take()?,
+            CompositedLayer::Screen(index) => {
+                std::mem::take(&mut self.screen_stack.get_mut(index)?.widget_tree)
+            }
+        };
+
+        if layout_invalidation {
+            let (w, h) = self.options.size;
+            run_layout_pass(&mut tree, (w.to_u16_sat(), h.to_u16_sat()));
+            apply_layout_info_tree_from_layout_rects(&mut tree);
+            let render_nodes = collect_render_nodes(&tree);
+            debug_render(&format!(
+                "[layout_pass] layer={} viewport={}x{} render_nodes={}",
+                debug_label,
+                w,
+                h,
+                render_nodes.len()
+            ));
+        }
+
+        apply_root_tree_virtual_content_size_in_tree(&mut tree);
+        sync_host_scrollbar_positions(&mut tree);
+
+        // Install the `:focus-within` set for this layer's tree so rules like
+        // `Collapsible:focus-within { background-tint: $foreground 5% }` resolve.
+        let _focus_within_guard =
+            crate::css::set_focus_within(super::routing::focus_within_ids_tree(&tree));
+
+        match layer {
+            CompositedLayer::AppRoot => render_app_root_tree_layer(
+                &tree,
+                widget,
+                next,
+                &self.console,
+                if self.debug_layout.enabled {
+                    Some(&self.debug_layout)
+                } else {
+                    None
+                },
+            ),
+            CompositedLayer::Screen(_) => render_screen_tree_layer(
+                &tree,
+                next,
+                &self.console,
+                if self.debug_layout.enabled {
+                    Some(&self.debug_layout)
+                } else {
+                    None
+                },
+                has_underlay,
+            ),
+        }
+
+        let layout_affected_style_change = take_layout_affected_style_changes();
+
+        match layer {
+            CompositedLayer::AppRoot => {
+                self.widget_tree = Some(tree);
+            }
+            CompositedLayer::Screen(index) => {
+                if let Some(entry) = self.screen_stack.get_mut(index) {
+                    entry.widget_tree = tree;
                 }
             }
         }
+        Some(layout_affected_style_change)
+    }
 
+    /// Diff the composed frame against the last one, write it to the
+    /// terminal, and refresh the hit-test map and layout info.
+    fn present_composed_frame(
+        &mut self,
+        widget: &mut dyn Widget,
+        mut next: FrameBuffer,
+        dirty_regions: Option<&[DirtyRegion]>,
+        layout_invalidation: bool,
+        layout_affected_style_change: bool,
+    ) -> crate::Result<()> {
         // Python applies the `ANSIToTruecolor` line filter to every strip; the
         // dim-attribute pre-blend must run on the composed frame BEFORE diffing
         // so live output matches the tree-render path (see `preblend_dim`).
@@ -907,323 +944,33 @@ fn render_tree_node(
         return;
     }
 
-    // CSS `outline` is drawn OVER this node's own edge cells (without reserving
-    // layout space) AND over any child content composited at those edges. It is
-    // therefore computed here (while the ancestor style stack is the base
-    // background) but PAINTED after children render — see `deferred_outline`
-    // below. Mirrors Python `StylesCache.render_line` outline block.
+    // CSS `outline` and `hatch` are computed while painting this node (the
+    // ancestor style stack is still the base background) but PAINTED after
+    // children render — see `node_deferred_outline` / `node_deferred_hatch`.
     let mut deferred_outline: Option<(Vec<OutlineCell>, i32, i32, ClipRect)> = None;
-
-    // CSS `hatch` fills the widget's blank cells with a repeating glyph. In
-    // Python this is applied via `line_post` to the widget's OWN content line,
-    // so the hatch covers the widget's full inner area — including the content
-    // row. In textual-rs, `.class()`/`.id()` on a leaf wraps it in a `Node`
-    // (border + hatch on the wrapper, raw text in an inner child). The inner
-    // content child renders AFTER the wrapper, so applying hatch before children
-    // lets the child's blank content line overpaint (un-hatch) the first inner
-    // row. Defer the fill until after children render (it only touches blank
-    // cells, preserving real content), mirroring Python's whole-inner-area hatch.
     let mut deferred_hatch: Option<DeferredHatch> = None;
 
     if should_render {
-        let dest_x = rect.x0 + ctx.origin_x;
-        let dest_y = rect.y0 + ctx.origin_y;
-
-        // Create options sized to this widget's layout rect.
-        let opts = sized_console_options(w, h);
-
-        // Build the debug label from the node record (css_id, classes).
-        let debug_label = {
-            let id_part = node
-                .css_id
-                .as_deref()
-                .map(|id| format!("#{id}"))
-                .unwrap_or_default();
-            let class_parts: Vec<String> = node.classes.iter().map(|c| format!(".{c}")).collect();
-            format!(
-                "{}{}{}",
-                node.widget.style_type(),
-                id_part,
-                class_parts.join("")
-            )
-        };
+        let dest = (rect.x0 + ctx.origin_x, rect.y0 + ctx.origin_y);
 
         // Set dispatch context so node_state()/node_id() work during render
         // (§T-6, step 3a): widgets can call self.node_state() inside render().
         let _dispatch_guard = set_dispatch_recipient(node_id, node.state);
 
-        // Python `visual_style` caching parity: capture/refresh the composited
-        // ancestor surface this node bakes into its transparent glyph segments,
-        // keyed on the node's OWN style identity (`node_own_style_fingerprint`,
-        // the render-time analogue of Python `styles._cache_key`). See the note
-        // on `FROZEN_ANCESTOR_BG` above.
-        let live_ancestor_bg = crate::css::current_composited_background();
-        let own_fp = node_own_style_fingerprint(&resolved, node);
-        let frozen_ancestor_bg = FROZEN_ANCESTOR_BG.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            match cache.get(&node_id) {
-                Some(&(fp, bg)) if fp == own_fp => bg,
-                _ => {
-                    cache.insert(node_id, (own_fp, live_ancestor_bg));
-                    live_ancestor_bg
-                }
-            }
-        });
-
-        // When the composited ancestor surface has DIVERGED from what this node
-        // captured at its own last content render (an ancestor-only background
-        // change, e.g. `guide/actions` pressing `r` to set the screen bg, or the
-        // `events/custom01` Screen bg animation), Python keeps the CACHED base
-        // surface in `visual_style` while Rust would bake the LIVE surface.
-        // Install the frozen bake-surface override for this node's render pass
-        // so everything derived from Python's `visual_style` — the node's own
-        // (possibly semi-transparent) bg flatten in content glyph strips, the
-        // content-align padding, the fg-bearing vertical extend — composites
-        // over the FROZEN ancestor surface. Surfaces Python renders live from
-        // `background_colors` (border rows/edges, CSS padding, trailing content
-        // pad) are unaffected, preserving the documented render-time
-        // live-composition invariant for surfaces. See `FROZEN_ANCESTOR_BG`.
-        let diverged = match (frozen_ancestor_bg, live_ancestor_bg) {
-            (Some(frozen), Some(live)) if frozen != live => Some((frozen, live)),
-            _ => None,
-        };
-        let frozen_bake_guard =
-            diverged.map(|(frozen, _)| crate::css::set_frozen_ancestor_bg_override(frozen));
-
-        // render_widget_with_meta handles CSS composition, border rendering,
-        // segment tagging with the real arena NodeId, and style stack push/pop.
-        let mut segments = crate::widgets::render_widget_with_meta(
-            node.widget.as_ref(),
-            console,
-            &opts,
-            debug,
-            node_id,
-            &meta,
-            &resolved,
-            &debug_label,
-        );
-        drop(frozen_bake_guard);
-
-        // Backstop for content glyph strips baked from live sources outside the
-        // override's reach: re-key cells still carrying the LIVE own-content
-        // surface to the frozen equivalent (see `recolor_frozen_content_bg`).
-        if let Some((frozen, live)) = diverged {
-            let live_content = compose_own_content_surface(&resolved, live);
-            let frozen_content = compose_own_content_surface(&resolved, frozen);
-            if live_content != frozen_content {
-                segments =
-                    recolor_frozen_content_bg(segments, node_id, live_content, frozen_content);
-            }
-        }
+        let segments =
+            render_node_segments(node, node_id, (w, h), &meta, &resolved, console, debug);
         if node.widget.preserve_underlay() && !segments.is_empty() {
-            if let Some(bg) = resolved.bg {
-                let widget_clip = ClipRect {
-                    x0: dest_x,
-                    y0: dest_y,
-                    x1: dest_x + w.to_i32_sat(),
-                    y1: dest_y + h.to_i32_sat(),
-                };
-                if let Some(paint_clip) = ctx.clip.intersect(widget_clip) {
-                    if bg.a >= 1.0 {
-                        fill_rect_with_background(frame, paint_clip, bg);
-                    } else if bg.a > 0.0 {
-                        tint_rect_with_background(frame, paint_clip, bg);
-                    }
-                }
-            }
+            fill_preserved_underlay(frame, &resolved, dest, (w, h), ctx.clip);
         }
-
-        // P2-31: When text-wrap is nowrap with an overflow mode, don't pre-crop
-        // lines so that apply_text_overflow_to_line can handle truncation with
-        // the correct mode (ellipsis/clip). Otherwise, split_and_crop_lines
-        // would already crop to `w`, making the overflow step a no-op.
-        let overflow_mode = text_overflow_mode(&resolved);
-        let crop_width = if overflow_mode.is_some() {
-            // Use natural per-line width so overflow truncation runs on the
-            // original lines (including explicit `\n` segment breaks).
-            let mut natural = 0usize;
-            let mut line_width = 0usize;
-            for segment in &segments {
-                if segment.control.is_some() {
-                    natural = natural.max(line_width);
-                    line_width = 0;
-                    continue;
-                }
-                let text = segment.text.as_ref();
-                if text.is_empty() {
-                    continue;
-                }
-                let mut parts = text.split('\n').peekable();
-                while let Some(part) = parts.next() {
-                    line_width = line_width.saturating_add(rich_rs::cell_len(part));
-                    if parts.peek().is_some() {
-                        natural = natural.max(line_width);
-                        line_width = 0;
-                    }
-                }
-            }
-            natural = natural.max(line_width);
-            natural.max(w)
-        } else {
-            w
-        };
-        // Structural tree nodes (for example Overlay modal layers) may render
-        // no segments of their own. If they also don't paint any surface style,
-        // don't synthesize padded blank lines, or they'd erase underlay content.
-        let has_surface_paint = resolved.bg.is_some()
-            || resolved.hatch.is_some()
-            || resolved.border_top.is_set()
-            || resolved.border_right.is_set()
-            || resolved.border_bottom.is_set()
-            || resolved.border_left.is_set()
-            || resolved.outline_top.is_set()
-            || resolved.outline_right.is_set()
-            || resolved.outline_bottom.is_set()
-            || resolved.outline_left.is_set();
-        let pad_lines = if segments.is_empty() && !has_surface_paint {
-            false
-        } else {
-            !node.widget.preserve_underlay()
-        };
-        let lines =
-            rich_rs::Segment::split_and_crop_lines(segments, crop_width, None, pad_lines, false);
-
-        let lines = if let Some(overflow) = overflow_mode {
-            lines
-                .into_iter()
-                .map(|line| apply_text_overflow_to_line(&line, w, overflow))
-                .collect()
-        } else {
-            lines
-        };
-
-        let frame_clip = ClipRect::for_frame(frame);
-        let Some(paint_clip) = ctx.clip.intersect(frame_clip) else {
+        let lines = node_content_lines(segments, w, &resolved, node.widget.preserve_underlay());
+        let Some(paint_clip) = write_node_lines(frame, &lines, dest, w, ctx.clip) else {
             return;
         };
-        for (row_idx, line) in lines.iter().enumerate() {
-            let y = dest_y + row_idx.to_i32_sat();
-            if y < paint_clip.y0 {
-                continue;
-            }
-            if y >= paint_clip.y1 {
-                break;
-            }
-            let line_start = dest_x;
-            let line_end = dest_x + w.to_i32_sat();
-            let x0 = line_start.max(paint_clip.x0);
-            let x1 = line_end.min(paint_clip.x1);
-            if x1 <= x0 {
-                continue;
-            }
-            let crop_start = (x0 - line_start).to_usize_sat();
-            let crop_width = (x1 - x0).to_usize_sat();
-            let cropped = if crop_start == 0 && crop_width == w {
-                line.clone()
-            } else {
-                crop_line_horizontal(line, crop_start, crop_width)
-            };
-            frame.write_line_at(x0.to_usize_sat(), y.to_usize_sat(), &cropped, false);
-        }
-
-        // Empty-Screen runtime background composite.
-        //
-        // The Screen surface widget (`AppRoot`, `style_type() == "Screen"`) bakes
-        // its blank surface from its OWN seed style, so a background set at
-        // RUNTIME on the Screen *node* — e.g. `query_mut("Screen").set_styles(
-        // |s| s.set_bg(red))` or `run_action("set_background('red')")` — never
-        // reaches the widget's baked surface (the node style and the widget seed
-        // are distinct). Without this, an empty Screen with a dynamically-set
-        // inline background paints 0 colored cells: the resolved node bg is red
-        // but every surface cell is still the stale theme base.
-        //
-        // The compositor owns surface compositing, so re-fill the Screen node's
-        // CONTENT box here with the RESOLVED node background (which includes the
-        // runtime inline bg). This mirrors `render_screen_tree_layer`'s
-        // top-of-layer fill for the screen-stack case, and Python's
-        // `Screen.styles.background` driving the screen blank. Children render
-        // AFTER this block (see below), so they still composite on top. Only runs
-        // for opaque backgrounds on the screen-surface node; every other widget
-        // is unaffected.
-        //
-        // The fill is scoped to the CONTENT box (inside any border/padding), NOT
-        // the full layout rect, so a Screen with `border:` (e.g. the `screen`
-        // styles demo: `Screen { background: darkblue; border: heavy white }`)
-        // keeps its border chrome — the widget already rendered the border into
-        // its segments above, and this fill must not clobber those edge cells.
-        // For a borderless empty Screen the content box equals the layout rect,
-        // so the runtime bg still fills the whole surface (actions01/02).
         if node_is_screen_surface(node) {
-            if let Some(bg) = resolved.bg {
-                if bg.a >= 1.0 {
-                    let content = node_content_or_layout_rect(node);
-                    let cx0 = content.x0 + ctx.origin_x;
-                    let cy0 = content.y0 + ctx.origin_y;
-                    let cx1 = content.x1 + ctx.origin_x;
-                    let cy1 = content.y1 + ctx.origin_y;
-                    let content_clip = ClipRect {
-                        x0: cx0,
-                        y0: cy0,
-                        x1: cx1,
-                        y1: cy1,
-                    };
-                    if let Some(fill_clip) = paint_clip.intersect(content_clip) {
-                        fill_rect_with_background(frame, fill_clip, bg);
-                    }
-                }
-            }
+            fill_screen_surface_background(frame, node, &resolved, ctx, paint_clip);
         }
-
-        // CSS `outline`: compute perimeter cells now (the ancestor style stack
-        // still represents the base/parent background), but defer painting until
-        // AFTER children render so the outline overdraws the final composited
-        // content at this node's edges. This makes outline correct for both leaf
-        // widgets and containers that wrap a child (e.g. `Static::new(..).id(..)`,
-        // which produces a Node wrapper).
-        if resolved.outline_top.is_set()
-            || resolved.outline_right.is_set()
-            || resolved.outline_bottom.is_set()
-            || resolved.outline_left.is_set()
-        {
-            let outer_bg = crate::css::current_composited_background().unwrap_or_else(|| {
-                crate::style::parse_color_like("$background")
-                    .unwrap_or(crate::style::Color::rgb(0, 0, 0))
-            });
-            let inner_bg = resolved.bg.map_or(outer_bg, |c| c.flatten_over(outer_bg));
-            let cells = outline_edge_cells(
-                w,
-                h,
-                resolved.outline_top,
-                resolved.outline_right,
-                resolved.outline_bottom,
-                resolved.outline_left,
-                inner_bg,
-                outer_bg,
-            );
-            if !cells.is_empty() {
-                deferred_outline = Some((cells, dest_x, dest_y, ctx.clip));
-            }
-        }
-
-        // P2-34: Defer hatch fill until after children render (see the
-        // `deferred_hatch` declaration above) so the inner content child of a
-        // `.class()`/`.id()` Node wrapper cannot un-hatch the first inner row.
-        //
-        // Scope the fill to the node's CONTENT box (inside any border/padding),
-        // not the full widget box. Python's `line_post` hatch only touches the
-        // inner content lines — it must NOT bleed into the border row, where the
-        // blank padding spaces around a `border_title` would otherwise be
-        // hatched (e.g. ` cross ` -> `╳cross╳`). For a gutterless leaf the
-        // content box equals the layout rect, so leaf hatch (Label, no border)
-        // is unchanged.
-        if let Some(ref hatch) = resolved.hatch {
-            let content = node_content_or_layout_rect(node);
-            let hx = content.x0 + ctx.origin_x;
-            let hy = content.y0 + ctx.origin_y;
-            let hw = content.x1.saturating_sub(content.x0).to_usize_sat();
-            let hh = content.y1.saturating_sub(content.y0).to_usize_sat();
-            deferred_hatch = Some((*hatch, resolved.bg, hx, hy, hw, hh, ctx.clip));
-        }
+        deferred_outline = node_deferred_outline(&resolved, (w, h), dest, ctx.clip);
+        deferred_hatch = node_deferred_hatch(node, &resolved, ctx);
     }
     // Clone keyline/layout before push_style_context takes ownership of resolved.
     // These are already folded into `resolved` via resolve_node_style, so no
@@ -1238,72 +985,14 @@ fn render_tree_node(
         !super::layers::effective_layers_with(tree, node_id, resolved.layers.clone()).is_empty();
     push_style_context(meta, resolved);
 
-    // Keyline background canvas (Python `layout.py::render_keyline` ->
-    // `Canvas.render(primitives, container.rich_style)`): a container with a
-    // keyline renders its WHOLE content box as a canvas whose blank cells on every
-    // keyline-spanned row carry `fg = base_style.bgcolor` (Canvas.render sets the
-    // base span color to the background color), i.e. `fg=<bg> bg=<bg>` — distinct
-    // from the screen's `fg=default` base blank. Visible children composite ON TOP
-    // of this canvas, so only the cells NOT covered by a visible child (gutter +
-    // `visibility:hidden` cells, e.g. the hidden Placeholder in `keyline`) show the
-    // canvas color. Paint that solid-fg/bg base here, BEFORE children render, so
-    // children overpaint it; the line glyphs are drawn after children by
-    // `paint_keylines`. (Every grid/flow content row carries a vertical keyline, so
-    // the whole content box is a span row — fill it uniformly.)
     if let Some(ref kl) = node_keyline {
-        if kl.keyline_type != KeylineType::None {
-            let canvas_bg = crate::css::current_composited_background().unwrap_or_else(|| {
-                crate::style::parse_color_like("$background")
-                    .unwrap_or(crate::style::Color::rgb(0, 0, 0))
-            });
-            if let Some(parent_node) = tree.get(node_id) {
-                let content_rect = node_content_or_layout_rect(parent_node);
-                let cx0 = content_rect.x0 + ctx.origin_x;
-                let cy0 = content_rect.y0 + ctx.origin_y;
-                let cx1 = content_rect.x1 + ctx.origin_x;
-                let cy1 = content_rect.y1 + ctx.origin_y;
-                let region_clip = ClipRect {
-                    x0: cx0,
-                    y0: cy0,
-                    x1: cx1,
-                    y1: cy1,
-                };
-                if let Some(paint_clip) = ctx.clip.intersect(region_clip) {
-                    fill_rect_solid_fg_bg(frame, paint_clip, canvas_bg);
-                }
-            }
-        }
+        paint_keyline_canvas(tree, node_id, kl, ctx, frame);
     }
 
-    // Descendants are never the overlay root; clear the exemption so a nested
-    // `overlay: screen` child inside a deferred overlay still escapes to top z.
-    let mut ctx = ctx;
-    ctx.overlay_root_exempt = None;
-    let unclipped_child_ctx = ctx;
-    let mut child_ctx = ctx;
-    // Clip descendants to this node's content box (inside border + padding) when
-    // either the widget opts in (scroll hosts, etc.) OR the node has gutter
-    // chrome (border/padding). Python's compositor clips every container's
-    // children to `container_region = region.shrink(gutter)` unconditionally
-    // (see `_compositor.py` `add_widget`: `sub_clip = clip.intersection(
-    // child_region)`), so overflowing children never paint over the parent's
-    // own border/padding. For gutterless nodes the content box equals the layout
-    // rect, leaving existing behavior unchanged.
-    if node.widget.clips_descendants_to_content() || node_has_gutter(node) {
-        let clip_rect = node_content_or_layout_rect(node);
-        let node_clip = ClipRect {
-            x0: clip_rect.x0 + ctx.origin_x,
-            y0: clip_rect.y0 + ctx.origin_y,
-            x1: clip_rect.x1 + ctx.origin_x,
-            y1: clip_rect.y1 + ctx.origin_y,
-        };
-        if let Some(intersection) = child_ctx.clip.intersect(node_clip) {
-            child_ctx.clip = intersection;
-        } else {
-            pop_style_context();
-            return;
-        }
-    }
+    let Some(child_ctxs) = child_render_ctxs(node, ctx) else {
+        pop_style_context();
+        return;
+    };
     // Paint children in CSS-layer order (Python `_compositor.py`: the parent's
     // `layers` declaration orders its layers bottom→top, so a child on a later
     // layer paints on top). The recursive paint walk previously used raw DOM
@@ -1317,90 +1006,7 @@ fn render_tree_node(
     } else {
         tree.children(node_id).to_vec()
     };
-    let (scroll_x, scroll_y) = node.widget.scroll_offset_f32();
-    let base_child_ctx = child_ctx;
-    let mut scrolled_child_ctx = child_ctx;
-    scrolled_child_ctx.origin_x -= scroll_x.round().to_i32_sat();
-    scrolled_child_ctx.origin_y -= scroll_y.round().to_i32_sat();
-    let has_scroll_viewport =
-        if let Some((viewport_w, viewport_h)) = node.widget.scroll_viewport_size() {
-            let content_rect = node_content_or_layout_rect(node);
-            let clip = ClipRect {
-                x0: content_rect.x0 + ctx.origin_x,
-                y0: content_rect.y0 + ctx.origin_y,
-                x1: content_rect.x0 + ctx.origin_x + viewport_w.to_i32_sat(),
-                y1: content_rect.y0 + ctx.origin_y + viewport_h.to_i32_sat(),
-            };
-            if let Some(intersection) = scrolled_child_ctx.clip.intersect(clip) {
-                scrolled_child_ctx.clip = intersection;
-            }
-            true
-        } else {
-            false
-        };
-    for child_id in child_ids {
-        let is_dedicated_scrollbar = node_is_dedicated_scrollbar(tree, child_id);
-        let use_scroll_ctx = has_scroll_viewport
-            && child_uses_parent_scroll(tree, child_id)
-            && !is_dedicated_scrollbar;
-        let mut next_ctx = if is_dedicated_scrollbar {
-            unclipped_child_ctx
-        } else if use_scroll_ctx {
-            scrolled_child_ctx
-        } else {
-            base_child_ctx
-        };
-        if is_dedicated_scrollbar {
-            // A dedicated scrollbar lives in the host's reserved gutter, which is
-            // OUTSIDE the host's (viewport-shrunk) content box. The clip inherited
-            // from the host therefore excludes the lane and would erase the bar.
-            // Expand the clip to cover the scrollbar's own layout rect (bounded by
-            // the frame) so the thumb glyphs and track paint into the gutter.
-            if let Some(child) = tree.get(child_id) {
-                let rect = child.layout_rect;
-                let frame_clip = ClipRect::for_frame(frame);
-                let lane_clip = ClipRect {
-                    x0: rect.x0 + unclipped_child_ctx.origin_x,
-                    y0: rect.y0 + unclipped_child_ctx.origin_y,
-                    x1: rect.x1 + unclipped_child_ctx.origin_x,
-                    y1: rect.y1 + unclipped_child_ctx.origin_y,
-                };
-                if let Some(lane_clip) = lane_clip.intersect(frame_clip) {
-                    next_ctx.clip = ClipRect {
-                        x0: next_ctx.clip.x0.min(lane_clip.x0),
-                        y0: next_ctx.clip.y0.min(lane_clip.y0),
-                        x1: next_ctx.clip.x1.max(lane_clip.x1),
-                        y1: next_ctx.clip.y1.max(lane_clip.y1),
-                    };
-                }
-            }
-        }
-        if use_scroll_ctx {
-            if let Some(child) = tree.get(child_id) {
-                let rect = child.layout_rect;
-                // The child's layout_rect is in the host's VIRTUAL (unscrolled)
-                // space; the child paints at the SCROLLED origin
-                // (`next_ctx.origin == base - scroll_offset`). The clip must
-                // bound where the child actually paints, so translate the rect
-                // by the scrolled origin. Using the unscrolled origin here made
-                // every child's clip miss its painted position as soon as the
-                // host scrolled (offset != 0): the on-screen child was culled
-                // (empty clip intersection) and the viewport went blank.
-                let child_clip = ClipRect {
-                    x0: rect.x0 + next_ctx.origin_x,
-                    y0: rect.y0 + next_ctx.origin_y,
-                    x1: rect.x1 + next_ctx.origin_x,
-                    y1: rect.y1 + next_ctx.origin_y,
-                };
-                if let Some(intersection) = next_ctx.clip.intersect(child_clip) {
-                    next_ctx.clip = intersection;
-                } else {
-                    continue;
-                }
-            }
-        }
-        render_tree_node(tree, child_id, next_ctx, frame, console, debug, overlays);
-    }
+    render_tree_children(tree, child_ids, child_ctxs, frame, console, debug, overlays);
 
     // P2-34: Paint keylines between children (after children are rendered).
     if let Some(ref keyline) = node_keyline {
@@ -1409,7 +1015,7 @@ fn render_tree_node(
             node_id,
             node_layout.unwrap_or(Layout::Vertical),
             keyline,
-            ctx,
+            child_ctxs.parent,
             frame,
         );
     }
@@ -1429,6 +1035,560 @@ fn render_tree_node(
     }
 
     pop_style_context();
+}
+
+/// Render a node's widget into segments at `size`, composited over the
+/// ancestor surface the node last rendered against.
+fn render_node_segments(
+    node: &crate::widget_tree::WidgetNode,
+    node_id: NodeId,
+    (w, h): (usize, usize),
+    meta: &crate::css::SelectorMeta,
+    resolved: &crate::style::Style,
+    console: &rich_rs::Console,
+    debug: Option<&crate::debug::DebugLayout>,
+) -> Segments {
+    // Create options sized to this widget's layout rect.
+    let opts = sized_console_options(w, h);
+
+    // Build the debug label from the node record (css_id, classes).
+    let debug_label = {
+        let id_part = node
+            .css_id
+            .as_deref()
+            .map(|id| format!("#{id}"))
+            .unwrap_or_default();
+        let class_parts: Vec<String> = node.classes.iter().map(|c| format!(".{c}")).collect();
+        format!(
+            "{}{}{}",
+            node.widget.style_type(),
+            id_part,
+            class_parts.join("")
+        )
+    };
+
+    // Python `visual_style` caching parity: capture/refresh the composited
+    // ancestor surface this node bakes into its transparent glyph segments,
+    // keyed on the node's OWN style identity (`node_own_style_fingerprint`,
+    // the render-time analogue of Python `styles._cache_key`). See the note
+    // on `FROZEN_ANCESTOR_BG` above.
+    let live_ancestor_bg = crate::css::current_composited_background();
+    let own_fp = node_own_style_fingerprint(resolved, node);
+    let frozen_ancestor_bg = FROZEN_ANCESTOR_BG.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        match cache.get(&node_id) {
+            Some(&(fp, bg)) if fp == own_fp => bg,
+            _ => {
+                cache.insert(node_id, (own_fp, live_ancestor_bg));
+                live_ancestor_bg
+            }
+        }
+    });
+
+    // When the composited ancestor surface has DIVERGED from what this node
+    // captured at its own last content render (an ancestor-only background
+    // change, e.g. `guide/actions` pressing `r` to set the screen bg, or the
+    // `events/custom01` Screen bg animation), Python keeps the CACHED base
+    // surface in `visual_style` while Rust would bake the LIVE surface.
+    // Install the frozen bake-surface override for this node's render pass
+    // so everything derived from Python's `visual_style` — the node's own
+    // (possibly semi-transparent) bg flatten in content glyph strips, the
+    // content-align padding, the fg-bearing vertical extend — composites
+    // over the FROZEN ancestor surface. Surfaces Python renders live from
+    // `background_colors` (border rows/edges, CSS padding, trailing content
+    // pad) are unaffected, preserving the documented render-time
+    // live-composition invariant for surfaces. See `FROZEN_ANCESTOR_BG`.
+    let diverged = match (frozen_ancestor_bg, live_ancestor_bg) {
+        (Some(frozen), Some(live)) if frozen != live => Some((frozen, live)),
+        _ => None,
+    };
+    let frozen_bake_guard =
+        diverged.map(|(frozen, _)| crate::css::set_frozen_ancestor_bg_override(frozen));
+
+    // render_widget_with_meta handles CSS composition, border rendering,
+    // segment tagging with the real arena NodeId, and style stack push/pop.
+    let mut segments = crate::widgets::render_widget_with_meta(
+        node.widget.as_ref(),
+        console,
+        &opts,
+        debug,
+        node_id,
+        meta,
+        resolved,
+        &debug_label,
+    );
+    drop(frozen_bake_guard);
+
+    // Backstop for content glyph strips baked from live sources outside the
+    // override's reach: re-key cells still carrying the LIVE own-content
+    // surface to the frozen equivalent (see `recolor_frozen_content_bg`).
+    if let Some((frozen, live)) = diverged {
+        let live_content = compose_own_content_surface(resolved, live);
+        let frozen_content = compose_own_content_surface(resolved, frozen);
+        if live_content != frozen_content {
+            segments = recolor_frozen_content_bg(segments, node_id, live_content, frozen_content);
+        }
+    }
+    segments
+}
+
+/// Paint a `preserve_underlay` widget's own background under its segments:
+/// opaque backgrounds fill, translucent ones tint.
+fn fill_preserved_underlay(
+    frame: &mut FrameBuffer,
+    resolved: &crate::style::Style,
+    (dest_x, dest_y): (i32, i32),
+    (w, h): (usize, usize),
+    clip: ClipRect,
+) {
+    if let Some(bg) = resolved.bg {
+        let widget_clip = ClipRect {
+            x0: dest_x,
+            y0: dest_y,
+            x1: dest_x + w.to_i32_sat(),
+            y1: dest_y + h.to_i32_sat(),
+        };
+        if let Some(paint_clip) = clip.intersect(widget_clip) {
+            if bg.a >= 1.0 {
+                fill_rect_with_background(frame, paint_clip, bg);
+            } else if bg.a > 0.0 {
+                tint_rect_with_background(frame, paint_clip, bg);
+            }
+        }
+    }
+}
+
+/// Split a node's segments into lines `w` cells wide, applying its
+/// `text-overflow` mode.
+fn node_content_lines(
+    segments: Segments,
+    w: usize,
+    resolved: &crate::style::Style,
+    preserve_underlay: bool,
+) -> Vec<Vec<Segment>> {
+    // P2-31: When text-wrap is nowrap with an overflow mode, don't pre-crop
+    // lines so that apply_text_overflow_to_line can handle truncation with
+    // the correct mode (ellipsis/clip). Otherwise, split_and_crop_lines
+    // would already crop to `w`, making the overflow step a no-op.
+    let overflow_mode = text_overflow_mode(resolved);
+    let crop_width = if overflow_mode.is_some() {
+        // Use natural per-line width so overflow truncation runs on the
+        // original lines (including explicit `\n` segment breaks).
+        let mut natural = 0usize;
+        let mut line_width = 0usize;
+        for segment in &segments {
+            if segment.control.is_some() {
+                natural = natural.max(line_width);
+                line_width = 0;
+                continue;
+            }
+            let text = segment.text.as_ref();
+            if text.is_empty() {
+                continue;
+            }
+            let mut parts = text.split('\n').peekable();
+            while let Some(part) = parts.next() {
+                line_width = line_width.saturating_add(rich_rs::cell_len(part));
+                if parts.peek().is_some() {
+                    natural = natural.max(line_width);
+                    line_width = 0;
+                }
+            }
+        }
+        natural = natural.max(line_width);
+        natural.max(w)
+    } else {
+        w
+    };
+    // Structural tree nodes (for example Overlay modal layers) may render
+    // no segments of their own. If they also don't paint any surface style,
+    // don't synthesize padded blank lines, or they'd erase underlay content.
+    let has_surface_paint = resolved.bg.is_some()
+        || resolved.hatch.is_some()
+        || resolved.border_top.is_set()
+        || resolved.border_right.is_set()
+        || resolved.border_bottom.is_set()
+        || resolved.border_left.is_set()
+        || resolved.outline_top.is_set()
+        || resolved.outline_right.is_set()
+        || resolved.outline_bottom.is_set()
+        || resolved.outline_left.is_set();
+    let pad_lines = if segments.is_empty() && !has_surface_paint {
+        false
+    } else {
+        !preserve_underlay
+    };
+    let lines =
+        rich_rs::Segment::split_and_crop_lines(segments, crop_width, None, pad_lines, false);
+
+    if let Some(overflow) = overflow_mode {
+        lines
+            .into_iter()
+            .map(|line| apply_text_overflow_to_line(&line, w, overflow))
+            .collect()
+    } else {
+        lines
+    }
+}
+
+/// Write a node's lines at `dest`, clipped to `clip` and the frame. Returns
+/// the paint clip, or `None` when nothing of the node can show.
+fn write_node_lines(
+    frame: &mut FrameBuffer,
+    lines: &[Vec<Segment>],
+    (dest_x, dest_y): (i32, i32),
+    w: usize,
+    clip: ClipRect,
+) -> Option<ClipRect> {
+    let frame_clip = ClipRect::for_frame(frame);
+    let paint_clip = clip.intersect(frame_clip)?;
+    for (row_idx, line) in lines.iter().enumerate() {
+        let y = dest_y + row_idx.to_i32_sat();
+        if y < paint_clip.y0 {
+            continue;
+        }
+        if y >= paint_clip.y1 {
+            break;
+        }
+        let line_start = dest_x;
+        let line_end = dest_x + w.to_i32_sat();
+        let x0 = line_start.max(paint_clip.x0);
+        let x1 = line_end.min(paint_clip.x1);
+        if x1 <= x0 {
+            continue;
+        }
+        let crop_start = (x0 - line_start).to_usize_sat();
+        let crop_width = (x1 - x0).to_usize_sat();
+        let cropped = if crop_start == 0 && crop_width == w {
+            line.clone()
+        } else {
+            crop_line_horizontal(line, crop_start, crop_width)
+        };
+        frame.write_line_at(x0.to_usize_sat(), y.to_usize_sat(), &cropped, false);
+    }
+    Some(paint_clip)
+}
+
+/// Empty-Screen runtime background composite.
+///
+/// The Screen surface widget (`AppRoot`, `style_type() == "Screen"`) bakes
+/// its blank surface from its OWN seed style, so a background set at
+/// RUNTIME on the Screen *node* — e.g. `query_mut("Screen").set_styles(
+/// |s| s.set_bg(red))` or `run_action("set_background('red')")` — never
+/// reaches the widget's baked surface (the node style and the widget seed
+/// are distinct). Without this, an empty Screen with a dynamically-set
+/// inline background paints 0 colored cells: the resolved node bg is red
+/// but every surface cell is still the stale theme base.
+///
+/// The compositor owns surface compositing, so re-fill the Screen node's
+/// CONTENT box here with the RESOLVED node background (which includes the
+/// runtime inline bg). This mirrors `render_screen_tree_layer`'s
+/// top-of-layer fill for the screen-stack case, and Python's
+/// `Screen.styles.background` driving the screen blank. Children render
+/// AFTER this block, so they still composite on top. Only runs for opaque
+/// backgrounds on the screen-surface node; every other widget is
+/// unaffected.
+///
+/// The fill is scoped to the CONTENT box (inside any border/padding), NOT
+/// the full layout rect, so a Screen with `border:` (e.g. the `screen`
+/// styles demo: `Screen { background: darkblue; border: heavy white }`)
+/// keeps its border chrome — the widget already rendered the border into
+/// its segments above, and this fill must not clobber those edge cells.
+/// For a borderless empty Screen the content box equals the layout rect,
+/// so the runtime bg still fills the whole surface (actions01/02).
+fn fill_screen_surface_background(
+    frame: &mut FrameBuffer,
+    node: &crate::widget_tree::WidgetNode,
+    resolved: &crate::style::Style,
+    ctx: TreeRenderCtx,
+    paint_clip: ClipRect,
+) {
+    if let Some(bg) = resolved.bg {
+        if bg.a >= 1.0 {
+            let content = node_content_or_layout_rect(node);
+            let cx0 = content.x0 + ctx.origin_x;
+            let cy0 = content.y0 + ctx.origin_y;
+            let cx1 = content.x1 + ctx.origin_x;
+            let cy1 = content.y1 + ctx.origin_y;
+            let content_clip = ClipRect {
+                x0: cx0,
+                y0: cy0,
+                x1: cx1,
+                y1: cy1,
+            };
+            if let Some(fill_clip) = paint_clip.intersect(content_clip) {
+                fill_rect_with_background(frame, fill_clip, bg);
+            }
+        }
+    }
+}
+
+/// CSS `outline`: compute perimeter cells now (the ancestor style stack
+/// still represents the base/parent background), but defer painting until
+/// AFTER children render so the outline overdraws the final composited
+/// content at this node's edges. This makes outline correct for both leaf
+/// widgets and containers that wrap a child (e.g. `Static::new(..).id(..)`,
+/// which produces a Node wrapper). Mirrors Python `StylesCache.render_line`.
+fn node_deferred_outline(
+    resolved: &crate::style::Style,
+    (w, h): (usize, usize),
+    (dest_x, dest_y): (i32, i32),
+    clip: ClipRect,
+) -> Option<(Vec<OutlineCell>, i32, i32, ClipRect)> {
+    if !(resolved.outline_top.is_set()
+        || resolved.outline_right.is_set()
+        || resolved.outline_bottom.is_set()
+        || resolved.outline_left.is_set())
+    {
+        return None;
+    }
+    let outer_bg = crate::css::current_composited_background().unwrap_or_else(|| {
+        crate::style::parse_color_like("$background").unwrap_or(crate::style::Color::rgb(0, 0, 0))
+    });
+    let inner_bg = resolved.bg.map_or(outer_bg, |c| c.flatten_over(outer_bg));
+    let cells = outline_edge_cells(
+        w,
+        h,
+        resolved.outline_top,
+        resolved.outline_right,
+        resolved.outline_bottom,
+        resolved.outline_left,
+        inner_bg,
+        outer_bg,
+    );
+    if cells.is_empty() {
+        None
+    } else {
+        Some((cells, dest_x, dest_y, clip))
+    }
+}
+
+/// P2-34: CSS `hatch` fills the widget's blank cells with a repeating glyph.
+/// In Python this is applied via `line_post` to the widget's OWN content
+/// line, so the hatch covers the widget's full inner area — including the
+/// content row. In textual-rs, `.class()`/`.id()` on a leaf wraps it in a
+/// `Node` (border + hatch on the wrapper, raw text in an inner child). The
+/// inner content child renders AFTER the wrapper, so applying hatch before
+/// children lets the child's blank content line overpaint (un-hatch) the
+/// first inner row. The fill is therefore deferred until after children
+/// render (it only touches blank cells, preserving real content).
+///
+/// The fill is scoped to the node's CONTENT box (inside any border/padding),
+/// not the full widget box. Python's `line_post` hatch only touches the
+/// inner content lines — it must NOT bleed into the border row, where the
+/// blank padding spaces around a `border_title` would otherwise be hatched
+/// (e.g. ` cross ` -> `╳cross╳`). For a gutterless leaf the content box
+/// equals the layout rect, so leaf hatch (Label, no border) is unchanged.
+fn node_deferred_hatch(
+    node: &crate::widget_tree::WidgetNode,
+    resolved: &crate::style::Style,
+    ctx: TreeRenderCtx,
+) -> Option<DeferredHatch> {
+    let hatch = resolved.hatch.as_ref()?;
+    let content = node_content_or_layout_rect(node);
+    let hx = content.x0 + ctx.origin_x;
+    let hy = content.y0 + ctx.origin_y;
+    let hw = content.x1.saturating_sub(content.x0).to_usize_sat();
+    let hh = content.y1.saturating_sub(content.y0).to_usize_sat();
+    Some((*hatch, resolved.bg, hx, hy, hw, hh, ctx.clip))
+}
+
+/// Keyline background canvas (Python `layout.py::render_keyline` ->
+/// `Canvas.render(primitives, container.rich_style)`): a container with a
+/// keyline renders its WHOLE content box as a canvas whose blank cells on every
+/// keyline-spanned row carry `fg = base_style.bgcolor` (Canvas.render sets the
+/// base span color to the background color), i.e. `fg=<bg> bg=<bg>` — distinct
+/// from the screen's `fg=default` base blank. Visible children composite ON TOP
+/// of this canvas, so only the cells NOT covered by a visible child (gutter +
+/// `visibility:hidden` cells, e.g. the hidden Placeholder in `keyline`) show the
+/// canvas color. Paint that solid-fg/bg base here, BEFORE children render, so
+/// children overpaint it; the line glyphs are drawn after children by
+/// `paint_keylines`. (Every grid/flow content row carries a vertical keyline, so
+/// the whole content box is a span row — fill it uniformly.)
+fn paint_keyline_canvas(
+    tree: &WidgetTree,
+    node_id: NodeId,
+    keyline: &crate::style::Keyline,
+    ctx: TreeRenderCtx,
+    frame: &mut FrameBuffer,
+) {
+    if keyline.keyline_type == KeylineType::None {
+        return;
+    }
+    let canvas_bg = crate::css::current_composited_background().unwrap_or_else(|| {
+        crate::style::parse_color_like("$background").unwrap_or(crate::style::Color::rgb(0, 0, 0))
+    });
+    if let Some(parent_node) = tree.get(node_id) {
+        let content_rect = node_content_or_layout_rect(parent_node);
+        let cx0 = content_rect.x0 + ctx.origin_x;
+        let cy0 = content_rect.y0 + ctx.origin_y;
+        let cx1 = content_rect.x1 + ctx.origin_x;
+        let cy1 = content_rect.y1 + ctx.origin_y;
+        let region_clip = ClipRect {
+            x0: cx0,
+            y0: cy0,
+            x1: cx1,
+            y1: cy1,
+        };
+        if let Some(paint_clip) = ctx.clip.intersect(region_clip) {
+            fill_rect_solid_fg_bg(frame, paint_clip, canvas_bg);
+        }
+    }
+}
+
+/// Render contexts for a node's children.
+#[derive(Clone, Copy)]
+struct ChildRenderCtxs {
+    /// The node's own context with the overlay-root exemption cleared.
+    parent: TreeRenderCtx,
+    /// For children outside the scroll viewport.
+    base: TreeRenderCtx,
+    /// For children that scroll with the node (shifted by its scroll offset,
+    /// clipped to its viewport).
+    scrolled: TreeRenderCtx,
+    /// Whether the node has a scroll viewport.
+    has_scroll_viewport: bool,
+}
+
+/// Build the render contexts for a node's children. `None` means the
+/// node's content box is clipped away, so no child can show.
+fn child_render_ctxs(
+    node: &crate::widget_tree::WidgetNode,
+    ctx: TreeRenderCtx,
+) -> Option<ChildRenderCtxs> {
+    // Descendants are never the overlay root; clear the exemption so a nested
+    // `overlay: screen` child inside a deferred overlay still escapes to top z.
+    let mut ctx = ctx;
+    ctx.overlay_root_exempt = None;
+    let mut child_ctx = ctx;
+    // Clip descendants to this node's content box (inside border + padding) when
+    // either the widget opts in (scroll hosts, etc.) OR the node has gutter
+    // chrome (border/padding). Python's compositor clips every container's
+    // children to `container_region = region.shrink(gutter)` unconditionally
+    // (see `_compositor.py` `add_widget`: `sub_clip = clip.intersection(
+    // child_region)`), so overflowing children never paint over the parent's
+    // own border/padding. For gutterless nodes the content box equals the layout
+    // rect, leaving existing behavior unchanged.
+    if node.widget.clips_descendants_to_content() || node_has_gutter(node) {
+        let clip_rect = node_content_or_layout_rect(node);
+        let node_clip = ClipRect {
+            x0: clip_rect.x0 + ctx.origin_x,
+            y0: clip_rect.y0 + ctx.origin_y,
+            x1: clip_rect.x1 + ctx.origin_x,
+            y1: clip_rect.y1 + ctx.origin_y,
+        };
+        child_ctx.clip = child_ctx.clip.intersect(node_clip)?;
+    }
+    let (scroll_x, scroll_y) = node.widget.scroll_offset_f32();
+    let mut scrolled_child_ctx = child_ctx;
+    scrolled_child_ctx.origin_x -= scroll_x.round().to_i32_sat();
+    scrolled_child_ctx.origin_y -= scroll_y.round().to_i32_sat();
+    let has_scroll_viewport =
+        if let Some((viewport_w, viewport_h)) = node.widget.scroll_viewport_size() {
+            let content_rect = node_content_or_layout_rect(node);
+            let clip = ClipRect {
+                x0: content_rect.x0 + ctx.origin_x,
+                y0: content_rect.y0 + ctx.origin_y,
+                x1: content_rect.x0 + ctx.origin_x + viewport_w.to_i32_sat(),
+                y1: content_rect.y0 + ctx.origin_y + viewport_h.to_i32_sat(),
+            };
+            if let Some(intersection) = scrolled_child_ctx.clip.intersect(clip) {
+                scrolled_child_ctx.clip = intersection;
+            }
+            true
+        } else {
+            false
+        };
+    Some(ChildRenderCtxs {
+        parent: ctx,
+        base: child_ctx,
+        scrolled: scrolled_child_ctx,
+        has_scroll_viewport,
+    })
+}
+
+/// Render a node's children, each with the context that fits it.
+fn render_tree_children(
+    tree: &WidgetTree,
+    child_ids: Vec<NodeId>,
+    ctxs: ChildRenderCtxs,
+    frame: &mut FrameBuffer,
+    console: &rich_rs::Console,
+    debug: Option<&crate::debug::DebugLayout>,
+    overlays: &mut Vec<QueuedOverlay>,
+) {
+    for child_id in child_ids {
+        let Some(next_ctx) = child_render_ctx(tree, child_id, ctxs, frame) else {
+            continue;
+        };
+        render_tree_node(tree, child_id, next_ctx, frame, console, debug, overlays);
+    }
+}
+
+/// The render context for one child. `None` means the child is clipped away.
+fn child_render_ctx(
+    tree: &WidgetTree,
+    child_id: NodeId,
+    ctxs: ChildRenderCtxs,
+    frame: &FrameBuffer,
+) -> Option<TreeRenderCtx> {
+    let is_dedicated_scrollbar = node_is_dedicated_scrollbar(tree, child_id);
+    let use_scroll_ctx = ctxs.has_scroll_viewport
+        && child_uses_parent_scroll(tree, child_id)
+        && !is_dedicated_scrollbar;
+    let mut next_ctx = if is_dedicated_scrollbar {
+        ctxs.parent
+    } else if use_scroll_ctx {
+        ctxs.scrolled
+    } else {
+        ctxs.base
+    };
+    if is_dedicated_scrollbar {
+        // A dedicated scrollbar lives in the host's reserved gutter, which is
+        // OUTSIDE the host's (viewport-shrunk) content box. The clip inherited
+        // from the host therefore excludes the lane and would erase the bar.
+        // Expand the clip to cover the scrollbar's own layout rect (bounded by
+        // the frame) so the thumb glyphs and track paint into the gutter.
+        if let Some(child) = tree.get(child_id) {
+            let rect = child.layout_rect;
+            let frame_clip = ClipRect::for_frame(frame);
+            let lane_clip = ClipRect {
+                x0: rect.x0 + ctxs.parent.origin_x,
+                y0: rect.y0 + ctxs.parent.origin_y,
+                x1: rect.x1 + ctxs.parent.origin_x,
+                y1: rect.y1 + ctxs.parent.origin_y,
+            };
+            if let Some(lane_clip) = lane_clip.intersect(frame_clip) {
+                next_ctx.clip = ClipRect {
+                    x0: next_ctx.clip.x0.min(lane_clip.x0),
+                    y0: next_ctx.clip.y0.min(lane_clip.y0),
+                    x1: next_ctx.clip.x1.max(lane_clip.x1),
+                    y1: next_ctx.clip.y1.max(lane_clip.y1),
+                };
+            }
+        }
+    }
+    if use_scroll_ctx {
+        if let Some(child) = tree.get(child_id) {
+            let rect = child.layout_rect;
+            // The child's layout_rect is in the host's VIRTUAL (unscrolled)
+            // space; the child paints at the SCROLLED origin
+            // (`next_ctx.origin == base - scroll_offset`). The clip must
+            // bound where the child actually paints, so translate the rect
+            // by the scrolled origin. Using the unscrolled origin here made
+            // every child's clip miss its painted position as soon as the
+            // host scrolled (offset != 0): the on-screen child was culled
+            // (empty clip intersection) and the viewport went blank.
+            let child_clip = ClipRect {
+                x0: rect.x0 + next_ctx.origin_x,
+                y0: rect.y0 + next_ctx.origin_y,
+                x1: rect.x1 + next_ctx.origin_x,
+                y1: rect.y1 + next_ctx.origin_y,
+            };
+            next_ctx.clip = next_ctx.clip.intersect(child_clip)?;
+        }
+    }
+    Some(next_ctx)
 }
 
 /// Paint a node's COVER widget (Python `Widget._render_widget`) into the
@@ -3213,207 +3373,276 @@ fn apply_host_scrollbar_layout(tree: &mut WidgetTree, viewport: (u16, u16)) {
             let style = resolve_node_style(tree, node_id, &meta);
             (content_rect, outer_rect, style, offset_x, offset_y)
         };
-        let content_w = (content_rect.width() as usize).max(1);
-        let content_h = (content_rect.height() as usize).max(1);
-
-        let (virtual_w, virtual_h, mut has_content_children) =
-            host_content_extent(tree, node_id, content_rect, scrollbar_children);
-        // Pass the ACTUAL virtual content extent per axis (not clamped up to the
-        // viewport) so a lane is reserved only on genuine overflow (see the
-        // ScrollbarPolicy::resolve note about the phantom cross-axis scrollbar).
-        let mut geometry = ScrollbarPolicy::from_style(&style, 2, 1)
-            .resolve(content_w, content_h, virtual_w, virtual_h);
-
-        // Re-layout the children at the resolved viewport, then recompute, until
-        // the reserved lanes stabilize (capped). The children were initially laid
-        // out at the full content box, so the first pass may over-reserve (e.g. a
-        // child that measured tall before its own `on_layout` corrected its
-        // width). Re-laying out and recomputing converges, and crucially
-        // RE-EXPANDS the children when a lane turns out to be unneeded — without
-        // this the gutter was reserved on a stale measurement and never released.
-        let mut laid_out_w = content_w;
-        let mut laid_out_h = content_h;
-        for _ in 0..3 {
-            if geometry.viewport_width == laid_out_w && geometry.viewport_height == laid_out_h {
-                break;
-            }
-            if let Some(id) = scrollbar_children.vertical {
-                set_runtime_display(tree, id, false);
-            }
-            if let Some(id) = scrollbar_children.horizontal {
-                set_runtime_display(tree, id, false);
-            }
-            if let Some(id) = scrollbar_children.corner {
-                set_runtime_display(tree, id, false);
-            }
-            crate::layout::resolve_layout(
-                tree,
-                node_id,
-                crate::layout::Region::new(
-                    content_rect.x0,
-                    content_rect.y0,
-                    geometry.viewport_width.to_u16_sat(),
-                    geometry.viewport_height.to_u16_sat(),
-                ),
-                viewport,
-            );
-            laid_out_w = geometry.viewport_width;
-            laid_out_h = geometry.viewport_height;
-            let (virtual_w, virtual_h, had_children) =
-                host_content_extent(tree, node_id, content_rect, scrollbar_children);
-            has_content_children = had_children;
-            geometry = ScrollbarPolicy::from_style(&style, 2, 1)
-                .resolve(content_w, content_h, virtual_w, virtual_h);
-        }
-
-        let viewport_rect = crate::widget_tree::Rect {
-            x0: content_rect.x0,
-            y0: content_rect.y0,
-            x1: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
-            y1: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
-        };
-        if let Some(node) = tree.get_mut(node_id) {
-            node.content_rect = viewport_rect;
-            if !has_content_children {
-                // Self-rendering hosts (no content children: RichLog, Log,
-                // OptionList, …) reserve the scrollbar lane out of their CONTENT
-                // box. For a CHROME-LESS host (no border/padding: Log, RichLog)
-                // the layout box and content box coincide, so the box tracks the
-                // viewport exactly as before. For a host WITH chrome (border or
-                // padding: OptionList) the outer box is fixed by layout and must
-                // be preserved — collapsing it to the content viewport would drop
-                // the border frame and the reserved gutter.
-                let has_chrome = outer_rect.x0 != content_rect.x0
-                    || outer_rect.y0 != content_rect.y0
-                    || outer_rect.x1 != content_rect.x1
-                    || outer_rect.y1 != content_rect.y1;
-                node.layout_rect = if has_chrome {
-                    outer_rect
-                } else {
-                    viewport_rect
-                };
-            }
-            node.widget
-                .set_virtual_content_size(geometry.content_width, geometry.content_height);
-        }
-
+        let (geometry, has_content_children) = resolve_host_scroll_geometry(
+            tree,
+            node_id,
+            content_rect,
+            &style,
+            scrollbar_children,
+            viewport,
+        );
+        apply_host_viewport(
+            tree,
+            node_id,
+            geometry,
+            (content_rect, outer_rect),
+            has_content_children,
+        );
         if let Some(v_id) = scrollbar_children.vertical {
-            // Fix B: use geometry.show_vertical (content overflows AND allowed) as the
-            // widget visibility flag, keeping lane/gutter RESERVATION (vertical_lane_width)
-            // separate from widget VISIBILITY.  Python parity: `_arrange_scrollbars` uses
-            // `show_vertical_scrollbar` (which respects overflow + scrollbar_gutter separately
-            // from `_get_scrollbar_region`'s stable-gutter reservation).
-            let show = geometry.show_vertical;
-            // Display (the bar PAINT) is gated on `show && paint`: the bar is
-            // drawn only when content overflows (`show`) AND visibility is not
-            // hidden (`paint`). Python: the compositor adds the chrome widget
-            // only when `show_vertical_scrollbar` AND
-            // `scrollbar_visibility == "visible"`.
-            // A `scrollbar-size: .. 0` lane reserves nothing and paints nothing
-            // (Python: a 0-size scrollbar region is empty), so also gate on the
-            // resolved lane width — otherwise the zero-rect bar would inherit
-            // the host clip and paint its `thickness.max(1)` glyphs over content.
-            let show = show && geometry.vertical_lane_width > 0;
-            set_runtime_display(tree, v_id, show && geometry.paint_vertical);
-            // The lane RECT is driven by lane RESERVATION
-            // (`vertical_lane_width > 0`), NOT by `show`. Under
-            // `scrollbar-gutter: stable` with no overflow the gutter is reserved
-            // (lane width == 2) even though the bar is not shown — so the lane
-            // node still owns its 2-column rect (Python
-            // `scrollbar_size_vertical` returns the full size whenever
-            // gutter==stable and overflow==auto, regardless of show_vertical).
-            // Gating the rect on `show` orphaned those reserved columns.
-            let rect = if geometry.vertical_lane_width > 0 {
-                crate::widget_tree::Rect {
-                    x0: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
-                    y0: content_rect.y0,
-                    x1: content_rect.x1,
-                    y1: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
-                }
-            } else {
-                crate::widget_tree::Rect::ZERO
-            };
-            set_layout_rect(tree, v_id, rect);
-            if let Some(node) = tree.get_mut(v_id) {
-                let any = node.widget.as_mut() as &mut dyn std::any::Any;
-                if let Some(scrollbar) = any.downcast_mut::<ScrollBar>() {
-                    // Width of the vertical bar = the CSS-resolved vertical lane
-                    // (`scrollbar-size` vertical). The lane RECT alone is not
-                    // enough: ScrollBar paints `thickness`-wide glyphs from its
-                    // own field, which defaults to 2 at creation.
-                    scrollbar.set_thickness(geometry.vertical_lane_width.max(1));
-                    scrollbar.set_window_virtual_size(geometry.content_height);
-                    scrollbar.set_window_size(geometry.viewport_height);
-                    if !scrollbar.grabbed() {
-                        let max_offset = geometry.max_offset_y().to_f32_lossy();
-                        scrollbar.set_position(offset_y.clamp(0.0, max_offset));
-                    }
-                }
-            }
+            place_vertical_scrollbar(tree, v_id, geometry, content_rect, offset_y);
         }
-
         if let Some(h_id) = scrollbar_children.horizontal {
-            // Fix B: same as vertical — use show_horizontal not horizontal_lane_height > 0.
-            let show = geometry.show_horizontal;
-            // See the vertical block: display gated on `show && paint` (and a
-            // non-zero lane — `scrollbar-size: 0 ..` paints nothing); the lane
-            // RECT is driven by lane reservation (`horizontal_lane_height > 0`),
-            // so a stable-gutter reserved lane keeps its rect even with no
-            // overflow or hidden visibility.
-            let show = show && geometry.horizontal_lane_height > 0;
-            set_runtime_display(tree, h_id, show && geometry.paint_horizontal);
-            let rect = if geometry.horizontal_lane_height > 0 {
-                crate::widget_tree::Rect {
-                    x0: content_rect.x0,
-                    y0: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
-                    x1: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
-                    y1: content_rect.y1,
-                }
-            } else {
-                crate::widget_tree::Rect::ZERO
-            };
-            set_layout_rect(tree, h_id, rect);
-            if let Some(node) = tree.get_mut(h_id) {
-                let any = node.widget.as_mut() as &mut dyn std::any::Any;
-                if let Some(scrollbar) = any.downcast_mut::<ScrollBar>() {
-                    // Height of the horizontal bar = the CSS-resolved horizontal
-                    // lane (`scrollbar-size` horizontal); see vertical note above.
-                    scrollbar.set_thickness(geometry.horizontal_lane_height.max(1));
-                    scrollbar.set_window_virtual_size(geometry.content_width);
-                    scrollbar.set_window_size(geometry.viewport_width);
-                    if !scrollbar.grabbed() {
-                        let max_offset = geometry.max_offset_x().to_f32_lossy();
-                        scrollbar.set_position(offset_x.clamp(0.0, max_offset));
-                    }
-                }
-            }
+            place_horizontal_scrollbar(tree, h_id, geometry, content_rect, offset_x);
         }
-
         if let Some(c_id) = scrollbar_children.corner {
-            // Corner is PAINTED only when BOTH scrollbar widgets are shown AND
-            // painted. Under `scrollbar-visibility: hidden` the lanes stay
-            // reserved but neither bar (nor the corner) is painted.
-            let show = geometry.show_vertical
-                && geometry.show_horizontal
-                && geometry.vertical_lane_width > 0
-                && geometry.horizontal_lane_height > 0;
-            let paint = geometry.paint_vertical && geometry.paint_horizontal;
-            set_runtime_display(tree, c_id, show && paint);
-            // Corner RECT is driven by lane reservation (both lanes reserved),
-            // matching the vertical/horizontal lane-rect policy.
-            let rect = if geometry.vertical_lane_width > 0 && geometry.horizontal_lane_height > 0 {
-                crate::widget_tree::Rect {
-                    x0: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
-                    y0: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
-                    x1: content_rect.x1,
-                    y1: content_rect.y1,
-                }
-            } else {
-                crate::widget_tree::Rect::ZERO
-            };
-            set_layout_rect(tree, c_id, rect);
+            place_scrollbar_corner(tree, c_id, geometry, content_rect);
         }
     }
+}
+
+/// Resolve a scroll host's scrollbar geometry, re-laying out its children at
+/// the resolved viewport until the reserved lanes settle. Returns the
+/// geometry and whether the host has content children.
+fn resolve_host_scroll_geometry(
+    tree: &mut WidgetTree,
+    node_id: NodeId,
+    content_rect: crate::widget_tree::Rect,
+    style: &crate::style::Style,
+    scrollbar_children: ScrollbarHostChildren,
+    viewport: (u16, u16),
+) -> (crate::widgets::ScrollbarGeometry, bool) {
+    let content_w = (content_rect.width() as usize).max(1);
+    let content_h = (content_rect.height() as usize).max(1);
+
+    let (virtual_w, virtual_h, mut has_content_children) =
+        host_content_extent(tree, node_id, content_rect, scrollbar_children);
+    // Pass the ACTUAL virtual content extent per axis (not clamped up to the
+    // viewport) so a lane is reserved only on genuine overflow (see the
+    // ScrollbarPolicy::resolve note about the phantom cross-axis scrollbar).
+    let mut geometry = ScrollbarPolicy::from_style(style, 2, 1)
+        .resolve(content_w, content_h, virtual_w, virtual_h);
+
+    // Re-layout the children at the resolved viewport, then recompute, until
+    // the reserved lanes stabilize (capped). The children were initially laid
+    // out at the full content box, so the first pass may over-reserve (e.g. a
+    // child that measured tall before its own `on_layout` corrected its
+    // width). Re-laying out and recomputing converges, and crucially
+    // RE-EXPANDS the children when a lane turns out to be unneeded — without
+    // this the gutter was reserved on a stale measurement and never released.
+    let mut laid_out_w = content_w;
+    let mut laid_out_h = content_h;
+    for _ in 0..3 {
+        if geometry.viewport_width == laid_out_w && geometry.viewport_height == laid_out_h {
+            break;
+        }
+        if let Some(id) = scrollbar_children.vertical {
+            set_runtime_display(tree, id, false);
+        }
+        if let Some(id) = scrollbar_children.horizontal {
+            set_runtime_display(tree, id, false);
+        }
+        if let Some(id) = scrollbar_children.corner {
+            set_runtime_display(tree, id, false);
+        }
+        crate::layout::resolve_layout(
+            tree,
+            node_id,
+            crate::layout::Region::new(
+                content_rect.x0,
+                content_rect.y0,
+                geometry.viewport_width.to_u16_sat(),
+                geometry.viewport_height.to_u16_sat(),
+            ),
+            viewport,
+        );
+        laid_out_w = geometry.viewport_width;
+        laid_out_h = geometry.viewport_height;
+        let (virtual_w, virtual_h, had_children) =
+            host_content_extent(tree, node_id, content_rect, scrollbar_children);
+        has_content_children = had_children;
+        geometry = ScrollbarPolicy::from_style(style, 2, 1)
+            .resolve(content_w, content_h, virtual_w, virtual_h);
+    }
+    (geometry, has_content_children)
+}
+
+/// Shrink a scroll host's content box to the resolved viewport (and its
+/// layout box too when it has no chrome and no content children), and
+/// record the virtual content size on the widget.
+fn apply_host_viewport(
+    tree: &mut WidgetTree,
+    node_id: NodeId,
+    geometry: crate::widgets::ScrollbarGeometry,
+    (content_rect, outer_rect): (crate::widget_tree::Rect, crate::widget_tree::Rect),
+    has_content_children: bool,
+) {
+    let viewport_rect = crate::widget_tree::Rect {
+        x0: content_rect.x0,
+        y0: content_rect.y0,
+        x1: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
+        y1: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
+    };
+    if let Some(node) = tree.get_mut(node_id) {
+        node.content_rect = viewport_rect;
+        if !has_content_children {
+            // Self-rendering hosts (no content children: RichLog, Log,
+            // OptionList, …) reserve the scrollbar lane out of their CONTENT
+            // box. For a CHROME-LESS host (no border/padding: Log, RichLog)
+            // the layout box and content box coincide, so the box tracks the
+            // viewport exactly as before. For a host WITH chrome (border or
+            // padding: OptionList) the outer box is fixed by layout and must
+            // be preserved — collapsing it to the content viewport would drop
+            // the border frame and the reserved gutter.
+            let has_chrome = outer_rect.x0 != content_rect.x0
+                || outer_rect.y0 != content_rect.y0
+                || outer_rect.x1 != content_rect.x1
+                || outer_rect.y1 != content_rect.y1;
+            node.layout_rect = if has_chrome {
+                outer_rect
+            } else {
+                viewport_rect
+            };
+        }
+        node.widget
+            .set_virtual_content_size(geometry.content_width, geometry.content_height);
+    }
+}
+
+/// Show, size and position a scroll host's vertical scrollbar.
+fn place_vertical_scrollbar(
+    tree: &mut WidgetTree,
+    v_id: NodeId,
+    geometry: crate::widgets::ScrollbarGeometry,
+    content_rect: crate::widget_tree::Rect,
+    offset_y: f32,
+) {
+    // Fix B: use geometry.show_vertical (content overflows AND allowed) as the
+    // widget visibility flag, keeping lane/gutter RESERVATION (vertical_lane_width)
+    // separate from widget VISIBILITY.  Python parity: `_arrange_scrollbars` uses
+    // `show_vertical_scrollbar` (which respects overflow + scrollbar_gutter separately
+    // from `_get_scrollbar_region`'s stable-gutter reservation).
+    let show = geometry.show_vertical;
+    // Display (the bar PAINT) is gated on `show && paint`: the bar is
+    // drawn only when content overflows (`show`) AND visibility is not
+    // hidden (`paint`). Python: the compositor adds the chrome widget
+    // only when `show_vertical_scrollbar` AND
+    // `scrollbar_visibility == "visible"`.
+    // A `scrollbar-size: .. 0` lane reserves nothing and paints nothing
+    // (Python: a 0-size scrollbar region is empty), so also gate on the
+    // resolved lane width — otherwise the zero-rect bar would inherit
+    // the host clip and paint its `thickness.max(1)` glyphs over content.
+    let show = show && geometry.vertical_lane_width > 0;
+    set_runtime_display(tree, v_id, show && geometry.paint_vertical);
+    // The lane RECT is driven by lane RESERVATION
+    // (`vertical_lane_width > 0`), NOT by `show`. Under
+    // `scrollbar-gutter: stable` with no overflow the gutter is reserved
+    // (lane width == 2) even though the bar is not shown — so the lane
+    // node still owns its 2-column rect (Python
+    // `scrollbar_size_vertical` returns the full size whenever
+    // gutter==stable and overflow==auto, regardless of show_vertical).
+    // Gating the rect on `show` orphaned those reserved columns.
+    let rect = if geometry.vertical_lane_width > 0 {
+        crate::widget_tree::Rect {
+            x0: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
+            y0: content_rect.y0,
+            x1: content_rect.x1,
+            y1: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
+        }
+    } else {
+        crate::widget_tree::Rect::ZERO
+    };
+    set_layout_rect(tree, v_id, rect);
+    if let Some(node) = tree.get_mut(v_id) {
+        let any = node.widget.as_mut() as &mut dyn std::any::Any;
+        if let Some(scrollbar) = any.downcast_mut::<ScrollBar>() {
+            // Width of the vertical bar = the CSS-resolved vertical lane
+            // (`scrollbar-size` vertical). The lane RECT alone is not
+            // enough: ScrollBar paints `thickness`-wide glyphs from its
+            // own field, which defaults to 2 at creation.
+            scrollbar.set_thickness(geometry.vertical_lane_width.max(1));
+            scrollbar.set_window_virtual_size(geometry.content_height);
+            scrollbar.set_window_size(geometry.viewport_height);
+            if !scrollbar.grabbed() {
+                let max_offset = geometry.max_offset_y().to_f32_lossy();
+                scrollbar.set_position(offset_y.clamp(0.0, max_offset));
+            }
+        }
+    }
+}
+
+/// Show, size and position a scroll host's horizontal scrollbar.
+fn place_horizontal_scrollbar(
+    tree: &mut WidgetTree,
+    h_id: NodeId,
+    geometry: crate::widgets::ScrollbarGeometry,
+    content_rect: crate::widget_tree::Rect,
+    offset_x: f32,
+) {
+    // Fix B: same as vertical — use show_horizontal not horizontal_lane_height > 0.
+    let show = geometry.show_horizontal;
+    // See the vertical block: display gated on `show && paint` (and a
+    // non-zero lane — `scrollbar-size: 0 ..` paints nothing); the lane
+    // RECT is driven by lane reservation (`horizontal_lane_height > 0`),
+    // so a stable-gutter reserved lane keeps its rect even with no
+    // overflow or hidden visibility.
+    let show = show && geometry.horizontal_lane_height > 0;
+    set_runtime_display(tree, h_id, show && geometry.paint_horizontal);
+    let rect = if geometry.horizontal_lane_height > 0 {
+        crate::widget_tree::Rect {
+            x0: content_rect.x0,
+            y0: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
+            x1: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
+            y1: content_rect.y1,
+        }
+    } else {
+        crate::widget_tree::Rect::ZERO
+    };
+    set_layout_rect(tree, h_id, rect);
+    if let Some(node) = tree.get_mut(h_id) {
+        let any = node.widget.as_mut() as &mut dyn std::any::Any;
+        if let Some(scrollbar) = any.downcast_mut::<ScrollBar>() {
+            // Height of the horizontal bar = the CSS-resolved horizontal
+            // lane (`scrollbar-size` horizontal); see vertical note above.
+            scrollbar.set_thickness(geometry.horizontal_lane_height.max(1));
+            scrollbar.set_window_virtual_size(geometry.content_width);
+            scrollbar.set_window_size(geometry.viewport_width);
+            if !scrollbar.grabbed() {
+                let max_offset = geometry.max_offset_x().to_f32_lossy();
+                scrollbar.set_position(offset_x.clamp(0.0, max_offset));
+            }
+        }
+    }
+}
+
+/// Show and position the corner between a scroll host's two scrollbars.
+fn place_scrollbar_corner(
+    tree: &mut WidgetTree,
+    c_id: NodeId,
+    geometry: crate::widgets::ScrollbarGeometry,
+    content_rect: crate::widget_tree::Rect,
+) {
+    // Corner is PAINTED only when BOTH scrollbar widgets are shown AND
+    // painted. Under `scrollbar-visibility: hidden` the lanes stay
+    // reserved but neither bar (nor the corner) is painted.
+    let show = geometry.show_vertical
+        && geometry.show_horizontal
+        && geometry.vertical_lane_width > 0
+        && geometry.horizontal_lane_height > 0;
+    let paint = geometry.paint_vertical && geometry.paint_horizontal;
+    set_runtime_display(tree, c_id, show && paint);
+    // Corner RECT is driven by lane reservation (both lanes reserved),
+    // matching the vertical/horizontal lane-rect policy.
+    let rect = if geometry.vertical_lane_width > 0 && geometry.horizontal_lane_height > 0 {
+        crate::widget_tree::Rect {
+            x0: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
+            y0: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
+            x1: content_rect.x1,
+            y1: content_rect.y1,
+        }
+    } else {
+        crate::widget_tree::Rect::ZERO
+    };
+    set_layout_rect(tree, c_id, rect);
 }
 
 /// Update existing host scrollbar widgets from current host scroll offsets.
