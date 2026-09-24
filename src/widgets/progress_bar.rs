@@ -146,7 +146,7 @@ fn format_eta(eta_secs: Option<u64>) -> String {
             let s = secs % 60;
             let m = (secs / 60) % 60;
             let h = secs / 3600;
-            if h > 999999 {
+            if h > 999_999 {
                 "+999999h".to_string()
             } else if h > 99 {
                 format!("{h}h")
@@ -1167,7 +1167,7 @@ mod tests {
         assert_eq!(format_eta(Some(0)), "00:00:00");
         assert_eq!(format_eta(Some(61)), "00:01:01");
         assert_eq!(format_eta(Some(3661)), "01:01:01");
-        assert_eq!(format_eta(Some(360000)), "100h");
+        assert_eq!(format_eta(Some(360_000)), "100h");
         assert_eq!(format_eta(Some(u64::MAX)), "+999999h");
     }
 

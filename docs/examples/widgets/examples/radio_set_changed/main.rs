@@ -68,7 +68,7 @@ impl TextualApp for RadioSetChangedApp {
     }
 
     fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut textual::event::WidgetCtx) {
-        let _ = app.query_mut("#focus_me").map(|q| q.focus());
+        let _ = app.query_mut("#focus_me").map(textual::DomQueryMut::focus);
     }
 
     fn on_message_with_app(

@@ -75,7 +75,7 @@ impl TextualApp for RadioChoicesApp {
         // Mirror Python `on_mount`: focus the first RadioSet (id="focus_me").
         // Since we can't set an id on RadioSet without modifying the framework,
         // we focus the first RadioSet by type selector.
-        let _ = app.query_mut("RadioSet").map(|q| q.focus());
+        let _ = app.query_mut("RadioSet").map(textual::DomQueryMut::focus);
     }
 }
 

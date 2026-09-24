@@ -157,7 +157,7 @@ impl WorldClockApp {
         let time = *new;
         let clock_ids = app
             .query("WorldClock")
-            .map(|q| q.into_ids())
+            .map(textual::DomQuery::into_ids)
             .unwrap_or_default();
         for node_id in clock_ids {
             let mut rctx = ReactiveCtx::new(node_id);

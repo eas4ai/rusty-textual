@@ -366,7 +366,7 @@ impl TextualApp for StopwatchApp {
             Box::new(|app, _ctx| {
                 let display_ids = app
                     .query("TimeDisplay")
-                    .map(|q| q.into_ids())
+                    .map(textual::DomQuery::into_ids)
                     .unwrap_or_default();
                 for node_id in display_ids {
                     let mut rctx = ReactiveCtx::new(node_id);

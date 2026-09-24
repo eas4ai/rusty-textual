@@ -57,7 +57,7 @@ impl TextualApp for CheckboxApp {
             });
         }
         // Focus "Kaitain" on mount.
-        let _ = app.query_mut("#initial_focus").map(|q| q.focus());
+        let _ = app.query_mut("#initial_focus").map(textual::DomQueryMut::focus);
         ctx.request_repaint();
     }
 }

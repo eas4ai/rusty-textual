@@ -73,7 +73,7 @@ impl TextualApp for CollapsibleApp {
         // Collect all Collapsible node IDs.
         let ids: Vec<NodeId> = app
             .query("Collapsible")
-            .map(|q| q.into_ids())
+            .map(textual::DomQuery::into_ids)
             .unwrap_or_default();
 
         for id in ids {

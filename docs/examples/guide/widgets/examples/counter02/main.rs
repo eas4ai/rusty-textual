@@ -86,7 +86,7 @@ impl Widget for Counter {
             return false;
         }
         // The first argument is a typed integer (Python `change_count(1)`).
-        let amount: i64 = match action.arguments.first().and_then(|a| a.as_int()) {
+        let amount: i64 = match action.arguments.first().and_then(textual::action::ActionArgument::as_int) {
             Some(v) => v,
             None => return false,
         };

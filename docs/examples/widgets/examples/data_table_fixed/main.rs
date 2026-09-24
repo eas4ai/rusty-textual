@@ -43,7 +43,7 @@ impl TextualApp for TableApp {
         }
 
         // Focus the table on mount.
-        let _ = app.query_mut("DataTable").map(|q| q.focus());
+        let _ = app.query_mut("DataTable").map(textual::DomQueryMut::focus);
     }
 }
 

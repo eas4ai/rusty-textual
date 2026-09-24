@@ -1664,7 +1664,7 @@ mod tests {
             let root_id = entry.widget_tree.root().expect("root");
             // Sender doesn't need to be in the tree for bubble-to-root; the
             // bubble path falls back to a depth-first walk that includes root.
-            (root_id, crate::node_id::node_id_from_ffi(424242))
+            (root_id, crate::node_id::node_id_from_ffi(424_242))
         };
 
         let message = MessageEvent::new(

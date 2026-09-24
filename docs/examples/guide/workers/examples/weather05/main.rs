@@ -76,7 +76,7 @@ impl WeatherApp {
                 // Python: `if not worker.is_cancelled: self.call_from_thread(widget.update, "")`
                 if !token.is_cancelled() {
                     let _ = App::call_from_thread(|app| {
-                        let _ = app.with_query_one_mut_as::<Static, _>("#weather", |w| w.clear());
+                        let _ = app.with_query_one_mut_as::<Static, _>("#weather", textual::widgets::Static::clear);
                     });
                 }
                 return Ok(());

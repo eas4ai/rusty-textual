@@ -156,7 +156,7 @@ impl MerlinApp {
         // xorshift64 seeded from wall-clock (no rand dependency for example).
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_or(0x9E3779B97F4A7C15, |d| d.as_nanos() as u64)
+            .map_or(0x9E37_79B9_7F4A_7C15, |d| d.as_nanos() as u64)
             .max(1);
         Self {
             start: None,

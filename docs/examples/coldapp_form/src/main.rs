@@ -257,7 +257,7 @@ mod tests {
     }
 
     fn type_into(pilot: &mut Pilot, id: &str, text: &str) -> textual::Result<()> {
-        let _ = pilot.app_mut().query_mut(id).map(|q| q.focus());
+        let _ = pilot.app_mut().query_mut(id).map(textual::DomQueryMut::focus);
         let keys: Vec<&str> = text.split("").filter(|s| !s.is_empty()).collect();
         pilot.press(&keys)?;
         Ok(())
@@ -325,7 +325,7 @@ mod tests {
             type_into(pilot, "#username", "alice")?;
             type_into(pilot, "#age", "30")?;
             // Check the sole Checkbox (space toggles the focused widget).
-            let _ = pilot.app_mut().query_mut("Checkbox").map(|q| q.focus());
+            let _ = pilot.app_mut().query_mut("Checkbox").map(textual::DomQueryMut::focus);
             pilot.press(&["space"])?;
             pilot.click("#submit")?;
             assert_eq!(submitted(pilot), 1, "a valid form must submit exactly once");
