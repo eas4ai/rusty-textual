@@ -1,4 +1,7 @@
-use crate::css::{AppRuntimePseudos, set_app_active, set_app_runtime_pseudos, set_style_context};
+use crate::css::{
+    AppActiveGuard, AppRuntimePseudos, AppRuntimePseudosGuard, StyleContextGuard, set_app_active,
+    set_app_runtime_pseudos, set_style_context,
+};
 use crate::debug::{debug_input, debug_render, debug_timing, timing_enabled};
 use crate::event::{
     Action, AnimationEase, AnimationRequest, AnimationValueEvent, BlurEvent, ClassOp,
@@ -2011,6 +2014,198 @@ fn run_paste_command(program: &str, args: &[&str]) -> Option<String> {
     Some(text)
 }
 
+/// Tick interval of the live loop while nothing animates.
+const IDLE_TICK_RATE: Duration = Duration::from_millis(100);
+/// Tick interval of the live loop while an animation or active widget needs frames.
+const ACTIVE_TICK_RATE: Duration = Duration::from_millis(16);
+
+/// What the live loop does after one step of a pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoopStep {
+    /// Go on with the rest of this pass.
+    Proceed,
+    /// Skip the rest of this pass and start the next one.
+    NextPass,
+    /// Leave the loop: the app is stopping.
+    Stop,
+}
+
+/// State the live loop carries from one pass to the next.
+struct LiveLoop {
+    pending_invalidation: PendingInvalidation,
+    worker_registry: WorkerRegistry,
+    /// Frame counter passed to the tick hooks.
+    tick: u64,
+    /// When the last tick ran.
+    last_tick: Instant,
+    /// Whether a widget was active at the last tick (keeps the fast tick rate).
+    prev_any_active: bool,
+    /// Focus at the end of the last pass, for Focus/Blur dispatch.
+    previous_focus: Option<NodeId>,
+    /// Input read ahead (mouse-motion coalescing, input draining).
+    pending_input_event: Option<CrosstermEvent>,
+    /// Last pointer position, for the hit probe's direction.
+    last_mouse_pos: Option<(u16, u16)>,
+}
+
+/// Timing of one live-loop pass, logged when `timing_enabled()`.
+struct PassTiming {
+    on: bool,
+    started: Instant,
+    input_started: Instant,
+    input_kind: &'static str,
+    poll_wait_us: u128,
+    input_dispatch_us: u128,
+    background_us: Option<u128>,
+    focused_help_us: Option<u128>,
+    lifecycle_us: Option<u128>,
+    reactive_us: Option<u128>,
+    focus_transition_us: Option<u128>,
+    binding_us: Option<u128>,
+    animation_us: Option<u128>,
+    worker_us: Option<u128>,
+    style_transition_us: u128,
+    immediate_render_us: u128,
+    normal_render_us: u128,
+    tick_render_us: u128,
+}
+
+impl PassTiming {
+    fn start() -> Self {
+        let on = timing_enabled();
+        let started = Instant::now();
+        Self {
+            on,
+            started,
+            input_started: started,
+            input_kind: "none",
+            poll_wait_us: 0,
+            input_dispatch_us: 0,
+            background_us: None,
+            focused_help_us: None,
+            lifecycle_us: None,
+            reactive_us: None,
+            focus_transition_us: None,
+            binding_us: None,
+            animation_us: None,
+            worker_us: None,
+            style_transition_us: 0,
+            immediate_render_us: 0,
+            normal_render_us: 0,
+            tick_render_us: 0,
+        }
+    }
+
+    /// Add the time since `phase_started` to a phase slot.
+    fn add_phase(slot: &mut Option<u128>, phase_started: Instant) {
+        *slot = Some(
+            slot.unwrap_or(0)
+                .saturating_add(phase_started.elapsed().as_micros()),
+        );
+    }
+
+    /// Record the input dispatch time, log why input handling ended the pass
+    /// early, and end the pass.
+    fn end_input_early(&mut self, pending: &PendingInvalidation, reason: &str) -> LoopStep {
+        self.input_dispatch_us = self.input_started.elapsed().as_micros();
+        if self.on {
+            debug_timing(&format!(
+                "[timing] early_continue reason={reason} input={} dispatch_us={} loop_us={} dirty={} flags(c={} s={} l={})",
+                self.input_kind,
+                self.input_dispatch_us,
+                self.started.elapsed().as_micros(),
+                pending.is_dirty(),
+                pending.flags.content,
+                pending.flags.style,
+                pending.flags.layout
+            ));
+        }
+        LoopStep::NextPass
+    }
+
+    /// Log the pass when it took long or did visible work.
+    fn report(&self, handled_input: bool, pending: &PendingInvalidation) {
+        if !self.on {
+            return;
+        }
+        let total_us = self.started.elapsed().as_micros();
+        if handled_input
+            || self.immediate_render_us > 0
+            || self.normal_render_us > 0
+            || self.tick_render_us > 0
+            || total_us > 2_000
+        {
+            debug_timing(&format!(
+                "[timing] loop input={} poll_wait_us={} input_dispatch_us={} phases_us(bg={} help={} lifecycle={} reactive={} focus={} binding={} anim={} worker={} style={}) render_us(immediate={} normal={} tick={}) total_us={} dirty_end={} flags_end(c={} s={} l={})",
+                self.input_kind,
+                self.poll_wait_us,
+                self.input_dispatch_us,
+                self.background_us.unwrap_or(0),
+                self.focused_help_us.unwrap_or(0),
+                self.lifecycle_us.unwrap_or(0),
+                self.reactive_us.unwrap_or(0),
+                self.focus_transition_us.unwrap_or(0),
+                self.binding_us.unwrap_or(0),
+                self.animation_us.unwrap_or(0),
+                self.worker_us.unwrap_or(0),
+                self.style_transition_us,
+                self.immediate_render_us,
+                self.normal_render_us,
+                self.tick_render_us,
+                total_us,
+                pending.is_dirty(),
+                pending.flags.content,
+                pending.flags.style,
+                pending.flags.layout
+            ));
+        }
+    }
+}
+
+/// Style-context guards the live loop holds while it dispatches input or a
+/// tick. Fields drop in declaration order, the reverse of the order they were
+/// set in.
+struct LiveStyleScope {
+    _style: StyleContextGuard,
+    _pseudos: AppRuntimePseudosGuard,
+    _active: AppActiveGuard,
+}
+
+/// Run the app root's own mount hook before the arena tree exists.
+///
+/// RA2.2: the app root's own mount hook takes a `&mut WidgetCtx`. The arena
+/// tree does not exist yet (it is built right after), so this synthesizes a
+/// throwaway ctx rooted at `NodeId::default()`. The ctx's outcome is absorbed
+/// after the tree is built (Gap 6 drop site B): worker requests are
+/// position-free so the deferral is unobservable, and messages are staged for
+/// the first flush with sender `NodeId::default()`, which the message router
+/// already treats as app-level.
+fn mount_live_root(root: &mut dyn Widget) -> DispatchOutcome {
+    let mut synth = EventCtx::default();
+    let mut wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut synth);
+    root.on_mount(&mut wctx);
+    wctx.__enqueue_reactive_if_dirty();
+    DispatchOutcome::from_event_ctx(&mut synth)
+}
+
+/// Build the outcome of a key-binding action that ran against `ctx`.
+fn binding_outcome(handled: bool, ctx: &mut EventCtx) -> DispatchOutcome {
+    DispatchOutcome {
+        handled: handled || ctx.handled(),
+        repaint_requested: ctx.repaint_requested(),
+        invalidation: ctx.invalidation(),
+        stop_requested: ctx.stop_requested(),
+        messages: ctx.take_messages(),
+        animation_requests: ctx.take_animation_requests(),
+        style_animation_requests: ctx.take_style_animation_requests(),
+        worker_requests: ctx.take_worker_requests(),
+        recompose_nodes: ctx.take_recompose_nodes(),
+        default_prevented: false,
+        prevented: Vec::new(),
+        class_ops: ctx.take_class_ops(),
+    }
+}
+
 impl App {
     /// The app-root widget tree, but only when a *separate* screen/mode tree is
     /// active on top of it. Returns `None` when the app-root tree is itself the
@@ -2527,21 +2722,23 @@ impl App {
         // jobs so blocked workers unblock.
         let _call_from_thread_guard = CallFromThreadGuard::register();
 
-        let mut root_mount_outcome = {
-            // RA2.2: the app root's own mount hook now takes a `&mut WidgetCtx`.
-            // The arena tree does not exist yet (built just below), so synthesize
-            // a throwaway ctx rooted at `NodeId::default()`. The ctx's outcome is
-            // captured here and absorbed after the tree is built (Gap 6 drop
-            // site B): worker requests are position-free so the deferral is
-            // unobservable, and messages are staged for the first flush with
-            // sender `NodeId::default()`, which the message router already
-            // treats as app-level.
-            let mut synth = EventCtx::default();
-            let mut wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut synth);
-            root.on_mount(&mut wctx);
-            wctx.__enqueue_reactive_if_dirty();
-            DispatchOutcome::from_event_ctx(&mut synth)
-        };
+        if let Some(mut live) = self.live_startup(root)? {
+            loop {
+                if self.live_pass(root, &mut live)? == LoopStep::Stop {
+                    break;
+                }
+            }
+        }
+
+        root.on_unmount();
+        self.finish()?;
+        Ok(())
+    }
+
+    /// Build the tree, run the startup lifecycle and draw the first frame.
+    /// `None` means a startup hook asked the app to stop.
+    fn live_startup(&mut self, root: &mut dyn Widget) -> crate::Result<Option<LiveLoop>> {
+        let root_mount_outcome = mount_live_root(root);
 
         // Build the arena-based widget tree by extracting children from root.
         // Runtime dispatch stays tree-driven even when only the synthetic root
@@ -2552,7 +2749,55 @@ impl App {
         }
         self.style_snapshot_cache.clear();
 
-        // Auto-focus the first focusable widget via the arena tree.
+        self.live_focus_first_widget();
+        let mut pending_invalidation = PendingInvalidation::default();
+        if self.live_absorb_root_mount(root, root_mount_outcome, &mut pending_invalidation) {
+            return Ok(None);
+        }
+        if self.live_app_mount_hook(root, &mut pending_invalidation) {
+            return Ok(None);
+        }
+
+        self.publish_devtools_snapshot(root);
+        let initial_help_outcome = self.dispatch_focused_help_changed(root);
+        if initial_help_outcome.stop_requested {
+            return Ok(None);
+        }
+
+        let worker_registry = WorkerRegistry::new();
+        pending_invalidation.request_flags(initial_help_outcome.invalidation);
+        if initial_help_outcome.should_repaint() {
+            pending_invalidation.request_full_content();
+        }
+        self.render_widget(root)?;
+        self.apply_layout_info_to_tree();
+        self.publish_devtools_snapshot(root);
+        pending_invalidation = PendingInvalidation::default();
+
+        self.live_initial_mount_events(root, &mut pending_invalidation);
+        self.live_ready_event(root, &mut pending_invalidation);
+
+        // Seed style snapshot cache after startup lifecycle events so initial
+        // class/style setup doesn't emit synthetic transition requests.
+        self.dispatch_style_transition_requests(root);
+
+        // Track focused widget for Focus/Blur event dispatch.
+        let previous_focus = self.active_widget_tree().and_then(focused_node_id_tree);
+
+        Ok(Some(LiveLoop {
+            pending_invalidation,
+            worker_registry,
+            tick: 0,
+            last_tick: Instant::now(),
+            prev_any_active: false,
+            previous_focus,
+            pending_input_event: None,
+            last_mouse_pos: None,
+        }))
+    }
+
+    /// Auto-focus the first focusable widget via the arena tree.
+    fn live_focus_first_widget(&mut self) {
         let bounds = self.hit_test.bounds.clone();
         if let Some(tree) = self.active_widget_tree_mut() {
             let current = focused_node_id_tree(tree);
@@ -2563,100 +2808,91 @@ impl App {
                 tree.set_focus_state(first, true);
             }
         }
-        let mut pending_invalidation = PendingInvalidation::default();
+    }
 
-        // Absorb the root's own mount-ctx outcome now that the tree exists
-        // (mirrors the `on_app_mount` absorption below). Without this, worker
-        // requests, animations and messages staged in a raw root widget's
-        // `on_mount` were silently dropped (only the reactive enqueue survived).
-        // Messages are dispatched inline (not merely staged): the shared flush
-        // only drains `pending_widget_posts` when the command/reactive queue
-        // ran, and nothing here enqueues a command, so inline dispatch — exactly
-        // as the adjacent `on_app_mount` block does — guarantees delivery.
-        if !root_mount_outcome.is_empty() {
-            let messages = std::mem::take(&mut root_mount_outcome.messages);
-            self.absorb_outcome(
-                &mut root_mount_outcome,
-                &mut pending_invalidation,
-                InvalidationScope::Global,
-            );
-            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, messages);
-            self.absorb_outcome(
-                &mut msg_outcome,
-                &mut pending_invalidation,
-                InvalidationScope::Global,
-            );
-            if root_mount_outcome.stop_requested || msg_outcome.stop_requested {
-                root.on_unmount();
-                self.finish()?;
-                return Ok(());
-            }
+    /// Absorb the root's own mount-ctx outcome now that the tree exists
+    /// (mirrors the `on_app_mount` absorption in [`Self::live_app_mount_hook`]).
+    /// Returns true when the app should stop.
+    ///
+    /// Without this, worker requests, animations and messages staged in a raw
+    /// root widget's `on_mount` were silently dropped (only the reactive
+    /// enqueue survived). Messages are dispatched inline (not merely staged):
+    /// the shared flush only drains `pending_widget_posts` when the
+    /// command/reactive queue ran, and nothing here enqueues a command, so
+    /// inline dispatch — exactly as the `on_app_mount` step does — guarantees
+    /// delivery.
+    fn live_absorb_root_mount(
+        &mut self,
+        root: &mut dyn Widget,
+        mut root_mount_outcome: DispatchOutcome,
+        pending_invalidation: &mut PendingInvalidation,
+    ) -> bool {
+        if root_mount_outcome.is_empty() {
+            return false;
         }
+        let messages = std::mem::take(&mut root_mount_outcome.messages);
+        self.absorb_outcome(
+            &mut root_mount_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        root_mount_outcome.stop_requested || msg_outcome.stop_requested
+    }
 
-        // Dispatch app-level reactive init phase.
-        //
-        // Called after the widget tree is built so that init-watcher dispatch
-        // (triggered by reactive setters inside `on_mount_with_app`) can reach
-        // existing tree nodes via `query_one` / `query_mut`.
+    /// Dispatch the app-level reactive init phase (`on_app_mount`). Returns
+    /// true when the app should stop.
+    ///
+    /// Called after the widget tree is built so that init-watcher dispatch
+    /// (triggered by reactive setters inside `on_mount_with_app`) can reach
+    /// existing tree nodes via `query_one` / `query_mut`.
+    fn live_app_mount_hook(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+    ) -> bool {
+        let mut mount_ctx = crate::event::EventCtx::default();
         {
-            let mut mount_ctx = crate::event::EventCtx::default();
-            {
-                let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut mount_ctx);
-                root.on_app_mount(self, &mut __wctx);
-                __wctx.__enqueue_reactive_if_dirty();
-            }
-            // Absorb the mount ctx so its outcome (worker requests, messages,
-            // invalidation, recompositions, animations) flows into the runtime.
-            // Without this the live loop dropped everything staged on the ctx —
-            // in particular worker requests issued from `on_mount_with_app`
-            // (e.g. questions01's `@work`-decorated `on_mount` that calls
-            // `push_screen_wait`) were silently discarded, so the QuestionScreen
-            // was never pushed and the app rendered blank. The headless startup
-            // (`headless_startup`) already absorbs the mount ctx the same way;
-            // the live loop must match so worker-driven screen pushes land.
-            let mut mount_outcome = DispatchOutcome::from_event_ctx(&mut mount_ctx);
-            self.absorb_outcome(
-                &mut mount_outcome,
-                &mut pending_invalidation,
-                InvalidationScope::Global,
-            );
-            let mut msg_outcome =
-                self.dispatch_message_queue_with_runtime(root, mount_outcome.messages);
-            self.absorb_outcome(
-                &mut msg_outcome,
-                &mut pending_invalidation,
-                InvalidationScope::Global,
-            );
-            if mount_outcome.stop_requested || msg_outcome.stop_requested {
-                root.on_unmount();
-                self.finish()?;
-                return Ok(());
-            }
+            let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut mount_ctx);
+            root.on_app_mount(self, &mut __wctx);
+            __wctx.__enqueue_reactive_if_dirty();
         }
+        // Absorb the mount ctx so its outcome (worker requests, messages,
+        // invalidation, recompositions, animations) flows into the runtime.
+        // Without this the live loop dropped everything staged on the ctx —
+        // in particular worker requests issued from `on_mount_with_app`
+        // (e.g. questions01's `@work`-decorated `on_mount` that calls
+        // `push_screen_wait`) were silently discarded, so the QuestionScreen
+        // was never pushed and the app rendered blank. The headless startup
+        // (`headless_startup`) already absorbs the mount ctx the same way;
+        // the live loop must match so worker-driven screen pushes land.
+        let mut mount_outcome = DispatchOutcome::from_event_ctx(&mut mount_ctx);
+        self.absorb_outcome(
+            &mut mount_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome =
+            self.dispatch_message_queue_with_runtime(root, mount_outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        mount_outcome.stop_requested || msg_outcome.stop_requested
+    }
 
-        self.publish_devtools_snapshot(root);
-        let initial_help_outcome = self.dispatch_focused_help_changed(root);
-        if initial_help_outcome.stop_requested {
-            root.on_unmount();
-            self.finish()?;
-            return Ok(());
-        }
-
-        let mut tick: u64 = 0;
-        let idle_tick_rate = Duration::from_millis(100);
-        let active_tick_rate = Duration::from_millis(16);
-        let mut worker_registry = WorkerRegistry::new();
-        pending_invalidation.request_flags(initial_help_outcome.invalidation);
-        if initial_help_outcome.should_repaint() {
-            pending_invalidation.request_full_content();
-        }
-        let mut prev_any_active = false;
-        self.render_widget(root)?;
-        self.apply_layout_info_to_tree();
-        self.publish_devtools_snapshot(root);
-        pending_invalidation = PendingInvalidation::default();
-
-        // Dispatch initial Mount events for all tree nodes after first render.
+    /// Dispatch initial Mount events for all tree nodes after the first render.
+    fn live_initial_mount_events(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+    ) {
         let initial_mount_nodes: Vec<NodeId> = self
             .active_widget_tree()
             .and_then(|tree| tree.root().map(|r| tree.walk_depth_first(r)))
@@ -2669,1941 +2905,1906 @@ impl App {
             );
             self.absorb_outcome(
                 &mut outcome,
-                &mut pending_invalidation,
+                pending_invalidation,
                 InvalidationScope::Global,
             );
             let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
             self.absorb_outcome(
                 &mut msg_outcome,
-                &mut pending_invalidation,
+                pending_invalidation,
                 InvalidationScope::Global,
             );
             // Mount-time messages (e.g. Select/ListView initial selection) are
             // posted by the widget's `on_mount` (fired at tree build) and routed
             // through the command queue, bubbled by the shared reactive flush.
         }
+    }
 
-        // Dispatch Ready event once after the first successful render.
+    /// Dispatch the Ready event once, after the first successful render.
+    fn live_ready_event(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+    ) {
+        let mut outcome = self.dispatch_event_auto(root, &Event::Ready(ReadyEvent));
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+    }
+
+    /// Run one pass of the live loop: read input, run the per-pass phases,
+    /// render, and tick when due.
+    fn live_pass(&mut self, root: &mut dyn Widget, lp: &mut LiveLoop) -> crate::Result<LoopStep> {
+        let mut t = PassTiming::start();
+        self.validate_active_selection_owner();
+        if self.apply_devtools_commands(root, &mut lp.pending_invalidation) {
+            return Ok(LoopStep::Stop);
+        }
+        let now = Instant::now();
+        let tick_rate = if self.animator.has_animations() || lp.prev_any_active {
+            ACTIVE_TICK_RATE
+        } else {
+            IDLE_TICK_RATE
+        };
+        let input_event = self.live_poll_input(lp, &mut t, now, tick_rate)?;
+        let handled_input = input_event.is_some();
+        if let Some(input_event) = input_event {
+            let step = self.live_input(root, lp, &mut t, input_event)?;
+            if step != LoopStep::Proceed {
+                return Ok(step);
+            }
+        }
+
+        let step = self.live_background_phases(root, lp, &mut t);
+        if step != LoopStep::Proceed {
+            return Ok(step);
+        }
+        let step = self.live_focus_transitions(root, lp, &mut t);
+        if step != LoopStep::Proceed {
+            return Ok(step);
+        }
+        let step = self.live_input_fast_path(root, lp, &mut t, handled_input, tick_rate)?;
+        if step != LoopStep::Proceed {
+            return Ok(step);
+        }
+        let step = self.live_housekeeping(root, lp, &mut t);
+        if step != LoopStep::Proceed {
+            return Ok(step);
+        }
+
+        if lp.pending_invalidation.is_dirty() || self.resized_since_last_render {
+            t.normal_render_us = self.live_render_pending(root, &mut lp.pending_invalidation)?;
+        }
+
+        if lp.last_tick.elapsed() >= tick_rate {
+            let step = self.live_tick(root, lp, &mut t)?;
+            if step != LoopStep::Proceed {
+                return Ok(step);
+            }
+        }
+
+        t.report(handled_input, &lp.pending_invalidation);
+        Ok(LoopStep::Proceed)
+    }
+
+    /// Wait for the next input event, bounded by the tick, animation and
+    /// timer deadlines. Input read ahead in an earlier pass comes first.
+    fn live_poll_input(
+        &mut self,
+        lp: &mut LiveLoop,
+        t: &mut PassTiming,
+        now: Instant,
+        tick_rate: Duration,
+    ) -> crate::Result<Option<CrosstermEvent>> {
+        let tick_timeout = tick_rate.saturating_sub(lp.last_tick.elapsed());
+        let timeout = self
+            .animator
+            .next_timeout(now)
+            .map_or(tick_timeout, |anim_timeout| tick_timeout.min(anim_timeout));
+        let timeout = self
+            .timers
+            .next_timeout(self.timers.now())
+            .map_or(timeout, |timer_timeout| timeout.min(timer_timeout));
+        let poll_started = Instant::now();
+        let input_event = if let Some(pending) = lp.pending_input_event.take() {
+            Some(pending)
+        } else if event::poll(timeout)? {
+            Some(event::read()?)
+        } else {
+            None
+        };
+        t.poll_wait_us = poll_started.elapsed().as_micros();
+        if let Some(ref event) = input_event {
+            t.input_kind = input_event_kind(event);
+        }
+        let pending_invalidation = &lp.pending_invalidation;
+        if t.on
+            && input_event.is_none()
+            && pending_invalidation.is_dirty()
+            && t.poll_wait_us > 1_000
         {
-            let mut outcome = self.dispatch_event_auto(root, &Event::Ready(ReadyEvent));
-            self.absorb_outcome(
-                &mut outcome,
-                &mut pending_invalidation,
-                InvalidationScope::Global,
-            );
-            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+            debug_timing(&format!(
+                "[timing] wait_for_input kind=none timeout_us={} waited_us={} dirty=true flags(c={} s={} l={})",
+                timeout.as_micros(),
+                t.poll_wait_us,
+                pending_invalidation.flags.content,
+                pending_invalidation.flags.style,
+                pending_invalidation.flags.layout
+            ));
+        }
+        Ok(input_event)
+    }
+
+    /// Set the style context (stylesheets, app-active and runtime pseudos)
+    /// that input and tick dispatch resolve styles against.
+    fn live_style_scope(&self) -> LiveStyleScope {
+        let mut sheet = self.default_stylesheet.clone();
+        sheet.extend(&self.stylesheet);
+        if let Some(screen_sheet) = self.active_screen_stylesheet() {
+            sheet.extend(screen_sheet);
+        }
+        let active = set_app_active(self.app_active);
+        let pseudos = set_app_runtime_pseudos(AppRuntimePseudos {
+            dark: self.dark_mode,
+            inline: self.app_inline,
+            ansi: self.app_ansi,
+            nocolor: self.app_nocolor,
+        });
+        let style = set_style_context(sheet);
+        LiveStyleScope {
+            _style: style,
+            _pseudos: pseudos,
+            _active: active,
+        }
+    }
+
+    /// Dispatch one terminal input event.
+    fn live_input(
+        &mut self,
+        root: &mut dyn Widget,
+        lp: &mut LiveLoop,
+        t: &mut PassTiming,
+        input_event: CrosstermEvent,
+    ) -> crate::Result<LoopStep> {
+        t.input_started = Instant::now();
+        let _style_scope = self.live_style_scope();
+        let step = match input_event {
+            CrosstermEvent::Key(key) => self.live_key(root, &mut lp.pending_invalidation, t, key),
+            CrosstermEvent::Mouse(mouse) => self.live_mouse(root, lp, mouse)?,
+            CrosstermEvent::Resize(_, _) => self.live_resize(root, &mut lp.pending_invalidation)?,
+            CrosstermEvent::FocusLost => {
+                self.live_app_focus(root, &mut lp.pending_invalidation, false)
+            }
+            CrosstermEvent::FocusGained => {
+                self.live_app_focus(root, &mut lp.pending_invalidation, true)
+            }
+            // Bracketed paste (PR-15a): the terminal wraps the payload
+            // in DECSET 2004 markers (enabled at driver start), which
+            // crossterm decodes to a single Paste event — dispatched
+            // to focus like a key, not as raw keystrokes.
+            CrosstermEvent::Paste(text) => {
+                debug_input(&format!("[event] Paste({} chars)", text.chars().count()));
+                if self.dispatch_paste_event(root, text, &mut lp.pending_invalidation) {
+                    LoopStep::Stop
+                } else {
+                    LoopStep::Proceed
+                }
+            }
+        };
+        if step != LoopStep::Proceed {
+            return Ok(step);
+        }
+        if t.input_dispatch_us == 0 {
+            t.input_dispatch_us = t.input_started.elapsed().as_micros();
+        }
+        Ok(LoopStep::Proceed)
+    }
+
+    /// Dispatch a key press: the app key hook, priority actions, declarative
+    /// bindings, the focused widget's `key_<name>` hook and raw key, then the
+    /// action map.
+    fn live_key(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        t: &mut PassTiming,
+        key: KeyEvent,
+    ) -> LoopStep {
+        debug_input(&format!(
+            "[input] key code={:?} mods={:?} kind={:?}",
+            key.code, key.modifiers, key.kind
+        ));
+        if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+            return t.end_input_early(pending_invalidation, "non_press_key");
+        }
+        if should_quit_key(&key, &self.quit_keys) {
+            return LoopStep::Stop;
+        }
+        let key = KeyEventData::from_crossterm(key);
+
+        let step = self.live_app_key_hook(root, pending_invalidation, t, &key);
+        if step != LoopStep::Proceed {
+            return step;
+        }
+
+        let bind = crate::event::KeyBind::from_event(&key);
+        let mapped_action = self.action_map.lookup(&bind);
+        let step = self.live_priority_action(root, pending_invalidation, t, bind, mapped_action);
+        if step != LoopStep::Proceed {
+            return step;
+        }
+        let step = self.live_key_binding(root, pending_invalidation, t, &key);
+        if step != LoopStep::Proceed {
+            return step;
+        }
+
+        // P-F: `key_<name>` hook on the focused widget (no binding
+        // consumed it). A `true` return marks the key handled
+        // so the action-map fallback below is suppressed.
+        let mut key_name_outcome = dispatch_key_name_to_focused(self, &key);
+        let key_name_handled = key_name_outcome.handled;
+        self.absorb_outcome(
+            &mut key_name_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+
+        // Dispatch the raw key so focused widgets (e.g. Input) can consume it.
+        let mut key_outcome = self.dispatch_event_auto(root, &Event::Key(key.clone()));
+        debug_input(&format!(
+            "[input] key dispatch handled={} repaint={} messages={}",
+            key_outcome.handled,
+            key_outcome.repaint_requested,
+            key_outcome.messages.len()
+        ));
+        self.absorb_outcome(
+            &mut key_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, key_outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if key_outcome.stop_requested || msg_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+        if key_outcome.handled || key_name_handled {
+            return LoopStep::Proceed;
+        }
+        let Some(action) = mapped_action.filter(|a| !is_priority_action(*a)) else {
+            debug_input(&format!("[input] action-map {bind:?} -> none"));
+            return LoopStep::Proceed;
+        };
+        self.live_action_map_fallback(root, pending_invalidation, t, bind, action)
+    }
+
+    /// App-level key hook with runtime handle (Textual-style).
+    fn live_app_key_hook(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        t: &mut PassTiming,
+        key: &KeyEventData,
+    ) -> LoopStep {
+        let mut app_key_ctx = EventCtx::default();
+        {
+            let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut app_key_ctx);
+            root.on_app_key(self, key, &mut __wctx);
+            __wctx.__enqueue_reactive_if_dirty();
+        }
+        if app_key_ctx.repaint_requested() {
+            pending_invalidation.request_full_content();
+        }
+        pending_invalidation.request_flags(app_key_ctx.invalidation());
+        if app_key_ctx.stop_requested() {
+            return LoopStep::Stop;
+        }
+        let app_key_handled = app_key_ctx.handled();
+        let app_key_messages = app_key_ctx.take_messages();
+        if !app_key_messages.is_empty() {
+            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, app_key_messages);
             self.absorb_outcome(
                 &mut msg_outcome,
-                &mut pending_invalidation,
+                pending_invalidation,
+                InvalidationScope::Global,
+            );
+            if msg_outcome.stop_requested {
+                return LoopStep::Stop;
+            }
+        }
+        // Apply any class ops queued by on_app_key handlers (e.g. via
+        // widget methods that stage ClassOps for the next event turn).
+        let app_key_class_ops = app_key_ctx.take_class_ops();
+        if !app_key_class_ops.is_empty() {
+            if let Some(tree) = self.active_widget_tree_mut() {
+                for (node, op) in app_key_class_ops {
+                    match op {
+                        crate::event::ClassOp::Add(c) => tree.add_class(node, &c),
+                        crate::event::ClassOp::Remove(c) => {
+                            tree.remove_class(node, &c);
+                        }
+                    }
+                }
+            }
+            // Class change may flip descendant display/visibility;
+            // relayout so the affected subtree re-resolves CSS.
+            pending_invalidation.request_flags(crate::event::InvalidationFlags::layout());
+        }
+        if app_key_handled {
+            return t.end_input_early(pending_invalidation, "app_key_handled");
+        }
+        LoopStep::Proceed
+    }
+
+    /// Priority actions (e.g. command palette) run before raw key dispatch.
+    fn live_priority_action(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        t: &mut PassTiming,
+        bind: crate::event::KeyBind,
+        mapped_action: Option<Action>,
+    ) -> LoopStep {
+        let Some(action) = mapped_action.filter(|a| is_priority_action(*a)) else {
+            return LoopStep::Proceed;
+        };
+        debug_input(&format!(
+            "[input] priority action-map {bind:?} -> {action:?}"
+        ));
+        // Wave 1: ctrl+p opens the composed CommandPaletteScreen
+        // via the adapter (on_app_message), NOT by dispatching
+        // Action::CommandPalette to the legacy host.
+        let mut outcome = if matches!(action, Action::CommandPalette) {
+            self.dispatch_command_palette_open(root)
+        } else {
+            self.dispatch_event_auto(root, &Event::Action(action))
+        };
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if outcome.stop_requested || msg_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+        if outcome.handled || matches!(action, Action::CommandPalette) {
+            return t.end_input_early(pending_invalidation, "priority_action_handled");
+        }
+        LoopStep::Proceed
+    }
+
+    /// Declarative BINDINGS: walk the active chain (focused→root, or
+    /// screen-body root when unfocused) plus `App::BINDINGS` beneath an active
+    /// screen, and run the matched action.
+    fn live_key_binding(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        t: &mut PassTiming,
+        key: &KeyEventData,
+    ) -> LoopStep {
+        let mut binding_clashes = Vec::new();
+        let binding_match = self.active_widget_tree().and_then(|tree| {
+            let root_target = tree.root().unwrap_or_default();
+            match_binding_chain(
+                tree,
+                self.app_root_tree_when_screen_active(),
+                key,
+                self.check_action_fn.as_deref(),
+                &self.keymap,
+                Some(&mut binding_clashes),
+            )
+            .map(|(node_id, action_str, source)| (node_id, action_str, source, root_target))
+        });
+        // Deliver keymap clash reports after the tree borrow
+        // ends (per clashing keypress, Python cadence).
+        self.deliver_binding_clashes(&binding_clashes);
+        let Some((binding_node_id, action_str, binding_source, root_target)) = binding_match else {
+            return LoopStep::Proceed;
+        };
+        let Ok(parsed) = crate::action::parse_action(&action_str) else {
+            return LoopStep::Proceed;
+        };
+
+        // CLUSTER 7: execute the binding on its source node when
+        // no registry owner resolves (binding source IS target).
+        if binding_source == BindingSource::Active {
+            let step = self.live_binding_on_source(
+                root,
+                pending_invalidation,
+                t,
+                &parsed,
+                &action_str,
+                binding_node_id,
+            );
+            if step != LoopStep::Proceed {
+                return step;
+            }
+        }
+
+        let step = self.live_binding_on_root(
+            root,
+            pending_invalidation,
+            t,
+            &parsed,
+            &action_str,
+            root_target,
+        );
+        if step != LoopStep::Proceed {
+            return step;
+        }
+
+        // Fallback: app-defined custom action (e.g. "add", "clear").
+        // Called when no action_registry handler exists and execute_action declined.
+        let step = self.live_unhandled_action_hook(root, pending_invalidation, &action_str);
+        if step != LoopStep::Proceed {
+            return step;
+        }
+
+        // The binding matched but no layer handled its
+        // action: report the silent no-op (debug channel +
+        // test-observable buffer) before the key falls
+        // through to raw dispatch.
+        report_unhandled_binding_action(binding_node_id, &action_str);
+        LoopStep::Proceed
+    }
+
+    /// Run a binding action on the focused chain's resolved owner, or on the
+    /// binding's source node when no owner resolves.
+    fn live_binding_on_source(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        t: &mut PassTiming,
+        parsed: &crate::action::ParsedAction,
+        action_str: &str,
+        binding_node_id: NodeId,
+    ) -> LoopStep {
+        let Some(tree_mut) = self.active_widget_tree_mut() else {
+            return LoopStep::Proceed;
+        };
+        let focused = focused_node_id_tree(tree_mut);
+        let resolved = {
+            let tree_ref = &*tree_mut;
+            focused.and_then(|fid| {
+                crate::action::resolve_action(parsed, tree_ref, fid, |nid| {
+                    tree_ref
+                        .get(nid)
+                        .map(|n| (n.widget.action_namespace(), n.widget.action_registry()))
+                })
+            })
+        };
+        let target = resolved.map_or(binding_node_id, |ra| ra.node);
+        let Some(node) = tree_mut.get_mut(target) else {
+            return LoopStep::Proceed;
+        };
+        let mut ctx = EventCtx::default();
+        let handled =
+            execute_action_with_dispatch_target(&mut *node.widget, parsed, &mut ctx, target);
+        debug_input(&format!(
+            "[input] binding action={action_str:?} handled={handled}"
+        ));
+        if !(handled || ctx.handled()) {
+            return LoopStep::Proceed;
+        }
+        let outcome = binding_outcome(handled, &mut ctx);
+        if self.live_absorb_binding_outcome(root, pending_invalidation, outcome) {
+            return LoopStep::Stop;
+        }
+        t.end_input_early(pending_invalidation, "binding_widget_action")
+    }
+
+    /// Run a binding action on the app root.
+    fn live_binding_on_root(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        t: &mut PassTiming,
+        parsed: &crate::action::ParsedAction,
+        action_str: &str,
+        root_target: NodeId,
+    ) -> LoopStep {
+        let mut root_ctx = EventCtx::default();
+        let handled = execute_action_with_dispatch_target(root, parsed, &mut root_ctx, root_target);
+        debug_input(&format!(
+            "[input] binding action={action_str:?} root_handled={handled}"
+        ));
+        if !(handled || root_ctx.handled()) {
+            return LoopStep::Proceed;
+        }
+        let outcome = binding_outcome(handled, &mut root_ctx);
+        if self.live_absorb_binding_outcome(root, pending_invalidation, outcome) {
+            return LoopStep::Stop;
+        }
+        t.end_input_early(pending_invalidation, "binding_root_action")
+    }
+
+    /// Offer a binding action nothing handled to the app's
+    /// `on_app_unhandled_action` hook.
+    fn live_unhandled_action_hook(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        action_str: &str,
+    ) -> LoopStep {
+        let mut fallback_ctx = EventCtx::default();
+        {
+            let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut fallback_ctx);
+            root.on_app_unhandled_action(self, action_str, &mut __wctx);
+            __wctx.__enqueue_reactive_if_dirty();
+        }
+        if !fallback_ctx.handled() {
+            return LoopStep::Proceed;
+        }
+        let outcome = binding_outcome(true, &mut fallback_ctx);
+        if self.live_absorb_binding_outcome(root, pending_invalidation, outcome) {
+            return LoopStep::Stop;
+        }
+        LoopStep::NextPass
+    }
+
+    /// Absorb a binding action's outcome and dispatch its messages. Returns
+    /// true when the app should stop.
+    fn live_absorb_binding_outcome(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        mut outcome: DispatchOutcome,
+    ) -> bool {
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let messages = outcome.messages;
+        if !messages.is_empty() {
+            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, messages);
+            self.absorb_outcome(
+                &mut msg_outcome,
+                pending_invalidation,
+                InvalidationScope::Global,
+            );
+            if msg_outcome.stop_requested {
+                return true;
+            }
+        }
+        outcome.stop_requested
+    }
+
+    /// Run the action-map action of a key nothing else handled.
+    fn live_action_map_fallback(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        t: &mut PassTiming,
+        bind: crate::event::KeyBind,
+        action: Action,
+    ) -> LoopStep {
+        if action == Action::CopySelectedText {
+            return self.live_copy_selected_text(root, pending_invalidation, t);
+        }
+        if action == Action::HelpQuit {
+            self.notify_help_quit();
+            pending_invalidation.request_full_content();
+            return t.end_input_early(pending_invalidation, "help_quit");
+        }
+        if matches!(action, Action::FocusNext | Action::FocusPrev) {
+            let step = self.live_focus_action(root, pending_invalidation, t, action);
+            if step != LoopStep::Proceed {
+                return step;
+            }
+        }
+        debug_input(&format!("[input] action-map {bind:?} -> {action:?}"));
+        let mut outcome = if is_scroll_action(action) {
+            self.dispatch_scroll_action_auto(root, action, self.hovered)
+        } else {
+            self.dispatch_event_auto(root, &Event::Action(action))
+        };
+        debug_input(&format!(
+            "[input] action dispatch action={:?} handled={} repaint={} messages={}",
+            action,
+            outcome.handled,
+            outcome.repaint_requested,
+            outcome.messages.len()
+        ));
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if outcome.stop_requested || msg_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+        LoopStep::Proceed
+    }
+
+    /// Copy the selected text to the clipboard, or show the help-quit notice
+    /// when nothing is selected.
+    fn live_copy_selected_text(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        t: &mut PassTiming,
+    ) -> LoopStep {
+        let Some(text) = self.action_copy_selected_text() else {
+            self.notify_help_quit();
+            pending_invalidation.request_full_content();
+            return t.end_input_early(pending_invalidation, "help_quit");
+        };
+        let sender = App::runtime_message_sender();
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(
+            root,
+            vec![
+                MessageEvent::new(
+                    sender,
+                    crate::message::TextEditClipboardCopyRequested { text, cut: false },
+                )
+                .with_control(sender),
+            ],
+        );
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        t.end_input_early(pending_invalidation, "copy_selected_text")
+    }
+
+    /// Focus next/previous: give the currently-focused branch a chance to
+    /// descend focus before falling back to tree-level focus cycling.
+    fn live_focus_action(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        t: &mut PassTiming,
+        action: Action,
+    ) -> LoopStep {
+        let mut focus_outcome = self.dispatch_event_auto(root, &Event::Action(action));
+        self.absorb_outcome(
+            &mut focus_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut focus_msg_outcome =
+            self.dispatch_message_queue_with_runtime(root, focus_outcome.messages);
+        self.absorb_outcome(
+            &mut focus_msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if focus_outcome.stop_requested || focus_msg_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+        if focus_outcome.handled {
+            return t.end_input_early(pending_invalidation, "focus_action_handled");
+        }
+        if self.move_focus_auto(action) {
+            pending_invalidation.request_full_content();
+            return t.end_input_early(pending_invalidation, "focus_moved");
+        }
+        LoopStep::Proceed
+    }
+
+    /// Dispatch a mouse event.
+    fn live_mouse(
+        &mut self,
+        root: &mut dyn Widget,
+        lp: &mut LiveLoop,
+        mouse: crossterm::event::MouseEvent,
+    ) -> crate::Result<LoopStep> {
+        // Python `App.on_event`: every mouse event refreshes
+        // `App.mouse_position`.
+        self.mouse_position = (mouse.column, mouse.row);
+        let mouse = if matches!(mouse.kind, MouseEventKind::Moved | MouseEventKind::Drag(_)) {
+            coalesce_mouse_motion_events(mouse, &mut lp.pending_input_event)?
+        } else {
+            mouse
+        };
+        Ok(match mouse.kind {
+            MouseEventKind::Moved | MouseEventKind::Drag(_) => {
+                self.live_mouse_move(root, lp, mouse)
+            }
+            MouseEventKind::Down(btn) => {
+                self.live_mouse_down(root, &mut lp.pending_invalidation, mouse, btn)
+            }
+            MouseEventKind::Up(_) => self.live_mouse_up(root, &mut lp.pending_invalidation, mouse),
+            MouseEventKind::ScrollUp
+            | MouseEventKind::ScrollDown
+            | MouseEventKind::ScrollLeft
+            | MouseEventKind::ScrollRight => {
+                self.live_mouse_scroll(root, &mut lp.pending_invalidation, mouse)
+            }
+        })
+    }
+
+    /// Log which widget the frame and the tree layout each put under the
+    /// pointer (`hit_probe_enabled()`).
+    fn live_hit_probe_log(
+        &self,
+        last_mouse_pos: Option<(u16, u16)>,
+        mouse: crossterm::event::MouseEvent,
+    ) {
+        let curr = (mouse.column, mouse.row);
+        let dir = point_direction(last_mouse_pos, curr);
+        let frame_target = self.widget_at(mouse.column, mouse.row);
+        let tree_target = self
+            .active_widget_tree()
+            .and_then(|tree| widget_at_tree_layout(tree, mouse.column, mouse.row));
+        let chosen = self.active_widget_tree().map_or(frame_target, |tree| {
+            super::choose_deeper_target(tree, frame_target, tree_target)
+        });
+        let relation = self
+            .active_widget_tree()
+            .and_then(|tree| match (frame_target, tree_target) {
+                (Some(frame), Some(tree_hit)) if frame != tree_hit => {
+                    if super::is_ancestor_or_self(tree, frame, tree_hit) {
+                        Some("frame->ancestor(tree)")
+                    } else if super::is_ancestor_or_self(tree, tree_hit, frame) {
+                        Some("tree->ancestor(frame)")
+                    } else {
+                        Some("unrelated")
+                    }
+                }
+                (Some(_), Some(_)) => Some("same"),
+                _ => None,
+            })
+            .unwrap_or("-");
+        let frame_rect = frame_target.and_then(|id| self.hit_test.rect(id));
+        let tree_rect = tree_target.and_then(|id| self.hit_test.rect(id));
+        debug_input(&format!(
+            "[hit-probe] pos=({}, {}) dir={} frame={:?} frame_rect={} tree={:?} tree_rect={} relation={} chosen={:?}",
+            mouse.column,
+            mouse.row,
+            dir,
+            frame_target.map(node_id_to_ffi),
+            fmt_rect(frame_rect),
+            tree_target.map(node_id_to_ffi),
+            fmt_rect(tree_rect),
+            relation,
+            chosen.map(node_id_to_ffi)
+        ));
+    }
+
+    /// Repaint the widgets whose hover state changed from `before`.
+    fn live_invalidate_hover_change(
+        &self,
+        pending_invalidation: &mut PendingInvalidation,
+        before: Option<NodeId>,
+    ) {
+        if let Some(id) = before {
+            pending_invalidation.request_widget_rect(&self.hit_test, id);
+        }
+        if let Some(id) = self.hovered {
+            pending_invalidation.request_widget_rect(&self.hit_test, id);
+        } else {
+            pending_invalidation.request_full_content();
+        }
+    }
+
+    /// Pointer motion: hover, Enter/Leave, selection drag, tooltips, then
+    /// the move event itself.
+    fn live_mouse_move(
+        &mut self,
+        root: &mut dyn Widget,
+        lp: &mut LiveLoop,
+        mouse: crossterm::event::MouseEvent,
+    ) -> LoopStep {
+        if hit_probe_enabled() {
+            self.live_hit_probe_log(lp.last_mouse_pos, mouse);
+        }
+        lp.last_mouse_pos = Some((mouse.column, mouse.row));
+        let pending_invalidation = &mut lp.pending_invalidation;
+        let before = self.hovered;
+        if self.update_hover_from_frame(mouse.column, mouse.row, root) {
+            self.live_invalidate_hover_change(pending_invalidation, before);
+
+            // Dispatch Enter/Leave events on hover change.
+            let enter_leave = generate_enter_leave_events(
+                before,
+                self.hovered,
+                mouse.column,
+                mouse.row,
+                mouse.column,
+                mouse.row,
+            );
+            for (target, event) in enter_leave {
+                let mut outcome = self.dispatch_event_to_target_auto(root, target, &event);
+                self.absorb_outcome(
+                    &mut outcome,
+                    pending_invalidation,
+                    InvalidationScope::Global,
+                );
+            }
+        }
+        if let Some(owner) = self.active_selection_owner
+            && self.selection_drag_active
+        {
+            let (sx, sy) = self.content_local_coords_auto(owner, mouse.column, mouse.row);
+            if self.update_selection_drag(owner, sx, sy).unwrap_or(false) {
+                pending_invalidation.request_widget_rect(&self.hit_test, owner);
+            }
+        }
+        if self.update_hover_tooltip(mouse.column, mouse.row) {
+            pending_invalidation.request_flags(crate::event::InvalidationFlags::layout());
+            pending_invalidation.request_full_content();
+        }
+        self.live_mouse_move_dispatch(root, pending_invalidation, mouse)
+    }
+
+    /// Deliver the move event to the drag owner or the widget under the
+    /// pointer.
+    fn live_mouse_move_dispatch(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        mouse: crossterm::event::MouseEvent,
+    ) -> LoopStep {
+        let is_drag = matches!(mouse.kind, MouseEventKind::Drag(_));
+        let down_target = self.click_tracker.down_target();
+        let move_target = if is_drag {
+            down_target.or_else(|| self.widget_at_auto(mouse.column, mouse.row))
+        } else {
+            self.widget_at_auto(mouse.column, mouse.row)
+        };
+
+        if is_drag && scrollbar_drag_trace_enabled() {
+            debug_input(&format!(
+                "[scrollbar-drag] move screen=({}, {}) down_target={:?} hovered={:?} chosen_target={:?}",
+                mouse.column,
+                mouse.row,
+                down_target.map(node_id_to_ffi),
+                self.hovered.map(node_id_to_ffi),
+                move_target.map(node_id_to_ffi),
+            ));
+        }
+
+        let Some(target) = move_target else {
+            return LoopStep::Proceed;
+        };
+        let changed = self.call_on_mouse_move_auto(
+            root,
+            target,
+            mouse.column,
+            mouse.row,
+            is_drag && down_target.is_some(),
+        );
+
+        let (local_x, local_y) = self.content_local_coords_auto(target, mouse.column, mouse.row);
+        let move_event = Event::MouseMove(crate::event::MouseMoveEvent {
+            target,
+            screen_x: mouse.column,
+            screen_y: mouse.row,
+            x: local_x,
+            y: local_y,
+        });
+        let mut move_outcome = self.dispatch_event_to_target_auto(root, target, &move_event);
+        self.absorb_outcome(
+            &mut move_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut move_msg_outcome =
+            self.dispatch_message_queue_with_runtime(root, move_outcome.messages);
+        self.absorb_outcome(
+            &mut move_msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if move_outcome.stop_requested || move_msg_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+
+        if changed {
+            if matches!(mouse.kind, MouseEventKind::Drag(_)) {
+                // Dragging scrollbar thumbs can shift large composed
+                // regions and produce stale strip artifacts if only
+                // partial regions are updated. Force full content
+                // invalidation per drag update.
+                pending_invalidation.request_flags(crate::event::InvalidationFlags::layout());
+                pending_invalidation.request_full_content();
+            } else {
+                pending_invalidation.request_full_content();
+            }
+        }
+
+        // `call_on_mouse_move_auto` bubbles target -> root, so root
+        // drag handlers participate without a second explicit root
+        // dispatch.
+        LoopStep::Proceed
+    }
+
+    /// Mouse press.
+    fn live_mouse_down(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        mouse: crossterm::event::MouseEvent,
+        btn: crossterm::event::MouseButton,
+    ) -> LoopStep {
+        debug_input(&format!(
+            "[input] mouse down x={} y={} hovered={:?}",
+            mouse.column,
+            mouse.row,
+            self.hovered.map(node_id_to_ffi)
+        ));
+        // P-E: explicit mouse capture retargets the press
+        // regardless of pointer position.
+        if let Some(target) = self
+            .click_tracker
+            .capture_target()
+            .or_else(|| self.widget_at_auto(mouse.column, mouse.row))
+        {
+            self.live_mouse_down_on_widget(root, pending_invalidation, mouse, btn, target)
+        } else {
+            self.live_mouse_down_on_screen(root, pending_invalidation, mouse, btn)
+        }
+    }
+
+    /// Mouse press on a widget: click tracking, selection, focus, then the
+    /// press event.
+    fn live_mouse_down_on_widget(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        mouse: crossterm::event::MouseEvent,
+        btn: crossterm::event::MouseButton,
+        target: NodeId,
+    ) -> LoopStep {
+        let (x, y) = self.content_local_coords_auto(target, mouse.column, mouse.row);
+        debug_input(&format!(
+            "[input] mouse target id={}",
+            node_id_to_ffi(target)
+        ));
+        // Record click tracker state for click synthesis.
+        let button = match btn {
+            crossterm::event::MouseButton::Left => 0,
+            crossterm::event::MouseButton::Right => 2,
+            crossterm::event::MouseButton::Middle => 1,
+        };
+        self.click_tracker
+            .on_mouse_down(target, x, y, mouse.column, mouse.row, button);
+        if scrollbar_drag_trace_enabled() {
+            debug_input(&format!(
+                "[scrollbar-drag] down target={} local=({}, {}) screen=({}, {}) button={}",
+                node_id_to_ffi(target),
+                x,
+                y,
+                mouse.column,
+                mouse.row,
+                button
+            ));
+        }
+        let down_event = Event::MouseDown(MouseDownEvent {
+            target,
+            screen_x: mouse.column,
+            screen_y: mouse.row,
+            x,
+            y,
+        });
+        if matches!(
+            btn,
+            crossterm::event::MouseButton::Left | crossterm::event::MouseButton::Right
+        ) {
+            self.live_click_selection(pending_invalidation, target, button, mouse, (x, y));
+        } else {
+            self.clear_selection_click_streak();
+        }
+        // Python `Screen._forward_event` (MouseDown):
+        // focus the nearest focusable widget under the
+        // pointer BEFORE forwarding the event
+        // (`get_focusable_widget_at` + `set_focus`).
+        let focus_target = self
+            .active_widget_tree()
+            .and_then(|tree| crate::runtime::helpers::focusable_node_for_click(tree, target));
+        if let Some(focus_target) = focus_target
+            && self.set_focus_node(focus_target)
+        {
+            pending_invalidation.request_full_content();
+        }
+        let mut outcome = self.dispatch_event_to_target_auto(root, target, &down_event);
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if outcome.stop_requested || msg_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+        LoopStep::Proceed
+    }
+
+    /// Update the text selection for a left or right press: one click starts
+    /// a drag, two select a word, three select all.
+    fn live_click_selection(
+        &mut self,
+        pending_invalidation: &mut PendingInvalidation,
+        target: NodeId,
+        button: u8,
+        mouse: crossterm::event::MouseEvent,
+        (x, y): (u16, u16),
+    ) {
+        let previous_owner = self.active_selection_owner;
+        let click_count = self.register_selection_click(target, button, mouse.column, mouse.row);
+        let changed = match click_count {
+            1 => self
+                .begin_selection_drag(target, x, y)
+                .or_else(|| Some(self.clear_active_selection()))
+                .unwrap_or(false),
+            2 => self
+                .select_word_at(target, x, y)
+                .or_else(|| Some(self.clear_active_selection()))
+                .unwrap_or(false),
+            _ => self
+                .select_all_at_target(target)
+                .or_else(|| Some(self.clear_active_selection()))
+                .unwrap_or(false),
+        };
+        if changed {
+            if let Some(id) = previous_owner {
+                pending_invalidation.request_widget_rect(&self.hit_test, id);
+            }
+            if let Some(id) = self.active_selection_owner {
+                pending_invalidation.request_widget_rect(&self.hit_test, id);
+            }
+        }
+    }
+
+    /// Mouse press with no widget cell under it.
+    fn live_mouse_down_on_screen(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        mouse: crossterm::event::MouseEvent,
+        btn: crossterm::event::MouseButton,
+    ) -> LoopStep {
+        if matches!(
+            btn,
+            crossterm::event::MouseButton::Left | crossterm::event::MouseButton::Right
+        ) {
+            self.clear_selection_click_streak();
+            let previous_owner = self.active_selection_owner;
+            if self.clear_active_selection() {
+                if let Some(id) = previous_owner {
+                    pending_invalidation.request_widget_rect(&self.hit_test, id);
+                } else {
+                    pending_invalidation.request_full_content();
+                }
+            }
+        }
+        // No widget cell under the press: Python
+        // treats this as a press on the Screen
+        // (not focusable) — focus is untouched.
+        let down_event = Event::MouseDown(MouseDownEvent {
+            target: NodeId::default(),
+            screen_x: mouse.column,
+            screen_y: mouse.row,
+            x: mouse.column,
+            y: mouse.row,
+        });
+        let mut outcome = self.dispatch_event_auto(root, &down_event);
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if outcome.stop_requested || msg_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+        LoopStep::Proceed
+    }
+
+    /// Mouse release: the release event (also to the press owner), then a
+    /// synthesized Click when press and release hit the same widget.
+    fn live_mouse_up(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        mouse: crossterm::event::MouseEvent,
+    ) -> LoopStep {
+        self.end_selection_drag();
+        let down_target = self.click_tracker.down_target();
+        // P-E: explicit mouse capture retargets the release.
+        let target = self
+            .click_tracker
+            .capture_target()
+            .or_else(|| self.widget_at_auto(mouse.column, mouse.row));
+        let (x, y) = target.map_or((mouse.column, mouse.row), |id| {
+            self.content_local_coords_auto(id, mouse.column, mouse.row)
+        });
+        let up_event = Event::MouseUp(MouseUpEvent {
+            target,
+            screen_x: mouse.column,
+            screen_y: mouse.row,
+            x,
+            y,
+        });
+        if scrollbar_drag_trace_enabled() {
+            debug_input(&format!(
+                "[scrollbar-drag] up target={:?} local=({}, {}) screen=({}, {}) down_target_before_clear={:?}",
+                target.map(node_id_to_ffi),
+                x,
+                y,
+                mouse.column,
+                mouse.row,
+                self.click_tracker.down_target().map(node_id_to_ffi)
+            ));
+        }
+        // Mouse-up must be delivered to the original mouse-down owner
+        // (capture-style semantics), even if pointer has drifted.
+        if let Some(capture_target) = down_target.filter(|id| Some(*id) != target)
+            && self.live_captured_mouse_up(root, pending_invalidation, mouse, capture_target)
+        {
+            return LoopStep::Stop;
+        }
+
+        let mut outcome = if let Some(target) = target {
+            self.dispatch_event_to_target_auto(root, target, &up_event)
+        } else {
+            self.dispatch_event_auto(root, &up_event)
+        };
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        // Synthesize Click if mouseup target matches mousedown target.
+        if let Some((click_target, click_event)) =
+            self.click_tracker
+                .on_mouse_up(target, x, y, mouse.column, mouse.row, Instant::now())
+            && self.live_synthesized_click(
+                root,
+                pending_invalidation,
+                mouse,
+                click_target,
+                &click_event,
+            )
+        {
+            return LoopStep::Stop;
+        }
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if outcome.stop_requested || msg_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+        LoopStep::Proceed
+    }
+
+    /// Deliver a release to the widget that owns the press. Returns true when
+    /// the app should stop.
+    fn live_captured_mouse_up(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        mouse: crossterm::event::MouseEvent,
+        capture_target: NodeId,
+    ) -> bool {
+        let (cx, cy) = self.content_local_coords_auto(capture_target, mouse.column, mouse.row);
+        let capture_up = Event::MouseUp(MouseUpEvent {
+            target: Some(capture_target),
+            screen_x: mouse.column,
+            screen_y: mouse.row,
+            x: cx,
+            y: cy,
+        });
+        let mut capture_outcome =
+            self.dispatch_event_to_target_auto(root, capture_target, &capture_up);
+        self.absorb_outcome(
+            &mut capture_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut capture_msg_outcome =
+            self.dispatch_message_queue_with_runtime(root, capture_outcome.messages);
+        self.absorb_outcome(
+            &mut capture_msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        capture_outcome.stop_requested || capture_msg_outcome.stop_requested
+    }
+
+    /// Dispatch a synthesized Click and any `@click` action at the clicked
+    /// cell. Returns true when the app should stop.
+    fn live_synthesized_click(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        mouse: crossterm::event::MouseEvent,
+        click_target: NodeId,
+        click_event: &Event,
+    ) -> bool {
+        let mut click_outcome = self.dispatch_event_to_target_auto(root, click_target, click_event);
+        let click_stopped = click_outcome.stop_requested;
+        self.absorb_outcome(
+            &mut click_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+
+        // `@click` action-link routing (Python
+        // `widget._on_click` → `app._broker_event`):
+        // consult the style meta at the clicked cell.
+        // If a `[@click=...]` span baked an action
+        // string there, dispatch it with the clicked
+        // widget as the default action namespace.
+        if !click_stopped && let Some(action) = self.click_action_at(mouse.column, mouse.row) {
+            let msg = MessageEvent::new(
+                click_target,
+                crate::message::ActionDispatchRequested { action },
+            );
+            let mut action_outcome = self.dispatch_message_queue_with_runtime(root, vec![msg]);
+            self.absorb_outcome(
+                &mut action_outcome,
+                pending_invalidation,
                 InvalidationScope::Global,
             );
         }
 
-        // Seed style snapshot cache after startup lifecycle events so initial
-        // class/style setup doesn't emit synthetic transition requests.
-        self.dispatch_style_transition_requests(root);
+        // Messages posted by widgets while handling
+        // the synthesized Click (e.g. a custom
+        // `on_event(Click)` posting a demo message)
+        // must reach the app, exactly as the
+        // headless click path dispatches them.
+        // Dropping them here left live clicks inert
+        // where `pilot.click` worked (custom01).
+        let mut click_msg_outcome =
+            self.dispatch_message_queue_with_runtime(root, click_outcome.messages);
+        self.absorb_outcome(
+            &mut click_msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        click_msg_outcome.stop_requested
+    }
 
-        // Track focused widget for Focus/Blur event dispatch.
-        let mut previous_focus: Option<NodeId> =
+    /// Mouse wheel: hover update, the scroll event, then the scroll hook.
+    fn live_mouse_scroll(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        mouse: crossterm::event::MouseEvent,
+    ) -> LoopStep {
+        debug_input(&format!(
+            "[input] mouse scroll kind={:?} mods={:?} x={} y={}",
+            mouse.kind, mouse.modifiers, mouse.column, mouse.row
+        ));
+        let before = self.hovered;
+        if self.update_hover_from_frame(mouse.column, mouse.row, root) {
+            self.live_invalidate_hover_change(pending_invalidation, before);
+        }
+        let (delta_x, delta_y) = mouse_scroll_deltas(mouse.kind, mouse.modifiers);
+        let target = self.widget_at_auto(mouse.column, mouse.row);
+        let (local_x, local_y) = target.map_or((0, 0), |id| {
+            self.content_local_coords_auto(id, mouse.column, mouse.row)
+        });
+        debug_input(&format!(
+            "[input] mouse scroll route target={:?} dx={} dy={}",
+            target.map(node_id_to_ffi),
+            delta_x,
+            delta_y
+        ));
+        let scroll_event = Event::MouseScroll(MouseScrollEvent {
+            target,
+            screen_x: mouse.column,
+            screen_y: mouse.row,
+            x: local_x,
+            y: local_y,
+            delta_x,
+            delta_y,
+            modifiers: mouse.modifiers,
+        });
+        let mut diag_outcome = if let Some(target) = target {
+            self.dispatch_event_to_target_auto(root, target, &scroll_event)
+        } else {
+            self.dispatch_event_auto(root, &scroll_event)
+        };
+        self.absorb_outcome(
+            &mut diag_outcome,
+            pending_invalidation,
+            target.map_or(InvalidationScope::Global, InvalidationScope::Widget),
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, diag_outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut outcome = if let Some(target) = target {
+            self.dispatch_mouse_scroll_to_target_auto(root, target, delta_x, delta_y)
+        } else {
+            dispatch_mouse_scroll(root, delta_x, delta_y)
+        };
+        debug_input(&format!(
+            "[input] mouse scroll dispatch handled={} repaint={} messages={}",
+            outcome.handled,
+            outcome.repaint_requested,
+            outcome.messages.len()
+        ));
+        // Scroll bubbling may be handled by an ancestor (including the
+        // root screen), which can shift large portions of the composed
+        // frame. Use global invalidation for the hook-path outcome to
+        // avoid stale region artifacts.
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if diag_outcome.stop_requested || outcome.stop_requested || msg_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+        LoopStep::Proceed
+    }
+
+    /// Terminal resize.
+    fn live_resize(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+    ) -> crate::Result<LoopStep> {
+        let size = self.driver.size();
+        debug_render(&format!("[event] Resize({}x{})", size.width, size.height));
+        self.refresh_size()?;
+        let size = self.driver.size();
+        root.on_resize(size.width, size.height);
+        let mut outcome = self.dispatch_event_auto(root, &Event::Resize(size.width, size.height));
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if outcome.stop_requested || msg_outcome.stop_requested {
+            return Ok(LoopStep::Stop);
+        }
+        Ok(LoopStep::Proceed)
+    }
+
+    /// The terminal gained or lost focus.
+    fn live_app_focus(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        gained: bool,
+    ) -> LoopStep {
+        if gained {
+            self.apply_app_focus_restore_state();
+            debug_input("[event] FocusGained");
+        } else {
+            self.apply_app_blur_focus_state();
+            if self.clear_hover_tooltip() {
+                pending_invalidation.request_flags(crate::event::InvalidationFlags::layout());
+            }
+            debug_input("[event] FocusLost");
+        }
+        let mut outcome = self.dispatch_event_auto(root, &Event::AppFocus(gained));
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        pending_invalidation.request_full_content();
+        if outcome.stop_requested || msg_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+        LoopStep::Proceed
+    }
+
+    /// Background runtime messages, timer callbacks, focused-help updates,
+    /// lifecycle events and the reactive phase.
+    fn live_background_phases(
+        &mut self,
+        root: &mut dyn Widget,
+        lp: &mut LiveLoop,
+        t: &mut PassTiming,
+    ) -> LoopStep {
+        let pending_invalidation = &mut lp.pending_invalidation;
+        let phase_started = Instant::now();
+        let mut background_outcome = self.dispatch_background_runtime_messages(root);
+        PassTiming::add_phase(&mut t.background_us, phase_started);
+        self.absorb_outcome(
+            &mut background_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if background_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+
+        // App-level timer callbacks (set_interval / set_timer). The
+        // background drain above stashed any due app-timer ids; invoke their
+        // callbacks now through the adapter's `on_app_timer` hook so reactive
+        // mutations fire their watchers in the same turn.
+        if self.has_pending_timer_fires() && self.live_app_timers(root, pending_invalidation) {
+            return LoopStep::Stop;
+        }
+
+        // Widget-owned interval callbacks (WidgetCtx::set_interval). Same
+        // TimerRuntime as app timers; the background drain above stashed any
+        // due widget-timer ids. Fires run against each node's widget with a
+        // fresh WidgetCtx (reactive mutations flow to watchers via the flush).
+        if self.has_pending_widget_timer_fires() {
+            self.run_due_widget_timer_callbacks(pending_invalidation);
+        }
+
+        let phase_started = Instant::now();
+        let mut focused_help_outcome = self.dispatch_focused_help_changed(root);
+        PassTiming::add_phase(&mut t.focused_help_us, phase_started);
+        self.absorb_outcome(
+            &mut focused_help_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if focused_help_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+
+        // Drain pending lifecycle events from the tree and dispatch
+        // Mount/Unmount events to affected widgets (this fires the
+        // widget-owned `on_mount_ctx` hook — set_interval registration).
+        // Shared with the headless pump so a subtree mounted via dynamic
+        // recompose registers its timers identically in both loops.
+        let phase_started = Instant::now();
+        let lifecycle_outcome = self.drain_tree_lifecycle_events(
+            root,
+            pending_invalidation,
+            Some(&mut lp.worker_registry),
+        );
+        PassTiming::add_phase(&mut t.lifecycle_us, phase_started);
+        if lifecycle_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+
+        // ── Reactive phase ────────────────────────────────────────
+        // Run the reactive phase for widgets that accumulated changes
+        // during event dispatch. This drains ReactiveCtx changes, calls
+        // watchers/computed recomputation, and detects cycles.
+        let phase_started = Instant::now();
+        self.run_event_loop_reactive_phase(root, pending_invalidation);
+        PassTiming::add_phase(&mut t.reactive_us, phase_started);
+        LoopStep::Proceed
+    }
+
+    /// Run due app-level timer callbacks through `on_app_timer`. Returns true
+    /// when the app should stop.
+    fn live_app_timers(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+    ) -> bool {
+        let mut timer_ctx = EventCtx::default();
+        {
+            let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut timer_ctx);
+            root.on_app_timer(self, &mut __wctx);
+            __wctx.__enqueue_reactive_if_dirty();
+        }
+        let mut timer_outcome = DispatchOutcome::from_event_ctx(&mut timer_ctx);
+        self.absorb_outcome(
+            &mut timer_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if timer_outcome.stop_requested {
+            return true;
+        }
+        let mut timer_msg_outcome =
+            self.dispatch_message_queue_with_runtime(root, timer_outcome.messages);
+        self.absorb_outcome(
+            &mut timer_msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        timer_msg_outcome.stop_requested
+    }
+
+    /// Detect focus transitions and dispatch Focus/Blur events.
+    fn live_focus_transitions(
+        &mut self,
+        root: &mut dyn Widget,
+        lp: &mut LiveLoop,
+        t: &mut PassTiming,
+    ) -> LoopStep {
+        let phase_started = Instant::now();
+        let current_focus: Option<NodeId> =
             self.active_widget_tree().and_then(focused_node_id_tree);
-
-        let mut last_tick = Instant::now();
-        let mut pending_input_event: Option<CrosstermEvent> = None;
-        let mut last_mouse_pos: Option<(u16, u16)> = None;
-
-        'event_loop: loop {
-            let timing_on = timing_enabled();
-            let loop_started = Instant::now();
-            let mut input_kind = "none";
-            self.validate_active_selection_owner();
-            let mut input_dispatch_us: u128 = 0;
-            let mut background_us: Option<u128> = None;
-            let mut focused_help_us: Option<u128> = None;
-            let mut lifecycle_us: Option<u128> = None;
-            let mut reactive_us: Option<u128> = None;
-            let mut focus_transition_us: Option<u128> = None;
-            let mut binding_us: Option<u128> = None;
-            let mut animation_us: Option<u128> = None;
-            let mut worker_us: Option<u128> = None;
-            let mut style_transition_us: u128 = 0;
-            let mut immediate_render_us: u128 = 0;
-            let mut normal_render_us: u128 = 0;
-            let mut tick_render_us: u128 = 0;
-            if self.apply_devtools_commands(root, &mut pending_invalidation) {
-                break 'event_loop;
-            }
-            let now = Instant::now();
-            let has_runtime_animation = self.animator.has_animations();
-            let tick_rate = if has_runtime_animation || prev_any_active {
-                active_tick_rate
-            } else {
-                idle_tick_rate
-            };
-            let tick_timeout = tick_rate.saturating_sub(last_tick.elapsed());
-            let timeout = self
-                .animator
-                .next_timeout(now)
-                .map_or(tick_timeout, |anim_timeout| tick_timeout.min(anim_timeout));
-            let timeout = self
-                .timers
-                .next_timeout(self.timers.now())
-                .map_or(timeout, |timer_timeout| timeout.min(timer_timeout));
-            let poll_started = Instant::now();
-            let input_event = if let Some(pending) = pending_input_event.take() {
-                Some(pending)
-            } else if event::poll(timeout)? {
-                Some(event::read()?)
-            } else {
-                None
-            };
-            let poll_wait_us = poll_started.elapsed().as_micros();
-            if let Some(ref event) = input_event {
-                input_kind = input_event_kind(event);
-            }
-            if timing_on
-                && input_event.is_none()
-                && pending_invalidation.is_dirty()
-                && poll_wait_us > 1_000
-            {
-                debug_timing(&format!(
-                    "[timing] wait_for_input kind=none timeout_us={} waited_us={} dirty=true flags(c={} s={} l={})",
-                    timeout.as_micros(),
-                    poll_wait_us,
-                    pending_invalidation.flags.content,
-                    pending_invalidation.flags.style,
-                    pending_invalidation.flags.layout
-                ));
-            }
-
-            let mut handled_input_this_loop = false;
-            if let Some(input_event) = input_event {
-                let input_started = Instant::now();
-                handled_input_this_loop = true;
-                let mut sheet = self.default_stylesheet.clone();
-                sheet.extend(&self.stylesheet);
-                if let Some(screen_sheet) = self.active_screen_stylesheet() {
-                    sheet.extend(screen_sheet);
+        if current_focus != lp.previous_focus {
+            let pending_invalidation = &mut lp.pending_invalidation;
+            if let Some(old_id) = lp.previous_focus {
+                if self.dispatch_focus_transition_event(
+                    root,
+                    pending_invalidation,
+                    old_id,
+                    &Event::Blur(BlurEvent { node: old_id }),
+                ) {
+                    return LoopStep::Stop;
                 }
-                let _active = set_app_active(self.app_active);
-                let _pseudo_state = set_app_runtime_pseudos(AppRuntimePseudos {
-                    dark: self.dark_mode,
-                    inline: self.app_inline,
-                    ansi: self.app_ansi,
-                    nocolor: self.app_nocolor,
-                });
-                let _guard = set_style_context(sheet);
-                match input_event {
-                    CrosstermEvent::Key(key) => {
-                        debug_input(&format!(
-                            "[input] key code={:?} mods={:?} kind={:?}",
-                            key.code, key.modifiers, key.kind
-                        ));
-                        if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
-                            input_dispatch_us = input_started.elapsed().as_micros();
-                            if timing_on {
-                                debug_timing(&format!(
-                                    "[timing] early_continue reason=non_press_key input={} dispatch_us={} loop_us={} dirty={} flags(c={} s={} l={})",
-                                    input_kind,
-                                    input_dispatch_us,
-                                    loop_started.elapsed().as_micros(),
-                                    pending_invalidation.is_dirty(),
-                                    pending_invalidation.flags.content,
-                                    pending_invalidation.flags.style,
-                                    pending_invalidation.flags.layout
-                                ));
-                            }
-                            continue;
-                        }
-                        if should_quit_key(&key, &self.quit_keys) {
-                            break;
-                        }
-                        let key = KeyEventData::from_crossterm(key);
-
-                        // App-level key hook with runtime handle (Textual-style).
-                        let mut app_key_ctx = EventCtx::default();
-                        {
-                            let mut __wctx =
-                                WidgetCtx::__from_dispatch(NodeId::default(), &mut app_key_ctx);
-                            root.on_app_key(self, &key, &mut __wctx);
-                            __wctx.__enqueue_reactive_if_dirty();
-                        }
-                        if app_key_ctx.repaint_requested() {
-                            pending_invalidation.request_full_content();
-                        }
-                        pending_invalidation.request_flags(app_key_ctx.invalidation());
-                        if app_key_ctx.stop_requested() {
-                            break 'event_loop;
-                        }
-                        let app_key_handled = app_key_ctx.handled();
-                        let app_key_messages = app_key_ctx.take_messages();
-                        if !app_key_messages.is_empty() {
-                            let mut msg_outcome =
-                                self.dispatch_message_queue_with_runtime(root, app_key_messages);
-                            self.absorb_outcome(
-                                &mut msg_outcome,
-                                &mut pending_invalidation,
-                                InvalidationScope::Global,
-                            );
-                            if msg_outcome.stop_requested {
-                                break 'event_loop;
-                            }
-                        }
-                        // Apply any class ops queued by on_app_key handlers (e.g. via
-                        // widget methods that stage ClassOps for the next event turn).
-                        let app_key_class_ops = app_key_ctx.take_class_ops();
-                        if !app_key_class_ops.is_empty() {
-                            if let Some(tree) = self.active_widget_tree_mut() {
-                                for (node, op) in app_key_class_ops {
-                                    match op {
-                                        crate::event::ClassOp::Add(c) => tree.add_class(node, &c),
-                                        crate::event::ClassOp::Remove(c) => {
-                                            tree.remove_class(node, &c);
-                                        }
-                                    }
-                                }
-                            }
-                            // Class change may flip descendant display/visibility;
-                            // relayout so the affected subtree re-resolves CSS.
-                            pending_invalidation
-                                .request_flags(crate::event::InvalidationFlags::layout());
-                        }
-                        if app_key_handled {
-                            input_dispatch_us = input_started.elapsed().as_micros();
-                            if timing_on {
-                                debug_timing(&format!(
-                                    "[timing] early_continue reason=app_key_handled input={} dispatch_us={} loop_us={} dirty={} flags(c={} s={} l={})",
-                                    input_kind,
-                                    input_dispatch_us,
-                                    loop_started.elapsed().as_micros(),
-                                    pending_invalidation.is_dirty(),
-                                    pending_invalidation.flags.content,
-                                    pending_invalidation.flags.style,
-                                    pending_invalidation.flags.layout
-                                ));
-                            }
-                            continue;
-                        }
-
-                        let bind = crate::event::KeyBind::from_event(&key);
-                        let mapped_action = self.action_map.lookup(&bind);
-
-                        // Priority actions (e.g. command palette) run before raw key dispatch.
-                        if let Some(action) = mapped_action.filter(|a| is_priority_action(*a)) {
-                            debug_input(&format!(
-                                "[input] priority action-map {bind:?} -> {action:?}"
-                            ));
-                            // Wave 1: ctrl+p opens the composed CommandPaletteScreen
-                            // via the adapter (on_app_message), NOT by dispatching
-                            // Action::CommandPalette to the legacy host.
-                            let mut outcome = if matches!(action, Action::CommandPalette) {
-                                self.dispatch_command_palette_open(root)
-                            } else {
-                                self.dispatch_event_auto(root, &Event::Action(action))
-                            };
-                            self.absorb_outcome(
-                                &mut outcome,
-                                &mut pending_invalidation,
-                                InvalidationScope::Global,
-                            );
-                            let mut msg_outcome =
-                                self.dispatch_message_queue_with_runtime(root, outcome.messages);
-                            self.absorb_outcome(
-                                &mut msg_outcome,
-                                &mut pending_invalidation,
-                                InvalidationScope::Global,
-                            );
-                            if outcome.stop_requested || msg_outcome.stop_requested {
-                                break 'event_loop;
-                            }
-                            if outcome.handled || matches!(action, Action::CommandPalette) {
-                                input_dispatch_us = input_started.elapsed().as_micros();
-                                if timing_on {
-                                    debug_timing(&format!(
-                                        "[timing] early_continue reason=priority_action_handled input={} dispatch_us={} loop_us={} dirty={} flags(c={} s={} l={})",
-                                        input_kind,
-                                        input_dispatch_us,
-                                        loop_started.elapsed().as_micros(),
-                                        pending_invalidation.is_dirty(),
-                                        pending_invalidation.flags.content,
-                                        pending_invalidation.flags.style,
-                                        pending_invalidation.flags.layout
-                                    ));
-                                }
-                                continue;
-                            }
-                        }
-
-                        // Declarative BINDINGS: walk the active chain (focused→root,
-                        // or screen-body root when unfocused) plus App::BINDINGS
-                        // beneath an active screen.
-                        let mut binding_clashes = Vec::new();
-                        let binding_match = self.active_widget_tree().and_then(|tree| {
-                            let root_target = tree.root().unwrap_or_default();
-                            match_binding_chain(
-                                tree,
-                                self.app_root_tree_when_screen_active(),
-                                &key,
-                                self.check_action_fn.as_deref(),
-                                &self.keymap,
-                                Some(&mut binding_clashes),
-                            )
-                            .map(|(node_id, action_str, source)| {
-                                (node_id, action_str, source, root_target)
-                            })
-                        });
-                        // Deliver keymap clash reports after the tree borrow
-                        // ends (per clashing keypress, Python cadence).
-                        self.deliver_binding_clashes(&binding_clashes);
-                        if let Some((binding_node_id, action_str, binding_source, root_target)) =
-                            binding_match
-                            && let Ok(parsed) = crate::action::parse_action(&action_str)
-                        {
-                            // CLUSTER 7: execute the binding on its source node when
-                            // no registry owner resolves (binding source IS target).
-                            if binding_source == BindingSource::Active
-                                && let Some(tree_mut) = self.active_widget_tree_mut()
-                            {
-                                let focused = focused_node_id_tree(tree_mut);
-                                let resolved = {
-                                    let tree_ref = &*tree_mut;
-                                    focused.and_then(|fid| {
-                                        crate::action::resolve_action(
-                                            &parsed,
-                                            tree_ref,
-                                            fid,
-                                            |nid| {
-                                                tree_ref.get(nid).map(|n| {
-                                                    (
-                                                        n.widget.action_namespace(),
-                                                        n.widget.action_registry(),
-                                                    )
-                                                })
-                                            },
-                                        )
-                                    })
-                                };
-                                let target = resolved.map_or(binding_node_id, |ra| ra.node);
-                                if let Some(node) = tree_mut.get_mut(target) {
-                                    let mut ctx = EventCtx::default();
-                                    let handled = execute_action_with_dispatch_target(
-                                        &mut *node.widget,
-                                        &parsed,
-                                        &mut ctx,
-                                        target,
-                                    );
-                                    debug_input(&format!(
-                                        "[input] binding action={action_str:?} handled={handled}"
-                                    ));
-                                    if handled || ctx.handled() {
-                                        let mut binding_outcome = DispatchOutcome {
-                                            handled: handled || ctx.handled(),
-                                            repaint_requested: ctx.repaint_requested(),
-                                            invalidation: ctx.invalidation(),
-                                            stop_requested: ctx.stop_requested(),
-                                            messages: ctx.take_messages(),
-                                            animation_requests: ctx.take_animation_requests(),
-                                            style_animation_requests: ctx
-                                                .take_style_animation_requests(),
-                                            worker_requests: ctx.take_worker_requests(),
-                                            recompose_nodes: ctx.take_recompose_nodes(),
-                                            default_prevented: false,
-                                            prevented: Vec::new(),
-                                            class_ops: ctx.take_class_ops(),
-                                        };
-                                        self.absorb_outcome(
-                                            &mut binding_outcome,
-                                            &mut pending_invalidation,
-                                            InvalidationScope::Global,
-                                        );
-                                        let messages = binding_outcome.messages;
-                                        if !messages.is_empty() {
-                                            let mut msg_outcome = self
-                                                .dispatch_message_queue_with_runtime(
-                                                    root, messages,
-                                                );
-                                            self.absorb_outcome(
-                                                &mut msg_outcome,
-                                                &mut pending_invalidation,
-                                                InvalidationScope::Global,
-                                            );
-                                            if msg_outcome.stop_requested {
-                                                break 'event_loop;
-                                            }
-                                        }
-                                        if binding_outcome.stop_requested {
-                                            break 'event_loop;
-                                        }
-                                        input_dispatch_us = input_started.elapsed().as_micros();
-                                        if timing_on {
-                                            debug_timing(&format!(
-                                                "[timing] early_continue reason=binding_widget_action input={} dispatch_us={} loop_us={} dirty={} flags(c={} s={} l={})",
-                                                input_kind,
-                                                input_dispatch_us,
-                                                loop_started.elapsed().as_micros(),
-                                                pending_invalidation.is_dirty(),
-                                                pending_invalidation.flags.content,
-                                                pending_invalidation.flags.style,
-                                                pending_invalidation.flags.layout
-                                            ));
-                                        }
-                                        continue;
-                                    }
-                                }
-                            }
-
-                            let mut root_ctx = EventCtx::default();
-                            let handled = execute_action_with_dispatch_target(
-                                root,
-                                &parsed,
-                                &mut root_ctx,
-                                root_target,
-                            );
-                            debug_input(&format!(
-                                "[input] binding action={action_str:?} root_handled={handled}"
-                            ));
-                            if handled || root_ctx.handled() {
-                                let mut root_binding_outcome = DispatchOutcome {
-                                    handled: handled || root_ctx.handled(),
-                                    repaint_requested: root_ctx.repaint_requested(),
-                                    invalidation: root_ctx.invalidation(),
-                                    stop_requested: root_ctx.stop_requested(),
-                                    messages: root_ctx.take_messages(),
-                                    animation_requests: root_ctx.take_animation_requests(),
-                                    style_animation_requests: root_ctx
-                                        .take_style_animation_requests(),
-                                    worker_requests: root_ctx.take_worker_requests(),
-                                    recompose_nodes: root_ctx.take_recompose_nodes(),
-                                    default_prevented: false,
-                                    prevented: Vec::new(),
-                                    class_ops: root_ctx.take_class_ops(),
-                                };
-                                self.absorb_outcome(
-                                    &mut root_binding_outcome,
-                                    &mut pending_invalidation,
-                                    InvalidationScope::Global,
-                                );
-                                let messages = root_binding_outcome.messages;
-                                if !messages.is_empty() {
-                                    let mut msg_outcome =
-                                        self.dispatch_message_queue_with_runtime(root, messages);
-                                    self.absorb_outcome(
-                                        &mut msg_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    if msg_outcome.stop_requested {
-                                        break 'event_loop;
-                                    }
-                                }
-                                if root_binding_outcome.stop_requested {
-                                    break 'event_loop;
-                                }
-                                input_dispatch_us = input_started.elapsed().as_micros();
-                                if timing_on {
-                                    debug_timing(&format!(
-                                        "[timing] early_continue reason=binding_root_action input={} dispatch_us={} loop_us={} dirty={} flags(c={} s={} l={})",
-                                        input_kind,
-                                        input_dispatch_us,
-                                        loop_started.elapsed().as_micros(),
-                                        pending_invalidation.is_dirty(),
-                                        pending_invalidation.flags.content,
-                                        pending_invalidation.flags.style,
-                                        pending_invalidation.flags.layout
-                                    ));
-                                }
-                                continue;
-                            }
-
-                            // Fallback: app-defined custom action (e.g. "add", "clear").
-                            // Called when no action_registry handler exists and execute_action declined.
-                            {
-                                let mut fallback_ctx = EventCtx::default();
-                                {
-                                    let mut __wctx = WidgetCtx::__from_dispatch(
-                                        NodeId::default(),
-                                        &mut fallback_ctx,
-                                    );
-                                    root.on_app_unhandled_action(self, &action_str, &mut __wctx);
-                                    __wctx.__enqueue_reactive_if_dirty();
-                                }
-                                if fallback_ctx.handled() {
-                                    let mut fallback_outcome = DispatchOutcome {
-                                        handled: true,
-                                        repaint_requested: fallback_ctx.repaint_requested(),
-                                        invalidation: fallback_ctx.invalidation(),
-                                        stop_requested: fallback_ctx.stop_requested(),
-                                        messages: fallback_ctx.take_messages(),
-                                        animation_requests: fallback_ctx.take_animation_requests(),
-                                        style_animation_requests: fallback_ctx
-                                            .take_style_animation_requests(),
-                                        worker_requests: fallback_ctx.take_worker_requests(),
-                                        recompose_nodes: fallback_ctx.take_recompose_nodes(),
-                                        default_prevented: false,
-                                        prevented: Vec::new(),
-                                        class_ops: fallback_ctx.take_class_ops(),
-                                    };
-                                    self.absorb_outcome(
-                                        &mut fallback_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    let messages = fallback_outcome.messages;
-                                    if !messages.is_empty() {
-                                        let mut msg_outcome = self
-                                            .dispatch_message_queue_with_runtime(root, messages);
-                                        self.absorb_outcome(
-                                            &mut msg_outcome,
-                                            &mut pending_invalidation,
-                                            InvalidationScope::Global,
-                                        );
-                                        if msg_outcome.stop_requested {
-                                            break 'event_loop;
-                                        }
-                                    }
-                                    if fallback_outcome.stop_requested {
-                                        break 'event_loop;
-                                    }
-                                    continue;
-                                }
-                            }
-
-                            // The binding matched but no layer handled its
-                            // action: report the silent no-op (debug channel +
-                            // test-observable buffer) before the key falls
-                            // through to raw dispatch.
-                            report_unhandled_binding_action(binding_node_id, &action_str);
-                        }
-
-                        // P-F: `key_<name>` hook on the focused widget (no binding
-                        // consumed it). A `true` return marks the key handled
-                        // so the action-map fallback below is suppressed.
-                        let mut key_name_outcome = dispatch_key_name_to_focused(self, &key);
-                        let key_name_handled = key_name_outcome.handled;
-                        self.absorb_outcome(
-                            &mut key_name_outcome,
-                            &mut pending_invalidation,
-                            InvalidationScope::Global,
-                        );
-
-                        // Dispatch the raw key so focused widgets (e.g. Input) can consume it.
-                        let mut key_outcome =
-                            self.dispatch_event_auto(root, &Event::Key(key.clone()));
-                        debug_input(&format!(
-                            "[input] key dispatch handled={} repaint={} messages={}",
-                            key_outcome.handled,
-                            key_outcome.repaint_requested,
-                            key_outcome.messages.len()
-                        ));
-                        self.absorb_outcome(
-                            &mut key_outcome,
-                            &mut pending_invalidation,
-                            InvalidationScope::Global,
-                        );
-                        let mut msg_outcome =
-                            self.dispatch_message_queue_with_runtime(root, key_outcome.messages);
-                        self.absorb_outcome(
-                            &mut msg_outcome,
-                            &mut pending_invalidation,
-                            InvalidationScope::Global,
-                        );
-                        if key_outcome.stop_requested || msg_outcome.stop_requested {
-                            break 'event_loop;
-                        }
-                        if !key_outcome.handled && !key_name_handled {
-                            if let Some(action) = mapped_action.filter(|a| !is_priority_action(*a))
-                            {
-                                if action == Action::CopySelectedText {
-                                    if let Some(text) = self.action_copy_selected_text() {
-                                        let sender = App::runtime_message_sender();
-                                        let mut msg_outcome = self
-                                            .dispatch_message_queue_with_runtime(
-                                                root,
-                                                vec![MessageEvent::new(
-                                                    sender,
-                                                    crate::message::TextEditClipboardCopyRequested {
-                                                        text,
-                                                        cut: false,
-                                                    },
-                                                )
-                                                .with_control(sender)],
-                                            );
-                                        self.absorb_outcome(
-                                            &mut msg_outcome,
-                                            &mut pending_invalidation,
-                                            InvalidationScope::Global,
-                                        );
-                                        input_dispatch_us = input_started.elapsed().as_micros();
-                                        if timing_on {
-                                            debug_timing(&format!(
-                                                "[timing] early_continue reason=copy_selected_text input={} dispatch_us={} loop_us={} dirty={} flags(c={} s={} l={})",
-                                                input_kind,
-                                                input_dispatch_us,
-                                                loop_started.elapsed().as_micros(),
-                                                pending_invalidation.is_dirty(),
-                                                pending_invalidation.flags.content,
-                                                pending_invalidation.flags.style,
-                                                pending_invalidation.flags.layout
-                                            ));
-                                        }
-                                    } else {
-                                        self.notify_help_quit();
-                                        pending_invalidation.request_full_content();
-                                        input_dispatch_us = input_started.elapsed().as_micros();
-                                        if timing_on {
-                                            debug_timing(&format!(
-                                                "[timing] early_continue reason=help_quit input={} dispatch_us={} loop_us={} dirty={} flags(c={} s={} l={})",
-                                                input_kind,
-                                                input_dispatch_us,
-                                                loop_started.elapsed().as_micros(),
-                                                pending_invalidation.is_dirty(),
-                                                pending_invalidation.flags.content,
-                                                pending_invalidation.flags.style,
-                                                pending_invalidation.flags.layout
-                                            ));
-                                        }
-                                    }
-                                    continue;
-                                }
-                                if action == Action::HelpQuit {
-                                    self.notify_help_quit();
-                                    pending_invalidation.request_full_content();
-                                    input_dispatch_us = input_started.elapsed().as_micros();
-                                    if timing_on {
-                                        debug_timing(&format!(
-                                            "[timing] early_continue reason=help_quit input={} dispatch_us={} loop_us={} dirty={} flags(c={} s={} l={})",
-                                            input_kind,
-                                            input_dispatch_us,
-                                            loop_started.elapsed().as_micros(),
-                                            pending_invalidation.is_dirty(),
-                                            pending_invalidation.flags.content,
-                                            pending_invalidation.flags.style,
-                                            pending_invalidation.flags.layout
-                                        ));
-                                    }
-                                    continue;
-                                }
-                                if matches!(action, Action::FocusNext | Action::FocusPrev) {
-                                    // Give the currently-focused branch a chance to descend
-                                    // focus before falling back to tree-level focus cycling.
-                                    let mut focus_outcome =
-                                        self.dispatch_event_auto(root, &Event::Action(action));
-                                    self.absorb_outcome(
-                                        &mut focus_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    let mut focus_msg_outcome = self
-                                        .dispatch_message_queue_with_runtime(
-                                            root,
-                                            focus_outcome.messages,
-                                        );
-                                    self.absorb_outcome(
-                                        &mut focus_msg_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    if focus_outcome.stop_requested
-                                        || focus_msg_outcome.stop_requested
-                                    {
-                                        break 'event_loop;
-                                    }
-                                    if focus_outcome.handled {
-                                        input_dispatch_us = input_started.elapsed().as_micros();
-                                        if timing_on {
-                                            debug_timing(&format!(
-                                                "[timing] early_continue reason=focus_action_handled input={} dispatch_us={} loop_us={} dirty={} flags(c={} s={} l={})",
-                                                input_kind,
-                                                input_dispatch_us,
-                                                loop_started.elapsed().as_micros(),
-                                                pending_invalidation.is_dirty(),
-                                                pending_invalidation.flags.content,
-                                                pending_invalidation.flags.style,
-                                                pending_invalidation.flags.layout
-                                            ));
-                                        }
-                                        continue;
-                                    }
-                                    if self.move_focus_auto(action) {
-                                        pending_invalidation.request_full_content();
-                                        input_dispatch_us = input_started.elapsed().as_micros();
-                                        if timing_on {
-                                            debug_timing(&format!(
-                                                "[timing] early_continue reason=focus_moved input={} dispatch_us={} loop_us={} dirty={} flags(c={} s={} l={})",
-                                                input_kind,
-                                                input_dispatch_us,
-                                                loop_started.elapsed().as_micros(),
-                                                pending_invalidation.is_dirty(),
-                                                pending_invalidation.flags.content,
-                                                pending_invalidation.flags.style,
-                                                pending_invalidation.flags.layout
-                                            ));
-                                        }
-                                        continue;
-                                    }
-                                }
-                                debug_input(&format!("[input] action-map {bind:?} -> {action:?}"));
-                                let mut outcome = if is_scroll_action(action) {
-                                    self.dispatch_scroll_action_auto(root, action, self.hovered)
-                                } else {
-                                    self.dispatch_event_auto(root, &Event::Action(action))
-                                };
-                                debug_input(&format!(
-                                    "[input] action dispatch action={:?} handled={} repaint={} messages={}",
-                                    action,
-                                    outcome.handled,
-                                    outcome.repaint_requested,
-                                    outcome.messages.len()
-                                ));
-                                self.absorb_outcome(
-                                    &mut outcome,
-                                    &mut pending_invalidation,
-                                    InvalidationScope::Global,
-                                );
-                                let mut msg_outcome = self
-                                    .dispatch_message_queue_with_runtime(root, outcome.messages);
-                                self.absorb_outcome(
-                                    &mut msg_outcome,
-                                    &mut pending_invalidation,
-                                    InvalidationScope::Global,
-                                );
-                                if outcome.stop_requested || msg_outcome.stop_requested {
-                                    break 'event_loop;
-                                }
-                            } else {
-                                debug_input(&format!("[input] action-map {bind:?} -> none"));
-                            }
-                        }
-                    }
-                    CrosstermEvent::Mouse(mouse) => {
-                        // Python `App.on_event`: every mouse event refreshes
-                        // `App.mouse_position`.
-                        self.mouse_position = (mouse.column, mouse.row);
-                        let mouse = if matches!(
-                            mouse.kind,
-                            MouseEventKind::Moved | MouseEventKind::Drag(_)
-                        ) {
-                            coalesce_mouse_motion_events(mouse, &mut pending_input_event)?
-                        } else {
-                            mouse
-                        };
-                        match mouse.kind {
-                            MouseEventKind::Moved | MouseEventKind::Drag(_) => {
-                                if hit_probe_enabled() {
-                                    let curr = (mouse.column, mouse.row);
-                                    let dir = point_direction(last_mouse_pos, curr);
-                                    let frame_target = self.widget_at(mouse.column, mouse.row);
-                                    let tree_target = self.active_widget_tree().and_then(|tree| {
-                                        widget_at_tree_layout(tree, mouse.column, mouse.row)
-                                    });
-                                    let chosen =
-                                        self.active_widget_tree().map_or(frame_target, |tree| {
-                                            super::choose_deeper_target(
-                                                tree,
-                                                frame_target,
-                                                tree_target,
-                                            )
-                                        });
-                                    let relation = self
-                                        .active_widget_tree()
-                                        .and_then(|tree| match (frame_target, tree_target) {
-                                            (Some(frame), Some(tree_hit)) if frame != tree_hit => {
-                                                if super::is_ancestor_or_self(tree, frame, tree_hit)
-                                                {
-                                                    Some("frame->ancestor(tree)")
-                                                } else if super::is_ancestor_or_self(
-                                                    tree, tree_hit, frame,
-                                                ) {
-                                                    Some("tree->ancestor(frame)")
-                                                } else {
-                                                    Some("unrelated")
-                                                }
-                                            }
-                                            (Some(_), Some(_)) => Some("same"),
-                                            _ => None,
-                                        })
-                                        .unwrap_or("-");
-                                    let frame_rect =
-                                        frame_target.and_then(|id| self.hit_test.rect(id));
-                                    let tree_rect =
-                                        tree_target.and_then(|id| self.hit_test.rect(id));
-                                    debug_input(&format!(
-                                        "[hit-probe] pos=({}, {}) dir={} frame={:?} frame_rect={} tree={:?} tree_rect={} relation={} chosen={:?}",
-                                        mouse.column,
-                                        mouse.row,
-                                        dir,
-                                        frame_target.map(node_id_to_ffi),
-                                        fmt_rect(frame_rect),
-                                        tree_target.map(node_id_to_ffi),
-                                        fmt_rect(tree_rect),
-                                        relation,
-                                        chosen.map(node_id_to_ffi)
-                                    ));
-                                }
-                                last_mouse_pos = Some((mouse.column, mouse.row));
-                                let before = self.hovered;
-                                if self.update_hover_from_frame(mouse.column, mouse.row, root) {
-                                    if let Some(id) = before {
-                                        pending_invalidation
-                                            .request_widget_rect(&self.hit_test, id);
-                                    }
-                                    if let Some(id) = self.hovered {
-                                        pending_invalidation
-                                            .request_widget_rect(&self.hit_test, id);
-                                    } else {
-                                        pending_invalidation.request_full_content();
-                                    }
-
-                                    // Dispatch Enter/Leave events on hover change.
-                                    let enter_leave = generate_enter_leave_events(
-                                        before,
-                                        self.hovered,
-                                        mouse.column,
-                                        mouse.row,
-                                        mouse.column,
-                                        mouse.row,
-                                    );
-                                    for (target, event) in enter_leave {
-                                        let mut outcome = self
-                                            .dispatch_event_to_target_auto(root, target, &event);
-                                        self.absorb_outcome(
-                                            &mut outcome,
-                                            &mut pending_invalidation,
-                                            InvalidationScope::Global,
-                                        );
-                                    }
-                                }
-                                if let Some(owner) = self.active_selection_owner
-                                    && self.selection_drag_active
-                                {
-                                    let (sx, sy) = self.content_local_coords_auto(
-                                        owner,
-                                        mouse.column,
-                                        mouse.row,
-                                    );
-                                    if self.update_selection_drag(owner, sx, sy).unwrap_or(false) {
-                                        pending_invalidation
-                                            .request_widget_rect(&self.hit_test, owner);
-                                    }
-                                }
-                                if self.update_hover_tooltip(mouse.column, mouse.row) {
-                                    pending_invalidation
-                                        .request_flags(crate::event::InvalidationFlags::layout());
-                                    pending_invalidation.request_full_content();
-                                }
-                                let is_drag = matches!(mouse.kind, MouseEventKind::Drag(_));
-                                let down_target = self.click_tracker.down_target();
-                                let move_target = if is_drag {
-                                    down_target
-                                        .or_else(|| self.widget_at_auto(mouse.column, mouse.row))
-                                } else {
-                                    self.widget_at_auto(mouse.column, mouse.row)
-                                };
-
-                                if is_drag && scrollbar_drag_trace_enabled() {
-                                    debug_input(&format!(
-                                        "[scrollbar-drag] move screen=({}, {}) down_target={:?} hovered={:?} chosen_target={:?}",
-                                        mouse.column,
-                                        mouse.row,
-                                        down_target.map(node_id_to_ffi),
-                                        self.hovered.map(node_id_to_ffi),
-                                        move_target.map(node_id_to_ffi),
-                                    ));
-                                }
-
-                                if let Some(target) = move_target {
-                                    let changed = self.call_on_mouse_move_auto(
-                                        root,
-                                        target,
-                                        mouse.column,
-                                        mouse.row,
-                                        is_drag && down_target.is_some(),
-                                    );
-
-                                    let (local_x, local_y) = self.content_local_coords_auto(
-                                        target,
-                                        mouse.column,
-                                        mouse.row,
-                                    );
-                                    let move_event =
-                                        Event::MouseMove(crate::event::MouseMoveEvent {
-                                            target,
-                                            screen_x: mouse.column,
-                                            screen_y: mouse.row,
-                                            x: local_x,
-                                            y: local_y,
-                                        });
-                                    let mut move_outcome = self.dispatch_event_to_target_auto(
-                                        root,
-                                        target,
-                                        &move_event,
-                                    );
-                                    self.absorb_outcome(
-                                        &mut move_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    let mut move_msg_outcome = self
-                                        .dispatch_message_queue_with_runtime(
-                                            root,
-                                            move_outcome.messages,
-                                        );
-                                    self.absorb_outcome(
-                                        &mut move_msg_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    if move_outcome.stop_requested
-                                        || move_msg_outcome.stop_requested
-                                    {
-                                        break 'event_loop;
-                                    }
-
-                                    if changed {
-                                        if matches!(mouse.kind, MouseEventKind::Drag(_)) {
-                                            // Dragging scrollbar thumbs can shift large composed
-                                            // regions and produce stale strip artifacts if only
-                                            // partial regions are updated. Force full content
-                                            // invalidation per drag update.
-                                            pending_invalidation.request_flags(
-                                                crate::event::InvalidationFlags::layout(),
-                                            );
-                                            pending_invalidation.request_full_content();
-                                        } else {
-                                            pending_invalidation.request_full_content();
-                                        }
-                                    }
-
-                                    // `call_on_mouse_move_auto` bubbles target -> root, so root
-                                    // drag handlers participate without a second explicit root
-                                    // dispatch.
-                                }
-                            }
-                            MouseEventKind::Down(btn) => {
-                                debug_input(&format!(
-                                    "[input] mouse down x={} y={} hovered={:?}",
-                                    mouse.column,
-                                    mouse.row,
-                                    self.hovered.map(node_id_to_ffi)
-                                ));
-                                // P-E: explicit mouse capture retargets the press
-                                // regardless of pointer position.
-                                if let Some(target) = self
-                                    .click_tracker
-                                    .capture_target()
-                                    .or_else(|| self.widget_at_auto(mouse.column, mouse.row))
-                                {
-                                    let (x, y) = self.content_local_coords_auto(
-                                        target,
-                                        mouse.column,
-                                        mouse.row,
-                                    );
-                                    debug_input(&format!(
-                                        "[input] mouse target id={}",
-                                        node_id_to_ffi(target)
-                                    ));
-                                    // Record click tracker state for click synthesis.
-                                    let button = match btn {
-                                        crossterm::event::MouseButton::Left => 0,
-                                        crossterm::event::MouseButton::Right => 2,
-                                        crossterm::event::MouseButton::Middle => 1,
-                                    };
-                                    self.click_tracker.on_mouse_down(
-                                        target,
-                                        x,
-                                        y,
-                                        mouse.column,
-                                        mouse.row,
-                                        button,
-                                    );
-                                    if scrollbar_drag_trace_enabled() {
-                                        debug_input(&format!(
-                                            "[scrollbar-drag] down target={} local=({}, {}) screen=({}, {}) button={}",
-                                            node_id_to_ffi(target),
-                                            x,
-                                            y,
-                                            mouse.column,
-                                            mouse.row,
-                                            button
-                                        ));
-                                    }
-                                    let down_event = Event::MouseDown(MouseDownEvent {
-                                        target,
-                                        screen_x: mouse.column,
-                                        screen_y: mouse.row,
-                                        x,
-                                        y,
-                                    });
-                                    if matches!(
-                                        btn,
-                                        crossterm::event::MouseButton::Left
-                                            | crossterm::event::MouseButton::Right
-                                    ) {
-                                        let previous_owner = self.active_selection_owner;
-                                        let click_count = self.register_selection_click(
-                                            target,
-                                            button,
-                                            mouse.column,
-                                            mouse.row,
-                                        );
-                                        let changed = match click_count {
-                                            1 => self
-                                                .begin_selection_drag(target, x, y)
-                                                .or_else(|| Some(self.clear_active_selection()))
-                                                .unwrap_or(false),
-                                            2 => self
-                                                .select_word_at(target, x, y)
-                                                .or_else(|| Some(self.clear_active_selection()))
-                                                .unwrap_or(false),
-                                            _ => self
-                                                .select_all_at_target(target)
-                                                .or_else(|| Some(self.clear_active_selection()))
-                                                .unwrap_or(false),
-                                        };
-                                        if changed {
-                                            if let Some(id) = previous_owner {
-                                                pending_invalidation
-                                                    .request_widget_rect(&self.hit_test, id);
-                                            }
-                                            if let Some(id) = self.active_selection_owner {
-                                                pending_invalidation
-                                                    .request_widget_rect(&self.hit_test, id);
-                                            }
-                                        }
-                                    } else {
-                                        self.clear_selection_click_streak();
-                                    }
-                                    // Python `Screen._forward_event` (MouseDown):
-                                    // focus the nearest focusable widget under the
-                                    // pointer BEFORE forwarding the event
-                                    // (`get_focusable_widget_at` + `set_focus`).
-                                    let focus_target = self.active_widget_tree().and_then(|tree| {
-                                        crate::runtime::helpers::focusable_node_for_click(
-                                            tree, target,
-                                        )
-                                    });
-                                    if let Some(focus_target) = focus_target
-                                        && self.set_focus_node(focus_target)
-                                    {
-                                        pending_invalidation.request_full_content();
-                                    }
-                                    let mut outcome = self.dispatch_event_to_target_auto(
-                                        root,
-                                        target,
-                                        &down_event,
-                                    );
-                                    self.absorb_outcome(
-                                        &mut outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    let mut msg_outcome = self.dispatch_message_queue_with_runtime(
-                                        root,
-                                        outcome.messages,
-                                    );
-                                    self.absorb_outcome(
-                                        &mut msg_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    if outcome.stop_requested || msg_outcome.stop_requested {
-                                        break 'event_loop;
-                                    }
-                                } else {
-                                    if matches!(
-                                        btn,
-                                        crossterm::event::MouseButton::Left
-                                            | crossterm::event::MouseButton::Right
-                                    ) {
-                                        self.clear_selection_click_streak();
-                                        let previous_owner = self.active_selection_owner;
-                                        if self.clear_active_selection() {
-                                            if let Some(id) = previous_owner {
-                                                pending_invalidation
-                                                    .request_widget_rect(&self.hit_test, id);
-                                            } else {
-                                                pending_invalidation.request_full_content();
-                                            }
-                                        }
-                                    }
-                                    // No widget cell under the press: Python
-                                    // treats this as a press on the Screen
-                                    // (not focusable) — focus is untouched.
-                                    let down_event = Event::MouseDown(MouseDownEvent {
-                                        target: NodeId::default(),
-                                        screen_x: mouse.column,
-                                        screen_y: mouse.row,
-                                        x: mouse.column,
-                                        y: mouse.row,
-                                    });
-                                    let mut outcome = self.dispatch_event_auto(root, &down_event);
-                                    self.absorb_outcome(
-                                        &mut outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    let mut msg_outcome = self.dispatch_message_queue_with_runtime(
-                                        root,
-                                        outcome.messages,
-                                    );
-                                    self.absorb_outcome(
-                                        &mut msg_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    if outcome.stop_requested || msg_outcome.stop_requested {
-                                        break 'event_loop;
-                                    }
-                                }
-                            }
-                            MouseEventKind::Up(_) => {
-                                self.end_selection_drag();
-                                let down_target = self.click_tracker.down_target();
-                                // P-E: explicit mouse capture retargets the release.
-                                let target = self
-                                    .click_tracker
-                                    .capture_target()
-                                    .or_else(|| self.widget_at_auto(mouse.column, mouse.row));
-                                let (x, y) = target.map_or((mouse.column, mouse.row), |id| {
-                                    self.content_local_coords_auto(id, mouse.column, mouse.row)
-                                });
-                                let up_event = Event::MouseUp(MouseUpEvent {
-                                    target,
-                                    screen_x: mouse.column,
-                                    screen_y: mouse.row,
-                                    x,
-                                    y,
-                                });
-                                if scrollbar_drag_trace_enabled() {
-                                    debug_input(&format!(
-                                        "[scrollbar-drag] up target={:?} local=({}, {}) screen=({}, {}) down_target_before_clear={:?}",
-                                        target.map(node_id_to_ffi),
-                                        x,
-                                        y,
-                                        mouse.column,
-                                        mouse.row,
-                                        self.click_tracker.down_target().map(node_id_to_ffi)
-                                    ));
-                                }
-                                // Mouse-up must be delivered to the original mouse-down owner
-                                // (capture-style semantics), even if pointer has drifted.
-                                if let Some(capture_target) =
-                                    down_target.filter(|id| Some(*id) != target)
-                                {
-                                    let (cx, cy) = self.content_local_coords_auto(
-                                        capture_target,
-                                        mouse.column,
-                                        mouse.row,
-                                    );
-                                    let capture_up = Event::MouseUp(MouseUpEvent {
-                                        target: Some(capture_target),
-                                        screen_x: mouse.column,
-                                        screen_y: mouse.row,
-                                        x: cx,
-                                        y: cy,
-                                    });
-                                    let mut capture_outcome = self.dispatch_event_to_target_auto(
-                                        root,
-                                        capture_target,
-                                        &capture_up,
-                                    );
-                                    self.absorb_outcome(
-                                        &mut capture_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    let mut capture_msg_outcome = self
-                                        .dispatch_message_queue_with_runtime(
-                                            root,
-                                            capture_outcome.messages,
-                                        );
-                                    self.absorb_outcome(
-                                        &mut capture_msg_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    if capture_outcome.stop_requested
-                                        || capture_msg_outcome.stop_requested
-                                    {
-                                        break 'event_loop;
-                                    }
-                                }
-
-                                let mut outcome = if let Some(target) = target {
-                                    self.dispatch_event_to_target_auto(root, target, &up_event)
-                                } else {
-                                    self.dispatch_event_auto(root, &up_event)
-                                };
-                                self.absorb_outcome(
-                                    &mut outcome,
-                                    &mut pending_invalidation,
-                                    InvalidationScope::Global,
-                                );
-                                // Synthesize Click if mouseup target matches mousedown target.
-                                if let Some((click_target, click_event)) =
-                                    self.click_tracker.on_mouse_up(
-                                        target,
-                                        x,
-                                        y,
-                                        mouse.column,
-                                        mouse.row,
-                                        Instant::now(),
-                                    )
-                                {
-                                    let mut click_outcome = self.dispatch_event_to_target_auto(
-                                        root,
-                                        click_target,
-                                        &click_event,
-                                    );
-                                    let click_stopped = click_outcome.stop_requested;
-                                    self.absorb_outcome(
-                                        &mut click_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-
-                                    // `@click` action-link routing (Python
-                                    // `widget._on_click` → `app._broker_event`):
-                                    // consult the style meta at the clicked cell.
-                                    // If a `[@click=...]` span baked an action
-                                    // string there, dispatch it with the clicked
-                                    // widget as the default action namespace.
-                                    if !click_stopped {
-                                        if let Some(action) =
-                                            self.click_action_at(mouse.column, mouse.row)
-                                        {
-                                            let msg = MessageEvent::new(
-                                                click_target,
-                                                crate::message::ActionDispatchRequested { action },
-                                            );
-                                            let mut action_outcome = self
-                                                .dispatch_message_queue_with_runtime(
-                                                    root,
-                                                    vec![msg],
-                                                );
-                                            self.absorb_outcome(
-                                                &mut action_outcome,
-                                                &mut pending_invalidation,
-                                                InvalidationScope::Global,
-                                            );
-                                        }
-                                    }
-
-                                    // Messages posted by widgets while handling
-                                    // the synthesized Click (e.g. a custom
-                                    // `on_event(Click)` posting a demo message)
-                                    // must reach the app, exactly as the
-                                    // headless click path dispatches them.
-                                    // Dropping them here left live clicks inert
-                                    // where `pilot.click` worked (custom01).
-                                    let mut click_msg_outcome = self
-                                        .dispatch_message_queue_with_runtime(
-                                            root,
-                                            click_outcome.messages,
-                                        );
-                                    self.absorb_outcome(
-                                        &mut click_msg_outcome,
-                                        &mut pending_invalidation,
-                                        InvalidationScope::Global,
-                                    );
-                                    if click_msg_outcome.stop_requested {
-                                        break 'event_loop;
-                                    }
-                                }
-                                let mut msg_outcome = self
-                                    .dispatch_message_queue_with_runtime(root, outcome.messages);
-                                self.absorb_outcome(
-                                    &mut msg_outcome,
-                                    &mut pending_invalidation,
-                                    InvalidationScope::Global,
-                                );
-                                if outcome.stop_requested || msg_outcome.stop_requested {
-                                    break 'event_loop;
-                                }
-                            }
-                            MouseEventKind::ScrollUp
-                            | MouseEventKind::ScrollDown
-                            | MouseEventKind::ScrollLeft
-                            | MouseEventKind::ScrollRight => {
-                                debug_input(&format!(
-                                    "[input] mouse scroll kind={:?} mods={:?} x={} y={}",
-                                    mouse.kind, mouse.modifiers, mouse.column, mouse.row
-                                ));
-                                let before = self.hovered;
-                                if self.update_hover_from_frame(mouse.column, mouse.row, root) {
-                                    if let Some(id) = before {
-                                        pending_invalidation
-                                            .request_widget_rect(&self.hit_test, id);
-                                    }
-                                    if let Some(id) = self.hovered {
-                                        pending_invalidation
-                                            .request_widget_rect(&self.hit_test, id);
-                                    } else {
-                                        pending_invalidation.request_full_content();
-                                    }
-                                }
-                                let (delta_x, delta_y) =
-                                    mouse_scroll_deltas(mouse.kind, mouse.modifiers);
-                                let target = self.widget_at_auto(mouse.column, mouse.row);
-                                let (local_x, local_y) = target.map_or((0, 0), |id| {
-                                    self.content_local_coords_auto(id, mouse.column, mouse.row)
-                                });
-                                debug_input(&format!(
-                                    "[input] mouse scroll route target={:?} dx={} dy={}",
-                                    target.map(node_id_to_ffi),
-                                    delta_x,
-                                    delta_y
-                                ));
-                                let mut diag_outcome = if let Some(target) = target {
-                                    self.dispatch_event_to_target_auto(
-                                        root,
-                                        target,
-                                        &Event::MouseScroll(MouseScrollEvent {
-                                            target: Some(target),
-                                            screen_x: mouse.column,
-                                            screen_y: mouse.row,
-                                            x: local_x,
-                                            y: local_y,
-                                            delta_x,
-                                            delta_y,
-                                            modifiers: mouse.modifiers,
-                                        }),
-                                    )
-                                } else {
-                                    self.dispatch_event_auto(
-                                        root,
-                                        &Event::MouseScroll(MouseScrollEvent {
-                                            target: None,
-                                            screen_x: mouse.column,
-                                            screen_y: mouse.row,
-                                            x: local_x,
-                                            y: local_y,
-                                            delta_x,
-                                            delta_y,
-                                            modifiers: mouse.modifiers,
-                                        }),
-                                    )
-                                };
-                                self.absorb_outcome(
-                                    &mut diag_outcome,
-                                    &mut pending_invalidation,
-                                    target.map_or(
-                                        InvalidationScope::Global,
-                                        InvalidationScope::Widget,
-                                    ),
-                                );
-                                let mut msg_outcome = self.dispatch_message_queue_with_runtime(
-                                    root,
-                                    diag_outcome.messages,
-                                );
-                                self.absorb_outcome(
-                                    &mut msg_outcome,
-                                    &mut pending_invalidation,
-                                    InvalidationScope::Global,
-                                );
-                                let mut outcome = if let Some(target) = target {
-                                    self.dispatch_mouse_scroll_to_target_auto(
-                                        root, target, delta_x, delta_y,
-                                    )
-                                } else {
-                                    dispatch_mouse_scroll(root, delta_x, delta_y)
-                                };
-                                debug_input(&format!(
-                                    "[input] mouse scroll dispatch handled={} repaint={} messages={}",
-                                    outcome.handled,
-                                    outcome.repaint_requested,
-                                    outcome.messages.len()
-                                ));
-                                // Scroll bubbling may be handled by an ancestor (including the
-                                // root screen), which can shift large portions of the composed
-                                // frame. Use global invalidation for the hook-path outcome to
-                                // avoid stale region artifacts.
-                                self.absorb_outcome(
-                                    &mut outcome,
-                                    &mut pending_invalidation,
-                                    InvalidationScope::Global,
-                                );
-                                let mut msg_outcome = self
-                                    .dispatch_message_queue_with_runtime(root, outcome.messages);
-                                self.absorb_outcome(
-                                    &mut msg_outcome,
-                                    &mut pending_invalidation,
-                                    InvalidationScope::Global,
-                                );
-                                if diag_outcome.stop_requested
-                                    || outcome.stop_requested
-                                    || msg_outcome.stop_requested
-                                {
-                                    break 'event_loop;
-                                }
-                            }
-                        }
-                    }
-                    CrosstermEvent::Resize(_, _) => {
-                        let size = self.driver.size();
-                        debug_render(&format!("[event] Resize({}x{})", size.width, size.height));
-                        self.refresh_size()?;
-                        let size = self.driver.size();
-                        root.on_resize(size.width, size.height);
-                        let mut outcome =
-                            self.dispatch_event_auto(root, &Event::Resize(size.width, size.height));
-                        self.absorb_outcome(
-                            &mut outcome,
-                            &mut pending_invalidation,
-                            InvalidationScope::Global,
-                        );
-                        let mut msg_outcome =
-                            self.dispatch_message_queue_with_runtime(root, outcome.messages);
-                        self.absorb_outcome(
-                            &mut msg_outcome,
-                            &mut pending_invalidation,
-                            InvalidationScope::Global,
-                        );
-                        if outcome.stop_requested || msg_outcome.stop_requested {
-                            break 'event_loop;
-                        }
-                    }
-                    CrosstermEvent::FocusLost => {
-                        self.apply_app_blur_focus_state();
-                        if self.clear_hover_tooltip() {
-                            pending_invalidation
-                                .request_flags(crate::event::InvalidationFlags::layout());
-                        }
-                        debug_input("[event] FocusLost");
-                        let mut outcome = self.dispatch_event_auto(root, &Event::AppFocus(false));
-                        self.absorb_outcome(
-                            &mut outcome,
-                            &mut pending_invalidation,
-                            InvalidationScope::Global,
-                        );
-                        let mut msg_outcome =
-                            self.dispatch_message_queue_with_runtime(root, outcome.messages);
-                        self.absorb_outcome(
-                            &mut msg_outcome,
-                            &mut pending_invalidation,
-                            InvalidationScope::Global,
-                        );
-                        pending_invalidation.request_full_content();
-                        if outcome.stop_requested || msg_outcome.stop_requested {
-                            break 'event_loop;
-                        }
-                    }
-                    CrosstermEvent::FocusGained => {
-                        self.apply_app_focus_restore_state();
-                        debug_input("[event] FocusGained");
-                        let mut outcome = self.dispatch_event_auto(root, &Event::AppFocus(true));
-                        self.absorb_outcome(
-                            &mut outcome,
-                            &mut pending_invalidation,
-                            InvalidationScope::Global,
-                        );
-                        let mut msg_outcome =
-                            self.dispatch_message_queue_with_runtime(root, outcome.messages);
-                        self.absorb_outcome(
-                            &mut msg_outcome,
-                            &mut pending_invalidation,
-                            InvalidationScope::Global,
-                        );
-                        pending_invalidation.request_full_content();
-                        if outcome.stop_requested || msg_outcome.stop_requested {
-                            break 'event_loop;
-                        }
-                    }
-                    // Bracketed paste (PR-15a): the terminal wraps the payload
-                    // in DECSET 2004 markers (enabled at driver start), which
-                    // crossterm decodes to a single Paste event — dispatched
-                    // to focus like a key, not as raw keystrokes.
-                    CrosstermEvent::Paste(text) => {
-                        debug_input(&format!("[event] Paste({} chars)", text.chars().count()));
-                        if self.dispatch_paste_event(root, text, &mut pending_invalidation) {
-                            break 'event_loop;
-                        }
-                    }
-                }
-                if input_dispatch_us == 0 {
-                    input_dispatch_us = input_started.elapsed().as_micros();
+                // P-D (Python `DescendantBlur`, `bubble=True`):
+                // notify ancestors of the blurred node through the
+                // normal bubbling event path. Carries the node but
+                // never touches focus state (unlike `Blur`).
+                if self.dispatch_focus_transition_event(
+                    root,
+                    pending_invalidation,
+                    old_id,
+                    &Event::DescendantBlur(DescendantBlurEvent { node: old_id }),
+                ) {
+                    return LoopStep::Stop;
                 }
             }
-
-            let phase_started = Instant::now();
-            let mut background_outcome = self.dispatch_background_runtime_messages(root);
-            background_us = Some(
-                background_us
-                    .unwrap_or(0)
-                    .saturating_add(phase_started.elapsed().as_micros()),
-            );
-            self.absorb_outcome(
-                &mut background_outcome,
-                &mut pending_invalidation,
-                InvalidationScope::Global,
-            );
-            if background_outcome.stop_requested {
-                break 'event_loop;
-            }
-
-            // App-level timer callbacks (set_interval / set_timer). The
-            // background drain above stashed any due app-timer ids; invoke their
-            // callbacks now through the adapter's `on_app_timer` hook so reactive
-            // mutations fire their watchers in the same turn.
-            if self.has_pending_timer_fires() {
-                let mut timer_ctx = EventCtx::default();
-                {
-                    let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut timer_ctx);
-                    root.on_app_timer(self, &mut __wctx);
-                    __wctx.__enqueue_reactive_if_dirty();
+            if let Some(new_id) = current_focus {
+                if self.dispatch_focus_transition_event(
+                    root,
+                    pending_invalidation,
+                    new_id,
+                    &Event::Focus(FocusEvent { node: new_id }),
+                ) {
+                    return LoopStep::Stop;
                 }
-                let mut timer_outcome = DispatchOutcome::from_event_ctx(&mut timer_ctx);
-                self.absorb_outcome(
-                    &mut timer_outcome,
-                    &mut pending_invalidation,
-                    InvalidationScope::Global,
-                );
-                if timer_outcome.stop_requested {
-                    break 'event_loop;
-                }
-                let mut timer_msg_outcome =
-                    self.dispatch_message_queue_with_runtime(root, timer_outcome.messages);
-                self.absorb_outcome(
-                    &mut timer_msg_outcome,
-                    &mut pending_invalidation,
-                    InvalidationScope::Global,
-                );
-                if timer_msg_outcome.stop_requested {
-                    break 'event_loop;
+                // P-D (Python `DescendantFocus`, `bubble=True`).
+                if self.dispatch_focus_transition_event(
+                    root,
+                    pending_invalidation,
+                    new_id,
+                    &Event::DescendantFocus(DescendantFocusEvent { node: new_id }),
+                ) {
+                    return LoopStep::Stop;
                 }
             }
+            lp.previous_focus = current_focus;
+        }
+        PassTiming::add_phase(&mut t.focus_transition_us, phase_started);
+        LoopStep::Proceed
+    }
 
-            // Widget-owned interval callbacks (WidgetCtx::set_interval). Same
-            // TimerRuntime as app timers; the background drain above stashed any
-            // due widget-timer ids. Fires run against each node's widget with a
-            // fresh WidgetCtx (reactive mutations flow to watchers via the flush).
-            if self.has_pending_widget_timer_fires() {
-                self.run_due_widget_timer_callbacks(&mut pending_invalidation);
-            }
+    /// Input-priority fast path: render immediately after input-driven
+    /// invalidation so visible state updates (selection/caret/list focus)
+    /// land before slower per-loop housekeeping. When more input is already
+    /// queued, start the next pass to drain it first.
+    fn live_input_fast_path(
+        &mut self,
+        root: &mut dyn Widget,
+        lp: &mut LiveLoop,
+        t: &mut PassTiming,
+        handled_input: bool,
+        tick_rate: Duration,
+    ) -> crate::Result<LoopStep> {
+        let mut rendered_immediately_for_input = false;
+        if handled_input && (lp.pending_invalidation.is_dirty() || self.resized_since_last_render) {
+            t.immediate_render_us = self.live_render_pending(root, &mut lp.pending_invalidation)?;
+            rendered_immediately_for_input = true;
+        }
 
-            let phase_started = Instant::now();
-            let mut focused_help_outcome = self.dispatch_focused_help_changed(root);
-            focused_help_us = Some(
-                focused_help_us
-                    .unwrap_or(0)
-                    .saturating_add(phase_started.elapsed().as_micros()),
-            );
-            self.absorb_outcome(
-                &mut focused_help_outcome,
-                &mut pending_invalidation,
-                InvalidationScope::Global,
-            );
-            if focused_help_outcome.stop_requested {
-                break 'event_loop;
-            }
-
-            // Drain pending lifecycle events from the tree and dispatch
-            // Mount/Unmount events to affected widgets (this fires the
-            // widget-owned `on_mount_ctx` hook — set_interval registration).
-            // Shared with the headless pump so a subtree mounted via dynamic
-            // recompose registers its timers identically in both loops.
-            let phase_started = Instant::now();
-            let lifecycle_outcome = self.drain_tree_lifecycle_events(
-                root,
-                &mut pending_invalidation,
-                Some(&mut worker_registry),
-            );
-            lifecycle_us = Some(
-                lifecycle_us
-                    .unwrap_or(0)
-                    .saturating_add(phase_started.elapsed().as_micros()),
-            );
-            if lifecycle_outcome.stop_requested {
-                break 'event_loop;
-            }
-
-            // ── Reactive phase ────────────────────────────────────────
-            // Run the reactive phase for widgets that accumulated changes
-            // during event dispatch. This drains ReactiveCtx changes, calls
-            // watchers/computed recomputation, and detects cycles.
-            let phase_started = Instant::now();
-            self.run_event_loop_reactive_phase(root, &mut pending_invalidation);
-            reactive_us = Some(
-                reactive_us
-                    .unwrap_or(0)
-                    .saturating_add(phase_started.elapsed().as_micros()),
-            );
-
-            // Detect focus transitions and dispatch Focus/Blur events.
-            let phase_started = Instant::now();
-            let current_focus: Option<NodeId> =
-                self.active_widget_tree().and_then(focused_node_id_tree);
-            if current_focus != previous_focus {
-                if let Some(old_id) = previous_focus {
-                    if self.dispatch_focus_transition_event(
-                        root,
-                        &mut pending_invalidation,
-                        old_id,
-                        &Event::Blur(BlurEvent { node: old_id }),
-                    ) {
-                        break 'event_loop;
-                    }
-                    // P-D (Python `DescendantBlur`, `bubble=True`):
-                    // notify ancestors of the blurred node through the
-                    // normal bubbling event path. Carries the node but
-                    // never touches focus state (unlike `Blur`).
-                    if self.dispatch_focus_transition_event(
-                        root,
-                        &mut pending_invalidation,
-                        old_id,
-                        &Event::DescendantBlur(DescendantBlurEvent { node: old_id }),
-                    ) {
-                        break 'event_loop;
-                    }
-                }
-                if let Some(new_id) = current_focus {
-                    if self.dispatch_focus_transition_event(
-                        root,
-                        &mut pending_invalidation,
-                        new_id,
-                        &Event::Focus(FocusEvent { node: new_id }),
-                    ) {
-                        break 'event_loop;
-                    }
-                    // P-D (Python `DescendantFocus`, `bubble=True`).
-                    if self.dispatch_focus_transition_event(
-                        root,
-                        &mut pending_invalidation,
-                        new_id,
-                        &Event::DescendantFocus(DescendantFocusEvent { node: new_id }),
-                    ) {
-                        break 'event_loop;
-                    }
-                }
-                previous_focus = current_focus;
-            }
-            focus_transition_us = Some(
-                focus_transition_us
-                    .unwrap_or(0)
-                    .saturating_add(phase_started.elapsed().as_micros()),
-            );
-
-            // Input-priority fast path: render immediately after input-driven
-            // invalidation so visible state updates (selection/caret/list focus)
-            // land before slower per-loop housekeeping.
-            let mut rendered_immediately_for_input = false;
-            if handled_input_this_loop
-                && (pending_invalidation.is_dirty() || self.resized_since_last_render)
-            {
-                let render_started = Instant::now();
-                let regions = pending_invalidation
-                    .content_regions
-                    .as_render_regions(self.frame.width, self.frame.height);
-                let layout_invalidation = pending_invalidation.flags.layout
-                    || pending_invalidation.flags.style
-                    || self.resized_since_last_render;
-                self.render_widget_with_regions(root, regions.as_deref(), layout_invalidation)?;
-                self.apply_layout_info_to_tree();
-                self.publish_devtools_snapshot(root);
-                pending_invalidation = PendingInvalidation::default();
-                rendered_immediately_for_input = true;
-                immediate_render_us = render_started.elapsed().as_micros();
-            }
-
-            // If more input is already queued after an immediate render, keep
-            // draining input first to avoid visible backlog.
-            if rendered_immediately_for_input && event::poll(Duration::ZERO)? {
-                pending_input_event = Some(event::read()?);
-                // Fairness guard: keep low-latency input draining, but do not
-                // starve Tick delivery under sustained keyboard input.
-                let tick_due = last_tick.elapsed() >= tick_rate;
-                if !tick_due {
-                    if timing_on {
-                        debug_timing(&format!(
-                            "[timing] early_continue reason=input_priority_drain input={} dispatch_us={} immediate_render_us={} loop_us={} dirty_end={} flags(c={} s={} l={})",
-                            input_kind,
-                            input_dispatch_us,
-                            immediate_render_us,
-                            loop_started.elapsed().as_micros(),
-                            pending_invalidation.is_dirty(),
-                            pending_invalidation.flags.content,
-                            pending_invalidation.flags.style,
-                            pending_invalidation.flags.layout
-                        ));
-                    }
-                    continue;
-                }
-                if timing_on {
+        // If more input is already queued after an immediate render, keep
+        // draining input first to avoid visible backlog.
+        if rendered_immediately_for_input && event::poll(Duration::ZERO)? {
+            lp.pending_input_event = Some(event::read()?);
+            // Fairness guard: keep low-latency input draining, but do not
+            // starve Tick delivery under sustained keyboard input.
+            let tick_due = lp.last_tick.elapsed() >= tick_rate;
+            if !tick_due {
+                if t.on {
+                    let pending_invalidation = &lp.pending_invalidation;
                     debug_timing(&format!(
-                        "[timing] fairness_break reason=tick_due_after_input_drain input={} dispatch_us={} immediate_render_us={} loop_us={}",
-                        input_kind,
-                        input_dispatch_us,
-                        immediate_render_us,
-                        loop_started.elapsed().as_micros()
-                    ));
-                }
-            }
-
-            let phase_started = Instant::now();
-            let mut binding_outcome = self.dispatch_binding_hints_changed(root);
-            binding_us = Some(
-                binding_us
-                    .unwrap_or(0)
-                    .saturating_add(phase_started.elapsed().as_micros()),
-            );
-            self.absorb_outcome(
-                &mut binding_outcome,
-                &mut pending_invalidation,
-                InvalidationScope::Global,
-            );
-            if binding_outcome.stop_requested {
-                break 'event_loop;
-            }
-
-            let phase_started = Instant::now();
-            let mut animation_outcome = self.dispatch_animation_frame(root);
-            animation_us = Some(
-                animation_us
-                    .unwrap_or(0)
-                    .saturating_add(phase_started.elapsed().as_micros()),
-            );
-            self.absorb_outcome(
-                &mut animation_outcome,
-                &mut pending_invalidation,
-                InvalidationScope::Global,
-            );
-            if animation_outcome.stop_requested {
-                break 'event_loop;
-            }
-
-            // ── Run pending call_from_thread jobs for this tick ──────
-            //
-            // Worker threads posted these via `App::call_from_thread` and are
-            // blocked waiting for them to run. Execute each with `&mut App`
-            // (the closure ships its return value back to the worker). Run
-            // before worker-request processing so a callable that mutates the
-            // tree is reflected in the same tick's invalidation handling.
-            for job in crate::runtime::tasks::drain_call_from_thread_jobs() {
-                job(self);
-                pending_invalidation.request_full_content();
-            }
-
-            // ── Process accumulated worker requests for this tick ────
-            let phase_started = Instant::now();
-            {
-                let pending_workers = drain_accumulated_worker_requests();
-                let changes = process_worker_requests(&mut worker_registry, pending_workers);
-                if !changes.is_empty() {
-                    let worker_messages = worker_state_runtime_messages(&worker_registry, changes);
-                    let mut worker_outcome =
-                        self.dispatch_message_queue_with_runtime(root, worker_messages);
-                    self.absorb_outcome(
-                        &mut worker_outcome,
-                        &mut pending_invalidation,
-                        InvalidationScope::Global,
-                    );
-                    if worker_outcome.stop_requested {
-                        break 'event_loop;
-                    }
-                }
-                worker_registry.cleanup();
-            }
-            worker_us = Some(
-                worker_us
-                    .unwrap_or(0)
-                    .saturating_add(phase_started.elapsed().as_micros()),
-            );
-
-            if pending_invalidation.flags.style
-                || pending_invalidation.flags.layout
-                || self.style_snapshot_cache.is_empty()
-            {
-                let phase_started = Instant::now();
-                self.dispatch_style_transition_requests(root);
-                style_transition_us += phase_started.elapsed().as_micros();
-            }
-
-            if let Some(tree) = self.active_widget_tree_mut()
-                && sync_widget_controlled_child_display_tree(tree, root)
-            {
-                pending_invalidation.request_flags(crate::event::InvalidationFlags::layout());
-                pending_invalidation.request_full_content();
-            }
-            self.absorb_pending_recompositions(&mut pending_invalidation);
-            self.absorb_pending_query_refreshes(&mut pending_invalidation);
-            if self.take_pending_force_relayout() {
-                pending_invalidation.request_flags(crate::event::InvalidationFlags::layout());
-                pending_invalidation.request_full_content();
-            }
-
-            if pending_invalidation.is_dirty() || self.resized_since_last_render {
-                let render_started = Instant::now();
-                let regions = pending_invalidation
-                    .content_regions
-                    .as_render_regions(self.frame.width, self.frame.height);
-                let layout_invalidation = pending_invalidation.flags.layout
-                    || pending_invalidation.flags.style
-                    || self.resized_since_last_render;
-                self.render_widget_with_regions(root, regions.as_deref(), layout_invalidation)?;
-                self.apply_layout_info_to_tree();
-                self.publish_devtools_snapshot(root);
-                pending_invalidation = PendingInvalidation::default();
-                normal_render_us = render_started.elapsed().as_micros();
-            }
-
-            if last_tick.elapsed() >= tick_rate {
-                let mut sheet = self.default_stylesheet.clone();
-                sheet.extend(&self.stylesheet);
-                if let Some(screen_sheet) = self.active_screen_stylesheet() {
-                    sheet.extend(screen_sheet);
-                }
-                let _active = set_app_active(self.app_active);
-                let _pseudo_state = set_app_runtime_pseudos(AppRuntimePseudos {
-                    dark: self.dark_mode,
-                    inline: self.app_inline,
-                    ansi: self.app_ansi,
-                    nocolor: self.app_nocolor,
-                });
-                let _guard = set_style_context(sheet);
-                if let Some(reload) = self.poll_stylesheet() {
-                    self.absorb_stylesheet_reload(root, &reload, &mut pending_invalidation);
-                }
-                root.on_tick(tick);
-                // `root.on_tick` only reaches the app adapter — its composed
-                // children were extracted into the arena at tree build, so the
-                // widgets that actually animate (LoadingIndicator, …) never see
-                // the frame tick through it. Deliver the tick to every ACTIVE
-                // arena widget (and any cover widget — the `loading` overlay),
-                // mirroring `headless_advance_ticks`.
-                if let Some(tree) = self.active_widget_tree_mut() {
-                    deliver_frame_tick(tree, tick);
-                }
-                // Opt-in: inactive screens tick too (background animation).
-                self.deliver_background_screen_ticks(tick);
-
-                let mut app_tick_ctx = EventCtx::default();
-                {
-                    let mut __wctx =
-                        WidgetCtx::__from_dispatch(NodeId::default(), &mut app_tick_ctx);
-                    root.on_app_tick(self, tick, &mut __wctx);
-                    __wctx.__enqueue_reactive_if_dirty();
-                }
-                let mut app_tick_outcome = DispatchOutcome::from_event_ctx(&mut app_tick_ctx);
-                self.absorb_outcome(
-                    &mut app_tick_outcome,
-                    &mut pending_invalidation,
-                    InvalidationScope::Global,
-                );
-                if app_tick_outcome.stop_requested {
-                    break 'event_loop;
-                }
-                let mut app_tick_msg_outcome =
-                    self.dispatch_message_queue_with_runtime(root, app_tick_outcome.messages);
-                self.absorb_outcome(
-                    &mut app_tick_msg_outcome,
-                    &mut pending_invalidation,
-                    InvalidationScope::Global,
-                );
-                if app_tick_msg_outcome.stop_requested {
-                    break 'event_loop;
-                }
-
-                let mut outcome = self.dispatch_event_auto(root, &Event::Tick(tick));
-                self.absorb_outcome(
-                    &mut outcome,
-                    &mut pending_invalidation,
-                    InvalidationScope::Global,
-                );
-                let mut msg_outcome =
-                    self.dispatch_message_queue_with_runtime(root, outcome.messages);
-                self.absorb_outcome(
-                    &mut msg_outcome,
-                    &mut pending_invalidation,
-                    InvalidationScope::Global,
-                );
-                // Re-sync the docked ToastRack from the notification store when it
-                // changed (a `notify`, or a `NotificationExpired` removal from an
-                // elapsed rack timer / toast click). Auto-dismiss timing is owned
-                // by the rack node's widget timers, not a runtime prune.
-                if self.notifications_dirty && self.refresh_toast_rack() {
-                    pending_invalidation.request_full_content();
-                }
-                if pending_invalidation.flags.style
-                    || pending_invalidation.flags.layout
-                    || self.style_snapshot_cache.is_empty()
-                {
-                    let phase_started = Instant::now();
-                    self.dispatch_style_transition_requests(root);
-                    style_transition_us += phase_started.elapsed().as_micros();
-                }
-                if outcome.stop_requested || msg_outcome.stop_requested {
-                    break 'event_loop;
-                }
-
-                let any_active = self.any_widget_active_auto(root);
-                if let Some(tree) = self.active_widget_tree_mut()
-                    && sync_widget_controlled_child_display_tree(tree, root)
-                {
-                    pending_invalidation.request_flags(crate::event::InvalidationFlags::layout());
-                    pending_invalidation.request_full_content();
-                }
-                self.absorb_pending_recompositions(&mut pending_invalidation);
-                self.absorb_pending_query_refreshes(&mut pending_invalidation);
-                if pending_invalidation.is_dirty()
-                    || self.resized_since_last_render
-                    || any_active
-                    || prev_any_active
-                {
-                    let render_started = Instant::now();
-                    let regions = pending_invalidation
-                        .content_regions
-                        .as_render_regions(self.frame.width, self.frame.height);
-                    let layout_invalidation = pending_invalidation.flags.layout
-                        || pending_invalidation.flags.style
-                        || self.resized_since_last_render;
-                    self.render_widget_with_regions(root, regions.as_deref(), layout_invalidation)?;
-                    self.apply_layout_info_to_tree();
-                    self.publish_devtools_snapshot(root);
-                    pending_invalidation = PendingInvalidation::default();
-                    tick_render_us = render_started.elapsed().as_micros();
-                }
-                prev_any_active = any_active;
-                last_tick = Instant::now();
-                tick += 1;
-            }
-
-            if timing_on {
-                let total_us = loop_started.elapsed().as_micros();
-                if handled_input_this_loop
-                    || immediate_render_us > 0
-                    || normal_render_us > 0
-                    || tick_render_us > 0
-                    || total_us > 2_000
-                {
-                    debug_timing(&format!(
-                        "[timing] loop input={} poll_wait_us={} input_dispatch_us={} phases_us(bg={} help={} lifecycle={} reactive={} focus={} binding={} anim={} worker={} style={}) render_us(immediate={} normal={} tick={}) total_us={} dirty_end={} flags_end(c={} s={} l={})",
-                        input_kind,
-                        poll_wait_us,
-                        input_dispatch_us,
-                        background_us.unwrap_or(0),
-                        focused_help_us.unwrap_or(0),
-                        lifecycle_us.unwrap_or(0),
-                        reactive_us.unwrap_or(0),
-                        focus_transition_us.unwrap_or(0),
-                        binding_us.unwrap_or(0),
-                        animation_us.unwrap_or(0),
-                        worker_us.unwrap_or(0),
-                        style_transition_us,
-                        immediate_render_us,
-                        normal_render_us,
-                        tick_render_us,
-                        total_us,
+                        "[timing] early_continue reason=input_priority_drain input={} dispatch_us={} immediate_render_us={} loop_us={} dirty_end={} flags(c={} s={} l={})",
+                        t.input_kind,
+                        t.input_dispatch_us,
+                        t.immediate_render_us,
+                        t.started.elapsed().as_micros(),
                         pending_invalidation.is_dirty(),
                         pending_invalidation.flags.content,
                         pending_invalidation.flags.style,
                         pending_invalidation.flags.layout
                     ));
                 }
+                return Ok(LoopStep::NextPass);
+            }
+            if t.on {
+                debug_timing(&format!(
+                    "[timing] fairness_break reason=tick_due_after_input_drain input={} dispatch_us={} immediate_render_us={} loop_us={}",
+                    t.input_kind,
+                    t.input_dispatch_us,
+                    t.immediate_render_us,
+                    t.started.elapsed().as_micros()
+                ));
             }
         }
+        Ok(LoopStep::Proceed)
+    }
 
-        root.on_unmount();
-        self.finish()?;
-        Ok(())
+    /// Binding hints, animation frames, `call_from_thread` jobs, worker
+    /// requests, style transitions and pending recompositions.
+    fn live_housekeeping(
+        &mut self,
+        root: &mut dyn Widget,
+        lp: &mut LiveLoop,
+        t: &mut PassTiming,
+    ) -> LoopStep {
+        let pending_invalidation = &mut lp.pending_invalidation;
+        let phase_started = Instant::now();
+        let mut binding_outcome = self.dispatch_binding_hints_changed(root);
+        PassTiming::add_phase(&mut t.binding_us, phase_started);
+        self.absorb_outcome(
+            &mut binding_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if binding_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+
+        let phase_started = Instant::now();
+        let mut animation_outcome = self.dispatch_animation_frame(root);
+        PassTiming::add_phase(&mut t.animation_us, phase_started);
+        self.absorb_outcome(
+            &mut animation_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if animation_outcome.stop_requested {
+            return LoopStep::Stop;
+        }
+
+        // ── Run pending call_from_thread jobs for this tick ──────
+        //
+        // Worker threads posted these via `App::call_from_thread` and are
+        // blocked waiting for them to run. Execute each with `&mut App`
+        // (the closure ships its return value back to the worker). Run
+        // before worker-request processing so a callable that mutates the
+        // tree is reflected in the same tick's invalidation handling.
+        for job in crate::runtime::tasks::drain_call_from_thread_jobs() {
+            job(self);
+            pending_invalidation.request_full_content();
+        }
+
+        // ── Process accumulated worker requests for this tick ────
+        let phase_started = Instant::now();
+        if self.live_worker_requests(root, pending_invalidation, &mut lp.worker_registry) {
+            return LoopStep::Stop;
+        }
+        PassTiming::add_phase(&mut t.worker_us, phase_started);
+
+        if pending_invalidation.flags.style
+            || pending_invalidation.flags.layout
+            || self.style_snapshot_cache.is_empty()
+        {
+            let phase_started = Instant::now();
+            self.dispatch_style_transition_requests(root);
+            t.style_transition_us += phase_started.elapsed().as_micros();
+        }
+
+        if let Some(tree) = self.active_widget_tree_mut()
+            && sync_widget_controlled_child_display_tree(tree, root)
+        {
+            pending_invalidation.request_flags(crate::event::InvalidationFlags::layout());
+            pending_invalidation.request_full_content();
+        }
+        self.absorb_pending_recompositions(pending_invalidation);
+        self.absorb_pending_query_refreshes(pending_invalidation);
+        if self.take_pending_force_relayout() {
+            pending_invalidation.request_flags(crate::event::InvalidationFlags::layout());
+            pending_invalidation.request_full_content();
+        }
+        LoopStep::Proceed
+    }
+
+    /// Process the worker requests gathered this pass and post worker state
+    /// changes. Returns true when the app should stop.
+    fn live_worker_requests(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        worker_registry: &mut WorkerRegistry,
+    ) -> bool {
+        let pending_workers = drain_accumulated_worker_requests();
+        let changes = process_worker_requests(worker_registry, pending_workers);
+        if !changes.is_empty() {
+            let worker_messages = worker_state_runtime_messages(worker_registry, changes);
+            let mut worker_outcome =
+                self.dispatch_message_queue_with_runtime(root, worker_messages);
+            self.absorb_outcome(
+                &mut worker_outcome,
+                pending_invalidation,
+                InvalidationScope::Global,
+            );
+            if worker_outcome.stop_requested {
+                return true;
+            }
+        }
+        worker_registry.cleanup();
+        false
+    }
+
+    /// Render the pending invalidation and clear it. Returns the render time
+    /// in microseconds.
+    fn live_render_pending(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+    ) -> crate::Result<u128> {
+        let render_started = Instant::now();
+        let regions = pending_invalidation
+            .content_regions
+            .as_render_regions(self.frame.width, self.frame.height);
+        let layout_invalidation = pending_invalidation.flags.layout
+            || pending_invalidation.flags.style
+            || self.resized_since_last_render;
+        self.render_widget_with_regions(root, regions.as_deref(), layout_invalidation)?;
+        self.apply_layout_info_to_tree();
+        self.publish_devtools_snapshot(root);
+        *pending_invalidation = PendingInvalidation::default();
+        Ok(render_started.elapsed().as_micros())
+    }
+
+    /// Deliver one frame tick: stylesheet reload, tick hooks and the Tick
+    /// event, then render.
+    fn live_tick(
+        &mut self,
+        root: &mut dyn Widget,
+        lp: &mut LiveLoop,
+        t: &mut PassTiming,
+    ) -> crate::Result<LoopStep> {
+        let _style_scope = self.live_style_scope();
+        let tick = lp.tick;
+        let pending_invalidation = &mut lp.pending_invalidation;
+        if let Some(reload) = self.poll_stylesheet() {
+            self.absorb_stylesheet_reload(root, &reload, pending_invalidation);
+        }
+        root.on_tick(tick);
+        // `root.on_tick` only reaches the app adapter — its composed
+        // children were extracted into the arena at tree build, so the
+        // widgets that actually animate (LoadingIndicator, …) never see
+        // the frame tick through it. Deliver the tick to every ACTIVE
+        // arena widget (and any cover widget — the `loading` overlay),
+        // mirroring `headless_advance_ticks`.
+        if let Some(tree) = self.active_widget_tree_mut() {
+            deliver_frame_tick(tree, tick);
+        }
+        // Opt-in: inactive screens tick too (background animation).
+        self.deliver_background_screen_ticks(tick);
+
+        if self.live_app_tick_hook(root, pending_invalidation, tick) {
+            return Ok(LoopStep::Stop);
+        }
+
+        let mut outcome = self.dispatch_event_auto(root, &Event::Tick(tick));
+        self.absorb_outcome(
+            &mut outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(
+            &mut msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        // Re-sync the docked ToastRack from the notification store when it
+        // changed (a `notify`, or a `NotificationExpired` removal from an
+        // elapsed rack timer / toast click). Auto-dismiss timing is owned
+        // by the rack node's widget timers, not a runtime prune.
+        if self.notifications_dirty && self.refresh_toast_rack() {
+            pending_invalidation.request_full_content();
+        }
+        if pending_invalidation.flags.style
+            || pending_invalidation.flags.layout
+            || self.style_snapshot_cache.is_empty()
+        {
+            let phase_started = Instant::now();
+            self.dispatch_style_transition_requests(root);
+            t.style_transition_us += phase_started.elapsed().as_micros();
+        }
+        if outcome.stop_requested || msg_outcome.stop_requested {
+            return Ok(LoopStep::Stop);
+        }
+
+        let any_active = self.any_widget_active_auto(root);
+        if let Some(tree) = self.active_widget_tree_mut()
+            && sync_widget_controlled_child_display_tree(tree, root)
+        {
+            pending_invalidation.request_flags(crate::event::InvalidationFlags::layout());
+            pending_invalidation.request_full_content();
+        }
+        self.absorb_pending_recompositions(pending_invalidation);
+        self.absorb_pending_query_refreshes(pending_invalidation);
+        if pending_invalidation.is_dirty()
+            || self.resized_since_last_render
+            || any_active
+            || lp.prev_any_active
+        {
+            t.tick_render_us = self.live_render_pending(root, pending_invalidation)?;
+        }
+        lp.prev_any_active = any_active;
+        lp.last_tick = Instant::now();
+        lp.tick += 1;
+        Ok(LoopStep::Proceed)
+    }
+
+    /// Run the app's `on_app_tick` hook. Returns true when the app should
+    /// stop.
+    fn live_app_tick_hook(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+        tick: u64,
+    ) -> bool {
+        let mut app_tick_ctx = EventCtx::default();
+        {
+            let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut app_tick_ctx);
+            root.on_app_tick(self, tick, &mut __wctx);
+            __wctx.__enqueue_reactive_if_dirty();
+        }
+        let mut app_tick_outcome = DispatchOutcome::from_event_ctx(&mut app_tick_ctx);
+        self.absorb_outcome(
+            &mut app_tick_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        if app_tick_outcome.stop_requested {
+            return true;
+        }
+        let mut app_tick_msg_outcome =
+            self.dispatch_message_queue_with_runtime(root, app_tick_outcome.messages);
+        self.absorb_outcome(
+            &mut app_tick_msg_outcome,
+            pending_invalidation,
+            InvalidationScope::Global,
+        );
+        app_tick_msg_outcome.stop_requested
     }
 
     // ── Headless test harness (App::run_test / Pilot) ────────────────────────
