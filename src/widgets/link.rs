@@ -81,7 +81,9 @@ impl Link {
 
     fn activate(&mut self, ctx: &mut crate::event::WidgetCtx) {
         if !self.url.is_empty() {
-            // Attempt to open the URL in the default browser/handler.
+            // Attempt to open the URL in the default browser/handler. Not under
+            // `cargo test`: the unit tests activate links, and each would open a tab.
+            #[cfg(not(test))]
             if let Err(err) = open::that(&self.url) {
                 eprintln!("Link: failed to open URL {:?}: {}", self.url, err);
             }
