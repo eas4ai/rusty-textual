@@ -20,18 +20,21 @@ use rusty_textual::prelude::*;
 
 const CSS: &str = r#"
 #calculator {
+    layout: grid;
     grid-size: 4 6;
+    grid-rows: 3 3 3 3 3 3;
     grid-gutter: 1;
     padding: 1 2;
-    width: auto;
-    height: auto;
-    align: center middle;
+    width: 100%;
+    height: 100%;
 }
 
 #numbers {
     column-span: 4;
+    width: 100%;
     height: 3;
-    content-align: right middle;
+    background: $surface;
+    text-align: right;
     text-style: bold;
 }
 
@@ -298,28 +301,31 @@ impl CalculatorApp {
 impl TextualApp for CalculatorApp {
     fn compose(&mut self) -> AppRoot {
         use ButtonVariant as V;
-        AppRoot::new()
-            .with_child(Static::new("0").id("numbers"))
-            .with_child(Self::button("AC", "ac", V::Primary))
-            .with_child(Self::button("C", "c", V::Primary))
-            .with_child(Self::button("+/-", "plus-minus", V::Primary))
-            .with_child(Self::button("%", "percent", V::Primary))
-            .with_child(Self::button("÷", "divide", V::Warning))
-            .with_child(Self::button("7", "number-7", V::Default))
-            .with_child(Self::button("8", "number-8", V::Default))
-            .with_child(Self::button("9", "number-9", V::Default))
-            .with_child(Self::button("×", "multiply", V::Warning))
-            .with_child(Self::button("4", "number-4", V::Default))
-            .with_child(Self::button("5", "number-5", V::Default))
-            .with_child(Self::button("6", "number-6", V::Default))
-            .with_child(Self::button("-", "minus", V::Warning))
-            .with_child(Self::button("1", "number-1", V::Default))
-            .with_child(Self::button("2", "number-2", V::Default))
-            .with_child(Self::button("3", "number-3", V::Default))
-            .with_child(Self::button("+", "plus", V::Warning))
-            .with_child(Self::button("0", "number-0", V::Default))
-            .with_child(Self::button(".", "point", V::Default))
-            .with_child(Self::button("=", "equals", V::Warning))
+        AppRoot::new().with_child(
+            Container::new()
+                .with_child(Static::new("0").id("numbers"))
+                .with_child(Self::button("AC", "ac", V::Primary))
+                .with_child(Self::button("C", "c", V::Primary))
+                .with_child(Self::button("+/-", "plus-minus", V::Primary))
+                .with_child(Self::button("%", "percent", V::Primary))
+                .with_child(Self::button("÷", "divide", V::Warning))
+                .with_child(Self::button("7", "number-7", V::Default))
+                .with_child(Self::button("8", "number-8", V::Default))
+                .with_child(Self::button("9", "number-9", V::Default))
+                .with_child(Self::button("×", "multiply", V::Warning))
+                .with_child(Self::button("4", "number-4", V::Default))
+                .with_child(Self::button("5", "number-5", V::Default))
+                .with_child(Self::button("6", "number-6", V::Default))
+                .with_child(Self::button("-", "minus", V::Warning))
+                .with_child(Self::button("1", "number-1", V::Default))
+                .with_child(Self::button("2", "number-2", V::Default))
+                .with_child(Self::button("3", "number-3", V::Default))
+                .with_child(Self::button("+", "plus", V::Warning))
+                .with_child(Self::button("0", "number-0", V::Default))
+                .with_child(Self::button(".", "point", V::Default))
+                .with_child(Self::button("=", "equals", V::Warning))
+                .id("calculator"),
+        )
     }
 
     fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
@@ -382,6 +388,54 @@ mod smoke {
             .app_mut()
             .with_widget_mut_as::<Static, _>(node, |d| d.text().to_string())
             .expect("display text")
+    }
+
+    /// Layout: the keypad is a 4-column grid (display + 5 button rows), not
+    /// a single stacked column. Regression test — the `#calculator` grid
+    /// container was missing, so every button rendered full-width.
+    #[test]
+    fn headless_keypad_is_four_column_grid() {
+        fn rect(pilot: &mut Pilot, sel: &str) -> (u16, u16, u16, u16) {
+            let node = pilot.app().query_one(sel).expect("keypad node");
+            pilot.app().layout_rect_for_test(node).expect("layout rect")
+        }
+
+        run_test_sized(CalculatorApp::new(), 80, 24, |pilot| {
+            pilot.pause()?;
+            // Display spans the full grid width on the first row.
+            let numbers = rect(pilot, "#numbers");
+            let ac = rect(pilot, "#ac");
+            let percent = rect(pilot, "#percent");
+            assert_eq!(numbers.0, ac.0, "display left edge aligns with grid");
+            assert_eq!(numbers.2, percent.2, "display spans full grid width");
+            // Each key row shares one y band, ordered top-to-bottom.
+            let rows = [
+                ["#ac", "#c", "#plus-minus", "#percent"],
+                ["#divide", "#number-7", "#number-8", "#number-9"],
+                ["#multiply", "#number-4", "#number-5", "#number-6"],
+                ["#minus", "#number-1", "#number-2", "#number-3"],
+                ["#plus", "#number-0", "#point", "#equals"],
+            ];
+            let mut prev_y1 = numbers.3;
+            for row in rows {
+                let rects: Vec<_> = row.iter().map(|sel| rect(pilot, sel)).collect();
+                for r in &rects {
+                    assert!(r.2 > r.0 && r.3 > r.1, "key has zero area: {r:?}");
+                    assert_eq!((r.1, r.3), (rects[0].1, rects[0].3), "row shares a y band");
+                }
+                for pair in rects.windows(2) {
+                    assert!(pair[0].0 < pair[1].0, "row orders left-to-right");
+                }
+                assert!(
+                    rects[0].1 >= prev_y1,
+                    "rows order top-to-bottom: prev end {prev_y1}, row start {}",
+                    rects[0].1
+                );
+                prev_y1 = rects[0].3;
+            }
+            Ok(())
+        })
+        .expect("run_test_sized");
     }
 
     /// End-to-end through the real key path: 9 - 3 = 6 on the display.

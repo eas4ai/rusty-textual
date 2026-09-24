@@ -241,6 +241,7 @@ mod tests {
         let app = MarkdownApp {
             nav_state: (true, false),
             initial_path: None,
+            viewer: HandleSlot::new(),
         };
         assert_eq!(app.check_action("back", &[]), None); // dimmed
         assert_eq!(app.check_action("forward", &[]), Some(true)); // enabled
@@ -251,6 +252,7 @@ mod tests {
         let app = MarkdownApp {
             nav_state: (false, true),
             initial_path: None,
+            viewer: HandleSlot::new(),
         };
         assert_eq!(app.check_action("forward", &[]), None); // dimmed
         assert_eq!(app.check_action("back", &[]), Some(true)); // enabled

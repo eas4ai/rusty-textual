@@ -32,10 +32,10 @@
         font-family: arial;
     }
 
-    .terminal-2289894918-r2 { fill: #e0e0e0;font-weight: bold }
+    .terminal-2289894918-r3 { fill: #e0e0e0 }
 .terminal-2289894918-r4 { fill: #ddedf9;font-weight: bold }
+.terminal-2289894918-r2 { fill: #e0e0e0;font-weight: bold }
 .terminal-2289894918-r1 { fill: #c5c8c6 }
-.terminal-2289894918-r3 { fill: #e0e0e0 }
     </style>
 
     <defs>

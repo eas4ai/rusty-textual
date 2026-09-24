@@ -62,8 +62,6 @@ Screen {
 }
 
 Grid {
-    width: auto;
-    height: auto;
     border: thick $border;
     padding: 1 2;
     grid-size: 3 3;
@@ -318,6 +316,38 @@ mod smoke {
                     .unwrap_or(false)
             })
             .collect()
+    }
+
+    /// Layout: the nine switches form a 3x3 grid (phone-keypad rows),
+    /// not a crushed column. Regression test — `width/height: auto` on the
+    /// grid collapsed the tracks; the grid now sizes from its parent.
+    #[test]
+    fn headless_switches_form_three_by_three_grid() {
+        fn rect(pilot: &mut Pilot, sel: &str) -> (u16, u16, u16, u16) {
+            let node = pilot.app().query_one(sel).expect("switch node");
+            pilot.app().layout_rect_for_test(node).expect("layout rect")
+        }
+
+        run_test_sized(MerlinApp::new(), 80, 24, |pilot| {
+            pilot.pause()?;
+            for row in [
+                ["#switch-7", "#switch-8", "#switch-9"],
+                ["#switch-4", "#switch-5", "#switch-6"],
+                ["#switch-1", "#switch-2", "#switch-3"],
+            ] {
+                let rects: Vec<_> = row.iter().map(|sel| rect(pilot, sel)).collect();
+                for r in &rects {
+                    assert!(r.2 > r.0 && r.3 > r.1, "switch has zero area: {r:?}");
+                    assert_eq!((r.1, r.3), (rects[0].1, rects[0].3), "row shares a y band");
+                }
+                for pair in rects.windows(2) {
+                    assert!(pair[0].0 < pair[1].0, "row orders left-to-right");
+                    assert!(pair[0].2 <= pair[1].0, "switches do not overlap");
+                }
+            }
+            Ok(())
+        })
+        .expect("run_test_sized");
     }
 
     /// End-to-end: all nine switches compose, and flipping switch 1 through

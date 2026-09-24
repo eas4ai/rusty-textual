@@ -33,12 +33,12 @@
     }
 
     .terminal-3391622659-r3 { fill: #c5c8c6 }
-.terminal-3391622659-r6 { fill: #e0e0e0 }
+.terminal-3391622659-r4 { fill: #6b6b6b }
 .terminal-3391622659-r7 { fill: #ff0000 }
 .terminal-3391622659-r2 { fill: #0178d4 }
 .terminal-3391622659-r1 { fill: #121212 }
-.terminal-3391622659-r4 { fill: #6b6b6b }
 .terminal-3391622659-r5 { fill: #0178d4;font-weight: bold }
+.terminal-3391622659-r6 { fill: #e0e0e0 }
     </style>
 
     <defs>

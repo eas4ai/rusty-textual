@@ -1634,6 +1634,16 @@ impl App {
         self.query(selector)?.first()
     }
 
+    /// Test/observability hook: layout rect `(x0, y0, x1, y1)` of `node` in
+    /// the active tree (`None` when there is no active tree or the node is
+    /// unknown). Lets headless tests (including example smoke tests) assert
+    /// row order and non-overlap without reaching into crate-internal fields.
+    #[doc(hidden)]
+    pub fn layout_rect_for_test(&self, node: NodeId) -> Option<(u16, u16, u16, u16)> {
+        let tree = self.active_widget_tree()?;
+        crate::layout::inspect_node_rects(tree, node).map(|(layout, _)| layout)
+    }
+
     /// Query exactly one node; fails when more than one match exists.
     pub fn query_exactly_one(&self, selector: &str) -> std::result::Result<NodeId, QueryError> {
         self.query(selector)?.only_one()

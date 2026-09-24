@@ -32,18 +32,18 @@
         font-family: arial;
     }
 
-    .terminal-2521551042-r8 { fill: #ffc473 }
-.terminal-2521551042-r3 { fill: #e0e0e0 }
+    .terminal-2521551042-r5 { fill: #e0e0e0;font-style: italic }
+.terminal-2521551042-r2 { fill: #0178d4;text-decoration: underline }
 .terminal-2521551042-r6 { fill: #e0e0e0;font-weight: bold }
-.terminal-2521551042-r9 { fill: #ffffff }
+.terminal-2521551042-r8 { fill: #ffc473 }
 .terminal-2521551042-r11 { fill: #ffffff;font-weight: bold }
 .terminal-2521551042-r4 { fill: #f4bb6e }
-.terminal-2521551042-r5 { fill: #e0e0e0;font-style: italic }
-.terminal-2521551042-r10 { fill: #ffc473;text-decoration: underline }
 .terminal-2521551042-r12 { fill: #7dc092 }
-.terminal-2521551042-r2 { fill: #0178d4;text-decoration: underline }
+.terminal-2521551042-r3 { fill: #e0e0e0 }
 .terminal-2521551042-r1 { fill: #c5c8c6 }
 .terminal-2521551042-r7 { fill: #57a5e2 }
+.terminal-2521551042-r9 { fill: #ffffff }
+.terminal-2521551042-r10 { fill: #ffc473;text-decoration: underline }
     </style>
 
     <defs>

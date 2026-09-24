@@ -27,19 +27,23 @@ Screen {
     background: $panel;
 }
 
-#title {
+// One dock per edge: same-edge docks overlap (Python parity), so the form
+// rows live in a single docked container and stack in normal flow inside it.
+#form {
     dock: top;
-    margin: 1 0;
+    margin: 0 0 1 0;
+}
+
+#title {
+    margin: 0 0 1 0;
 }
 
 #due {
-    dock: top;
     margin: 0 0 1 0;
 }
 
 #add {
-    dock: top;
-    margin: 0 0 1 0;
+    width: 100%;
 }
 
 #list {
@@ -255,12 +259,16 @@ impl TextualApp for ReminderApp {
         let (year, month, day) = DEFAULT_DUE;
         AppRoot::new()
             .with_child(
-                Input::new()
-                    .with_placeholder("What needs doing?")
-                    .id("title"),
+                Vertical::new()
+                    .with_child(
+                        Input::new()
+                            .with_placeholder("What needs doing?")
+                            .id("title"),
+                    )
+                    .with_child(DateInput::new(year, month, day).id("due"))
+                    .with_child(Button::new("Add").id("add").variant(ButtonVariant::Primary))
+                    .id("form"),
             )
-            .with_child(DateInput::new(year, month, day).id("due"))
-            .with_child(Button::new("Add").id("add").variant(ButtonVariant::Primary))
             .with_child(Vertical::new().id("list"))
             .with_child(Static::new("").id("status"))
     }
@@ -415,6 +423,44 @@ mod smoke {
             (stored[0].year, stored[0].month, stored[0].day),
             DEFAULT_DUE
         );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Layout: the form rows stack top-to-bottom with no overlap. Regression
+    /// test — three `dock: top` siblings used to paint over each other
+    /// (same-edge docks overlap by design), so the rows now live in one
+    /// docked `#form` container.
+    #[test]
+    fn headless_form_rows_do_not_overlap() {
+        fn overlaps(a: (u16, u16, u16, u16), b: (u16, u16, u16, u16)) -> bool {
+            a.0 < b.2 && b.0 < a.2 && a.1 < b.3 && b.1 < a.3
+        }
+
+        let path = test_store("layout");
+        let _ = std::fs::remove_file(&path);
+        run_test_sized(ReminderApp::with_store(path.clone()), 80, 24, |pilot| {
+            pilot.pause()?;
+            let rect = |sel: &str| {
+                let node = pilot.app().query_one(sel).expect("form node");
+                pilot.app().layout_rect_for_test(node).expect("layout rect")
+            };
+            let title = rect("#title");
+            let due = rect("#due");
+            let add = rect("#add");
+            for (name, r) in [("title", title), ("due", due), ("add", add)] {
+                assert!(r.2 > r.0 && r.3 > r.1, "{name} has zero area: {r:?}");
+            }
+            assert!(
+                title.3 <= due.1 && due.3 <= add.1,
+                "form rows out of order: title={title:?} due={due:?} add={add:?}"
+            );
+            assert!(
+                !overlaps(title, due) && !overlaps(due, add) && !overlaps(title, add),
+                "form rows overlap: title={title:?} due={due:?} add={add:?}"
+            );
+            Ok(())
+        })
+        .expect("run_test_sized");
         let _ = std::fs::remove_file(&path);
     }
 
