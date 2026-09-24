@@ -3663,9 +3663,9 @@ mod tests {
         ) {
             for change in changes {
                 if change.field_name == "val" {
+                    use crate::reactive::ReactiveFlags;
                     self.dispatch_count += 1;
                     // Always re-record to create a cycle
-                    use crate::reactive::ReactiveFlags;
                     let new = *change.new_value.downcast_ref::<i32>().unwrap();
                     ctx.record_change(
                         "val",

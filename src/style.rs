@@ -3454,8 +3454,6 @@ impl Style {
     /// Returns `(property_name, formatted_value)` pairs for every set (non-None/non-Unset)
     /// property. Used by the devtools snapshot protocol to expose resolved CSS.
     pub fn debug_properties(&self) -> Vec<(&'static str, String)> {
-        let mut out = Vec::new();
-
         fn fmt_color(c: &Color) -> String {
             if c.a >= 1.0 {
                 format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)
@@ -3519,6 +3517,8 @@ impl Style {
                 parts.join(" ")
             }
         }
+
+        let mut out = Vec::new();
 
         // Text / color
         if let Some(c) = &self.fg {

@@ -54,7 +54,7 @@ impl std::fmt::Debug for Welcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Welcome")
             .field("close_label", &self.close_label)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

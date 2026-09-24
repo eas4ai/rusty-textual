@@ -517,7 +517,6 @@ impl crate::widgets::Render for Row {
         let mut child_lines: Vec<Vec<Vec<Segment>>> = Vec::new();
 
         for (idx, child) in self.children.iter().enumerate() {
-            let _resolved = &resolved_list[idx];
             let margin = margins[idx];
             let child_width = widths[idx].max(1);
             let constraints = constraints_list[idx];

@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::sync::OnceLock;
 
 use super::ast::{Combinator, PseudoClass, SelectorChain, SelectorMeta};
@@ -50,10 +51,10 @@ pub(super) fn selector_chain_string(chain: &SelectorChain) -> String {
 }
 
 pub(super) fn style_debug_matches(meta: &SelectorMeta) -> bool {
+    static FILTERS: OnceLock<Vec<String>> = OnceLock::new();
     if !crate::debug::channel_enabled(crate::debug::DebugChannel::Style) {
         return false;
     }
-    static FILTERS: OnceLock<Vec<String>> = OnceLock::new();
     let filters = FILTERS.get_or_init(|| {
         std::env::var("TEXTUAL_DEBUG_STYLE_FILTER")
             .ok()
@@ -154,7 +155,7 @@ pub(super) fn style_debug_meta_label(meta: &SelectorMeta) -> String {
         label.push_str(":nocolor");
     }
     if let Some(idx) = meta.states.child_index {
-        label.push_str(&format!(":child({idx})"));
+        let _ = write!(label, ":child({idx})");
     }
     label
 }

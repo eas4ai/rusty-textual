@@ -281,8 +281,6 @@ fn t5_4_with_control_override_observed() {
 
 #[test]
 fn t5_5_builtin_and_custom_coexist_in_same_queue() {
-    let log = Arc::new(Mutex::new(Vec::<Received>::new()));
-
     // A recorder that also counts ButtonPressed to prove both go through the
     // same dispatch mechanism.
     struct MixedRecorder {
@@ -311,6 +309,8 @@ fn t5_5_builtin_and_custom_coexist_in_same_queue() {
             }
         }
     }
+
+    let log = Arc::new(Mutex::new(Vec::<Received>::new()));
 
     let button_count = Arc::new(Mutex::new(0u32));
 

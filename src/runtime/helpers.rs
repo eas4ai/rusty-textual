@@ -156,9 +156,8 @@ pub(crate) fn collect_focus_chain_tree_sorted(
 ) -> Vec<NodeId> {
     // Trap scope: nearest trapping ancestor of the focused widget (or the
     // focused widget itself), mirroring `ancestors_with_self` in Python.
-    let mut root = match tree.root() {
-        Some(r) => r,
-        None => return Vec::new(),
+    let Some(mut root) = tree.root() else {
+        return Vec::new();
     };
     if let Some(mut id) = focused {
         while let Some(node) = tree.get(id) {
@@ -538,9 +537,8 @@ fn resolve_style_along_path(
 
 /// Check whether any widget in the tree reports `is_active() == true`.
 pub(crate) fn any_widget_active_tree(tree: &WidgetTree) -> bool {
-    let root = match tree.root() {
-        Some(r) => r,
-        None => return false,
+    let Some(root) = tree.root() else {
+        return false;
     };
     for node_id in tree.walk_depth_first(root) {
         if let Some(node) = tree.get(node_id) {

@@ -264,9 +264,7 @@ impl crate::widgets::Render for ContentSwitcher {
         let width = options.size.0.max(1);
         let height = options.size.1.max(1);
 
-        let child = if let Some(child) = self.visible_child() {
-            child
-        } else {
+        let Some(child) = self.visible_child() else {
             // No visible child: render empty space
             let mut out = Segments::new();
             out.push(Segment::styled(" ".repeat(width), rich_rs::Style::new()));

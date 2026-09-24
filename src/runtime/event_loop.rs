@@ -903,9 +903,8 @@ fn set_overlay_modal_display_tree(
     overlay: NodeId,
     visible: bool,
 ) -> bool {
-    let modal_root = match tree.children(overlay).get(1).copied() {
-        Some(id) => id,
-        None => return false,
+    let Some(modal_root) = tree.children(overlay).get(1).copied() else {
+        return false;
     };
     let node_ids = tree.walk_depth_first(modal_root);
     let mut changed = false;
@@ -1561,15 +1560,6 @@ fn collect_stylesheet_affected_widgets_tree(
     app_active: bool,
     app_pseudos: AppRuntimePseudos,
 ) -> Vec<NodeId> {
-    if changed_rules.is_empty() {
-        return Vec::new();
-    }
-    let root = match tree.root() {
-        Some(r) => r,
-        None => return Vec::new(),
-    };
-
-    let mut affected = HashSet::new();
     // Recursive visitor that maintains an ancestor chain for selector matching.
     fn visit(
         tree: &crate::widget_tree::WidgetTree,
@@ -1605,6 +1595,14 @@ fn collect_stylesheet_affected_widgets_tree(
         ancestors.pop();
     }
 
+    if changed_rules.is_empty() {
+        return Vec::new();
+    }
+    let Some(root) = tree.root() else {
+        return Vec::new();
+    };
+
+    let mut affected = HashSet::new();
     let mut ancestors = Vec::new();
     visit(
         tree,
@@ -1730,12 +1728,29 @@ fn transition_requests_for_style_change(
     previous: &crate::style::Style,
     current: &crate::style::Style,
 ) -> (Vec<AnimationRequest>, Vec<StyleAnimationRequest>) {
+    // Float/scalar properties dispatched as Event::AnimationValue (existing path).
+    const NUMERIC_ANIMATABLE: [&str; 4] = ["opacity", "text_opacity", "offset_x", "offset_y"];
+
+    // StyleValue properties applied directly to widget inline styles.
+    const STYLE_ANIMATABLE: [&str; 12] = [
+        "fg",
+        "bg",
+        "width",
+        "height",
+        "min_width",
+        "max_width",
+        "min_height",
+        "max_height",
+        "margin",
+        "padding",
+        "tint",
+        "background_tint",
+    ];
+
     if previous == current {
         return (Vec::new(), Vec::new());
     }
 
-    // Float/scalar properties dispatched as Event::AnimationValue (existing path).
-    const NUMERIC_ANIMATABLE: [&str; 4] = ["opacity", "text_opacity", "offset_x", "offset_y"];
     let numeric: Vec<AnimationRequest> = NUMERIC_ANIMATABLE
         .iter()
         .filter_map(|property| {
@@ -1755,21 +1770,6 @@ fn transition_requests_for_style_change(
         })
         .collect();
 
-    // StyleValue properties applied directly to widget inline styles.
-    const STYLE_ANIMATABLE: [&str; 12] = [
-        "fg",
-        "bg",
-        "width",
-        "height",
-        "min_width",
-        "max_width",
-        "min_height",
-        "max_height",
-        "margin",
-        "padding",
-        "tint",
-        "background_tint",
-    ];
     let style: Vec<StyleAnimationRequest> = STYLE_ANIMATABLE
         .iter()
         .filter_map(|property| {
@@ -1964,15 +1964,14 @@ fn paste_from_system_clipboard() -> Option<String> {
 }
 
 fn run_copy_command(program: &str, args: &[&str], text: &str) -> bool {
-    let mut child = match Command::new(program)
+    let Ok(mut child) = Command::new(program)
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-    {
-        Ok(child) => child,
-        Err(_) => return false,
+    else {
+        return false;
     };
 
     let write_ok = match child.stdin.take() {
@@ -2140,6 +2139,8 @@ impl App {
     }
 
     fn publish_devtools_snapshot(&mut self, root: &mut dyn Widget) {
+        use std::fmt::Write as _;
+
         let Some(devtools) = &self.devtools else {
             return;
         };
@@ -2265,32 +2266,37 @@ impl App {
 
         let mut snapshot = String::new();
         snapshot.push_str("version\t2\n");
-        snapshot.push_str(&format!("pid\t{}\n", std::process::id()));
-        snapshot.push_str(&format!("app_active\t{}\n", bool_flag(self.app_active)));
-        snapshot.push_str(&format!(
-            "debug_layout\t{}\n",
+        let _ = writeln!(snapshot, "pid\t{}", std::process::id());
+        let _ = writeln!(snapshot, "app_active\t{}", bool_flag(self.app_active));
+        let _ = writeln!(
+            snapshot,
+            "debug_layout\t{}",
             bool_flag(self.debug_layout.enabled)
-        ));
-        snapshot.push_str(&format!(
-            "frame\t{}\t{}\n",
+        );
+        let _ = writeln!(
+            snapshot,
+            "frame\t{}\t{}",
             self.frame.width, self.frame.height
-        ));
-        snapshot.push_str(&format!(
-            "hovered\t{}\n",
+        );
+        let _ = writeln!(
+            snapshot,
+            "hovered\t{}",
             self.hovered
                 .map_or_else(|| "-".to_string(), |id| node_id_to_ffi(id).to_string())
-        ));
-        snapshot.push_str(&format!(
-            "focused\t{}\n",
+        );
+        let _ = writeln!(
+            snapshot,
+            "focused\t{}",
             focused.map_or_else(|| "-".to_string(), |id| node_id_to_ffi(id).to_string())
-        ));
-        snapshot.push_str(&format!("widget_count\t{}\n", widget_lines.len()));
+        );
+        let _ = writeln!(snapshot, "widget_count\t{}", widget_lines.len());
         for hint in &self.last_binding_hints {
-            snapshot.push_str(&format!(
-                "hint\t{}\t{}\n",
+            let _ = writeln!(
+                snapshot,
+                "hint\t{}\t{}",
                 sanitize_snapshot_field(&hint.key),
                 sanitize_snapshot_field(&hint.description)
-            ));
+            );
         }
         for line in widget_lines {
             snapshot.push_str(&line);
@@ -2300,11 +2306,12 @@ impl App {
         for (node_id, style) in &self.style_snapshot_cache {
             let ffi_id = node_id_to_ffi(*node_id);
             for (prop, value) in style.debug_properties() {
-                snapshot.push_str(&format!(
-                    "style\t{ffi_id}\t{}\t{}\n",
+                let _ = writeln!(
+                    snapshot,
+                    "style\t{ffi_id}\t{}\t{}",
                     sanitize_snapshot_field(prop),
                     sanitize_snapshot_field(&value)
-                ));
+                );
             }
         }
         devtools.publish_snapshot(snapshot);
@@ -4740,8 +4747,8 @@ impl App {
         root: &mut dyn Widget,
         pending: &mut PendingInvalidation,
     ) -> crate::Result<()> {
-        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         const MAX_ITERATIONS: usize = 10_000;
+        let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         for _ in 0..MAX_ITERATIONS {
             let mut progressed = false;
 
@@ -4991,6 +4998,10 @@ impl App {
         root: &mut dyn Widget,
         pending: &mut PendingInvalidation,
     ) -> bool {
+        // Wait limits for the worker quiescence loop below.
+        const WORKER_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
+        const QUIESCENCE_GRACE: std::time::Duration = std::time::Duration::from_millis(25);
+
         let pending_workers = drain_accumulated_worker_requests();
         let has_new = !pending_workers.is_empty();
 
@@ -5041,8 +5052,6 @@ impl App {
         // active. Fast workers (weather) complete within the window; parked
         // workers (questions01) yield control back to the pump so the test body
         // can drive the next interaction (the click that dismisses the screen).
-        const WORKER_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
-        const QUIESCENCE_GRACE: std::time::Duration = std::time::Duration::from_millis(25);
         let deadline = Instant::now() + WORKER_WAIT_BUDGET;
         let mut last_activity = Instant::now();
         while !registry.active_workers().is_empty() && Instant::now() < deadline {
@@ -6186,7 +6195,7 @@ impl App {
 
     fn absorb_stylesheet_reload(
         &mut self,
-        _root: &mut dyn Widget,
+        root: &mut dyn Widget,
         reload: StylesheetReload,
         pending: &mut PendingInvalidation,
     ) {
@@ -6207,7 +6216,7 @@ impl App {
             )
         } else {
             collect_stylesheet_affected_widgets_root(
-                _root,
+                root,
                 &reload.changed_rules,
                 self.app_active,
                 AppRuntimePseudos {
@@ -7046,7 +7055,7 @@ impl App {
     fn dispatch_event_to_target_auto(
         &mut self,
         root: &mut dyn Widget,
-        _target: NodeId,
+        target: NodeId,
         event: &Event,
     ) -> DispatchOutcome {
         self.ensure_runtime_tree(root);
@@ -7055,7 +7064,7 @@ impl App {
         let dismissed_tooltip = matches!(event, Event::Action(Action::CommandPalette))
             && self.start_command_palette_tooltip_cooldown();
         let tree = self.active_widget_tree_mut().expect("tree should exist");
-        let mut outcome = dispatch_event_to_target_tree(tree, _target, event);
+        let mut outcome = dispatch_event_to_target_tree(tree, target, event);
         if dismissed_tooltip {
             outcome.repaint_requested = true;
             outcome
@@ -7081,13 +7090,13 @@ impl App {
     fn dispatch_mouse_scroll_to_target_auto(
         &mut self,
         root: &mut dyn Widget,
-        _target: NodeId,
+        target: NodeId,
         delta_x: i32,
         delta_y: i32,
     ) -> DispatchOutcome {
         self.ensure_runtime_tree(root);
         let tree = self.active_widget_tree_mut().expect("tree should exist");
-        dispatch_mouse_scroll_to_target_tree(tree, _target, delta_x, delta_y)
+        dispatch_mouse_scroll_to_target_tree(tree, target, delta_x, delta_y)
     }
 
     /// Dispatch a message queue via the arena tree.
@@ -7195,7 +7204,7 @@ impl App {
     pub(super) fn call_on_mouse_move_auto(
         &mut self,
         root: &mut dyn Widget,
-        _target: NodeId,
+        target: NodeId,
         x: u16,
         y: u16,
         capture_only: bool,
@@ -7203,15 +7212,15 @@ impl App {
         self.ensure_runtime_tree(root);
         if let Some(tree) = self.active_widget_tree_mut() {
             if capture_only {
-                let (lx, ly) = tree_content_local_coords(tree, _target, x, y);
-                if let Some(node) = tree.get_mut(_target) {
-                    let _dispatch_guard = set_dispatch_recipient(_target, node.state);
+                let (lx, ly) = tree_content_local_coords(tree, target, x, y);
+                if let Some(node) = tree.get_mut(target) {
+                    let _dispatch_guard = set_dispatch_recipient(target, node.state);
                     node.widget.on_mouse_move(lx, ly)
                 } else {
                     false
                 }
             } else {
-                call_on_mouse_move_tree(tree, _target, x, y)
+                call_on_mouse_move_tree(tree, target, x, y)
             }
         } else {
             false
@@ -8139,7 +8148,6 @@ mod tests {
     /// Applies each node's `focused` field as `set_focus_state` on the tree after
     /// mounting (Step 6: focus lives on the node record, not the widget).
     fn build_tree_from_style_node(node: StyleNode) -> (crate::widget_tree::WidgetTree, NodeId) {
-        let mut tree = crate::widget_tree::WidgetTree::new();
         fn insert(
             tree: &mut crate::widget_tree::WidgetTree,
             mut node: StyleNode,
@@ -8160,6 +8168,7 @@ mod tests {
             }
             id
         }
+        let mut tree = crate::widget_tree::WidgetTree::new();
         let root_id = insert(&mut tree, node, None);
         (tree, root_id)
     }
@@ -8172,12 +8181,12 @@ mod tests {
             .with_child(button)
             .with_child(StyleNode::new("Label"));
 
-        let (tree, _root_id) = build_tree_from_style_node(root_node);
+        let (tree, root_id) = build_tree_from_style_node(root_node);
 
         // Descendant combinator: Container.panel > Button.special
         let changed = StyleSheet::parse("Container.panel > Button.special { bg: #334455; }");
         let affected = collect_stylesheet_affected_widgets_root(
-            tree.get(_root_id).unwrap().widget.as_ref(),
+            tree.get(root_id).unwrap().widget.as_ref(),
             changed.rules(),
             true,
             crate::css::AppRuntimePseudos::default(),
@@ -8575,11 +8584,11 @@ mod tests {
 
     #[test]
     fn worker_full_pipeline_ctx_to_registry() {
+        use crate::event::EventCtx;
+        use crate::worker::{WorkerRegistry, WorkerState, process_worker_requests};
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        use crate::event::EventCtx;
-        use crate::worker::{WorkerRegistry, WorkerState, process_worker_requests};
         let _ = super::drain_accumulated_worker_requests();
 
         // 1. Widget creates worker requests via EventCtx.
@@ -8629,10 +8638,10 @@ mod tests {
 
     #[test]
     fn worker_request_processing_in_runtime_hot_path_is_non_blocking() {
+        use crate::worker::{WorkerRegistry, WorkerRequest, WorkerRequestPayload, WorkerState};
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        use crate::worker::{WorkerRegistry, WorkerRequest, WorkerRequestPayload, WorkerState};
 
         let owner = node_id_from_ffi(90);
         let mut registry = WorkerRegistry::new();
@@ -8702,13 +8711,13 @@ mod tests {
 
     #[test]
     fn worker_state_changes_route_to_owning_widgets_via_message_pipeline() {
-        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
         use crate::worker::{
             WorkerRegistry, WorkerRequest, WorkerRequestPayload, WorkerState,
             process_worker_requests,
         };
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let success_hits = Arc::new(AtomicUsize::new(0));
         let error_hits = Arc::new(AtomicUsize::new(0));

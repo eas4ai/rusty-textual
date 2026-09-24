@@ -594,7 +594,14 @@ impl std::fmt::Debug for ReactiveCtx {
             .field("repaint_requested", &self.repaint_requested)
             .field("layout_requested", &self.layout_requested)
             .field("recompose_requested", &self.recompose_requested)
+            .field(
+                "bindings_refresh_requested",
+                &self.bindings_refresh_requested,
+            )
+            .field("class_ops", &self.class_ops.len())
             .field("styles_requested", &self.styles_requested)
+            .field("messages", &self.messages.len())
+            .field("prevented", &self.prevented.len())
             .finish()
     }
 }

@@ -2704,12 +2704,11 @@ impl App {
         if !self.query("HelpPanel")?.is_empty() {
             return Ok(false);
         }
-        let mount_parent = match self
+        let Some(mount_parent) = self
             .active_widget_tree()
             .and_then(super::widget_tree::WidgetTree::root)
-        {
-            Some(root) => root,
-            None => return Ok(false),
+        else {
+            return Ok(false);
         };
 
         if let Some(tree) = self.active_widget_tree_mut() {
@@ -3048,9 +3047,8 @@ impl App {
     ///
     /// Returns `true` if the recompose was applied.
     pub fn recompose_app(&mut self, fresh_root: crate::widgets::AppRoot) -> bool {
-        let app_content_id = match self.app_content_node_id() {
-            Some(id) => id,
-            None => return false,
+        let Some(app_content_id) = self.app_content_node_id() else {
+            return false;
         };
         let Some(tree) = self.active_widget_tree_mut() else {
             return false;
@@ -3412,27 +3410,40 @@ impl App {
     ///
     /// Returns `true` if any scroll offset changed.
     pub fn scroll_visible(&mut self, node_id: NodeId) -> bool {
+        // Minimum delta to make [pos, pos + size) fit in [current, current + viewport).
+        fn min_scroll_delta(pos: usize, size: usize, current: usize, viewport: usize) -> i32 {
+            if size >= viewport {
+                // Widget larger than viewport: align top-left.
+                pos as i32 - current as i32
+            } else if pos < current {
+                // Widget is above/left of current view.
+                pos as i32 - current as i32
+            } else if pos + size > current + viewport {
+                // Widget extends below/right of current view.
+                (pos + size) as i32 - (current + viewport) as i32
+            } else {
+                0
+            }
+        }
+
         // --- Read phase (immutable borrow) ---
 
         // Gather (ancestor_id, widget_rect, ancestor_rect, scroll_offset, viewport_size)
         // for the first scrollable ancestor.
         let scroll_info = {
-            let tree = match self.active_widget_tree() {
-                Some(t) => t,
-                None => return false,
+            let Some(tree) = self.active_widget_tree() else {
+                return false;
             };
-            let node = match tree.get(node_id) {
-                Some(n) => n,
-                None => return false,
+            let Some(node) = tree.get(node_id) else {
+                return false;
             };
             let widget_rect = node.layout_rect;
 
             // Walk ancestors to find the first scrollable one.
             let mut found = None;
             for anc_id in tree.ancestors(node_id) {
-                let anc_node = match tree.get(anc_id) {
-                    Some(n) => n,
-                    None => continue,
+                let Some(anc_node) = tree.get(anc_id) else {
+                    continue;
                 };
                 if let Some(vp) = anc_node.widget.scroll_viewport_size() {
                     let scroll_off = anc_node.widget.scroll_offset();
@@ -3447,10 +3458,9 @@ impl App {
             found
         };
 
-        let (anc_id, widget_rect, anc_rect, (offset_x, offset_y), (vp_w, vp_h)) = match scroll_info
-        {
-            Some(info) => info,
-            None => return false,
+        let Some((anc_id, widget_rect, anc_rect, (offset_x, offset_y), (vp_w, vp_h))) = scroll_info
+        else {
+            return false;
         };
 
         // --- Compute target offsets ---
@@ -3473,21 +3483,6 @@ impl App {
         let widget_h = widget_rect.y1.saturating_sub(widget_rect.y0) as usize;
 
         // Minimum delta to make [virt_x, virt_x + widget_w) fit in [offset_x, offset_x + vp_w).
-        fn min_scroll_delta(pos: usize, size: usize, current: usize, viewport: usize) -> i32 {
-            if size >= viewport {
-                // Widget larger than viewport: align top-left.
-                pos as i32 - current as i32
-            } else if pos < current {
-                // Widget is above/left of current view.
-                pos as i32 - current as i32
-            } else if pos + size > current + viewport {
-                // Widget extends below/right of current view.
-                (pos + size) as i32 - (current + viewport) as i32
-            } else {
-                0
-            }
-        }
-
         let delta_x = min_scroll_delta(virt_x, widget_w, offset_x, vp_w);
         let delta_y = min_scroll_delta(virt_y, widget_h, offset_y, vp_h);
 
@@ -4572,10 +4567,10 @@ impl App {
     /// Returns [`Error::Terminal`] when writing `\x07` to stdout or flushing
     /// stdout fails. Headless apps never return `Err`.
     pub fn bell(&self) -> Result<()> {
+        use std::io::Write;
         if self.headless {
             return Ok(());
         }
-        use std::io::Write;
         let stdout = std::io::stdout();
         let mut handle = stdout.lock();
         handle.write_all(b"\x07")?;
@@ -4890,9 +4885,8 @@ impl App {
         }
 
         // Verify the mode is registered.
-        let factory = match self.modes.get(name) {
-            Some(f) => f,
-            None => return false,
+        let Some(factory) = self.modes.get(name) else {
+            return false;
         };
 
         // Create the new screen from the factory before popping the old one,
@@ -7504,9 +7498,6 @@ mod tests {
     // (event_loop.rs `dispatch_message_queue_auto_calls_app_message_when_root_message_unhandled`).
     #[test]
     fn screen_callback_defers_app_message_via_widget_command_on_dismiss() {
-        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
         use crate::message::CommandPaletteCommandSelected;
         use crate::runtime::commands::{WidgetCommand, take_widget_commands};
         use crate::screen::{Screen, ScreenMessageCtx, ScreenResult};
@@ -7552,6 +7543,9 @@ mod tests {
             }
         }
 
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut app = App::new().expect("app should initialize");
         // The selection callback defers the command via the runtime WidgetCommand
         // FIFO (exactly what the adapter's command-palette open path will do at

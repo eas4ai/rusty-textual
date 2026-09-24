@@ -738,8 +738,16 @@ mod focus_tests {
         let requests = ctx.take_animation_requests();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].attribute, ScrollView::OFFSET_Y_ATTR);
-        assert_eq!(requests[0].start, 0.0);
-        assert_eq!(requests[0].end, 1.0);
+        assert!(
+            requests[0].start.abs() < f32::EPSILON,
+            "start = {}",
+            requests[0].start
+        );
+        assert!(
+            (requests[0].end - 1.0).abs() < f32::EPSILON,
+            "end = {}",
+            requests[0].end
+        );
     }
 
     #[test]
@@ -963,17 +971,25 @@ mod focus_tests {
         }
 
         assert!(ctx.handled());
-        assert_eq!(
-            root.scroll_offset_f32().1,
-            0.0,
-            "animated message should not jump offset immediately"
+        let offset_y = root.scroll_offset_f32().1;
+        assert!(
+            offset_y.abs() < f32::EPSILON,
+            "animated message should not jump offset immediately (offset_y = {offset_y})"
         );
         let requests = ctx.take_animation_requests();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].target, root.node_id());
         assert_eq!(requests[0].attribute, APP_ROOT_OFFSET_Y_ATTR);
-        assert_eq!(requests[0].start, 0.0);
-        assert_eq!(requests[0].end, 24.5);
+        assert!(
+            requests[0].start.abs() < f32::EPSILON,
+            "start = {}",
+            requests[0].start
+        );
+        assert!(
+            (requests[0].end - 24.5).abs() < f32::EPSILON,
+            "end = {}",
+            requests[0].end
+        );
     }
 
     #[test]
@@ -1039,7 +1055,11 @@ mod focus_tests {
         }
 
         assert!(ctx.handled());
-        assert_eq!(root.scroll_offset_f32().1, 24.5);
+        let offset_y = root.scroll_offset_f32().1;
+        assert!(
+            (offset_y - 24.5).abs() < f32::EPSILON,
+            "offset_y = {offset_y}"
+        );
         assert_eq!(root.scroll_offset().1, 25);
     }
 }

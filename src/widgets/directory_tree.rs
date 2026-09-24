@@ -400,13 +400,13 @@ impl DirectoryTree {
 
     fn on_node_state_changed(
         &mut self,
-        _old: crate::widgets::NodeState,
+        old: crate::widgets::NodeState,
         new: crate::widgets::NodeState,
     ) {
         // Propagate hover state changes to the inner Tree so hover highlighting clears
         // when DirectoryTree loses hover.
         if !new.hovered {
-            self.tree.on_node_state_changed(_old, new);
+            self.tree.on_node_state_changed(old, new);
         }
     }
 

@@ -71,7 +71,7 @@ impl std::fmt::Debug for Button {
             .field("flat", &self.flat)
             .field("compact", &self.compact)
             .field("classes", &self.seed.classes)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

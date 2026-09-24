@@ -694,26 +694,6 @@ pub(crate) fn take_layout_affected_style_changes() -> bool {
 /// `resolve_style` returns correct results. Typically invoked once per
 /// render pass, right after `begin_style_render_pass()`.
 pub(crate) fn apply_display_visibility_to_tree(tree: &mut WidgetTree) {
-    let root = match tree.root() {
-        Some(r) => r,
-        None => return,
-    };
-
-    // Build the :focus-within set: the focused node + all its ancestors.
-    let mut focus_within_ids = std::collections::HashSet::new();
-    for node_id in tree.walk_depth_first(root) {
-        if let Some(node) = tree.get(node_id) {
-            if node.state.focused {
-                focus_within_ids.insert(node_id);
-                for ancestor in tree.ancestors(node_id) {
-                    focus_within_ids.insert(ancestor);
-                }
-                break;
-            }
-        }
-    }
-    let _fw_guard = super::context::set_focus_within(focus_within_ids);
-
     // `inherited_vis` is the effective visibility flowing down from ancestors.
     // Python (`DOMNode.visible`): a node with no OWN `visibility` rule inherits
     // its parent's effective visibility; an explicit rule overrides it. So a
@@ -745,6 +725,25 @@ pub(crate) fn apply_display_visibility_to_tree(tree: &mut WidgetTree) {
             }
         });
     }
+
+    let Some(root) = tree.root() else {
+        return;
+    };
+
+    // Build the :focus-within set: the focused node + all its ancestors.
+    let mut focus_within_ids = std::collections::HashSet::new();
+    for node_id in tree.walk_depth_first(root) {
+        if let Some(node) = tree.get(node_id) {
+            if node.state.focused {
+                focus_within_ids.insert(node_id);
+                for ancestor in tree.ancestors(node_id) {
+                    focus_within_ids.insert(ancestor);
+                }
+                break;
+            }
+        }
+    }
+    let _fw_guard = super::context::set_focus_within(focus_within_ids);
 
     apply_node(tree, root, Visibility::Visible);
 }

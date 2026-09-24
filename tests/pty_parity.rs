@@ -1995,6 +1995,8 @@ fn write_actual(case: &Case, actual: &str) -> PathBuf {
 }
 
 fn diff_summary(golden: &str, actual: &str) -> String {
+    use std::fmt::Write as _;
+
     let mut out = String::new();
     let golden_lines: Vec<&str> = golden.lines().collect();
     let actual_lines: Vec<&str> = actual.lines().collect();
@@ -2003,10 +2005,8 @@ fn diff_summary(golden: &str, actual: &str) -> String {
         let g = golden_lines.get(i).copied().unwrap_or("<missing>");
         let a = actual_lines.get(i).copied().unwrap_or("<missing>");
         if g != a {
-            out.push_str(&format!(
-                "line {:>2}:\n  python | {g}\n  rust   | {a}\n",
-                i + 1
-            ));
+            // Writing to a `String` cannot fail.
+            let _ = writeln!(out, "line {:>2}:\n  python | {g}\n  rust   | {a}", i + 1);
         }
     }
     out

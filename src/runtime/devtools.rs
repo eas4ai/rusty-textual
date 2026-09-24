@@ -518,13 +518,17 @@ fn stream_logs(stream: &mut TcpStream) -> io::Result<()> {
 /// `CHANNELS` payload: a `protocol` header plus one line per debug channel
 /// with its stream state and env-configured log file (or `-`).
 fn channels_payload() -> String {
+    use std::fmt::Write as _;
+
     let mut out = format!("protocol\t{PROTOCOL_VERSION}\n");
     for (name, file, streaming) in debug::channel_states() {
-        out.push_str(&format!(
-            "channel\t{name}\t{}\t{}\n",
+        // Writing to a `String` cannot fail.
+        let _ = writeln!(
+            out,
+            "channel\t{name}\t{}\t{}",
             u8::from(streaming),
             file.unwrap_or("-")
-        ));
+        );
     }
     out
 }

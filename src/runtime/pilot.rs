@@ -417,10 +417,10 @@ impl<'a> Pilot<'a> {
     /// Forwards any error from the headless pump. The pump draws only into the
     /// in-memory frame, so it does not fail in headless mode.
     pub fn advance_clock(&mut self, delta: Duration) -> Result<()> {
-        let mut remaining = delta;
         // Bound iterations defensively (a fast interval over a long delta still
         // terminates; this only guards against a pathological zero-interval).
         const MAX_STEPS: usize = 1_000_000;
+        let mut remaining = delta;
         // Walk to each timer deadline that falls within `remaining`, advancing
         // and pumping (which drains ready timers, runs app-level timer
         // callbacks, processes messages/recompositions, and re-renders — exactly

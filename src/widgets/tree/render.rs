@@ -50,8 +50,6 @@ pub(super) struct VisibleNode {
 
 impl Tree {
     pub(super) fn visible_nodes(&self) -> Vec<VisibleNode> {
-        let depth_offset: usize = usize::from(!self.show_root);
-
         fn walk(
             tree: &Tree,
             ids: &[TreeNodeId],
@@ -102,6 +100,7 @@ impl Tree {
             }
         }
 
+        let depth_offset: usize = usize::from(!self.show_root);
         let mut out = Vec::new();
         let mut path = Vec::new();
         let mut is_last = Vec::new();

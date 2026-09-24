@@ -394,7 +394,6 @@ fn p1g13_hover_enter_requests_repaint_via_tree_dispatch() {
     );
 
     let btn1 = children[0];
-    let _btn2 = children[1];
 
     // Hover enter on btn1.
     let enter_outcome = dispatch_event_to_target_tree(

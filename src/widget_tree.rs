@@ -619,10 +619,7 @@ impl WidgetTree {
     /// Ordered children of `node`.
     #[must_use]
     pub fn children(&self, node: NodeId) -> &[NodeId] {
-        self.arena
-            .get(node)
-            .map(|n| n.children.as_slice())
-            .unwrap_or(&[])
+        self.arena.get(node).map_or(&[], |n| n.children.as_slice())
     }
 
     /// Whether `ancestor` is a proper ancestor of `descendant`.
@@ -917,9 +914,8 @@ impl WidgetTree {
                 "invalid selector: {selector}"
             )));
         }
-        let root = match self.root {
-            Some(r) => r,
-            None => return Ok(Vec::new()),
+        let Some(root) = self.root else {
+            return Ok(Vec::new());
         };
         let all_nodes = self.walk_depth_first(root);
         let mut result = Vec::new();
@@ -1062,9 +1058,8 @@ impl WidgetTree {
         if parts.is_empty() {
             return false;
         }
-        let meta = match self.node_selector_meta(node) {
-            Some(m) => m,
-            None => return false,
+        let Some(meta) = self.node_selector_meta(node) else {
+            return false;
         };
         // The last part of the chain must match the node itself.
         if !parts[parts.len() - 1].matches(&meta) {
@@ -1080,13 +1075,11 @@ impl WidgetTree {
             let comb = combinators[combinators.len() - 1 - i];
             match comb {
                 Combinator::Child => {
-                    let parent = match self.parent(current) {
-                        Some(p) => p,
-                        None => return false,
+                    let Some(parent) = self.parent(current) else {
+                        return false;
                     };
-                    let parent_meta = match self.node_selector_meta(parent) {
-                        Some(m) => m,
-                        None => return false,
+                    let Some(parent_meta) = self.node_selector_meta(parent) else {
+                        return false;
                     };
                     if !selector.matches(&parent_meta) {
                         return false;

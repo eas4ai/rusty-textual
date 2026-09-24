@@ -362,6 +362,16 @@ pub fn layout_grid(
     viewport: (u16, u16),
     parent_style: &Style,
 ) {
+    // One placed child. Mirrors Python's `cell_size_map`: per widget ->
+    // (start_col, start_row, col_span, row_span).
+    struct Placement {
+        child: NodeId,
+        start_col: usize,
+        start_row: usize,
+        col_span: usize,
+        row_span: usize,
+    }
+
     if children.is_empty() {
         return;
     }
@@ -410,16 +420,8 @@ pub fn layout_grid(
     };
 
     // --- Placement: assign each child to its primary cell (occupancy-based) ---
-    // Mirrors Python's `cell_size_map`: per widget -> (start_col, start_row,
-    // col_span, row_span). Computed BEFORE track resolution so `auto` tracks can
-    // measure the widgets that occupy them.
-    struct Placement {
-        child: NodeId,
-        start_col: usize,
-        start_row: usize,
-        col_span: usize,
-        row_span: usize,
-    }
+    // Computed BEFORE track resolution so `auto` tracks can measure the
+    // widgets that occupy them.
     let mut placements: Vec<Placement> = Vec::with_capacity(children.len());
     // cell_map[(col, row)] -> index into `placements` for the widget whose
     // PRIMARY cell is (col, row); used for auto-track measurement.

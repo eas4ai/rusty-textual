@@ -238,7 +238,7 @@ impl crate::widgets::Render for Underline {
         "Underline"
     }
 
-    fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
+    fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
         let width = options.size.0.max(1);
         let state = self.state.lock().expect("underline state lock");
         let (start, end) = if state.show_highlight {
@@ -260,7 +260,7 @@ impl crate::widgets::Render for Underline {
             active_style = active_style.with_color(fg);
         }
         let bar = crate::renderables::Bar::new((start, end), active_style, base_style).width(width);
-        bar.render(_console, options)
+        bar.render(console, options)
     }
 }
 static NEXT_TABS_SCOPE_ID: AtomicU64 = AtomicU64::new(1);
@@ -1287,8 +1287,8 @@ impl crate::widgets::Interactive for Tabs {
         self.last_size = Some((width, height));
     }
 
-    fn on_layout(&mut self, width: u16, _height: u16) {
-        self.last_size = Some((width, _height));
+    fn on_layout(&mut self, width: u16, height: u16) {
+        self.last_size = Some((width, height));
         let next_layout_width = usize::from(width).max(1);
         if next_layout_width == self.layout_width {
             self.layout_width = next_layout_width;

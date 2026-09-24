@@ -37,9 +37,8 @@ pub fn arrange_dock(
 
     for &child in docked {
         let style = get_node_style(tree, child);
-        let edge = match style.dock {
-            Some(d) => d,
-            None => continue,
+        let Some(edge) = style.dock else {
+            continue;
         };
 
         // Box model against the FULL region (not a progressively-shrunk one).

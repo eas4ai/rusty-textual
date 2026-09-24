@@ -384,20 +384,6 @@ fn render_outline_uses_table_chars() {
 
 #[test]
 fn render_panel_title_flip() {
-    // Panel border: fg/bg are swapped for the title text (BORDER_TITLE_FLIP).
-    // Build a widget with Panel border on all sides, title "T", left-aligned.
-    let red = Color::parse("red").unwrap();
-    let panel_edge = BorderEdge::Edge {
-        border_type: BorderType::Panel,
-        color: red,
-    };
-    let mut style = Style::new();
-    style.border_top = panel_edge;
-    style.border_right = panel_edge;
-    style.border_bottom = panel_edge;
-    style.border_left = panel_edge;
-    style.border_title_align = Some(HorizontalAlign::Left);
-
     struct PanelCaptionWidget {
         title: &'static str,
         seed: NodeSeed,
@@ -425,6 +411,48 @@ fn render_panel_title_flip() {
             std::mem::take(&mut self.seed)
         }
     }
+
+    struct SolidCaptionWidget {
+        title: &'static str,
+        seed: NodeSeed,
+    }
+    impl Widget for SolidCaptionWidget {
+        fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
+            let w = options.size.0.max(1);
+            let h = options.size.1.max(1);
+            let mut out = Segments::new();
+            for y in 0..h {
+                out.push(Segment::new(" ".repeat(w)));
+                if y + 1 < h {
+                    out.push(Segment::line());
+                }
+            }
+            out
+        }
+        fn style_type(&self) -> &'static str {
+            "SolidCaptionWidget"
+        }
+        fn border_title(&self) -> Option<&str> {
+            Some(self.title)
+        }
+        fn take_node_seed(&mut self) -> NodeSeed {
+            std::mem::take(&mut self.seed)
+        }
+    }
+
+    // Panel border: fg/bg are swapped for the title text (BORDER_TITLE_FLIP).
+    // Build a widget with Panel border on all sides, title "T", left-aligned.
+    let red = Color::parse("red").unwrap();
+    let panel_edge = BorderEdge::Edge {
+        border_type: BorderType::Panel,
+        color: red,
+    };
+    let mut style = Style::new();
+    style.border_top = panel_edge;
+    style.border_right = panel_edge;
+    style.border_bottom = panel_edge;
+    style.border_left = panel_edge;
+    style.border_title_align = Some(HorizontalAlign::Left);
 
     let mut seed = NodeSeed::default();
     seed.styles.style = style;
@@ -460,34 +488,6 @@ fn render_panel_title_flip() {
     style2.border_bottom = solid_edge;
     style2.border_left = solid_edge;
     style2.border_title_align = Some(HorizontalAlign::Left);
-
-    struct SolidCaptionWidget {
-        title: &'static str,
-        seed: NodeSeed,
-    }
-    impl Widget for SolidCaptionWidget {
-        fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
-            let w = options.size.0.max(1);
-            let h = options.size.1.max(1);
-            let mut out = Segments::new();
-            for y in 0..h {
-                out.push(Segment::new(" ".repeat(w)));
-                if y + 1 < h {
-                    out.push(Segment::line());
-                }
-            }
-            out
-        }
-        fn style_type(&self) -> &'static str {
-            "SolidCaptionWidget"
-        }
-        fn border_title(&self) -> Option<&str> {
-            Some(self.title)
-        }
-        fn take_node_seed(&mut self) -> NodeSeed {
-            std::mem::take(&mut self.seed)
-        }
-    }
 
     let mut seed2 = NodeSeed::default();
     seed2.styles.style = style2;

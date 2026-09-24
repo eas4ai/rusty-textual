@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use rich_rs::{Console, ControlType, Segments};
 
 pub fn capture_segments_raw_bytes(segments: &Segments) -> Vec<u8> {
@@ -17,7 +19,9 @@ pub fn escape_terminal_bytes(bytes: &[u8]) -> String {
             b'\r' => out.push_str("\\r"),
             b'\t' => out.push_str("\\t"),
             0x20..=0x7e => out.push(byte as char),
-            _ => out.push_str(&format!("\\x{byte:02x}")),
+            _ => {
+                let _ = write!(out, "\\x{byte:02x}");
+            }
         }
     }
     out

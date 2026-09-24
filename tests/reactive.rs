@@ -753,12 +753,12 @@ impl WatchWithAppWidget {
 
 #[test]
 fn watch_with_app_dispatches_with_runtime() {
+    use rusty_textual::reactive::ReactiveChange;
     let mut w = WatchWithAppWidget { value: 0 };
     let mut ctx = make_ctx();
     let mut app = App::new().expect("runtime init");
 
     // Synthesize a change
-    use rusty_textual::reactive::ReactiveChange;
     let changes = vec![ReactiveChange {
         field_name: "value",
         flags: ReactiveFlags::reactive(),
@@ -793,11 +793,11 @@ impl VarWatchWithAppWidget {
 
 #[test]
 fn var_with_watch_with_app_parses_and_dispatches() {
+    use rusty_textual::reactive::ReactiveChange;
     let mut w = VarWatchWithAppWidget { show: false };
     let mut app = App::new().expect("runtime init");
     let mut ctx = make_ctx();
 
-    use rusty_textual::reactive::ReactiveChange;
     let changes = vec![ReactiveChange {
         field_name: "show",
         flags: ReactiveFlags::var(),
@@ -883,13 +883,13 @@ impl MixedWatchWidget {
 
 #[test]
 fn mixed_watch_kinds_one_dispatch_with_app() {
+    use rusty_textual::reactive::ReactiveChange;
     let mut w = MixedWatchWidget {
         plain: 0,
         with_app: 0,
     };
     let mut app = App::new().expect("runtime init");
 
-    use rusty_textual::reactive::ReactiveChange;
     let changes = vec![
         ReactiveChange {
             field_name: "plain",

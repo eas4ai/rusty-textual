@@ -329,10 +329,7 @@ impl Tree {
     /// The ordered children of `id` (empty for a leaf or unknown id).
     #[must_use]
     pub fn children_of(&self, id: TreeNodeId) -> &[TreeNodeId] {
-        self.nodes
-            .get(id)
-            .map(|n| n.children.as_slice())
-            .unwrap_or(&[])
+        self.nodes.get(id).map_or(&[], |n| n.children.as_slice())
     }
 
     /// The sibling list containing `id`: its parent's children, or the root

@@ -49,6 +49,8 @@ fn col(c: vt100::Color) -> String {
 }
 
 fn serialize(parser: &vt100::Parser) -> String {
+    use std::fmt::Write as _;
+
     let screen = parser.screen();
     let mut serial = String::new();
     for r in 0..ROWS {
@@ -73,17 +75,19 @@ fn serialize(parser: &vt100::Parser) -> String {
             } else if cfg == fg && cbg == bg {
                 run.push_str(&chs);
             } else {
-                serial.push_str(&format!("[{start}-{}] {run:?} fg={fg} bg={bg}\n", c - 1));
+                // Writing to a `String` cannot fail.
+                let _ = writeln!(serial, "[{start}-{}] {run:?} fg={fg} bg={bg}", c - 1);
                 start = c;
                 fg = cfg;
                 bg = cbg;
                 run = chs;
             }
         }
-        serial.push_str(&format!(
-            "[{start}-{}] {run:?} fg={fg} bg={bg}\n--row {r}--\n",
+        let _ = writeln!(
+            serial,
+            "[{start}-{}] {run:?} fg={fg} bg={bg}\n--row {r}--",
             COLS - 1
-        ));
+        );
     }
     serial
 }
@@ -175,9 +179,7 @@ fn interactive_parity() {
             eprintln!("SKIP {} (no bin)", case.name);
             continue;
         }
-        let golden = if let Ok(g) = std::fs::read_to_string(golden_path(case.name)) {
-            g
-        } else {
+        let Ok(golden) = std::fs::read_to_string(golden_path(case.name)) else {
             eprintln!("SKIP {} (no golden)", case.name);
             continue;
         };

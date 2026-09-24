@@ -161,7 +161,9 @@ fn save_screenshot_auto_filename() {
         pilot.pause()?;
         let written = pilot.app().save_screenshot(None, None)?;
         assert!(
-            written.ends_with(".svg"),
+            std::path::Path::new(&written)
+                .extension()
+                .is_some_and(|ext| ext == "svg"),
             "auto filename must be SVG: {written}"
         );
         assert!(

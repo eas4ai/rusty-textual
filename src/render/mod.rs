@@ -8,6 +8,7 @@
 
 use std::cmp;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 use rich_rs::{
     Console, ConsoleOptions, MetaValue, Renderable, Segment, Segments, Style, StyleMeta,
@@ -166,7 +167,8 @@ impl FrameBuffer {
         let mut out = String::new();
         out.push_str("lines:\n");
         for (y, line) in self.as_plain_lines().iter().enumerate() {
-            out.push_str(&format!("{y}: \"{line}\"\n"));
+            // Writing to a `String` cannot fail.
+            let _ = writeln!(out, "{y}: \"{line}\"");
         }
         out.push_str("meta:\n");
         for y in 0..self.height {
@@ -180,7 +182,7 @@ impl FrameBuffer {
                             continue;
                         }
                     }
-                    out.push_str(&format!("({x},{y}): {meta:?}\n"));
+                    let _ = writeln!(out, "({x},{y}): {meta:?}");
                 }
             }
         }

@@ -594,12 +594,10 @@ impl MaskedInput {
                     continue;
                 }
                 match ch {
-                    '\\' => {
-                        escaped = true;
-                        continue;
-                    }
+                    '\\' => escaped = true,
                     ';' => break,
-                    '>' | '<' | '!' => continue,
+                    // Modifiers are not editable slots.
+                    '>' | '<' | '!' => {}
                     _ => {
                         if template_char_def(ch).is_some() {
                             found = true;
@@ -1146,6 +1144,13 @@ impl crate::widgets::Render for MaskedInput {
     }
 
     fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum SlotVisual {
+            Normal,
+            Placeholder,
+            Cursor,
+        }
+
         let width = options.size.0.max(1);
 
         // Painted surface + component-colour resolution shared with `Input`
@@ -1163,13 +1168,6 @@ impl crate::widgets::Render for MaskedInput {
 
         let cursor_style = resolve_component_rich("input--cursor");
         let placeholder_style = resolve_component_rich("input--placeholder");
-
-        #[derive(Clone, Copy, PartialEq, Eq)]
-        enum SlotVisual {
-            Normal,
-            Placeholder,
-            Cursor,
-        }
 
         let mut runs: Vec<(SlotVisual, String)> = Vec::new();
         let mut push_char = |visual: SlotVisual, ch: char| {

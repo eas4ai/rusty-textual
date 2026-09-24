@@ -581,6 +581,7 @@ impl std::fmt::Debug for Regex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Regex")
             .field("pattern", &self.pattern.as_str())
+            .field("failure_description", &self.failure_description)
             .finish()
     }
 }

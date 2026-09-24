@@ -347,11 +347,7 @@ impl WrappedDocument {
     /// The wrapped sections of one document line (Python `get_sections`).
     pub fn get_sections<'a>(&self, document: &'a Document, line_index: usize) -> Vec<&'a str> {
         let line = document.line(line_index);
-        let offsets: &[usize] = self
-            .wrap_offsets
-            .get(line_index)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
+        let offsets: &[usize] = self.wrap_offsets.get(line_index).map_or(&[], Vec::as_slice);
         let mut sections = Vec::with_capacity(offsets.len() + 1);
         let mut start = 0usize;
         for &offset in offsets {
@@ -373,8 +369,7 @@ impl WrappedDocument {
     pub fn get_tab_widths(&self, line_index: usize) -> &[usize] {
         self.tab_width_cache
             .get(line_index)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+            .map_or(&[], Vec::as_slice)
     }
 
     /// The `(line_index, section_offset)` at a visual y-offset, if any.
@@ -387,8 +382,7 @@ impl WrappedDocument {
     pub fn line_offsets(&self, line_index: usize) -> &[usize] {
         self.line_index_to_offsets
             .get(line_index)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+            .map_or(&[], Vec::as_slice)
     }
 }
 

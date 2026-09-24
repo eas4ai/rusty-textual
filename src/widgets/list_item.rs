@@ -264,7 +264,7 @@ impl std::fmt::Debug for ListItem {
             .field("ordinal", &self.ordinal)
             .field("disabled", &self.disabled)
             .field("children", &self.children.len())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

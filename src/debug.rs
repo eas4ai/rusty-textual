@@ -336,10 +336,10 @@ pub(crate) fn debug_border(line: &str) {
 }
 
 pub(crate) fn border_debug_matches(label: &str) -> bool {
+    static FILTERS: OnceLock<Vec<String>> = OnceLock::new();
     if !channel_enabled(DebugChannel::Border) {
         return false;
     }
-    static FILTERS: OnceLock<Vec<String>> = OnceLock::new();
     let filters = FILTERS.get_or_init(|| {
         std::env::var("TEXTUAL_DEBUG_BORDER_FILTER")
             .ok()

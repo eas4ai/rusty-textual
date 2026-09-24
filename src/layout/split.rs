@@ -330,9 +330,8 @@ pub(crate) fn arrange_split(
 
     for &child in split_children {
         let style = get_node_style(tree, child);
-        let split = match style.split {
-            Some(s) => s,
-            None => continue,
+        let Some(split) = style.split else {
+            continue;
         };
         carve_edge(
             tree,

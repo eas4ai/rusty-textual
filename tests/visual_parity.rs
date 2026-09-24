@@ -16,6 +16,7 @@
 //!   `REPORT_ONLY=1`  cargo test --test `visual_parity`   # full tally, never panics
 //!   cargo test --test `visual_parity`                  # assert PASSING set
 
+use std::fmt::Write as _;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -439,17 +440,18 @@ fn capture(mut cmd: CommandBuilder, cwd: PathBuf) -> String {
                 } else if cfg == fg && cbg == bg {
                     run.push_str(&chs);
                 } else {
-                    serial.push_str(&format!("[{start}-{}] {run:?} fg={fg} bg={bg}\n", c - 1));
+                    let _ = writeln!(serial, "[{start}-{}] {run:?} fg={fg} bg={bg}", c - 1);
                     start = c;
                     fg = cfg;
                     bg = cbg;
                     run = chs;
                 }
             }
-            serial.push_str(&format!(
-                "[{start}-{}] {run:?} fg={fg} bg={bg}\n--row {r}--\n",
+            let _ = writeln!(
+                serial,
+                "[{start}-{}] {run:?} fg={fg} bg={bg}\n--row {r}--",
                 COLS - 1
-            ));
+            );
         }
         if !text.trim().is_empty() && text == prev {
             out = serial;
@@ -481,9 +483,7 @@ fn visual_parity_batch() {
     let mut ready: Vec<String> = Vec::new();
 
     for case in &cases {
-        let golden = if let Ok(g) = std::fs::read_to_string(golden_path(&case.name)) {
-            g
-        } else {
+        let Ok(golden) = std::fs::read_to_string(golden_path(&case.name)) else {
             n_skip += 1;
             continue;
         };

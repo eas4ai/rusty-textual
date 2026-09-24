@@ -480,15 +480,15 @@ pub(crate) fn dispatch_mouse_scroll_to_target_tree(
 /// This keeps envelope-level override support while making replacement
 /// semantics message-driven (Python parity).
 pub(crate) fn coalesce_message_queue(queue: &mut std::collections::VecDeque<MessageEnvelope>) {
-    if queue.len() < 2 {
-        return;
-    }
-
     fn envelope_replaces_pending(newer: &MessageEnvelope, older: &MessageEnvelope) -> bool {
         if newer.can_replace() {
             return newer.event.payload_type_id() == older.event.payload_type_id();
         }
         newer.message().can_replace(older.message())
+    }
+
+    if queue.len() < 2 {
+        return;
     }
 
     // Front-to-back; when the newer entry replaces the older, drop the older
@@ -645,9 +645,8 @@ fn dispatch_message_bubble(
         }
         // Sender not in tree — fall back to depth-first broadcast so
         // globally-addressed messages (overlay commands, etc.) still work.
-        let root = match tree.root() {
-            Some(r) => r,
-            None => return,
+        let Some(root) = tree.root() else {
+            return;
         };
         let node_ids = tree.walk_depth_first(root);
         for node_id in node_ids {
@@ -1652,14 +1651,14 @@ mod message_tests {
             root_id,
             Box::new(HintNode::new(false, vec![BindingHint::new("left", "back")])),
         );
-        let _leaf_id = tree.mount(
+        let leaf_id = tree.mount(
             mid_id,
             Box::new(HintNode::new(
                 true,
                 vec![BindingHint::new("enter", "activate")],
             )),
         );
-        tree.set_focus_state(_leaf_id, true);
+        tree.set_focus_state(leaf_id, true);
 
         let (hints, _sources) = active_binding_hints_tree(&tree, None, &Keymap::new());
         assert_eq!(
@@ -1700,14 +1699,14 @@ mod message_tests {
             false,
             vec![BindingHint::new("tab", "next")],
         )));
-        let _child_id = tree.mount(
+        let child_id = tree.mount(
             root_id,
             Box::new(
                 HintNode::new(true, vec![BindingHint::new("enter", "activate")])
                     .with_help("## Focused help\nUse enter"),
             ),
         );
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let focused = focused_help_metadata_tree(&tree);
         assert!(matches!(
@@ -1778,14 +1777,14 @@ mod message_tests {
             false,
             vec![BindingHint::new("tab", "next focus")],
         )));
-        let _child_id = tree.mount(
+        let child_id = tree.mount(
             root_id,
             Box::new(
                 HintNode::new(true, vec![BindingHint::new("left/right", "switch tab")])
                     .with_help("## First"),
             ),
         );
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let first = focused_help_metadata_tree(&tree);
         assert!(matches!(
@@ -1795,12 +1794,12 @@ mod message_tests {
 
         // State 2: focus moves to root which has its own help markup.
         let mut tree2 = WidgetTree::new();
-        let _root_id2 = tree2.set_root(Box::new(
+        let root_id2 = tree2.set_root(Box::new(
             HintNode::new(true, vec![BindingHint::new("tab", "next focus")]).with_help("## Second"),
         ));
-        tree2.set_focus_state(_root_id2, true);
+        tree2.set_focus_state(root_id2, true);
         let _child_id2 = tree2.mount(
-            _root_id2,
+            root_id2,
             Box::new(
                 HintNode::new(false, vec![BindingHint::new("left/right", "switch tab")])
                     .with_help("## First"),
@@ -1825,14 +1824,14 @@ mod message_tests {
             root_id,
             Box::new(HintNode::new(false, vec![BindingHint::new("left", "back")])),
         );
-        let _leaf_id = tree.mount(
+        let leaf_id = tree.mount(
             mid_id,
             Box::new(HintNode::new(
                 true,
                 vec![BindingHint::new("enter", "activate")],
             )),
         );
-        tree.set_focus_state(_leaf_id, true);
+        tree.set_focus_state(leaf_id, true);
 
         let (hints, sources) = active_binding_hints_tree(&tree, None, &Keymap::new());
         assert_eq!(
@@ -1927,8 +1926,8 @@ mod message_tests {
             false,
             vec![BindingHint::new("a", "Add node")],
         )));
-        let _tree_id = tree.mount(root_id, Box::new(HintNode::new(true, vec![])));
-        tree.set_focus_state(_tree_id, true);
+        let tree_id = tree.mount(root_id, Box::new(HintNode::new(true, vec![])));
+        tree.set_focus_state(tree_id, true);
 
         let (hints, sources) = active_binding_hints_tree(&tree, None, &Keymap::new());
         assert!(
@@ -2457,12 +2456,12 @@ mod envelope_tests {
     fn pump_has_no_message_cap() {
         // Review §1.1 (PR-02): the pump previously dropped everything past a
         // 1024-message cap with only a debug log. Python drains until empty.
+        const N: usize = 3000;
         let count = Arc::new(AtomicUsize::new(0));
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(MessageCounter::new(count.clone())));
         let leaf_id = tree.mount(root_id, Box::new(MessageCounter::new(count.clone())));
 
-        const N: usize = 3000;
         let messages: Vec<MessageEvent> = (0..N)
             .map(|i| {
                 MessageEvent::new(
@@ -3216,21 +3215,21 @@ mod binding_tests {
         // Tree: root → child (focused, binding "enter" → "submit")
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(Root));
-        let _child_id = tree.mount(
+        let child_id = tree.mount(
             root_id,
             Box::new(BindingWidget::new(
                 true,
                 vec![BindingDecl::new("enter", "submit", "Submit")],
             )),
         );
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let key = KeyEventData::from_crossterm(key_event(KeyCode::Enter, KeyModifiers::empty()));
         let result = match_binding_tree(&tree, &key);
         assert!(result.is_some());
         let (node_id, action) = result.unwrap();
         assert_eq!(action, "submit");
-        assert_eq!(node_id, _child_id);
+        assert_eq!(node_id, child_id);
     }
 
     #[test]
@@ -3241,9 +3240,9 @@ mod binding_tests {
             false,
             vec![BindingDecl::new("q", "app.quit", "Quit")],
         )));
-        let _child_id = tree.mount(root_id, Box::new(BindingWidget::new(false, vec![])));
+        let child_id = tree.mount(root_id, Box::new(BindingWidget::new(false, vec![])));
         // Focus the child
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let key =
             KeyEventData::from_crossterm(key_event(KeyCode::Char('q'), KeyModifiers::empty()));
@@ -3263,14 +3262,14 @@ mod binding_tests {
             false,
             vec![BindingDecl::new("escape", "close_app", "Close app").priority()],
         )));
-        let _child_id = tree.mount(
+        let child_id = tree.mount(
             root_id,
             Box::new(BindingWidget::new(
                 true,
                 vec![BindingDecl::new("escape", "cancel", "Cancel")],
             )),
         );
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let key = KeyEventData::from_crossterm(key_event(KeyCode::Esc, KeyModifiers::empty()));
         let result = match_binding_tree(&tree, &key);
@@ -3312,8 +3311,8 @@ mod binding_tests {
             false,
             vec![BindingDecl::new("enter", "submit", "Submit")],
         )));
-        let _child_id = tree.mount(root_id, Box::new(BindingWidget::new(true, vec![])));
-        tree.set_focus_state(_child_id, true);
+        let child_id = tree.mount(root_id, Box::new(BindingWidget::new(true, vec![])));
+        tree.set_focus_state(child_id, true);
 
         let key =
             KeyEventData::from_crossterm(key_event(KeyCode::Char('z'), KeyModifiers::empty()));
@@ -3653,7 +3652,7 @@ mod binding_tests {
             false,
             vec![BindingDecl::new("q", "quit", "Quit application")],
         )));
-        let _child_id = tree.mount(
+        let child_id = tree.mount(
             root_id,
             Box::new(BindingWidget::new(
                 true,
@@ -3663,7 +3662,7 @@ mod binding_tests {
                 ],
             )),
         );
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let (hints, _sources) = active_binding_hints_tree(&tree, None, &Keymap::new());
         // Root has 1 binding, child has 2 bindings = 3 total hints.

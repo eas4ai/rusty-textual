@@ -299,7 +299,7 @@ fn even_row_component_dark_gating() {
     let _guard = set_style_context(default_widget_stylesheet());
     let table = DataTable::empty();
 
-    let _dark = set_app_runtime_pseudos(AppRuntimePseudos {
+    let dark = set_app_runtime_pseudos(AppRuntimePseudos {
         dark: true,
         ..Default::default()
     });
@@ -309,7 +309,7 @@ fn even_row_component_dark_gating() {
         Some(token("$surface-darken-1").with_alpha(0.4)),
         "dark mode: even-row must resolve the :dark rule ($surface-darken-1 40%)"
     );
-    drop(_dark);
+    drop(dark);
 
     let _light = set_app_runtime_pseudos(AppRuntimePseudos {
         dark: false,

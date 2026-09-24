@@ -468,7 +468,7 @@ impl std::fmt::Debug for Markdown {
         f.debug_struct("Markdown")
             .field("markup_len", &self.markup.len())
             .field("pending_recompose", &self.pending_recompose)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

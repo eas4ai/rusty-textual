@@ -904,14 +904,6 @@ impl crate::widgets::Render for RichLog {
     }
 
     fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
-        let width = options.size.0.max(self.min_width).max(1);
-        let height = options.size.1.max(1);
-        self.widget_width.store(width, Ordering::Relaxed);
-        self.widget_height.store(height, Ordering::Relaxed);
-
-        let viewport_width = width;
-        let physical = self.physical_lines(console, options, viewport_width);
-        let content_height = physical.len().max(1);
         // Measure each physical line's CONTENT width (Python
         // `_widest_line_width`): rendered lines are padded to the render
         // width, so strip only the TRAILING blank run before measuring.
@@ -936,6 +928,15 @@ impl crate::widgets::Render for RichLog {
             }
             widths.into_iter().sum()
         }
+
+        let width = options.size.0.max(self.min_width).max(1);
+        let height = options.size.1.max(1);
+        self.widget_width.store(width, Ordering::Relaxed);
+        self.widget_height.store(height, Ordering::Relaxed);
+
+        let viewport_width = width;
+        let physical = self.physical_lines(console, options, viewport_width);
+        let content_height = physical.len().max(1);
         let widest = physical
             .iter()
             .map(|line| line_content_width(line))

@@ -282,6 +282,25 @@ fn build_heading_nodes(headings: &[HeadingEntry]) -> Vec<TreeNode> {
         children: Vec<TocNode>,
     }
 
+    // Convert TocNode tree to TreeNode tree.
+    // Python parity: parent nodes start expanded (Python expands as it walks down
+    // to place child headings), leaf nodes have allow_expand=false.
+    // Each node carries its block_id as data for click-to-scroll.
+    // Labels are prefixed with Roman numeral by heading level.
+    fn to_tree_node(toc: &TocNode) -> TreeNode {
+        let has_children = !toc.children.is_empty();
+        let numeral = NUMERALS.get(toc.level).copied().unwrap_or(' ');
+        let prefixed_label = format!("{} {}", numeral, toc.label);
+        let mut node = TreeNode::new(prefixed_label)
+            .expanded(has_children)
+            .allow_expand(has_children)
+            .with_data(toc.block_id.clone());
+        for child in &toc.children {
+            node = node.with_child(to_tree_node(child));
+        }
+        node
+    }
+
     let mut roots: Vec<TocNode> = Vec::new();
 
     for (level, title, block_id) in headings {
@@ -303,25 +322,6 @@ fn build_heading_nodes(headings: &[HeadingEntry]) -> Vec<TreeNode> {
             target = &mut last.children;
         }
         target.push(new_node);
-    }
-
-    // Convert TocNode tree to TreeNode tree.
-    // Python parity: parent nodes start expanded (Python expands as it walks down
-    // to place child headings), leaf nodes have allow_expand=false.
-    // Each node carries its block_id as data for click-to-scroll.
-    // Labels are prefixed with Roman numeral by heading level.
-    fn to_tree_node(toc: &TocNode) -> TreeNode {
-        let has_children = !toc.children.is_empty();
-        let numeral = NUMERALS.get(toc.level).copied().unwrap_or(' ');
-        let prefixed_label = format!("{} {}", numeral, toc.label);
-        let mut node = TreeNode::new(prefixed_label)
-            .expanded(has_children)
-            .allow_expand(has_children)
-            .with_data(toc.block_id.clone());
-        for child in &toc.children {
-            node = node.with_child(to_tree_node(child));
-        }
-        node
     }
 
     roots.iter().map(to_tree_node).collect()

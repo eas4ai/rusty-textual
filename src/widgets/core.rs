@@ -330,7 +330,7 @@ pub trait Widget: Send + Sync + Any {
 
     /// Render with full CSS styling, border composition, and segment tagging.
     ///
-    /// `_node_id` is the arena-assigned identity used for metadata tagging so
+    /// `node_id` is the arena-assigned identity used for metadata tagging so
     /// hit-test lookups remain compatible with `HitTestMap` and `NodeHitTestMap`.
     #[doc(hidden)]
     fn render_styled_dyn_obj(
@@ -338,13 +338,13 @@ pub trait Widget: Send + Sync + Any {
         console: &Console,
         options: &ConsoleOptions,
         debug: Option<&DebugLayout>,
-        _node_id: NodeId,
+        node_id: NodeId,
     ) -> Segments {
         // Set dispatch context so self.node_id() returns the correct arena
         // NodeId during render(). The guard restores the previous recipient
         // on drop, so nested/sibling renders don't leak context.
         let _dispatch_guard =
-            crate::runtime::dispatch_ctx::set_dispatch_recipient(_node_id, NodeState::default());
+            crate::runtime::dispatch_ctx::set_dispatch_recipient(node_id, NodeState::default());
 
         // Use the arena NodeId for metadata tagging — `apply_style_to_segments`
         // checks this value, so it must match the tag used here.
@@ -374,7 +374,7 @@ pub trait Widget: Send + Sync + Any {
             console,
             options,
             debug,
-            _node_id,
+            node_id,
             &meta,
             &resolved,
             &debug_widget_label,

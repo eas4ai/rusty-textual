@@ -196,6 +196,37 @@ impl FuzzyMatcher {
     }
 
     fn best_match_indices(query: &str, text: &str) -> Option<(f64, Vec<usize>)> {
+        fn recurse(
+            letter_positions: &[Vec<usize>],
+            positions_index: usize,
+            stack: &mut Vec<usize>,
+            candidate_chars: &[char],
+            best: &mut Option<(f64, Vec<usize>)>,
+        ) {
+            for &offset in &letter_positions[positions_index] {
+                if stack.last().is_some_and(|last| offset <= *last) {
+                    continue;
+                }
+                stack.push(offset);
+                if positions_index + 1 == letter_positions.len() {
+                    let score = FuzzyMatcher::score_positions(candidate_chars, stack);
+                    match best {
+                        Some((best_score, _)) if *best_score >= score => {}
+                        _ => *best = Some((score, stack.clone())),
+                    }
+                } else {
+                    recurse(
+                        letter_positions,
+                        positions_index + 1,
+                        stack,
+                        candidate_chars,
+                        best,
+                    );
+                }
+                let _ = stack.pop();
+            }
+        }
+
         if query.is_empty() {
             return Some((0.0, Vec::new()));
         }
@@ -243,37 +274,6 @@ impl FuzzyMatcher {
         let mut best: Option<(f64, Vec<usize>)> = None;
         let query_len = query_chars.len();
         let mut stack: Vec<usize> = Vec::with_capacity(query_len);
-
-        fn recurse(
-            letter_positions: &[Vec<usize>],
-            positions_index: usize,
-            stack: &mut Vec<usize>,
-            candidate_chars: &[char],
-            best: &mut Option<(f64, Vec<usize>)>,
-        ) {
-            for &offset in &letter_positions[positions_index] {
-                if stack.last().is_some_and(|last| offset <= *last) {
-                    continue;
-                }
-                stack.push(offset);
-                if positions_index + 1 == letter_positions.len() {
-                    let score = FuzzyMatcher::score_positions(candidate_chars, stack);
-                    match best {
-                        Some((best_score, _)) if *best_score >= score => {}
-                        _ => *best = Some((score, stack.clone())),
-                    }
-                } else {
-                    recurse(
-                        letter_positions,
-                        positions_index + 1,
-                        stack,
-                        candidate_chars,
-                        best,
-                    );
-                }
-                let _ = stack.pop();
-            }
-        }
 
         recurse(&letter_positions, 0, &mut stack, &text_chars, &mut best);
         best

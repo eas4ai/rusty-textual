@@ -189,7 +189,7 @@ impl Ord for SortKey {
             (SortKey::Tuple(a), SortKey::Tuple(b)) => {
                 for (x, y) in a.iter().zip(b.iter()) {
                     match x.cmp(y) {
-                        Ordering::Equal => continue,
+                        Ordering::Equal => {}
                         non_eq => return non_eq,
                     }
                 }

@@ -840,9 +840,8 @@ fn render_tree_node(
     debug: Option<&crate::debug::DebugLayout>,
     overlays: &mut Vec<QueuedOverlay>,
 ) {
-    let node = match tree.get(node_id) {
-        Some(n) => n,
-        None => return,
+    let Some(node) = tree.get(node_id) else {
+        return;
     };
 
     // Skip non-displayed nodes entirely (no layout, no render).
@@ -2308,16 +2307,6 @@ fn paint_grid_keyline_rectangles(
 ) {
     use std::collections::HashMap;
 
-    let frame_w = frame.width as i32;
-    let frame_h = frame.height as i32;
-    let parent_x0 = parent_rect.x0 + ctx.origin_x;
-    let parent_y0 = parent_rect.y0 + ctx.origin_y;
-    let parent_x1 = (parent_rect.x1 + ctx.origin_x).saturating_sub(1);
-    let parent_y1 = (parent_rect.y1 + ctx.origin_y).saturating_sub(1);
-    if parent_x0 > parent_x1 || parent_y0 > parent_y1 {
-        return;
-    }
-
     // Per-cell accumulated direction bits (up/down/left/right) in frame coords.
     // Each rectangle edge ORs the directions of the line passing through a cell;
     // overlapping rectangles in the shared gutter naturally form T/cross junctions.
@@ -2328,6 +2317,17 @@ fn paint_grid_keyline_rectangles(
         left: bool,
         right: bool,
     }
+
+    let frame_w = frame.width as i32;
+    let frame_h = frame.height as i32;
+    let parent_x0 = parent_rect.x0 + ctx.origin_x;
+    let parent_y0 = parent_rect.y0 + ctx.origin_y;
+    let parent_x1 = (parent_rect.x1 + ctx.origin_x).saturating_sub(1);
+    let parent_y1 = (parent_rect.y1 + ctx.origin_y).saturating_sub(1);
+    if parent_x0 > parent_x1 || parent_y0 > parent_y1 {
+        return;
+    }
+
     let mut cells: HashMap<(i32, i32), Dir> = HashMap::new();
 
     let mark = |cells: &mut HashMap<(i32, i32), Dir>,
@@ -3551,9 +3551,8 @@ fn sync_collapsible_titles(tree: &mut WidgetTree) {
 /// (via [`set_style_context`](crate::css::set_style_context)) before calling
 /// this function, because the layout solver resolves styles from the stylesheet.
 pub fn run_layout_pass(tree: &mut WidgetTree, viewport: (u16, u16)) {
-    let root_id = match tree.root() {
-        Some(r) => r,
-        None => return,
+    let Some(root_id) = tree.root() else {
+        return;
     };
 
     // Lazily mount scrollbar lanes into plain containers whose resolved overflow
@@ -3634,9 +3633,8 @@ pub fn run_layout_pass(tree: &mut WidgetTree, viewport: (u16, u16)) {
 /// render last (on top). Children without a `layer` assignment map to the
 /// first layer's index (Python `layers_to_index.get(layer, 0)`).
 pub(crate) fn collect_render_nodes(tree: &WidgetTree) -> Vec<(NodeId, bool)> {
-    let root = match tree.root() {
-        Some(r) => r,
-        None => return Vec::new(),
+    let Some(root) = tree.root() else {
+        return Vec::new();
     };
     let mut result = Vec::new();
     let mut stack = vec![root];
@@ -3727,9 +3725,8 @@ fn sort_children_by_layer(tree: &WidgetTree, parent: NodeId, children: &[NodeId]
 /// correct on the first rendered frame (and remains stable across subsequent
 /// post-render layout propagation).
 pub(crate) fn apply_layout_info_tree_from_layout_rects(tree: &mut WidgetTree) {
-    let root = match tree.root() {
-        Some(r) => r,
-        None => return,
+    let Some(root) = tree.root() else {
+        return;
     };
     let node_ids = tree.walk_depth_first(root);
     for node_id in node_ids {

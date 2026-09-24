@@ -48,6 +48,14 @@ pub struct SuggestionCache {
 /// Maximum number of cached suggestions (matches Python's `LRUCache(1024)`).
 const SUGGESTION_CACHE_CAPACITY: usize = 1024;
 
+/// Result of a [`SuggestionCache`] lookup.
+enum CacheLookup {
+    /// No entry for the key.
+    Miss,
+    /// The cached suggestion, which may be `None` ("no suggestion").
+    Hit(Option<String>),
+}
+
 impl SuggestionCache {
     /// Create an empty cache.
     #[must_use]
@@ -55,15 +63,17 @@ impl SuggestionCache {
         Self::default()
     }
 
-    /// Cached result for `key`, if any. The outer `Option` is the cache hit;
-    /// the inner `Option<String>` is the cached suggestion (which may be
-    /// "no suggestion").
-    fn lookup(&self, key: &str) -> Option<Option<String>> {
+    /// Cached result for `key`: a hit carries the cached suggestion (which
+    /// may be "no suggestion").
+    fn lookup(&self, key: &str) -> CacheLookup {
         let entries = match self.entries.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        entries.get(key).cloned()
+        match entries.get(key) {
+            Some(cached) => CacheLookup::Hit(cached.clone()),
+            None => CacheLookup::Miss,
+        }
     }
 
     /// Store a computed result for `key`.
@@ -132,7 +142,7 @@ pub trait Suggester: Send + Sync {
             value.to_lowercase()
         };
         if let Some(cache) = self.cache() {
-            if let Some(hit) = cache.lookup(&normalized) {
+            if let CacheLookup::Hit(hit) = cache.lookup(&normalized) {
                 return hit;
             }
             let suggestion = self.get_suggestion(&normalized);
