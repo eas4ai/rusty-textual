@@ -397,32 +397,86 @@ impl crate::widgets::Interactive for Row {
     }
 }
 
-impl crate::widgets::Render for Row {
-    fn compose(&mut self) -> ComposeResult {
-        self.children_extracted = true;
-        crate::compose::zip_child_decls(
-            std::mem::take(&mut self.children),
-            std::mem::take(&mut self.child_decl_meta),
-            std::mem::take(&mut self.child_handle_sinks),
-        )
-    }
+/// Per-child layout inputs of a [`Row`]: fixed widths, margins, size
+/// constraints and resolved styles.
+struct RowChildMetrics {
+    fixed_widths: Vec<Option<usize>>,
+    margins: Vec<Margin>,
+    constraints_list: Vec<LayoutConstraints>,
+    resolved_list: Vec<crate::style::Style>,
+}
 
-    fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
-        let width = options.size.0.max(1);
-        let height_limit = options.size.1.max(1);
-
-        if self.is_tree_mode() {
-            let blank = vec![Segment::new(" ".repeat(width))];
-            let mut out = Segments::new();
-            for row in 0..height_limit {
-                out.extend(blank.clone());
-                if row + 1 < height_limit {
-                    out.push(Segment::line());
-                }
+impl RowChildMetrics {
+    /// Total width of the fixed children (with margins) and the number of
+    /// flexible children.
+    fn fixed_total_and_flex_count(&self) -> (usize, usize) {
+        let fixed_widths = &self.fixed_widths;
+        let margins = &self.margins;
+        let mut fixed_total = 0usize;
+        let mut flex_count = 0usize;
+        for (idx, fixed) in fixed_widths.iter().enumerate() {
+            if let Some(width) = fixed {
+                let margin = margins[idx];
+                fixed_total = fixed_total
+                    .saturating_add(width + margin.left as usize + margin.right as usize);
+            } else {
+                flex_count += 1;
             }
-            return out;
         }
 
+        (fixed_total, flex_count)
+    }
+
+    /// Log the row's child metrics on the layout debug channel.
+    fn log(&self, width: usize, height_limit: usize, count: usize, fixed_total: usize) {
+        let fixed_widths = &self.fixed_widths;
+        let margins = &self.margins;
+        let constraints_list = &self.constraints_list;
+        let resolved_list = &self.resolved_list;
+        debug_layout(&format!(
+            "[row] id={} viewport=({}, {}) children={} fixed_total={}",
+            0u64, width, height_limit, count, fixed_total
+        ));
+        for (idx, fixed) in fixed_widths.iter().enumerate() {
+            debug_layout(&format!(
+                "[row] child={} fixed={:?} margin=({}, {}) constraints=({:?},{:?}) width={:?}",
+                idx,
+                fixed,
+                margins[idx].left,
+                margins[idx].right,
+                constraints_list[idx].min_width,
+                constraints_list[idx].max_width,
+                resolved_list[idx].width
+            ));
+        }
+    }
+
+    /// Final child widths: fixed children keep their width plus margins,
+    /// flexible children share the rest (`base`, plus one for the first
+    /// `remainder` of them).
+    fn widths(&self, count: usize, base: usize, remainder: usize) -> Vec<usize> {
+        let fixed_widths = &self.fixed_widths;
+        let margins = &self.margins;
+        let mut flex_seen = 0usize;
+        let widths: Vec<usize> = (0..count)
+            .map(|idx| {
+                if let Some(fixed) = fixed_widths[idx] {
+                    let margin = margins[idx];
+                    (fixed + margin.left as usize + margin.right as usize).max(1)
+                } else {
+                    let extra = usize::from(flex_seen < remainder);
+                    flex_seen += 1;
+                    (base + extra).max(1)
+                }
+            })
+            .collect();
+        widths
+    }
+}
+
+impl Row {
+    /// Resolve each child's style into row layout inputs.
+    fn child_metrics(&self) -> RowChildMetrics {
         let count = self.children.len().max(1);
         let mut fixed_widths: Vec<Option<usize>> = vec![None; count];
         let mut margins: Vec<Margin> = vec![Margin::default(); count];
@@ -458,69 +512,29 @@ impl crate::widgets::Render for Row {
             constraints_list.push(constraints);
             resolved_list.push(resolved);
         }
-
-        let mut fixed_total = 0usize;
-        let mut flex_count = 0usize;
-        for (idx, fixed) in fixed_widths.iter().enumerate() {
-            if let Some(width) = fixed {
-                let margin = margins[idx];
-                fixed_total = fixed_total
-                    .saturating_add(width + margin.left as usize + margin.right as usize);
-            } else {
-                flex_count += 1;
-            }
+        RowChildMetrics {
+            fixed_widths,
+            margins,
+            constraints_list,
+            resolved_list,
         }
+    }
 
-        if crate::debug::channel_enabled(crate::debug::DebugChannel::Layout) {
-            debug_layout(&format!(
-                "[row] id={} viewport=({}, {}) children={} fixed_total={}",
-                0u64, width, height_limit, count, fixed_total
-            ));
-            for (idx, fixed) in fixed_widths.iter().enumerate() {
-                debug_layout(&format!(
-                    "[row] child={} fixed={:?} margin=({}, {}) constraints=({:?},{:?}) width={:?}",
-                    idx,
-                    fixed,
-                    margins[idx].left,
-                    margins[idx].right,
-                    constraints_list[idx].min_width,
-                    constraints_list[idx].max_width,
-                    resolved_list[idx].width
-                ));
-            }
-        }
-
-        let remaining = width.saturating_sub(fixed_total);
-        let base = remaining.checked_div(flex_count).unwrap_or(0);
-        let remainder = remaining.checked_rem(flex_count).unwrap_or(0);
-
-        let mut flex_seen = 0usize;
-        let widths: Vec<usize> = (0..count)
-            .map(|idx| {
-                if let Some(fixed) = fixed_widths[idx] {
-                    let margin = margins[idx];
-                    (fixed + margin.left as usize + margin.right as usize).max(1)
-                } else {
-                    let extra = usize::from(flex_seen < remainder);
-                    flex_seen += 1;
-                    (base + extra).max(1)
-                }
-            })
-            .collect();
-
-        if crate::debug::channel_enabled(crate::debug::DebugChannel::Layout) {
-            debug_layout(&format!(
-                "[row] id={} widths={:?} remaining={} flex_count={} base={} remainder={}",
-                0u64, widths, remaining, flex_count, base, remainder
-            ));
-        }
-
+    /// Render each child into its column.
+    fn render_child_lines(
+        &self,
+        console: &Console,
+        options: &ConsoleOptions,
+        metrics: &RowChildMetrics,
+        widths: &[usize],
+        height_limit: usize,
+    ) -> Vec<Vec<Vec<Segment>>> {
         let mut child_lines: Vec<Vec<Vec<Segment>>> = Vec::new();
 
         for (idx, child) in self.children.iter().enumerate() {
-            let margin = margins[idx];
+            let margin = metrics.margins[idx];
             let child_width = widths[idx].max(1);
-            let constraints = constraints_list[idx];
+            let constraints = metrics.constraints_list[idx];
             let render_width = clamp_with_constraints(
                 child_width
                     .saturating_sub(margin.left as usize + margin.right as usize)
@@ -566,153 +580,25 @@ impl crate::widgets::Render for Row {
             lines = apply_margin(lines, child_width, margin);
             child_lines.push(lines);
         }
-
-        let max_child_height = child_lines
-            .iter()
-            .map(std::vec::Vec::len)
-            .max()
-            .unwrap_or(1)
-            .max(1)
-            .min(height_limit);
-
-        let mut normalized_lines: Vec<Vec<Vec<Segment>>> = Vec::new();
-        for lines in child_lines {
-            let height = lines.len().max(1);
-            let (pad_top, pad_bottom) = match self.align {
-                RowAlign::Top => (0, max_child_height.saturating_sub(height)),
-                RowAlign::Center => {
-                    let total = max_child_height.saturating_sub(height);
-                    (total / 2, total - total / 2)
-                }
-                RowAlign::Bottom => (max_child_height.saturating_sub(height), 0),
-            };
-            let mut padded = Vec::new();
-            for _ in 0..pad_top {
-                padded.push(Vec::new());
-            }
-            padded.extend(lines);
-            for _ in 0..pad_bottom {
-                padded.push(Vec::new());
-            }
-            normalized_lines.push(padded);
-        }
-
-        let mut out_lines: Vec<Vec<Segment>> = Vec::new();
-        for row in 0..max_child_height {
-            let mut line: Vec<Segment> = Vec::new();
-            for (idx, lines) in normalized_lines.iter().enumerate() {
-                let child_width = widths.get(idx).copied().unwrap_or(1).max(1);
-                let child_line = lines
-                    .get(row)
-                    .cloned()
-                    .unwrap_or_else(|| vec![Segment::new(" ".repeat(child_width))]);
-                let adjusted = adjust_line_length_no_bg(&child_line, child_width);
-                line.extend(adjusted);
-            }
-            out_lines.push(line);
-        }
-
-        out_lines.truncate(max_child_height);
-        while out_lines.len() < max_child_height {
-            out_lines.push(Vec::new());
-        }
-        let out_lines = pad_lines_to_width(out_lines, width);
-        let line_count = out_lines.len();
-        let mut out = Segments::new();
-        for (idx, line) in out_lines.into_iter().enumerate() {
-            out.extend(line);
-            if idx + 1 < line_count {
-                out.push(Segment::line());
-            }
-        }
-        out
+        child_lines
     }
 
-    fn render_with_debug(
+    /// Render each child into its column, wrapped in a layout debug box.
+    fn render_debug_child_lines(
         &self,
         console: &Console,
         options: &ConsoleOptions,
         debug: &DebugLayout,
-    ) -> Segments {
-        if self.is_tree_mode() {
-            return Widget::render(self, console, options);
-        }
-
-        let width = options.size.0.max(1);
-        let height_limit = options.size.1.max(1);
-
-        let count = self.children.len().max(1);
-        let mut fixed_widths: Vec<Option<usize>> = vec![None; count];
-        let mut margins: Vec<Margin> = vec![Margin::default(); count];
-        let mut constraints_list: Vec<LayoutConstraints> = Vec::with_capacity(count);
-        let mut resolved_list: Vec<crate::style::Style> = Vec::with_capacity(count);
-
-        for (idx, child) in self.children.iter().enumerate() {
-            let meta = css::selector_meta_generic(child.as_ref());
-            let resolved = css::resolve_style(child.as_ref(), &meta);
-            let margin = margin_from_style(&resolved);
-            let style_constraints = constraints_from_style(&resolved);
-            let constraints = style_constraints;
-
-            let fixed =
-                if let (Some(min), Some(max)) = (constraints.min_width, constraints.max_width) {
-                    if min == max { Some(min) } else { None }
-                } else if matches!(resolved.width, Some(Scalar::Auto)) {
-                    let pad = resolved
-                        .padding
-                        .map_or(0, |s| s.left as usize)
-                        .saturating_mul(2);
-                    let (_, _, border_left, border_right) =
-                        super::helpers::border_spacing_from_style(&resolved);
-                    child
-                        .content_width()
-                        .map(|w| w.saturating_add(pad + border_left + border_right).max(1))
-                } else {
-                    None
-                };
-
-            fixed_widths[idx] = fixed;
-            margins[idx] = margin;
-            constraints_list.push(constraints);
-            resolved_list.push(resolved);
-        }
-
-        let mut fixed_total = 0usize;
-        let mut flex_count = 0usize;
-        for (idx, fixed) in fixed_widths.iter().enumerate() {
-            if let Some(width) = fixed {
-                let margin = margins[idx];
-                fixed_total = fixed_total
-                    .saturating_add(width + margin.left as usize + margin.right as usize);
-            } else {
-                flex_count += 1;
-            }
-        }
-
-        let remaining = width.saturating_sub(fixed_total);
-        let base = remaining.checked_div(flex_count).unwrap_or(0);
-        let remainder = remaining.checked_rem(flex_count).unwrap_or(0);
-
-        let mut flex_seen = 0usize;
-        let widths: Vec<usize> = (0..count)
-            .map(|idx| {
-                if let Some(fixed) = fixed_widths[idx] {
-                    let margin = margins[idx];
-                    (fixed + margin.left as usize + margin.right as usize).max(1)
-                } else {
-                    let extra = usize::from(flex_seen < remainder);
-                    flex_seen += 1;
-                    (base + extra).max(1)
-                }
-            })
-            .collect();
-
+        metrics: &RowChildMetrics,
+        widths: &[usize],
+        height_limit: usize,
+    ) -> Vec<Vec<Vec<Segment>>> {
         let mut child_lines: Vec<Vec<Vec<Segment>>> = Vec::new();
 
         for (idx, child) in self.children.iter().enumerate() {
             let child_width = widths[idx].max(1);
-            let constraints = constraints_list[idx];
-            let margin = margins[idx];
+            let constraints = metrics.constraints_list[idx];
+            let margin = metrics.margins[idx];
             let render_width = clamp_with_constraints(
                 child_width
                     .saturating_sub(margin.left as usize + margin.right as usize)
@@ -763,7 +649,17 @@ impl crate::widgets::Render for Row {
             );
             child_lines.push(wrapped);
         }
+        child_lines
+    }
 
+    /// Align the child columns vertically and join them into rows.
+    fn join_child_columns(
+        &self,
+        child_lines: Vec<Vec<Vec<Segment>>>,
+        widths: &[usize],
+        width: usize,
+        height_limit: usize,
+    ) -> Segments {
         let max_child_height = child_lines
             .iter()
             .map(std::vec::Vec::len)
@@ -823,6 +719,77 @@ impl crate::widgets::Render for Row {
             }
         }
         out
+    }
+}
+
+impl crate::widgets::Render for Row {
+    fn compose(&mut self) -> ComposeResult {
+        self.children_extracted = true;
+        crate::compose::zip_child_decls(
+            std::mem::take(&mut self.children),
+            std::mem::take(&mut self.child_decl_meta),
+            std::mem::take(&mut self.child_handle_sinks),
+        )
+    }
+
+    fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
+        let width = options.size.0.max(1);
+        let height_limit = options.size.1.max(1);
+
+        if self.is_tree_mode() {
+            return blank_block(width, height_limit);
+        }
+
+        let count = self.children.len().max(1);
+        let metrics = self.child_metrics();
+        let (fixed_total, flex_count) = metrics.fixed_total_and_flex_count();
+
+        if crate::debug::channel_enabled(crate::debug::DebugChannel::Layout) {
+            metrics.log(width, height_limit, count, fixed_total);
+        }
+
+        let remaining = width.saturating_sub(fixed_total);
+        let base = remaining.checked_div(flex_count).unwrap_or(0);
+        let remainder = remaining.checked_rem(flex_count).unwrap_or(0);
+        let widths = metrics.widths(count, base, remainder);
+
+        if crate::debug::channel_enabled(crate::debug::DebugChannel::Layout) {
+            debug_layout(&format!(
+                "[row] id={} widths={:?} remaining={} flex_count={} base={} remainder={}",
+                0u64, widths, remaining, flex_count, base, remainder
+            ));
+        }
+
+        let child_lines =
+            self.render_child_lines(console, options, &metrics, &widths, height_limit);
+        self.join_child_columns(child_lines, &widths, width, height_limit)
+    }
+
+    fn render_with_debug(
+        &self,
+        console: &Console,
+        options: &ConsoleOptions,
+        debug: &DebugLayout,
+    ) -> Segments {
+        if self.is_tree_mode() {
+            return Widget::render(self, console, options);
+        }
+
+        let width = options.size.0.max(1);
+        let height_limit = options.size.1.max(1);
+
+        let count = self.children.len().max(1);
+        let metrics = self.child_metrics();
+        let (fixed_total, flex_count) = metrics.fixed_total_and_flex_count();
+
+        let remaining = width.saturating_sub(fixed_total);
+        let base = remaining.checked_div(flex_count).unwrap_or(0);
+        let remainder = remaining.checked_rem(flex_count).unwrap_or(0);
+        let widths = metrics.widths(count, base, remainder);
+
+        let child_lines =
+            self.render_debug_child_lines(console, options, debug, &metrics, &widths, height_limit);
+        self.join_child_columns(child_lines, &widths, width, height_limit)
     }
 }
 
@@ -1005,72 +972,34 @@ impl Dock {
         for (idx, item) in self.items.iter().enumerate() {
             match item.kind {
                 DockKind::Top => {
-                    let h = item
-                        .size
-                        .or_else(|| item.child.layout_height())
-                        .unwrap_or(1)
-                        .max(1)
-                        .min(height as usize)
-                        .to_u16_sat();
-                    if x >= x0
-                        && x < x0.saturating_add(width)
-                        && y >= y0
-                        && y < y0.saturating_add(h)
-                    {
-                        return Some((idx, x.saturating_sub(x0), y.saturating_sub(y0), width, h));
+                    let h = dock_item_height(item, height);
+                    if let Some((lx, ly)) = local_in_rect(x, y, (x0, y0, width, h)) {
+                        return Some((idx, lx, ly, width, h));
                     }
                     y0 = y0.saturating_add(h);
                     height = height.saturating_sub(h);
                 }
                 DockKind::Bottom => {
-                    let h = item
-                        .size
-                        .or_else(|| item.child.layout_height())
-                        .unwrap_or(1)
-                        .max(1)
-                        .min(height as usize)
-                        .to_u16_sat();
+                    let h = dock_item_height(item, height);
                     let by = y0.saturating_add(height.saturating_sub(h));
-                    if x >= x0
-                        && x < x0.saturating_add(width)
-                        && y >= by
-                        && y < by.saturating_add(h)
-                    {
-                        return Some((idx, x.saturating_sub(x0), y.saturating_sub(by), width, h));
+                    if let Some((lx, ly)) = local_in_rect(x, y, (x0, by, width, h)) {
+                        return Some((idx, lx, ly, width, h));
                     }
                     height = height.saturating_sub(h);
                 }
                 DockKind::Left => {
-                    let w = item
-                        .size
-                        .unwrap_or(1)
-                        .max(1)
-                        .min(width as usize)
-                        .to_u16_sat();
-                    if x >= x0
-                        && x < x0.saturating_add(w)
-                        && y >= y0
-                        && y < y0.saturating_add(height)
-                    {
-                        return Some((idx, x.saturating_sub(x0), y.saturating_sub(y0), w, height));
+                    let w = dock_item_width(item, width);
+                    if let Some((lx, ly)) = local_in_rect(x, y, (x0, y0, w, height)) {
+                        return Some((idx, lx, ly, w, height));
                     }
                     x0 = x0.saturating_add(w);
                     width = width.saturating_sub(w);
                 }
                 DockKind::Right => {
-                    let w = item
-                        .size
-                        .unwrap_or(1)
-                        .max(1)
-                        .min(width as usize)
-                        .to_u16_sat();
+                    let w = dock_item_width(item, width);
                     let bx = x0.saturating_add(width.saturating_sub(w));
-                    if x >= bx
-                        && x < bx.saturating_add(w)
-                        && y >= y0
-                        && y < y0.saturating_add(height)
-                    {
-                        return Some((idx, x.saturating_sub(bx), y.saturating_sub(y0), w, height));
+                    if let Some((lx, ly)) = local_in_rect(x, y, (bx, y0, w, height)) {
+                        return Some((idx, lx, ly, w, height));
                     }
                     width = width.saturating_sub(w);
                 }
@@ -1081,15 +1010,107 @@ impl Dock {
             }
         }
 
-        if let (Some(idx), Some((fx, fy, fw, fh))) = (fill_idx, fill_rect)
-            && x >= fx
-            && x < fx.saturating_add(fw)
-            && y >= fy
-            && y < fy.saturating_add(fh)
+        if let (Some(idx), Some(rect)) = (fill_idx, fill_rect)
+            && let Some((lx, ly)) = local_in_rect(x, y, rect)
         {
-            return Some((idx, x.saturating_sub(fx), y.saturating_sub(fy), fw, fh));
+            return Some((idx, lx, ly, rect.2, rect.3));
         }
         None
+    }
+
+    /// Lay out and render the dock items: top and bottom bars, left and right
+    /// columns, and the fill item in the middle. With `debug`, each item is
+    /// wrapped in a layout debug box.
+    fn render_items(
+        &self,
+        console: &Console,
+        options: &ConsoleOptions,
+        debug: Option<&DebugLayout>,
+    ) -> Segments {
+        let mut remaining_width = options.size.0.max(1);
+        let mut remaining_height = self.fixed_height.unwrap_or_else(|| options.size.1.max(1));
+
+        let mut top_lines: Vec<Vec<Segment>> = Vec::new();
+        let mut bottom_lines: Vec<Vec<Segment>> = Vec::new();
+
+        let mut left_columns: Vec<(usize, Vec<Vec<Segment>>)> = Vec::new();
+        let mut right_columns: Vec<(usize, Vec<Vec<Segment>>)> = Vec::new();
+        let mut fill_index: Option<usize> = None;
+
+        for (idx, item) in self.items.iter().enumerate() {
+            let child = item.child.as_ref();
+            match item.kind {
+                DockKind::Top | DockKind::Bottom => {
+                    let height = item
+                        .size
+                        .or_else(|| item.child.layout_height())
+                        .unwrap_or(1)
+                        .min(remaining_height);
+                    let lines = dock_item_lines(
+                        child,
+                        console,
+                        options,
+                        (remaining_width, height),
+                        debug,
+                        idx,
+                    );
+                    if matches!(item.kind, DockKind::Top) {
+                        top_lines.extend(lines);
+                    } else {
+                        bottom_lines.extend(lines);
+                    }
+                    remaining_height = remaining_height.saturating_sub(height);
+                }
+                DockKind::Left | DockKind::Right => {
+                    let width = item.size.unwrap_or(1).min(remaining_width);
+                    let lines = dock_item_lines(
+                        child,
+                        console,
+                        options,
+                        (width, remaining_height),
+                        debug,
+                        idx,
+                    );
+                    if matches!(item.kind, DockKind::Left) {
+                        left_columns.push((width, lines));
+                    } else {
+                        right_columns.push((width, lines));
+                    }
+                    remaining_width = remaining_width.saturating_sub(width);
+                }
+                DockKind::Fill => {
+                    fill_index = Some(idx);
+                }
+            }
+        }
+
+        let fill_lines = fill_index.map(|idx| {
+            let child = self.items[idx].child.as_ref();
+            dock_item_lines(
+                child,
+                console,
+                options,
+                (remaining_width, remaining_height),
+                debug,
+                idx,
+            )
+        });
+
+        let middle_lines = dock_middle_lines(
+            &left_columns,
+            fill_lines.as_ref(),
+            &right_columns,
+            remaining_width,
+            remaining_height,
+        );
+
+        join_lines(
+            top_lines
+                .into_iter()
+                .chain(middle_lines)
+                .chain(bottom_lines)
+                .collect(),
+        )
     }
 }
 
@@ -1272,255 +1293,10 @@ impl crate::widgets::Render for Dock {
         if self.is_tree_mode() {
             let width = options.size.0.max(1);
             let height = self.fixed_height.unwrap_or_else(|| options.size.1.max(1));
-            let blank = vec![Segment::new(" ".repeat(width))];
-            let mut out = Segments::new();
-            for row in 0..height {
-                out.extend(blank.clone());
-                if row + 1 < height {
-                    out.push(Segment::line());
-                }
-            }
-            return out;
+            return blank_block(width, height);
         }
 
-        let mut remaining_width = options.size.0.max(1);
-        let mut remaining_height = self.fixed_height.unwrap_or_else(|| options.size.1.max(1));
-
-        let mut top_lines: Vec<Vec<Segment>> = Vec::new();
-        let mut bottom_lines: Vec<Vec<Segment>> = Vec::new();
-
-        let mut left_columns: Vec<(usize, Vec<Vec<Segment>>)> = Vec::new();
-        let mut right_columns: Vec<(usize, Vec<Vec<Segment>>)> = Vec::new();
-        let mut fill_lines: Option<Vec<Vec<Segment>>> = None;
-        let mut fill_index: Option<usize> = None;
-
-        for (idx, item) in self.items.iter().enumerate() {
-            match item.kind {
-                DockKind::Top => {
-                    let height = item
-                        .size
-                        .or_else(|| item.child.layout_height())
-                        .unwrap_or(1)
-                        .min(remaining_height);
-                    let constraints = {
-                        let meta = css::selector_meta_generic(item.child.as_ref());
-                        let resolved = css::resolve_style(item.child.as_ref(), &meta);
-                        constraints_from_style(&resolved)
-                    };
-                    let render_height = clamp_with_constraints(
-                        height,
-                        constraints.min_height,
-                        constraints.max_height,
-                        height,
-                    );
-                    let render_width = clamp_with_constraints(
-                        remaining_width,
-                        constraints.min_width,
-                        constraints.max_width,
-                        remaining_width,
-                    );
-                    let mut child_options = options.clone();
-                    child_options.size = (render_width, render_height);
-                    child_options.max_width = render_width;
-                    child_options.max_height = render_height;
-                    let segments = item.child.render_styled(console, &child_options);
-                    let mut lines =
-                        Segment::split_and_crop_lines(segments, render_width, None, true, false);
-                    lines =
-                        Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-                    lines = pad_lines_to_width(lines, remaining_width);
-                    top_lines.extend(lines);
-                    remaining_height = remaining_height.saturating_sub(height);
-                }
-                DockKind::Bottom => {
-                    let height = item
-                        .size
-                        .or_else(|| item.child.layout_height())
-                        .unwrap_or(1)
-                        .min(remaining_height);
-                    let constraints = {
-                        let meta = css::selector_meta_generic(item.child.as_ref());
-                        let resolved = css::resolve_style(item.child.as_ref(), &meta);
-                        constraints_from_style(&resolved)
-                    };
-                    let render_height = clamp_with_constraints(
-                        height,
-                        constraints.min_height,
-                        constraints.max_height,
-                        height,
-                    );
-                    let render_width = clamp_with_constraints(
-                        remaining_width,
-                        constraints.min_width,
-                        constraints.max_width,
-                        remaining_width,
-                    );
-                    let mut child_options = options.clone();
-                    child_options.size = (render_width, render_height);
-                    child_options.max_width = render_width;
-                    child_options.max_height = render_height;
-                    let segments = item.child.render_styled(console, &child_options);
-                    let mut lines =
-                        Segment::split_and_crop_lines(segments, render_width, None, true, false);
-                    lines =
-                        Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-                    lines = pad_lines_to_width(lines, remaining_width);
-                    bottom_lines.extend(lines);
-                    remaining_height = remaining_height.saturating_sub(height);
-                }
-                DockKind::Left => {
-                    let width = item.size.unwrap_or(1).min(remaining_width);
-                    let constraints = {
-                        let meta = css::selector_meta_generic(item.child.as_ref());
-                        let resolved = css::resolve_style(item.child.as_ref(), &meta);
-                        constraints_from_style(&resolved)
-                    };
-                    let render_width = clamp_with_constraints(
-                        width,
-                        constraints.min_width,
-                        constraints.max_width,
-                        width,
-                    );
-                    let render_height = clamp_with_constraints(
-                        remaining_height,
-                        constraints.min_height,
-                        constraints.max_height,
-                        remaining_height,
-                    );
-                    let mut child_options = options.clone();
-                    child_options.size = (render_width, render_height);
-                    child_options.max_width = render_width;
-                    child_options.max_height = render_height;
-                    let segments = item.child.render_styled(console, &child_options);
-                    let mut lines =
-                        Segment::split_and_crop_lines(segments, render_width, None, true, false);
-                    lines =
-                        Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-                    lines = pad_lines_to_width(lines, width);
-                    left_columns.push((width, lines));
-                    remaining_width = remaining_width.saturating_sub(width);
-                }
-                DockKind::Right => {
-                    let width = item.size.unwrap_or(1).min(remaining_width);
-                    let constraints = {
-                        let meta = css::selector_meta_generic(item.child.as_ref());
-                        let resolved = css::resolve_style(item.child.as_ref(), &meta);
-                        constraints_from_style(&resolved)
-                    };
-                    let render_width = clamp_with_constraints(
-                        width,
-                        constraints.min_width,
-                        constraints.max_width,
-                        width,
-                    );
-                    let render_height = clamp_with_constraints(
-                        remaining_height,
-                        constraints.min_height,
-                        constraints.max_height,
-                        remaining_height,
-                    );
-                    let mut child_options = options.clone();
-                    child_options.size = (render_width, render_height);
-                    child_options.max_width = render_width;
-                    child_options.max_height = render_height;
-                    let segments = item.child.render_styled(console, &child_options);
-                    let mut lines =
-                        Segment::split_and_crop_lines(segments, render_width, None, true, false);
-                    lines =
-                        Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-                    lines = pad_lines_to_width(lines, width);
-                    right_columns.push((width, lines));
-                    remaining_width = remaining_width.saturating_sub(width);
-                }
-                DockKind::Fill => {
-                    fill_index = Some(idx);
-                }
-            }
-        }
-
-        if let Some(idx) = fill_index {
-            let item = &self.items[idx];
-            let constraints = {
-                let meta = css::selector_meta_generic(item.child.as_ref());
-                let resolved = css::resolve_style(item.child.as_ref(), &meta);
-                constraints_from_style(&resolved)
-            };
-            let render_width = clamp_with_constraints(
-                remaining_width,
-                constraints.min_width,
-                constraints.max_width,
-                remaining_width,
-            );
-            let render_height = clamp_with_constraints(
-                remaining_height,
-                constraints.min_height,
-                constraints.max_height,
-                remaining_height,
-            );
-            let mut child_options = options.clone();
-            child_options.size = (render_width, render_height);
-            child_options.max_width = render_width;
-            child_options.max_height = render_height;
-            let segments = item.child.render_styled(console, &child_options);
-            let mut lines =
-                Segment::split_and_crop_lines(segments, render_width, None, true, false);
-            lines = Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-            lines = pad_lines_to_width(lines, remaining_width);
-            fill_lines = Some(lines);
-        }
-
-        let mut middle_lines: Vec<Vec<Segment>> = Vec::new();
-        for row in 0..remaining_height {
-            let mut line: Vec<Segment> = Vec::new();
-
-            for (col_width, column) in &left_columns {
-                let col_line = column
-                    .get(row)
-                    .cloned()
-                    .unwrap_or_else(|| vec![Segment::new(" ".repeat(*col_width))]);
-                let adjusted = Segment::adjust_line_length(&col_line, *col_width, None, true);
-                line.extend(adjusted);
-            }
-
-            let remaining_mid_width = remaining_width;
-            if let Some(lines) = &fill_lines {
-                let fill_line = lines
-                    .get(row)
-                    .cloned()
-                    .unwrap_or_else(|| vec![Segment::new(" ".repeat(remaining_mid_width))]);
-                let adjusted =
-                    Segment::adjust_line_length(&fill_line, remaining_mid_width, None, true);
-                line.extend(adjusted);
-            } else {
-                line.extend(vec![Segment::new(" ".repeat(remaining_mid_width))]);
-            }
-
-            for (col_width, column) in &right_columns {
-                let col_line = column
-                    .get(row)
-                    .cloned()
-                    .unwrap_or_else(|| vec![Segment::new(" ".repeat(*col_width))]);
-                let adjusted = Segment::adjust_line_length(&col_line, *col_width, None, true);
-                line.extend(adjusted);
-            }
-
-            middle_lines.push(line);
-        }
-
-        let mut out_lines: Vec<Vec<Segment>> = Vec::new();
-        out_lines.extend(top_lines);
-        out_lines.extend(middle_lines);
-        out_lines.extend(bottom_lines);
-
-        let line_count = out_lines.len();
-        let mut out = Segments::new();
-        for (idx, line) in out_lines.into_iter().enumerate() {
-            out.extend(line);
-            if idx + 1 < line_count {
-                out.push(Segment::line());
-            }
-        }
-        out
+        self.render_items(console, options, None)
     }
 
     fn render_with_debug(
@@ -1533,309 +1309,7 @@ impl crate::widgets::Render for Dock {
             return Widget::render(self, console, options);
         }
 
-        let mut remaining_width = options.size.0.max(1);
-        let mut remaining_height = self.fixed_height.unwrap_or_else(|| options.size.1.max(1));
-
-        let mut top_lines: Vec<Vec<Segment>> = Vec::new();
-        let mut bottom_lines: Vec<Vec<Segment>> = Vec::new();
-
-        let mut left_columns: Vec<(usize, Vec<Vec<Segment>>)> = Vec::new();
-        let mut right_columns: Vec<(usize, Vec<Vec<Segment>>)> = Vec::new();
-        let mut fill_lines: Option<Vec<Vec<Segment>>> = None;
-        let mut fill_index: Option<usize> = None;
-
-        for (idx, item) in self.items.iter().enumerate() {
-            match item.kind {
-                DockKind::Top => {
-                    let height = item
-                        .size
-                        .or_else(|| item.child.layout_height())
-                        .unwrap_or(1)
-                        .min(remaining_height);
-                    let constraints = {
-                        let meta = css::selector_meta_generic(item.child.as_ref());
-                        let resolved = css::resolve_style(item.child.as_ref(), &meta);
-                        constraints_from_style(&resolved)
-                    };
-                    let render_height = clamp_with_constraints(
-                        height,
-                        constraints.min_height,
-                        constraints.max_height,
-                        height,
-                    );
-                    let render_width = clamp_with_constraints(
-                        remaining_width,
-                        constraints.min_width,
-                        constraints.max_width,
-                        remaining_width,
-                    );
-                    let mut child_options = options.clone();
-                    child_options.size = (render_width, render_height);
-                    child_options.max_width = render_width;
-                    child_options.max_height = render_height;
-                    let segments = item.child.render_styled(console, &child_options);
-                    let mut lines =
-                        Segment::split_and_crop_lines(segments, render_width, None, true, false);
-                    lines =
-                        Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-                    lines = pad_lines_to_width(lines, remaining_width);
-                    let debug_height = (height + 2).max(3);
-                    let label = if debug.show_sizes {
-                        Some(format!("{remaining_width}x{debug_height}"))
-                    } else {
-                        None
-                    };
-                    let wrapped = apply_debug_box(
-                        lines,
-                        remaining_width,
-                        debug_height,
-                        label.as_deref(),
-                        debug.style_for(idx),
-                    );
-                    top_lines.extend(wrapped);
-                    remaining_height = remaining_height.saturating_sub(height);
-                }
-                DockKind::Bottom => {
-                    let height = item
-                        .size
-                        .or_else(|| item.child.layout_height())
-                        .unwrap_or(1)
-                        .min(remaining_height);
-                    let constraints = {
-                        let meta = css::selector_meta_generic(item.child.as_ref());
-                        let resolved = css::resolve_style(item.child.as_ref(), &meta);
-                        constraints_from_style(&resolved)
-                    };
-                    let render_height = clamp_with_constraints(
-                        height,
-                        constraints.min_height,
-                        constraints.max_height,
-                        height,
-                    );
-                    let render_width = clamp_with_constraints(
-                        remaining_width,
-                        constraints.min_width,
-                        constraints.max_width,
-                        remaining_width,
-                    );
-                    let mut child_options = options.clone();
-                    child_options.size = (render_width, render_height);
-                    child_options.max_width = render_width;
-                    child_options.max_height = render_height;
-                    let segments = item.child.render_styled(console, &child_options);
-                    let mut lines =
-                        Segment::split_and_crop_lines(segments, render_width, None, true, false);
-                    lines =
-                        Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-                    lines = pad_lines_to_width(lines, remaining_width);
-                    let debug_height = (height + 2).max(3);
-                    let label = if debug.show_sizes {
-                        Some(format!("{remaining_width}x{debug_height}"))
-                    } else {
-                        None
-                    };
-                    let wrapped = apply_debug_box(
-                        lines,
-                        remaining_width,
-                        debug_height,
-                        label.as_deref(),
-                        debug.style_for(idx),
-                    );
-                    bottom_lines.extend(wrapped);
-                    remaining_height = remaining_height.saturating_sub(height);
-                }
-                DockKind::Left => {
-                    let width = item.size.unwrap_or(1).min(remaining_width);
-                    let constraints = {
-                        let meta = css::selector_meta_generic(item.child.as_ref());
-                        let resolved = css::resolve_style(item.child.as_ref(), &meta);
-                        constraints_from_style(&resolved)
-                    };
-                    let render_width = clamp_with_constraints(
-                        width,
-                        constraints.min_width,
-                        constraints.max_width,
-                        width,
-                    );
-                    let render_height = clamp_with_constraints(
-                        remaining_height,
-                        constraints.min_height,
-                        constraints.max_height,
-                        remaining_height,
-                    );
-                    let mut child_options = options.clone();
-                    child_options.size = (render_width, render_height);
-                    child_options.max_width = render_width;
-                    child_options.max_height = render_height;
-                    let segments = item.child.render_styled(console, &child_options);
-                    let mut lines =
-                        Segment::split_and_crop_lines(segments, render_width, None, true, false);
-                    lines =
-                        Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-                    lines = pad_lines_to_width(lines, width);
-                    let debug_height = (remaining_height + 2).max(3);
-                    let label = if debug.show_sizes {
-                        Some(format!("{width}x{debug_height}"))
-                    } else {
-                        None
-                    };
-                    let wrapped = apply_debug_box(
-                        lines,
-                        width,
-                        debug_height,
-                        label.as_deref(),
-                        debug.style_for(idx),
-                    );
-                    left_columns.push((width, wrapped));
-                    remaining_width = remaining_width.saturating_sub(width);
-                }
-                DockKind::Right => {
-                    let width = item.size.unwrap_or(1).min(remaining_width);
-                    let constraints = {
-                        let meta = css::selector_meta_generic(item.child.as_ref());
-                        let resolved = css::resolve_style(item.child.as_ref(), &meta);
-                        constraints_from_style(&resolved)
-                    };
-                    let render_width = clamp_with_constraints(
-                        width,
-                        constraints.min_width,
-                        constraints.max_width,
-                        width,
-                    );
-                    let render_height = clamp_with_constraints(
-                        remaining_height,
-                        constraints.min_height,
-                        constraints.max_height,
-                        remaining_height,
-                    );
-                    let mut child_options = options.clone();
-                    child_options.size = (render_width, render_height);
-                    child_options.max_width = render_width;
-                    child_options.max_height = render_height;
-                    let segments = item.child.render_styled(console, &child_options);
-                    let mut lines =
-                        Segment::split_and_crop_lines(segments, render_width, None, true, false);
-                    lines =
-                        Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-                    lines = pad_lines_to_width(lines, width);
-                    let debug_height = (remaining_height + 2).max(3);
-                    let label = if debug.show_sizes {
-                        Some(format!("{width}x{debug_height}"))
-                    } else {
-                        None
-                    };
-                    let wrapped = apply_debug_box(
-                        lines,
-                        width,
-                        debug_height,
-                        label.as_deref(),
-                        debug.style_for(idx),
-                    );
-                    right_columns.push((width, wrapped));
-                    remaining_width = remaining_width.saturating_sub(width);
-                }
-                DockKind::Fill => {
-                    fill_index = Some(idx);
-                }
-            }
-        }
-
-        if let Some(idx) = fill_index {
-            let item = &self.items[idx];
-            let constraints = {
-                let meta = css::selector_meta_generic(item.child.as_ref());
-                let resolved = css::resolve_style(item.child.as_ref(), &meta);
-                constraints_from_style(&resolved)
-            };
-            let render_width = clamp_with_constraints(
-                remaining_width,
-                constraints.min_width,
-                constraints.max_width,
-                remaining_width,
-            );
-            let render_height = clamp_with_constraints(
-                remaining_height,
-                constraints.min_height,
-                constraints.max_height,
-                remaining_height,
-            );
-            let mut child_options = options.clone();
-            child_options.size = (render_width, render_height);
-            child_options.max_width = render_width;
-            child_options.max_height = render_height;
-            let segments = item.child.render_styled(console, &child_options);
-            let mut lines =
-                Segment::split_and_crop_lines(segments, render_width, None, true, false);
-            lines = Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-            lines = pad_lines_to_width(lines, remaining_width);
-            let debug_height = (remaining_height + 2).max(3);
-            let label = if debug.show_sizes {
-                Some(format!("{remaining_width}x{debug_height}"))
-            } else {
-                None
-            };
-            let wrapped = apply_debug_box(
-                lines,
-                remaining_width,
-                debug_height,
-                label.as_deref(),
-                debug.style_for(idx),
-            );
-            fill_lines = Some(wrapped);
-        }
-
-        let mut middle_lines: Vec<Vec<Segment>> = Vec::new();
-        for row in 0..remaining_height {
-            let mut line: Vec<Segment> = Vec::new();
-
-            for (col_width, column) in &left_columns {
-                let col_line = column
-                    .get(row)
-                    .cloned()
-                    .unwrap_or_else(|| vec![Segment::new(" ".repeat(*col_width))]);
-                let adjusted = Segment::adjust_line_length(&col_line, *col_width, None, true);
-                line.extend(adjusted);
-            }
-
-            let remaining_mid_width = remaining_width;
-            if let Some(lines) = &fill_lines {
-                let fill_line = lines
-                    .get(row)
-                    .cloned()
-                    .unwrap_or_else(|| vec![Segment::new(" ".repeat(remaining_mid_width))]);
-                let adjusted =
-                    Segment::adjust_line_length(&fill_line, remaining_mid_width, None, true);
-                line.extend(adjusted);
-            } else {
-                line.extend(vec![Segment::new(" ".repeat(remaining_mid_width))]);
-            }
-
-            for (col_width, column) in &right_columns {
-                let col_line = column
-                    .get(row)
-                    .cloned()
-                    .unwrap_or_else(|| vec![Segment::new(" ".repeat(*col_width))]);
-                let adjusted = Segment::adjust_line_length(&col_line, *col_width, None, true);
-                line.extend(adjusted);
-            }
-
-            middle_lines.push(line);
-        }
-
-        let mut out_lines: Vec<Vec<Segment>> = Vec::new();
-        out_lines.extend(top_lines);
-        out_lines.extend(middle_lines);
-        out_lines.extend(bottom_lines);
-
-        let line_count = out_lines.len();
-        let mut out = Segments::new();
-        for (idx, line) in out_lines.into_iter().enumerate() {
-            out.extend(line);
-            if idx + 1 < line_count {
-                out.push(Segment::line());
-            }
-        }
-        out
+        self.render_items(console, options, Some(debug))
     }
 }
 
@@ -2062,6 +1536,159 @@ impl crate::widgets::Interactive for Grid {
     }
 }
 
+impl Grid {
+    /// Lay out and render the cells. With `debug`, each occupied cell is
+    /// wrapped in a layout debug box.
+    #[allow(clippy::needless_range_loop)] // r/c used as 2D indices into row_heights[r]/col_widths[c]
+    fn render_cells(
+        &self,
+        console: &Console,
+        options: &ConsoleOptions,
+        debug: Option<&DebugLayout>,
+    ) -> Segments {
+        let width = options.size.0.max(1);
+        let height = options.size.1.max(1);
+
+        let total_col_gaps = self.col_gaps.saturating_mul(self.cols.saturating_sub(1));
+        let total_row_gaps = self.row_gaps.saturating_mul(self.rows.saturating_sub(1));
+        let inner_width = width.saturating_sub(total_col_gaps).max(1);
+        let inner_height = height.saturating_sub(total_row_gaps).max(1);
+
+        let col_widths: Vec<usize> = if let Some(sizes) = &self.col_sizes {
+            sizes.clone()
+        } else {
+            let base_w = inner_width / self.cols;
+            let rem_w = inner_width % self.cols;
+            (0..self.cols)
+                .map(|c| base_w + usize::from(c < rem_w))
+                .collect()
+        };
+
+        let row_heights: Vec<usize> = if let Some(sizes) = &self.row_sizes {
+            sizes.clone()
+        } else {
+            let base_h = inner_height / self.rows;
+            let rem_h = inner_height % self.rows;
+            (0..self.rows)
+                .map(|r| base_h + usize::from(r < rem_h))
+                .collect()
+        };
+
+        let mut cell_lines: Vec<Vec<Vec<Vec<Segment>>>> = Vec::new();
+        for r in 0..self.rows {
+            let mut row_cells = Vec::new();
+            for c in 0..self.cols {
+                let idx = r * self.cols + c;
+                let size = (col_widths[c].max(1), row_heights[r].max(1));
+                row_cells.push(self.render_cell(console, options, debug, idx, size));
+            }
+            cell_lines.push(row_cells);
+        }
+
+        join_lines(self.join_cell_rows(&cell_lines, &col_widths, &row_heights, width))
+    }
+
+    /// Render one cell's child (or blank) at `(cell_width, cell_height)`.
+    fn render_cell(
+        &self,
+        console: &Console,
+        options: &ConsoleOptions,
+        debug: Option<&DebugLayout>,
+        idx: usize,
+        (cell_width, cell_height): (usize, usize),
+    ) -> Vec<Vec<Segment>> {
+        let (margin, constraints) = if let Some(child) = &self.cells[idx] {
+            let meta = css::selector_meta_generic(child.as_ref());
+            let resolved = css::resolve_style(child.as_ref(), &meta);
+            let style_constraints = constraints_from_style(&resolved);
+            (margin_from_style(&resolved), style_constraints)
+        } else {
+            (Margin::default(), LayoutConstraints::default())
+        };
+        let render_width = clamp_with_constraints(
+            cell_width
+                .saturating_sub(margin.left as usize + margin.right as usize)
+                .max(1),
+            constraints.min_width,
+            constraints.max_width,
+            cell_width
+                .saturating_sub(margin.left as usize + margin.right as usize)
+                .max(1),
+        );
+        let render_height = clamp_with_constraints(
+            cell_height
+                .saturating_sub(margin.top as usize + margin.bottom as usize)
+                .max(1),
+            constraints.min_height,
+            constraints.max_height,
+            cell_height
+                .saturating_sub(margin.top as usize + margin.bottom as usize)
+                .max(1),
+        );
+        let mut child_options = options.clone();
+        child_options.size = (render_width, render_height);
+        child_options.max_width = render_width;
+        child_options.max_height = render_height;
+        if let Some(child) = &self.cells[idx] {
+            let segments = child.render_styled(console, &child_options);
+            let mut lines =
+                Segment::split_and_crop_lines(segments, render_width, None, true, false);
+            lines = Segment::set_shape(&lines, render_width, Some(render_height), None, false);
+            lines = pad_lines_to_width(lines, render_width);
+            lines = apply_margin(lines, cell_width, margin);
+            debug_boxed(
+                lines,
+                debug,
+                idx,
+                cell_width,
+                (cell_height + 2).max(3),
+                (cell_width, cell_height),
+            )
+        } else {
+            Segment::set_shape(&[], cell_width, Some(cell_height), None, false)
+        }
+    }
+
+    /// Join the rendered cells row by row, with the column and row gaps.
+    #[allow(clippy::needless_range_loop)] // r/c used as 2D indices into row_heights[r]/col_widths[c]
+    fn join_cell_rows(
+        &self,
+        cell_lines: &[Vec<Vec<Vec<Segment>>>],
+        col_widths: &[usize],
+        row_heights: &[usize],
+        width: usize,
+    ) -> Vec<Vec<Segment>> {
+        let mut out_lines: Vec<Vec<Segment>> = Vec::new();
+        for r in 0..self.rows {
+            let cell_height = row_heights[r].max(1);
+            for row in 0..cell_height {
+                let mut line: Vec<Segment> = Vec::new();
+                for c in 0..self.cols {
+                    let cell_width = col_widths[c].max(1);
+                    let lines = &cell_lines[r][c];
+                    let cell_line = lines
+                        .get(row)
+                        .cloned()
+                        .unwrap_or_else(|| vec![Segment::new(" ".repeat(cell_width))]);
+                    let adjusted = Segment::adjust_line_length(&cell_line, cell_width, None, true);
+                    line.extend(adjusted);
+                    if c + 1 < self.cols && self.col_gaps > 0 {
+                        line.push(Segment::new(" ".repeat(self.col_gaps)));
+                    }
+                }
+                out_lines.push(line);
+            }
+            if r + 1 < self.rows && self.row_gaps > 0 {
+                let gap_line = vec![Segment::new(" ".repeat(width))];
+                for _ in 0..self.row_gaps {
+                    out_lines.push(gap_line.clone());
+                }
+            }
+        }
+        out_lines
+    }
+}
+
 impl crate::widgets::Render for Grid {
     fn compose(&mut self) -> ComposeResult {
         self.cells_extracted = true;
@@ -2077,144 +1704,17 @@ impl crate::widgets::Render for Grid {
         )
     }
 
-    #[allow(clippy::needless_range_loop)] // r/c used as 2D indices into row_heights[r]/col_widths[c]
     fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
         let width = options.size.0.max(1);
         let height = options.size.1.max(1);
 
         if self.is_tree_mode() {
-            let blank = vec![Segment::new(" ".repeat(width))];
-            let mut out = Segments::new();
-            for row in 0..height {
-                out.extend(blank.clone());
-                if row + 1 < height {
-                    out.push(Segment::line());
-                }
-            }
-            return out;
+            return blank_block(width, height);
         }
 
-        let total_col_gaps = self.col_gaps.saturating_mul(self.cols.saturating_sub(1));
-        let total_row_gaps = self.row_gaps.saturating_mul(self.rows.saturating_sub(1));
-        let inner_width = width.saturating_sub(total_col_gaps).max(1);
-        let inner_height = height.saturating_sub(total_row_gaps).max(1);
-
-        let col_widths: Vec<usize> = if let Some(sizes) = &self.col_sizes {
-            sizes.clone()
-        } else {
-            let base_w = inner_width / self.cols;
-            let rem_w = inner_width % self.cols;
-            (0..self.cols)
-                .map(|c| base_w + usize::from(c < rem_w))
-                .collect()
-        };
-
-        let row_heights: Vec<usize> = if let Some(sizes) = &self.row_sizes {
-            sizes.clone()
-        } else {
-            let base_h = inner_height / self.rows;
-            let rem_h = inner_height % self.rows;
-            (0..self.rows)
-                .map(|r| base_h + usize::from(r < rem_h))
-                .collect()
-        };
-
-        let mut cell_lines: Vec<Vec<Vec<Vec<Segment>>>> = Vec::new();
-        for r in 0..self.rows {
-            let mut row_cells = Vec::new();
-            for c in 0..self.cols {
-                let idx = r * self.cols + c;
-                let cell_width = col_widths[c].max(1);
-                let cell_height = row_heights[r].max(1);
-                let (margin, constraints) = if let Some(child) = &self.cells[idx] {
-                    let meta = css::selector_meta_generic(child.as_ref());
-                    let resolved = css::resolve_style(child.as_ref(), &meta);
-                    let style_constraints = constraints_from_style(&resolved);
-                    (margin_from_style(&resolved), style_constraints)
-                } else {
-                    (Margin::default(), LayoutConstraints::default())
-                };
-                let render_width = clamp_with_constraints(
-                    cell_width
-                        .saturating_sub(margin.left as usize + margin.right as usize)
-                        .max(1),
-                    constraints.min_width,
-                    constraints.max_width,
-                    cell_width
-                        .saturating_sub(margin.left as usize + margin.right as usize)
-                        .max(1),
-                );
-                let render_height = clamp_with_constraints(
-                    cell_height
-                        .saturating_sub(margin.top as usize + margin.bottom as usize)
-                        .max(1),
-                    constraints.min_height,
-                    constraints.max_height,
-                    cell_height
-                        .saturating_sub(margin.top as usize + margin.bottom as usize)
-                        .max(1),
-                );
-                let mut child_options = options.clone();
-                child_options.size = (render_width, render_height);
-                child_options.max_width = render_width;
-                child_options.max_height = render_height;
-                let lines = if let Some(child) = &self.cells[idx] {
-                    let segments = child.render_styled(console, &child_options);
-                    let mut lines =
-                        Segment::split_and_crop_lines(segments, render_width, None, true, false);
-                    lines =
-                        Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-                    lines = pad_lines_to_width(lines, render_width);
-                    lines = apply_margin(lines, cell_width, margin);
-                    lines
-                } else {
-                    Segment::set_shape(&[], cell_width, Some(cell_height), None, false)
-                };
-                row_cells.push(lines);
-            }
-            cell_lines.push(row_cells);
-        }
-
-        let mut out_lines: Vec<Vec<Segment>> = Vec::new();
-        for r in 0..self.rows {
-            let cell_height = row_heights[r].max(1);
-            for row in 0..cell_height {
-                let mut line: Vec<Segment> = Vec::new();
-                for c in 0..self.cols {
-                    let cell_width = col_widths[c].max(1);
-                    let lines = &cell_lines[r][c];
-                    let cell_line = lines
-                        .get(row)
-                        .cloned()
-                        .unwrap_or_else(|| vec![Segment::new(" ".repeat(cell_width))]);
-                    let adjusted = Segment::adjust_line_length(&cell_line, cell_width, None, true);
-                    line.extend(adjusted);
-                    if c + 1 < self.cols && self.col_gaps > 0 {
-                        line.push(Segment::new(" ".repeat(self.col_gaps)));
-                    }
-                }
-                out_lines.push(line);
-            }
-            if r + 1 < self.rows && self.row_gaps > 0 {
-                let gap_line = vec![Segment::new(" ".repeat(width))];
-                for _ in 0..self.row_gaps {
-                    out_lines.push(gap_line.clone());
-                }
-            }
-        }
-
-        let line_count = out_lines.len();
-        let mut out = Segments::new();
-        for (idx, line) in out_lines.into_iter().enumerate() {
-            out.extend(line);
-            if idx + 1 < line_count {
-                out.push(Segment::line());
-            }
-        }
-        out
+        self.render_cells(console, options, None)
     }
 
-    #[allow(clippy::needless_range_loop)] // r/c used as 2D indices into row_heights[r]/col_widths[c]
     fn render_with_debug(
         &self,
         console: &Console,
@@ -2225,140 +1725,7 @@ impl crate::widgets::Render for Grid {
             return Widget::render(self, console, options);
         }
 
-        let width = options.size.0.max(1);
-        let height = options.size.1.max(1);
-
-        let total_col_gaps = self.col_gaps.saturating_mul(self.cols.saturating_sub(1));
-        let total_row_gaps = self.row_gaps.saturating_mul(self.rows.saturating_sub(1));
-        let inner_width = width.saturating_sub(total_col_gaps).max(1);
-        let inner_height = height.saturating_sub(total_row_gaps).max(1);
-
-        let col_widths: Vec<usize> = if let Some(sizes) = &self.col_sizes {
-            sizes.clone()
-        } else {
-            let base_w = inner_width / self.cols;
-            let rem_w = inner_width % self.cols;
-            (0..self.cols)
-                .map(|c| base_w + usize::from(c < rem_w))
-                .collect()
-        };
-
-        let row_heights: Vec<usize> = if let Some(sizes) = &self.row_sizes {
-            sizes.clone()
-        } else {
-            let base_h = inner_height / self.rows;
-            let rem_h = inner_height % self.rows;
-            (0..self.rows)
-                .map(|r| base_h + usize::from(r < rem_h))
-                .collect()
-        };
-
-        let mut cell_lines: Vec<Vec<Vec<Vec<Segment>>>> = Vec::new();
-        let mut cell_index = 0;
-        for r in 0..self.rows {
-            let mut row_cells = Vec::new();
-            for c in 0..self.cols {
-                let idx = r * self.cols + c;
-                let cell_width = col_widths[c].max(1);
-                let cell_height = row_heights[r].max(1);
-                let (margin, constraints) = if let Some(child) = &self.cells[idx] {
-                    let meta = css::selector_meta_generic(child.as_ref());
-                    let resolved = css::resolve_style(child.as_ref(), &meta);
-                    let style_constraints = constraints_from_style(&resolved);
-                    (margin_from_style(&resolved), style_constraints)
-                } else {
-                    (Margin::default(), LayoutConstraints::default())
-                };
-                let render_width = clamp_with_constraints(
-                    cell_width
-                        .saturating_sub(margin.left as usize + margin.right as usize)
-                        .max(1),
-                    constraints.min_width,
-                    constraints.max_width,
-                    cell_width
-                        .saturating_sub(margin.left as usize + margin.right as usize)
-                        .max(1),
-                );
-                let render_height = clamp_with_constraints(
-                    cell_height
-                        .saturating_sub(margin.top as usize + margin.bottom as usize)
-                        .max(1),
-                    constraints.min_height,
-                    constraints.max_height,
-                    cell_height
-                        .saturating_sub(margin.top as usize + margin.bottom as usize)
-                        .max(1),
-                );
-                let mut child_options = options.clone();
-                child_options.size = (render_width, render_height);
-                child_options.max_width = render_width;
-                child_options.max_height = render_height;
-                let lines = if let Some(child) = &self.cells[idx] {
-                    let segments = child.render_styled(console, &child_options);
-                    let mut lines =
-                        Segment::split_and_crop_lines(segments, render_width, None, true, false);
-                    lines =
-                        Segment::set_shape(&lines, render_width, Some(render_height), None, false);
-                    lines = pad_lines_to_width(lines, render_width);
-                    lines = apply_margin(lines, cell_width, margin);
-                    let label = if debug.show_sizes {
-                        Some(format!("{cell_width}x{cell_height}"))
-                    } else {
-                        None
-                    };
-                    apply_debug_box(
-                        lines,
-                        cell_width,
-                        (cell_height + 2).max(3),
-                        label.as_deref(),
-                        debug.style_for(cell_index),
-                    )
-                } else {
-                    Segment::set_shape(&[], cell_width, Some(cell_height), None, false)
-                };
-                row_cells.push(lines);
-                cell_index += 1;
-            }
-            cell_lines.push(row_cells);
-        }
-
-        let mut out_lines: Vec<Vec<Segment>> = Vec::new();
-        for r in 0..self.rows {
-            let cell_height = row_heights[r].max(1);
-            for row in 0..cell_height {
-                let mut line: Vec<Segment> = Vec::new();
-                for c in 0..self.cols {
-                    let cell_width = col_widths[c].max(1);
-                    let lines = &cell_lines[r][c];
-                    let cell_line = lines
-                        .get(row)
-                        .cloned()
-                        .unwrap_or_else(|| vec![Segment::new(" ".repeat(cell_width))]);
-                    let adjusted = Segment::adjust_line_length(&cell_line, cell_width, None, true);
-                    line.extend(adjusted);
-                    if c + 1 < self.cols && self.col_gaps > 0 {
-                        line.push(Segment::new(" ".repeat(self.col_gaps)));
-                    }
-                }
-                out_lines.push(line);
-            }
-            if r + 1 < self.rows && self.row_gaps > 0 {
-                let gap_line = vec![Segment::new(" ".repeat(width))];
-                for _ in 0..self.row_gaps {
-                    out_lines.push(gap_line.clone());
-                }
-            }
-        }
-
-        let line_count = out_lines.len();
-        let mut out = Segments::new();
-        for (idx, line) in out_lines.into_iter().enumerate() {
-            out.extend(line);
-            if idx + 1 < line_count {
-                out.push(Segment::line());
-            }
-        }
-        out
+        self.render_cells(console, options, Some(debug))
     }
 }
 
@@ -2372,6 +1739,186 @@ impl crate::widgets::StyleIdentity for Grid {
     fn take_node_seed(&mut self) -> NodeSeed {
         std::mem::take(&mut self.seed)
     }
+}
+
+/// A blank block `width` cells wide and `height` lines tall.
+fn blank_block(width: usize, height: usize) -> Segments {
+    let blank = vec![Segment::new(" ".repeat(width))];
+    let mut out = Segments::new();
+    for row in 0..height {
+        out.extend(blank.clone());
+        if row + 1 < height {
+            out.push(Segment::line());
+        }
+    }
+    out
+}
+
+/// Join lines into segments with a line break between them.
+fn join_lines(out_lines: Vec<Vec<Segment>>) -> Segments {
+    let line_count = out_lines.len();
+    let mut out = Segments::new();
+    for (idx, line) in out_lines.into_iter().enumerate() {
+        out.extend(line);
+        if idx + 1 < line_count {
+            out.push(Segment::line());
+        }
+    }
+    out
+}
+
+/// Wrap `lines` in a layout debug box `width` by `box_height` when `debug`
+/// is set, labelled with `label_size` when `show_sizes` is on.
+fn debug_boxed(
+    lines: Vec<Vec<Segment>>,
+    debug: Option<&DebugLayout>,
+    idx: usize,
+    width: usize,
+    box_height: usize,
+    label_size: (usize, usize),
+) -> Vec<Vec<Segment>> {
+    let Some(debug) = debug else {
+        return lines;
+    };
+    let label = if debug.show_sizes {
+        Some(format!("{}x{}", label_size.0, label_size.1))
+    } else {
+        None
+    };
+    apply_debug_box(
+        lines,
+        width,
+        box_height,
+        label.as_deref(),
+        debug.style_for(idx),
+    )
+}
+
+/// `(x, y)` relative to the rect `(rx, ry, rw, rh)`, when it lies inside.
+fn local_in_rect(x: u16, y: u16, (rx, ry, rw, rh): (u16, u16, u16, u16)) -> Option<(u16, u16)> {
+    (x >= rx && x < rx.saturating_add(rw) && y >= ry && y < ry.saturating_add(rh))
+        .then(|| (x.saturating_sub(rx), y.saturating_sub(ry)))
+}
+
+/// Height of a top/bottom dock item within `available` rows.
+fn dock_item_height(item: &DockItem, available: u16) -> u16 {
+    item.size
+        .or_else(|| item.child.layout_height())
+        .unwrap_or(1)
+        .max(1)
+        .min(available as usize)
+        .to_u16_sat()
+}
+
+/// Width of a left/right dock item within `available` columns.
+fn dock_item_width(item: &DockItem, available: u16) -> u16 {
+    item.size
+        .unwrap_or(1)
+        .max(1)
+        .min(available as usize)
+        .to_u16_sat()
+}
+
+/// Render a dock item's child into `(width, height)`, clamped by its CSS
+/// size constraints, and pad its lines to `pad_width`.
+fn render_dock_child(
+    child: &dyn Widget,
+    console: &Console,
+    options: &ConsoleOptions,
+    (width, height): (usize, usize),
+    pad_width: usize,
+) -> Vec<Vec<Segment>> {
+    let constraints = {
+        let meta = css::selector_meta_generic(child);
+        let resolved = css::resolve_style(child, &meta);
+        constraints_from_style(&resolved)
+    };
+    let render_height = clamp_with_constraints(
+        height,
+        constraints.min_height,
+        constraints.max_height,
+        height,
+    );
+    let render_width =
+        clamp_with_constraints(width, constraints.min_width, constraints.max_width, width);
+    let mut child_options = options.clone();
+    child_options.size = (render_width, render_height);
+    child_options.max_width = render_width;
+    child_options.max_height = render_height;
+    let segments = child.render_styled(console, &child_options);
+    let mut lines = Segment::split_and_crop_lines(segments, render_width, None, true, false);
+    lines = Segment::set_shape(&lines, render_width, Some(render_height), None, false);
+    pad_lines_to_width(lines, pad_width)
+}
+
+/// Render a dock item's child at `(width, height)`, wrapped in a layout
+/// debug box (`height + 2` tall, at least 3) when `debug` is set.
+fn dock_item_lines(
+    child: &dyn Widget,
+    console: &Console,
+    options: &ConsoleOptions,
+    (width, height): (usize, usize),
+    debug: Option<&DebugLayout>,
+    idx: usize,
+) -> Vec<Vec<Segment>> {
+    let lines = render_dock_child(child, console, options, (width, height), width);
+    let debug_height = (height + 2).max(3);
+    debug_boxed(
+        lines,
+        debug,
+        idx,
+        width,
+        debug_height,
+        (width, debug_height),
+    )
+}
+
+/// The dock's middle band: left columns, the fill item (or blank), then
+/// right columns, `height` lines tall.
+fn dock_middle_lines(
+    left_columns: &[(usize, Vec<Vec<Segment>>)],
+    fill_lines: Option<&Vec<Vec<Segment>>>,
+    right_columns: &[(usize, Vec<Vec<Segment>>)],
+    remaining_width: usize,
+    remaining_height: usize,
+) -> Vec<Vec<Segment>> {
+    let mut middle_lines: Vec<Vec<Segment>> = Vec::new();
+    for row in 0..remaining_height {
+        let mut line: Vec<Segment> = Vec::new();
+
+        for (col_width, column) in left_columns {
+            let col_line = column
+                .get(row)
+                .cloned()
+                .unwrap_or_else(|| vec![Segment::new(" ".repeat(*col_width))]);
+            let adjusted = Segment::adjust_line_length(&col_line, *col_width, None, true);
+            line.extend(adjusted);
+        }
+
+        let remaining_mid_width = remaining_width;
+        if let Some(lines) = fill_lines {
+            let fill_line = lines
+                .get(row)
+                .cloned()
+                .unwrap_or_else(|| vec![Segment::new(" ".repeat(remaining_mid_width))]);
+            let adjusted = Segment::adjust_line_length(&fill_line, remaining_mid_width, None, true);
+            line.extend(adjusted);
+        } else {
+            line.extend(vec![Segment::new(" ".repeat(remaining_mid_width))]);
+        }
+
+        for (col_width, column) in right_columns {
+            let col_line = column
+                .get(row)
+                .cloned()
+                .unwrap_or_else(|| vec![Segment::new(" ".repeat(*col_width))]);
+            let adjusted = Segment::adjust_line_length(&col_line, *col_width, None, true);
+            line.extend(adjusted);
+        }
+
+        middle_lines.push(line);
+    }
+    middle_lines
 }
 
 #[cfg(test)]
