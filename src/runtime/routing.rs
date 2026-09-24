@@ -121,6 +121,7 @@ fn build_path_to_node(tree: &WidgetTree, target: NodeId) -> Vec<NodeId> {
 /// Find the currently focused node by walking the entire tree depth-first.
 ///
 /// Returns the first node whose widget reports `has_focus() == true`.
+#[must_use]
 pub fn focused_node_id_tree(tree: &WidgetTree) -> Option<NodeId> {
     let root = tree.root()?;
     for node_id in tree.walk_depth_first(root) {
@@ -917,8 +918,7 @@ fn binding_check_allows(
         return check(&parsed.name, &parsed.arguments) == Some(true);
     }
     tree.get(node_id)
-        .map(|node| node.widget.check_action(&parsed.name, &parsed.arguments) == Some(true))
-        .unwrap_or(true)
+        .is_none_or(|node| node.widget.check_action(&parsed.name, &parsed.arguments) == Some(true))
 }
 
 /// Match a key against the full active binding chain.
@@ -1008,7 +1008,7 @@ pub(crate) fn match_binding_chain(
     // = app → screen → ... → focused). The app-root chain comes first so
     // App-level priority bindings beat screen/widget priority bindings.
     if let Some(app_tree) = app_root {
-        for (node_id, bindings) in app_chain.iter() {
+        for (node_id, bindings) in &app_chain {
             for binding in bindings {
                 if binding.priority
                     && key_matches_binding(key, &binding.key)
@@ -1025,7 +1025,7 @@ pub(crate) fn match_binding_chain(
             }
         }
     }
-    for (node_id, bindings) in active_chain.iter() {
+    for (node_id, bindings) in &active_chain {
         for binding in bindings {
             if binding.priority
                 && key_matches_binding(key, &binding.key)
@@ -1990,7 +1990,7 @@ mod envelope_tests {
         }
     }
 
-    /// Helper: build a MessageEvent from a sender FFI id and a typed message.
+    /// Helper: build a `MessageEvent` from a sender FFI id and a typed message.
     fn msg_event<M: Message>(sender_ffi: u64, message: M) -> MessageEvent {
         MessageEvent::new(node_id_from_ffi(sender_ffi), message)
     }
@@ -2999,7 +2999,7 @@ mod envelope_tests {
     use crate::node_id::NodeId;
     use std::sync::Mutex;
 
-    /// Widget that captures the `control` value from the MessageEvent it receives.
+    /// Widget that captures the `control` value from the `MessageEvent` it receives.
     struct ControlCapture {
         captured: Arc<Mutex<Vec<Option<NodeId>>>>,
     }
@@ -3327,7 +3327,7 @@ mod binding_tests {
         assert_eq!(action, "submit");
     }
 
-    /// Parity regression (radio_set_changed): a focused `RadioSet` inside a
+    /// Parity regression (`radio_set_changed)`: a focused `RadioSet` inside a
     /// scroll container must win the `down` key with its own
     /// `down,right → next_button` binding — NOT the ancestor's
     /// `down → scroll_down`. Python resolves BINDINGS focused→root, so the
@@ -3366,7 +3366,7 @@ mod binding_tests {
         );
     }
 
-    /// Same parity regression as RadioSet, for `OptionList`: a focused list
+    /// Same parity regression as `RadioSet`, for `OptionList`: a focused list
     /// inside a scroll container must win the arrows with its own
     /// `down → cursor_down` / `up → cursor_up` bindings — NOT the ancestor's
     /// `down → scroll_down` (Python resolves BINDINGS focused→root).
@@ -3414,9 +3414,9 @@ mod binding_tests {
         );
     }
 
-    /// Same parity regression as RadioSet, for `SelectionList`: a focused list
+    /// Same parity regression as `RadioSet`, for `SelectionList`: a focused list
     /// inside a scroll container must win the arrows (inherited
-    /// OptionList bindings) and space (`space → select`) — NOT the ancestor's
+    /// `OptionList` bindings) and space (`space → select`) — NOT the ancestor's
     /// `down → scroll_down` (Python resolves BINDINGS focused→root).
     #[test]
     fn match_binding_focused_selection_list_beats_ancestor_scroll_binding() {

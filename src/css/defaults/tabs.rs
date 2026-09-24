@@ -1,7 +1,7 @@
 // Tabs and TabbedContent widget defaults
 // DC-31: aligned with Python Textual _tabs.py and _tabbed_content.py DEFAULT_CSS
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 Underline {
     width: 1fr;
     height: 1;
@@ -96,4 +96,4 @@ TabbedContent {
         dock: top;
     }
 }
-"#;
+";

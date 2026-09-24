@@ -30,7 +30,7 @@ fn progress_text(filled: usize) -> String {
     format!("Filled: {filled}") // Python watch_filled, five_by_five.py:109
 }
 
-const HELP_TEXT: &str = r#"# 5x5
+const HELP_TEXT: &str = r"# 5x5
 
 ## Introduction
 
@@ -52,9 +52,9 @@ It is possible to solve the puzzle in as few as 14 moves.
 - **q** — quit
 
 Good luck!
-"#;
+";
 
-const CSS: &str = r#"
+const CSS: &str = r"
 GameHeader {
     background: $primary-background;
     color: $text;
@@ -132,7 +132,7 @@ WinnerMessage.visible {
 HelpRoot {
     border: round $primary-lighten-3;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // Pure game-logic helpers (replace GameState methods — unit-testable).
@@ -192,14 +192,15 @@ pub struct GameCell {
     #[allow(dead_code)]
     col: usize,
     /// Inner Button child: provides focus + press behavior.
-    /// No CSS id is set on it — GameCell is the CSS-identity node.
+    /// No CSS id is set on it — `GameCell` is the CSS-identity node.
     inner: Button,
-    /// Guard so take_composed_children is idempotent.
+    /// Guard so `take_composed_children` is idempotent.
     child_extracted: bool,
     seed: NodeSeed,
 }
 
 impl GameCell {
+    #[must_use]
     pub fn new(row: usize, col: usize) -> Self {
         let id = Self::id_for(row, col);
         let seed = NodeSeed {
@@ -218,8 +219,9 @@ impl GameCell {
         }
     }
 
+    #[must_use]
     pub fn id_for(row: usize, col: usize) -> String {
-        format!("cell-{}-{}", row, col)
+        format!("cell-{row}-{col}")
     }
 }
 
@@ -327,6 +329,7 @@ impl Default for GameHeader {
 }
 
 impl GameHeader {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             children_extracted: false,
@@ -395,6 +398,7 @@ impl Default for WinnerMessage {
 }
 
 impl WinnerMessage {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             text: String::new(),
@@ -505,7 +509,7 @@ impl Renderable for HelpRoot {
 struct HelpScreen;
 
 impl Screen for HelpScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Help"
     }
 
@@ -530,16 +534,16 @@ struct FiveByFiveApp {
     /// Cell fill array. Python: fill state lives in DOM classes (five_by_five.py:218-242).
     #[reactive(watch_with_app, init = false)]
     cells: Cells,
-    /// Cursor position. init=true → watch_cursor fires at mount to set initial class.
+    /// Cursor position. init=true → `watch_cursor` fires at mount to set initial class.
     #[reactive(watch_with_app)]
     cursor: (usize, usize),
-    /// Move counter. init=true → watch_moves fires at mount to initialize header.
+    /// Move counter. init=true → `watch_moves` fires at mount to initialize header.
     #[reactive(watch_with_app)]
     moves: usize,
-    /// Some(moves) once won; None while playing (Python: WinnerMessage show/hide).
+    /// Some(moves) once won; None while playing (Python: `WinnerMessage` show/hide).
     #[reactive(watch_with_app, init = false)]
     won_at: Option<usize>,
-    /// Handle slot for the WinnerMessage overlay (direct AppRoot child).
+    /// Handle slot for the `WinnerMessage` overlay (direct `AppRoot` child).
     winner: HandleSlot<WinnerMessage>,
 }
 

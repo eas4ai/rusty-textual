@@ -81,11 +81,11 @@ fn apply_flow_offsets(tree: &mut WidgetTree, children: &[NodeId], _viewport: (u1
         };
         let (w, h) = (node.layout_rect.width(), node.layout_rect.height());
         let dx = match off.x {
-            OffsetValue::Cells(c) => c as i32,
+            OffsetValue::Cells(c) => i32::from(c),
             OffsetValue::Percent(p) => (f32::from(w) * p / 100.0).round() as i32,
         };
         let dy = match off.y {
-            OffsetValue::Cells(c) => c as i32,
+            OffsetValue::Cells(c) => i32::from(c),
             OffsetValue::Percent(p) => (f32::from(h) * p / 100.0).round() as i32,
         };
         if dx == 0 && dy == 0 {
@@ -155,19 +155,19 @@ fn apply_parent_align(
     let dx = match align.horizontal {
         HorizontalAlign::Left => 0i32,
         HorizontalAlign::Center => {
-            (available.x + (available.width.saturating_sub(used_w) / 2) as i32) - min_x
+            (available.x + i32::from(available.width.saturating_sub(used_w) / 2)) - min_x
         }
         HorizontalAlign::Right => {
-            (available.x + available.width.saturating_sub(used_w) as i32) - min_x
+            (available.x + i32::from(available.width.saturating_sub(used_w))) - min_x
         }
     };
     let dy = match align.vertical {
         VerticalAlign::Top => 0i32,
         VerticalAlign::Middle => {
-            (available.y + (available.height.saturating_sub(used_h) / 2) as i32) - min_y
+            (available.y + i32::from(available.height.saturating_sub(used_h) / 2)) - min_y
         }
         VerticalAlign::Bottom => {
-            (available.y + available.height.saturating_sub(used_h) as i32) - min_y
+            (available.y + i32::from(available.height.saturating_sub(used_h))) - min_y
         }
     };
 
@@ -208,12 +208,10 @@ pub fn resolve_layout(
     let strategy = style.layout.unwrap_or(Layout::Vertical);
     let is_dock_parent = tree
         .get(node)
-        .map(|n| n.widget.style_type() == "Dock")
-        .unwrap_or(false);
+        .is_some_and(|n| n.widget.style_type() == "Dock");
     let is_overlay_parent = tree
         .get(node)
-        .map(|n| n.widget.style_type() == "Overlay")
-        .unwrap_or(false);
+        .is_some_and(|n| n.widget.style_type() == "Overlay");
 
     // Collect children (snapshot to avoid borrow conflict).
     let children: Vec<NodeId> = tree.children(node).to_vec();
@@ -241,7 +239,7 @@ pub fn resolve_layout(
     if is_overlay_parent {
         let mut layered = Vec::new();
         for &child in &children {
-            if tree.get(child).map(|n| !n.display).unwrap_or(true) {
+            if tree.get(child).is_none_or(|n| !n.display) {
                 continue;
             }
             let child_style = get_node_style(tree, child);
@@ -280,7 +278,7 @@ pub fn resolve_layout(
     let mut flow = Vec::new();
     for &child in &children {
         // Runtime/widget-driven hidden nodes should not participate in layout.
-        if tree.get(child).map(|n| !n.display).unwrap_or(true) {
+        if tree.get(child).is_none_or(|n| !n.display) {
             continue;
         }
         let child_style = get_node_style(tree, child);
@@ -366,14 +364,13 @@ pub fn resolve_layout(
             // wrap-to-fit behavior, so this is scoped to scroll hosts only.
             let is_scroll_host = tree
                 .get(node)
-                .map(|n| n.widget.clips_descendants_to_content())
-                .unwrap_or(false);
+                .is_some_and(|n| n.widget.clips_descendants_to_content());
             // A horizontally-scrollable parent (overflow-x: auto/scroll), OR a
             // scroll host that clips horizontal overflow (overflow-x: hidden on a
             // `VerticalScroll`), lets its children keep their resolved width.
             let allow_h_overflow = matches!(
                 style.overflow_x.or(style.overflow),
-                Some(crate::style::Overflow::Auto) | Some(crate::style::Overflow::Scroll)
+                Some(crate::style::Overflow::Auto | crate::style::Overflow::Scroll)
             ) || (is_scroll_host
                 && matches!(
                     style.overflow_x.or(style.overflow),
@@ -382,7 +379,7 @@ pub fn resolve_layout(
             // Same for the vertical axis.
             let allow_v_overflow = matches!(
                 style.overflow_y.or(style.overflow),
-                Some(crate::style::Overflow::Auto) | Some(crate::style::Overflow::Scroll)
+                Some(crate::style::Overflow::Auto | crate::style::Overflow::Scroll)
             ) || (is_scroll_host
                 && matches!(
                     style.overflow_y.or(style.overflow),
@@ -396,8 +393,7 @@ pub fn resolve_layout(
             // child alignment (mapped to `align`) when no explicit `align` is set.
             let is_transparent_wrapper = tree
                 .get(node)
-                .map(|n| n.widget.is_transparent_wrapper())
-                .unwrap_or(false);
+                .is_some_and(|n| n.widget.is_transparent_wrapper());
             let effective_align = style
                 .align
                 .or_else(|| {
@@ -423,8 +419,7 @@ pub fn resolve_layout(
                     let parent = tree.parent(node)?;
                     let parent_is_wrapper = tree
                         .get(parent)
-                        .map(|n| n.widget.is_transparent_wrapper())
-                        .unwrap_or(false);
+                        .is_some_and(|n| n.widget.is_transparent_wrapper());
                     if !parent_is_wrapper {
                         return None;
                     }
@@ -436,7 +431,7 @@ pub fn resolve_layout(
                         .iter()
                         .copied()
                         .filter(|&c| {
-                            tree.get(c).map(|n| n.display).unwrap_or(false)
+                            tree.get(c).is_some_and(|n| n.display)
                                 && get_node_style(tree, c).display != Some(Display::None)
                         })
                         .collect();
@@ -536,6 +531,7 @@ pub fn resolve_layout(
 /// negatives to `0` for the common non-negative inspection case; use
 /// [`inspect_node_rects_signed`] to observe negative placements.
 #[allow(clippy::type_complexity)] // return type is simple tuples, just wide
+#[must_use]
 pub fn inspect_node_rects(
     tree: &WidgetTree,
     node: NodeId,
@@ -563,6 +559,7 @@ pub fn inspect_node_rects(
 /// coordinates, so a negative origin (for example a widget with `offset: 0 -3`)
 /// is observable. Mirrors Python's signed `Region`.
 #[allow(clippy::type_complexity)]
+#[must_use]
 pub fn inspect_node_rects_signed(
     tree: &WidgetTree,
     node: NodeId,

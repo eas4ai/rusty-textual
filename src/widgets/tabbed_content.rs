@@ -238,6 +238,7 @@ pub struct TabbedContent {
 impl TabbedContent {
     const CONTENT_TAB_PREFIX: &'static str = "--content-tab-";
 
+    #[must_use]
     pub fn new() -> Self {
         let mut seed = NodeSeed::default();
         seed.classes.push("tabbed-content".to_string());
@@ -532,8 +533,7 @@ impl TabbedContent {
             self.active
                 .as_deref()
                 .and_then(|active| meta.iter().find(|pane| pane.id == active))
-                .map(|pane| !pane.hidden && !pane.disabled)
-                .unwrap_or(false)
+                .is_some_and(|pane| !pane.hidden && !pane.disabled)
         };
         if active_valid {
             return;

@@ -46,7 +46,9 @@ impl KeyProbe {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, KeyProbeState> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -132,7 +134,7 @@ fn two_probes(
 fn names(state: &Arc<Mutex<KeyProbeState>>) -> Vec<String> {
     state
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .names
         .clone()
 }
@@ -140,7 +142,7 @@ fn names(state: &Arc<Mutex<KeyProbeState>>) -> Vec<String> {
 fn actions(state: &Arc<Mutex<KeyProbeState>>) -> Vec<String> {
     state
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .actions
         .clone()
 }
@@ -230,7 +232,7 @@ fn duplicate_aliases_run_in_order_last_wins() {
 }
 
 /// Returning `true` marks the key handled and suppresses the action-map
-/// fallback: with `z` mapped to FocusNext, focus stays — proven by the next
+/// fallback: with `z` mapped to `FocusNext`, focus stays — proven by the next
 /// key landing on the same probe.
 #[test]
 fn consumed_key_suppresses_action_map_fallback() {

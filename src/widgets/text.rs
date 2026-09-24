@@ -110,6 +110,7 @@ impl Label {
 
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
@@ -142,30 +143,35 @@ impl Label {
         self.border_subtitle = subtitle.map(Into::into);
     }
 
+    #[must_use]
     pub fn wrap(mut self, wrap: bool) -> Self {
         self.wrap = wrap;
         self
     }
 
     /// Enable or disable Rich markup parsing for this label's text content.
+    #[must_use]
     pub fn with_markup(mut self, markup: bool) -> Self {
         self.markup = markup;
         self
     }
 
     /// When true, the widget expands to fill the available width.
+    #[must_use]
     pub fn with_expand(mut self, expand: bool) -> Self {
         self.expand = expand;
         self
     }
 
     /// When true, the widget shrinks to its content width (default: false).
+    #[must_use]
     pub fn with_shrink(mut self, shrink: bool) -> Self {
         self.shrink = shrink;
         self
     }
 
     /// Set the visual variant, adding a CSS class like `label--success`.
+    #[must_use]
     pub fn with_variant(mut self, variant: LabelVariant) -> Self {
         self.variant = Some(variant);
         self.rebuild_classes();
@@ -173,6 +179,7 @@ impl Label {
     }
 
     /// Get the current variant, if any.
+    #[must_use]
     pub fn variant(&self) -> Option<LabelVariant> {
         self.variant
     }
@@ -190,7 +197,7 @@ impl Label {
         }
     }
 
-    /// Mutable access to the pre-mount `NodeSeed` (css_id, classes, inline styles).
+    /// Mutable access to the pre-mount `NodeSeed` (`css_id`, classes, inline styles).
     ///
     /// Valid until the widget is mounted into the arena tree; after mount the
     /// node record is the single source of truth and seed changes have no effect.
@@ -278,10 +285,10 @@ impl crate::widgets::Layout for Label {
     }
 
     fn style(&self) -> Option<crate::style::Style> {
-        if self.seed.styles.style != Default::default() {
-            Some(self.seed.styles.style.clone())
-        } else {
+        if self.seed.styles.style == Default::default() {
             None
+        } else {
+            Some(self.seed.styles.style.clone())
         }
     }
 }
@@ -296,10 +303,10 @@ impl crate::widgets::StyleIdentity for Label {
     }
 
     fn style_classes(&self) -> &[String] {
-        if !self.seed.classes.is_empty() {
-            &self.seed.classes
-        } else {
+        if self.seed.classes.is_empty() {
             &self.classes_cache
+        } else {
+            &self.seed.classes
         }
     }
 
@@ -352,8 +359,7 @@ impl crate::widgets::Render for Label {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
 
         // Construct the render-time visual style: always has an explicit bg so
         // make_segment never falls back to black. fg/attrs come from the resolved
@@ -443,7 +449,7 @@ impl crate::widgets::Render for Label {
 #[widget(Focus, Interactive, Layout, Selectable)]
 pub struct Markdown {
     markup: String,
-    /// Shared content reference for parent-driven content updates (e.g. from MarkdownViewer).
+    /// Shared content reference for parent-driven content updates (e.g. from `MarkdownViewer`).
     /// When set, `on_layout()` syncs `self.markup` from this shared state before computing height.
     shared_markup: Option<Arc<RwLock<String>>>,
     layout_width: usize,
@@ -854,7 +860,7 @@ fn collapse_inline_whitespace(text: &str) -> String {
 ///     link_background.rich_color if styles.link_background.a else None)
 /// ```
 ///
-/// Returns `None` if no link_color is set (no visible link styling to apply).
+/// Returns `None` if no `link_color` is set (no visible link styling to apply).
 /// This matches Python: `link-color` defaults to the contrast text, which
 /// has alpha 0.87 — always Some in practice.
 pub(crate) fn compute_link_span_style(
@@ -1009,8 +1015,7 @@ impl crate::widgets::Render for MarkdownHeadingBlock {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
         let mut render_style = visual_style.clone();
         render_style.bg = Some(effective_bg);
 
@@ -1451,7 +1456,7 @@ impl MarkdownBlockQuoteBlock {
     /// adds a `▌ ` prefix; nested quotes are surrounded by a single blank bar line
     /// at the parent depth (Python's vertical margins around `MarkdownBlockQuote`).
     fn render_lines(children: &[QuoteChild], depth: usize, total_width: usize) -> Vec<String> {
-        let prefix = format!("{} ", QUOTE_BAR).repeat(depth);
+        let prefix = format!("{QUOTE_BAR} ").repeat(depth);
         let prefix_width = rich_rs::cell_len(&prefix);
         let content_width = total_width.saturating_sub(prefix_width).max(1);
         // A blank bar line at the current depth (bars only, trailing space trimmed).
@@ -1462,7 +1467,7 @@ impl MarkdownBlockQuoteBlock {
             match child {
                 QuoteChild::Paragraph(doc) => {
                     for wrapped in wrap_plain_lines(&doc.plain, content_width) {
-                        lines.push(format!("{}{}", prefix, wrapped));
+                        lines.push(format!("{prefix}{wrapped}"));
                     }
                 }
                 QuoteChild::Quote(nested) => {
@@ -1940,8 +1945,7 @@ fn compute_markdown_table_column_fractions(
         .map(|column| {
             let mut max_content = header_markups
                 .get(column)
-                .map(|cell| table_cell_content_width(cell))
-                .unwrap_or(1);
+                .map_or(1, |cell| table_cell_content_width(cell));
             for row in row_markups {
                 if let Some(cell) = row.get(column) {
                     max_content = max_content.max(table_cell_content_width(cell));
@@ -1986,12 +1990,10 @@ fn compute_markdown_table_column_widths(
     for column in 0..columns {
         let mut max_content = header_markups
             .get(column)
-            .map(|cell| table_cell_content_width(cell))
-            .unwrap_or(1);
+            .map_or(1, |cell| table_cell_content_width(cell));
         let mut minimal = header_markups
             .get(column)
-            .map(|cell| table_cell_minimal_width(cell))
-            .unwrap_or(1);
+            .map_or(1, |cell| table_cell_minimal_width(cell));
         for row in row_markups {
             if let Some(cell) = row.get(column) {
                 max_content = max_content.max(table_cell_content_width(cell));
@@ -2008,7 +2010,7 @@ fn compute_markdown_table_column_widths(
     // Python `_resolve.py:74-81` (expand): grow proportionally to fill.
     if used_space > 0.0 && total_space > used_space {
         let remaining = total_space - used_space;
-        for width in widths.iter_mut() {
+        for width in &mut widths {
             *width += (*width / used_space) * remaining;
         }
     } else if used_space > total_space {
@@ -2029,7 +2031,7 @@ fn compute_markdown_table_column_widths(
         used_space = widths.iter().sum();
         excess = used_space - total_space;
         if excess > 0.0 && used_space > 0.0 {
-            for width in widths.iter_mut() {
+            for width in &mut widths {
                 *width -= (*width / used_space) * excess;
             }
         }
@@ -2107,7 +2109,7 @@ struct MarkdownTableContentBlock {
     row_markups: Vec<Vec<String>>,
     layout_width: usize,
     children: Vec<Box<dyn Widget>>,
-    /// Computed row heights from the last on_layout call; contributed via style() hook.
+    /// Computed row heights from the last `on_layout` call; contributed via `style()` hook.
     grid_rows: Option<Vec<crate::style::Scalar>>,
     seed: NodeSeed,
 }
@@ -2622,6 +2624,7 @@ impl Markdown {
         markdown
     }
 
+    #[must_use]
     pub fn with_can_focus(mut self, can_focus: bool) -> Self {
         self.can_focus = can_focus;
         self
@@ -2642,6 +2645,7 @@ impl Markdown {
     /// Extract all headings from the markdown as `(level, title)` pairs.
     ///
     /// Used by `MarkdownTableOfContents` to build the sidebar tree.
+    #[must_use]
     pub fn extract_headings(&self) -> Vec<(usize, String)> {
         parse_markdown_headings(&self.markup)
     }

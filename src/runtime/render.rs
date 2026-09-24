@@ -240,14 +240,13 @@ fn recolor_frozen_content_bg(
                 .meta
                 .as_ref()
                 .and_then(|m| m.meta.as_ref())
-                .map(|map| {
+                .is_some_and(|map| {
                     matches!(map.get("textual:widget_id"), Some(MetaValue::Int(v)) if *v == want_id)
                         && matches!(
                             map.get("textual:no_text_style"),
                             Some(MetaValue::Bool(true))
                         )
-                })
-                .unwrap_or(false);
+                });
             if is_content {
                 if let Some(style) = seg.style.as_mut() {
                     if style.bgcolor == Some(live_simple) {
@@ -265,7 +264,7 @@ fn scrollbar_drag_trace_enabled() -> bool {
     *ENABLED.get_or_init(|| {
         std::env::var("TEXTUAL_DEBUG_SCROLLBAR_DRAG_TRACE")
             .ok()
-            .map(|value| {
+            .is_some_and(|value| {
                 let normalized = value.trim().to_ascii_lowercase();
                 !(normalized.is_empty()
                     || normalized == "0"
@@ -273,7 +272,6 @@ fn scrollbar_drag_trace_enabled() -> bool {
                     || normalized == "off"
                     || normalized == "no")
             })
-            .unwrap_or(false)
     })
 }
 
@@ -372,7 +370,7 @@ impl App {
 
     /// Tree-driven render path: walk the arena tree depth-first, rendering
     /// each widget at its `layout_rect` position and compositing into a
-    /// single FrameBuffer.
+    /// single `FrameBuffer`.
     ///
     /// This replaces the legacy recursive `render_styled()` path when the
     /// active tree is populated.
@@ -1170,10 +1168,7 @@ fn render_tree_node(
                 crate::style::parse_color_like("$background")
                     .unwrap_or(crate::style::Color::rgb(0, 0, 0))
             });
-            let inner_bg = resolved
-                .bg
-                .map(|c| c.flatten_over(outer_bg))
-                .unwrap_or(outer_bg);
+            let inner_bg = resolved.bg.map_or(outer_bg, |c| c.flatten_over(outer_bg));
             let cells = outline_edge_cells(
                 w,
                 h,
@@ -1597,15 +1592,15 @@ fn render_app_root_tree_layer(
         clip: ClipRect::for_frame(frame),
         overlay_root_exempt: None,
     };
-    let scroll_clip = root_widget
-        .scroll_viewport_size()
-        .map(|(vw, vh)| ClipRect {
+    let scroll_clip = root_widget.scroll_viewport_size().map_or_else(
+        || ClipRect::for_frame(frame),
+        |(vw, vh)| ClipRect {
             x0: 0,
             y0: 0,
             x1: vw.min(width) as i32,
             y1: vh.min(height) as i32,
-        })
-        .unwrap_or_else(|| ClipRect::for_frame(frame));
+        },
+    );
     let scroll_ctx = TreeRenderCtx {
         origin_x: -(root_scroll_x.round() as i32),
         origin_y: -(root_scroll_y.round() as i32),
@@ -1707,16 +1702,15 @@ fn render_screen_tree_layer(
         clip: ClipRect::for_frame(frame),
         overlay_root_exempt: None,
     };
-    let scroll_clip = root_node
-        .widget
-        .scroll_viewport_size()
-        .map(|(vw, vh)| ClipRect {
+    let scroll_clip = root_node.widget.scroll_viewport_size().map_or_else(
+        || ClipRect::for_frame(frame),
+        |(vw, vh)| ClipRect {
             x0: 0,
             y0: 0,
             x1: vw.min(width) as i32,
             y1: vh.min(height) as i32,
-        })
-        .unwrap_or_else(|| ClipRect::for_frame(frame));
+        },
+    );
     let scroll_ctx = TreeRenderCtx {
         origin_x: -(root_scroll.0.round() as i32),
         origin_y: -(root_scroll.1.round() as i32),
@@ -1841,8 +1835,7 @@ fn tint_rect_with_background(frame: &mut FrameBuffer, clip: ClipRect, tint: Colo
             let mut style = cell.style.unwrap_or_default();
             let under_bg = style
                 .bgcolor
-                .map(color_from_simple)
-                .unwrap_or_else(|| Color::rgb(0, 0, 0));
+                .map_or_else(|| Color::rgb(0, 0, 0), color_from_simple);
             style = style.with_bgcolor(tint.flatten_over(under_bg).to_simple_opaque());
             if let Some(fg) = style.color.map(color_from_simple) {
                 style = style.with_color(tint.flatten_over(fg).to_simple_opaque());
@@ -2028,9 +2021,7 @@ fn apply_hatch_fill(
     // Python paints the hatch glyph with foreground = `(background + color)`,
     // i.e. the hatch color (already carrying its opacity-scaled alpha) blended
     // over the cell's background. The cell background itself is left unchanged.
-    let fallback_bg = resolved_bg
-        .map(|c| Color::rgb(c.r, c.g, c.b))
-        .unwrap_or(Color::rgb(0, 0, 0));
+    let fallback_bg = resolved_bg.map_or(Color::rgb(0, 0, 0), |c| Color::rgb(c.r, c.g, c.b));
     for row in 0..h {
         let y = y0 + row as i32;
         if y < paint_clip.y0 || y >= paint_clip.y1 {
@@ -2053,8 +2044,7 @@ fn apply_hatch_fill(
                     .style
                     .as_ref()
                     .and_then(|s| s.bgcolor)
-                    .map(crate::style::color_from_simple)
-                    .unwrap_or(fallback_bg);
+                    .map_or(fallback_bg, crate::style::color_from_simple);
                 let fg = hatch.color.flatten_over(under);
                 cell.text = hatch.character.to_string();
                 let mut style = cell.style.unwrap_or_default();
@@ -2535,6 +2525,7 @@ fn paint_grid_keylines(
 /// the line is truncated and an ellipsis character is appended.
 /// `TextOverflow::Clip` truncates without ellipsis.
 /// `TextOverflow::Fold` wraps content (handled at widget level).
+#[must_use]
 pub fn apply_text_overflow_to_line(
     line: &[Segment],
     max_width: usize,
@@ -2558,8 +2549,9 @@ pub fn apply_text_overflow_to_line(
                 .iter()
                 .rev()
                 .find(|segment| segment.control.is_none())
-                .map(|segment| (segment.style, segment.meta.clone()))
-                .unwrap_or((None, None));
+                .map_or((None, None), |segment| {
+                    (segment.style, segment.meta.clone())
+                });
             let mut ellipsis = Segment::styled("…".to_string(), last_style.unwrap_or_default());
             ellipsis.meta = last_meta;
             result.push(ellipsis);
@@ -2575,8 +2567,9 @@ pub fn apply_text_overflow_to_line(
 
 /// Check if a style has text-wrap: nowrap and return the text-overflow mode.
 ///
-/// Returns `Some(overflow_mode)` when text-wrap is NoWrap, indicating the
+/// Returns `Some(overflow_mode)` when text-wrap is `NoWrap`, indicating the
 /// caller should apply overflow truncation. Returns `None` for normal wrapping.
+#[must_use]
 pub fn text_overflow_mode(resolved: &crate::style::Style) -> Option<TextOverflow> {
     match resolved.text_wrap {
         Some(TextWrap::NoWrap) => Some(resolved.text_overflow.unwrap_or(TextOverflow::Clip)),
@@ -2593,6 +2586,7 @@ pub fn text_overflow_mode(resolved: &crate::style::Style) -> Option<TextOverflow
 /// Returns `(constrain_x, constrain_y)` where each axis uses the specific
 /// override (`constrain-x`/`constrain-y`) if set, otherwise falls back to
 /// the generic `constrain` property.
+#[must_use]
 pub fn resolve_axis_constrain(resolved: &crate::style::Style) -> (Constrain, Constrain) {
     let base = resolved.constrain.unwrap_or(Constrain::None);
     let cx = resolved.constrain_x.unwrap_or(base);
@@ -2604,6 +2598,7 @@ pub fn resolve_axis_constrain(resolved: &crate::style::Style) -> (Constrain, Con
 ///
 /// Given a proposed overlay position with a size inside a viewport, clamp or
 /// inflect the position based on the per-axis constrain modes.
+#[must_use]
 pub fn constrain_overlay_position(
     pos: (i32, i32),
     size: (usize, usize),
@@ -2807,15 +2802,15 @@ fn render_tree_to_frame_with_debug_and_stylesheet(
             clip: ClipRect::for_frame(&frame),
             overlay_root_exempt: None,
         };
-        let scroll_clip = root
-            .scroll_viewport_size()
-            .map(|(vw, vh)| ClipRect {
+        let scroll_clip = root.scroll_viewport_size().map_or_else(
+            || ClipRect::for_frame(&frame),
+            |(vw, vh)| ClipRect {
                 x0: 0,
                 y0: 0,
                 x1: vw.min(width) as i32,
                 y1: vh.min(height) as i32,
-            })
-            .unwrap_or_else(|| ClipRect::for_frame(&frame));
+            },
+        );
         let scroll_ctx = TreeRenderCtx {
             origin_x: -(root_scroll_x as i32),
             origin_y: -(root_scroll_y as i32),
@@ -2933,7 +2928,7 @@ fn host_scrollbar_children(tree: &WidgetTree, parent: NodeId) -> ScrollbarHostCh
         let css_id = child.css_id.as_deref();
         match css_id {
             Some(APP_ROOT_VSCROLLBAR_ID | SCROLL_VIEW_VSCROLLBAR_ID | CONTAINER_VSCROLLBAR_ID) => {
-                children.vertical = Some(child_id)
+                children.vertical = Some(child_id);
             }
             Some(
                 APP_ROOT_HSCROLLBAR_ID
@@ -3011,7 +3006,7 @@ fn host_content_extent(
                 && Some(c) != scrollbar_children.horizontal
                 && Some(c) != scrollbar_children.corner
                 && !node_is_docked(tree, c)
-                && tree.get(c).map(|n| n.display).unwrap_or(false)
+                && tree.get(c).is_some_and(|n| n.display)
         })
         .map(|&c| super::helpers::resolve_style_in_tree(tree, c).and_then(|style| style.layer))
         .collect();
@@ -3626,10 +3621,9 @@ pub(crate) fn collect_render_nodes(tree: &WidgetTree) -> Vec<(NodeId, bool)> {
     let mut result = Vec::new();
     let mut stack = vec![root];
     while let Some(id) = stack.pop() {
-        let render = tree
-            .get(id)
-            .map(|node| node.display && node.visibility == crate::style::Visibility::Visible)
-            .unwrap_or(false);
+        let render = tree.get(id).is_some_and(|node| {
+            node.display && node.visibility == crate::style::Visibility::Visible
+        });
         result.push((id, render));
 
         // Collect children in layer-sorted order.
@@ -4831,8 +4825,7 @@ mod tests {
             .copied()
             .filter_map(|child_id| tree.get(child_id).map(|node| (child_id, node)))
             .find(|(child_id, _)| tree.css_id(*child_id) == Some(APP_ROOT_VSCROLLBAR_ID))
-            .map(|(_, node)| node.display)
-            .unwrap_or(false);
+            .is_some_and(|(_, node)| node.display);
         assert!(
             narrow_vbar_visible,
             "app root should show a vertical scrollbar when content overflows in narrow viewport"
@@ -4868,8 +4861,9 @@ mod tests {
             .iter()
             .filter_map(|&child_id| tree.get(child_id))
             .find(|node| node.widget.style_type() == "Label")
-            .map(|node| node.layout_rect.x1.saturating_sub(node.layout_rect.x0))
-            .unwrap_or(0);
+            .map_or(0, |node| {
+                node.layout_rect.x1.saturating_sub(node.layout_rect.x0)
+            });
         assert_eq!(
             label_width, 24,
             "auto-width Label should size to its rendered content width"
@@ -4971,10 +4965,10 @@ mod tests {
 
         let mut sheet = crate::css::default_widget_stylesheet();
         sheet.extend(&crate::css::StyleSheet::parse(
-            r#"
+            r"
 Parent > Child { display: none; }
 Parent.show > Child { display: block; }
-"#,
+",
         ));
         let _guard = crate::css::set_style_context(sheet);
 

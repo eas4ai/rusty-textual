@@ -6,7 +6,10 @@ use textual_macros::widget;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::event::Event;
-use crate::message::*;
+use crate::message::{
+    InputBlurred, InputChanged, InputSubmitted, MessageEvent, TextEditClipboardCopyRequested,
+    TextEditClipboardPaste, TextEditClipboardPasteRequested,
+};
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
 use crate::validation::{ValidationResult, ValidatorRef};
 
@@ -47,6 +50,7 @@ const SUGGESTION_CACHE_CAPACITY: usize = 1024;
 
 impl SuggestionCache {
     /// Create an empty cache.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -294,6 +298,7 @@ impl Default for Input {
 }
 
 impl Input {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             text: String::new(),
@@ -353,11 +358,13 @@ impl Input {
         self
     }
 
+    #[must_use]
     pub fn with_type(mut self, input_type: InputType) -> Self {
         self.input_type = input_type;
         self
     }
 
+    #[must_use]
     pub fn with_validators(mut self, validators: Vec<ValidatorRef>) -> Self {
         self.validators = validators;
         self.revalidate();
@@ -374,6 +381,7 @@ impl Input {
         self
     }
 
+    #[must_use]
     pub fn with_password(mut self, password: bool) -> Self {
         self.password = password;
         self
@@ -385,6 +393,7 @@ impl Input {
     /// While the whole value is selected, the next printable keystroke
     /// replaces it — e.g. a pre-filled `"0"` becomes `"123"` when typing
     /// `123`, not `"0123"`.
+    #[must_use]
     pub fn with_select_on_focus(mut self, select_on_focus: bool) -> Self {
         self.select_on_focus = select_on_focus;
         self
@@ -392,12 +401,14 @@ impl Input {
 
     /// Python `valid_empty`: an empty value passes validation without
     /// running validators (default false).
+    #[must_use]
     pub fn with_valid_empty(mut self, valid_empty: bool) -> Self {
         self.valid_empty = valid_empty;
         self
     }
 
     /// Python `valid_empty` getter.
+    #[must_use]
     pub fn valid_empty(&self) -> bool {
         self.valid_empty
     }
@@ -419,6 +430,7 @@ impl Input {
 
     /// Python `compact`: borderless compact style via the
     /// `-textual-compact` class (default false).
+    #[must_use]
     pub fn with_compact(mut self, compact: bool) -> Self {
         self.compact = compact;
         self.set_class("-textual-compact", compact);
@@ -426,6 +438,7 @@ impl Input {
     }
 
     /// Python `compact` getter.
+    #[must_use]
     pub fn compact(&self) -> bool {
         self.compact
     }
@@ -444,6 +457,7 @@ impl Input {
         }
     }
 
+    #[must_use]
     pub fn with_restrict(mut self, pattern: &str) -> Self {
         // Python uses `re.fullmatch` (`_input.py`): the WHOLE candidate value
         // must match the restrict pattern. Anchor the compiled regex so every
@@ -453,6 +467,7 @@ impl Input {
         self
     }
 
+    #[must_use]
     pub fn with_max_length(mut self, max_length: usize) -> Self {
         self.max_length = Some(max_length);
         self
@@ -474,10 +489,12 @@ impl Input {
         }
     }
 
+    #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
 
+    #[must_use]
     pub fn validation_result(&self) -> &ValidationResult {
         &self.validation_result
     }
@@ -582,6 +599,7 @@ impl Input {
     }
 
     /// Return the currently selected text, or None if no selection.
+    #[must_use]
     pub fn selected_text(&self) -> Option<String> {
         if self.selection.start == self.selection.end {
             return None;
@@ -630,7 +648,7 @@ impl Input {
         }
     }
 
-    /// Check if the proposed new value passes restrict and max_length checks.
+    /// Check if the proposed new value passes restrict and `max_length` checks.
     fn is_value_allowed(&self, value: &str) -> bool {
         if self.max_length.is_some_and(|max| value.len() > max) {
             return false;
@@ -817,11 +835,13 @@ impl Input {
     // ── Reactive getters ─────────────────────────────────────────────────
 
     /// Reactive getter for the input value (Python-aligned name for `text`).
+    #[must_use]
     pub fn value(&self) -> &str {
         &self.text
     }
 
     /// Reactive getter for the placeholder text.
+    #[must_use]
     pub fn placeholder(&self) -> Option<&str> {
         self.placeholder.as_deref()
     }
@@ -1461,8 +1481,7 @@ impl crate::widgets::Render for Input {
                 let rest_start = ghost
                     .grapheme_indices(true)
                     .nth(1)
-                    .map(|(i, _)| i)
-                    .unwrap_or(ghost.len());
+                    .map_or(ghost.len(), |(i, _)| i);
                 let rest = &ghost[rest_start..];
                 if !rest.is_empty() && cells_used < width {
                     let mut ghost_text = String::new();
@@ -2936,7 +2955,7 @@ mod tests {
         assert_eq!(input.text(), "abc");
     }
 
-    /// Regression (input_validation parity): after mount the arena node record
+    /// Regression (`input_validation` parity): after mount the arena node record
     /// is the single source of truth for CSS classes, so `revalidate()`'s
     /// seed-class update alone never reaches `Input.-invalid` /
     /// `&.-invalid:focus` selectors. Typing must queue the `-valid` /

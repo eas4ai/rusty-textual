@@ -2,7 +2,10 @@ use rich_rs::{Console, ConsoleOptions, Segments};
 use textual_macros::widget;
 
 use crate::event::{BindingHint, Event};
-use crate::message::*;
+use crate::message::{
+    HelpPanelClearHelp, HelpPanelFocusedHelpChanged, HelpPanelFocusedHelpCleared, HelpPanelSetHelp,
+    MessageEvent,
+};
 use crate::render::FrameBuffer;
 
 use super::{FooterBinding, KeyPanel, Markdown, NodeSeed, Overlay, Widget, WidgetRenderable};
@@ -31,6 +34,7 @@ impl Default for HelpPanel {
 impl HelpPanel {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         let mut seed = NodeSeed::default();
         seed.classes.push("help-panel".to_string());

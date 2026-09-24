@@ -18,7 +18,7 @@
 //!
 //! Plus the residual design-decision pins from the key-identity spec:
 //! subtree-removal purge, `clear()` anti-parity, Clone key preservation,
-//! DirectoryTree cursor-on-path across rebuild, and the null-key miss.
+//! `DirectoryTree` cursor-on-path across rebuild, and the null-key miss.
 
 use std::fs;
 use std::path::PathBuf;
@@ -273,7 +273,7 @@ fn add_seed_inserts_whole_subtree() {
 
 // ── test_tree_clearing.py ─────────────────────────────────────────────────
 
-/// Python TreeClearApp fixture: root "White Sun" (data) with two planets,
+/// Python `TreeClearApp` fixture: root "White Sun" (data) with two planets,
 /// each holding two moons.
 fn verse_tree() -> Tree {
     let mut tree = Tree::new(vec![
@@ -535,7 +535,7 @@ fn make_node_id() -> NodeId {
     sm.insert(())
 }
 
-/// DirectoryTree rebuilds its ENTIRE inner Tree on every toggle/load (fresh
+/// `DirectoryTree` rebuilds its ENTIRE inner Tree on every toggle/load (fresh
 /// arena, fresh ids). This pin guards the spec 3.1.2 scope decision: the
 /// index/path internals must keep the cursor on the same PATH across that
 /// wholesale rebuild, even though arena ids are regenerated per rebuild.
@@ -596,7 +596,7 @@ fn directory_tree_rebuild_keeps_cursor_on_path() {
         tree.on_event(&Event::Key(down.clone()), &mut w);
     }
     assert_eq!(
-        tree.selected_path().map(|p| p.to_path_buf()),
+        tree.selected_path().map(std::path::Path::to_path_buf),
         Some(temp.path.join("zzz.txt"))
     );
 
@@ -630,7 +630,7 @@ fn directory_tree_rebuild_keeps_cursor_on_path() {
 
     // The cursor stayed on the same PATH (zzz.txt), now at a shifted line.
     assert_eq!(
-        tree.selected_path().map(|p| p.to_path_buf()),
+        tree.selected_path().map(std::path::Path::to_path_buf),
         Some(temp.path.join("zzz.txt"))
     );
 }

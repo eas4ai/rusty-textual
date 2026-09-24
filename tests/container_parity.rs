@@ -62,8 +62,8 @@ fn horizontal_group_alias_places_children_in_row() {
         .with_child(Label::new("b"));
     let buf = render_once(&mut row, 8, 1);
     let line = &buf.as_plain_lines()[0];
-    assert!(line.contains("a"));
-    assert!(line.contains("b"));
+    assert!(line.contains('a'));
+    assert!(line.contains('b'));
 }
 
 #[test]

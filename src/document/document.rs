@@ -28,6 +28,7 @@ pub struct Document {
 
 impl Document {
     /// Build a document from text, detecting the newline style.
+    #[must_use]
     pub fn new(text: &str) -> Self {
         Self {
             newline: detect_newline_style(text),
@@ -36,38 +37,43 @@ impl Document {
     }
 
     /// The text of the document, joined with the document's newline.
+    #[must_use]
     pub fn text(&self) -> String {
         self.lines.join(self.newline)
     }
 
     /// The newline style used by this document: `"\n"`, `"\r\n"` or `"\r"`.
+    #[must_use]
     pub fn newline(&self) -> &'static str {
         self.newline
     }
 
     /// The lines of the document (no terminators).
+    #[must_use]
     pub fn lines(&self) -> &[String] {
         &self.lines
     }
 
     /// The line at `index`, or `""` when out of bounds.
     pub fn line(&self, index: usize) -> &str {
-        self.lines.get(index).map(String::as_str).unwrap_or("")
+        self.lines.get(index).map_or("", String::as_str)
     }
 
     /// The number of lines in the document (always at least 1).
+    #[must_use]
     pub fn line_count(&self) -> usize {
         self.lines.len()
     }
 
     /// The location of the start of the document: `(0, 0)`.
+    #[must_use]
     pub fn start(&self) -> Location {
         (0, 0)
     }
 
     /// The location of the end of the document.
     pub fn end(&self) -> Location {
-        let last_line = self.lines.last().map(String::as_str).unwrap_or("");
+        let last_line = self.lines.last().map_or("", String::as_str);
         (self.line_count() - 1, last_line.len())
     }
 
@@ -109,16 +115,16 @@ impl Document {
         };
 
         let destination_column;
-        if !insert_lines.is_empty() {
+        if insert_lines.is_empty() {
+            destination_column = before_selection.len();
+            insert_lines = vec![format!("{before_selection}{after_selection}")];
+        } else {
             insert_lines[0] = format!("{before_selection}{}", insert_lines[0]);
-            destination_column = insert_lines.last().map(String::len).unwrap_or(0);
+            destination_column = insert_lines.last().map_or(0, String::len);
             insert_lines
                 .last_mut()
                 .expect("insert_lines is non-empty")
                 .push_str(&after_selection);
-        } else {
-            destination_column = before_selection.len();
-            insert_lines = vec![format!("{before_selection}{after_selection}")];
         }
 
         // Python list-slice assignment clamps out-of-range indices.
@@ -136,6 +142,7 @@ impl Document {
 
     /// Get the text between `start` (inclusive) and `end` (exclusive),
     /// joining interior lines with the document's own newline.
+    #[must_use]
     pub fn get_text_range(&self, start: Location, end: Location) -> String {
         if start == end {
             return String::new();
@@ -172,6 +179,7 @@ impl Document {
     ///
     /// Deviation from Python: this is a byte index, not a codepoint index,
     /// consistent with byte-column locations.
+    #[must_use]
     pub fn get_index_from_location(&self, location: Location) -> usize {
         let (row, column) = location;
         let mut index = row * self.newline.len() + column;
@@ -213,6 +221,7 @@ impl Document {
     /// `tab_width` (consistent with wrap offsets and rendering); the
     /// parameter is kept for Python API parity until full tab expansion
     /// flips all consumers at once.
+    #[must_use]
     pub fn get_size(&self, tab_width: usize) -> (usize, usize) {
         let _ = tab_width;
         let max_cell_length = self
@@ -439,7 +448,7 @@ mod tests {
             } else {
                 (
                     line_count - 1,
-                    split_lines(&text).last().map(String::len).unwrap_or(0),
+                    split_lines(&text).last().map_or(0, String::len),
                 )
             };
             assert_eq!(document.end(), expected);

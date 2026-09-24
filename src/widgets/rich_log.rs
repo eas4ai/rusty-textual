@@ -8,7 +8,7 @@ use rich_rs::{Console, ConsoleOptions, Renderable, Segment, Segments, Text};
 use textual_macros::widget;
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{MessageEvent, RichLogScrolled, ScrollbarAxis, ScrollbarScrollTo};
 
 use super::helpers::adjust_line_length_no_bg;
 
@@ -50,7 +50,7 @@ impl LineCache {
             self.order.retain(|k| *k != key);
         } else if self.entries.len() >= self.max_size {
             // Evict least recently used
-            if let Some(evicted) = self.order.first().cloned() {
+            if let Some(evicted) = self.order.first().copied() {
                 self.entries.remove(&evicted);
                 self.order.remove(0);
             }
@@ -144,6 +144,7 @@ impl Default for RichLog {
 impl RichLog {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             lines: Vec::new(),
@@ -339,12 +340,12 @@ impl RichLog {
     }
 
     /// Returns true if the widget has been rendered at least once (size is known).
-    /// After first render, widget_width is set to actual width (>= min_width).
+    /// After first render, `widget_width` is set to actual width (>= `min_width`).
     fn is_sized(&self) -> bool {
         self.sized || self.widget_width.load(Ordering::Relaxed) > 1
     }
 
-    /// Lazily mark sized=true once widget_width indicates a render happened.
+    /// Lazily mark sized=true once `widget_width` indicates a render happened.
     fn mark_sized_if_ready(&mut self) {
         if !self.sized && self.widget_width.load(Ordering::Relaxed) > 1 {
             self.sized = true;

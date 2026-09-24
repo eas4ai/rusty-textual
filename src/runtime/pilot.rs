@@ -55,6 +55,7 @@ impl<'a> Pilot<'a> {
     }
 
     /// Immutable access to the running app, for assertions (`query_one`, state).
+    #[must_use]
     pub fn app(&self) -> &App {
         self.app
     }
@@ -340,6 +341,7 @@ impl<'a> Pilot<'a> {
     /// True while the harness is running on the deterministic manual clock
     /// (always the case inside `run_test`). Lets tests assert the foundation is
     /// active before relying on [`Pilot::advance_clock`] determinism.
+    #[must_use]
     pub fn clock_is_manual(&self) -> bool {
         self.app.timer_clock_is_manual()
     }
@@ -354,6 +356,7 @@ impl<'a> Pilot<'a> {
 /// into a crossterm [`KeyEvent`].
 ///
 /// Returns `None` for unrecognised specs.
+#[must_use]
 pub fn parse_key(spec: &str) -> Option<KeyEvent> {
     let mut modifiers = KeyModifiers::NONE;
     let parts: Vec<&str> = spec.split('+').collect();
@@ -422,10 +425,10 @@ mod tests {
     use crate::widgets::{AppRoot, BindingDecl, Button, Horizontal};
     use crate::{App, TextualApp};
 
-    const CSS: &str = r#"
+    const CSS: &str = r"
 Screen { align: center middle; }
 Horizontal { width: auto; height: auto; }
-"#;
+";
 
     /// Port of Python `docs/examples/guide/testing/rgb.py` + `test_rgb.py`,
     /// driven through the real Pilot harness.
@@ -870,7 +873,7 @@ Horizontal { width: auto; height: auto; }
         }
     }
 
-    /// A translucent modal (ModalScreen default `background: $background 60%`)
+    /// A translucent modal (`ModalScreen` default `background: $background 60%`)
     /// with a small top-left dialog, leaving the far corner dimmed.
     struct DimModalScreen;
 

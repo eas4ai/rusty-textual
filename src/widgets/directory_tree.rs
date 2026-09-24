@@ -5,7 +5,11 @@ use std::path::{Path, PathBuf};
 use textual_macros::widget;
 
 use crate::event::{Event, MouseDownEvent};
-use crate::message::*;
+use crate::message::{
+    AsyncDirectoryEntry, AsyncTaskCancel, AsyncTaskCancelled, AsyncTaskCompleted, AsyncTaskRequest,
+    AsyncTaskResult, AsyncTaskSpawn, DirectoryTreeDirectorySelected, DirectoryTreeFileSelected,
+    MessageEvent, TreeNodeSelected, TreeNodeToggled,
+};
 
 use crate::node_id::NodeId;
 
@@ -150,6 +154,7 @@ impl DirectoryTree {
         this
     }
 
+    #[must_use]
     pub fn show_hidden(mut self, show_hidden: bool) -> Self {
         self.show_hidden = show_hidden;
         self.refresh();
@@ -164,18 +169,22 @@ impl DirectoryTree {
         self.refresh();
     }
 
+    #[must_use]
     pub fn showing_hidden(&self) -> bool {
         self.show_hidden
     }
 
+    #[must_use]
     pub fn root_path(&self) -> &Path {
         &self.root_path
     }
 
+    #[must_use]
     pub fn tree_id(&self) -> NodeId {
         self.node_id()
     }
 
+    #[must_use]
     pub fn selected_path(&self) -> Option<&Path> {
         self.visible_entries
             .get(self.tree.selected())
@@ -538,7 +547,7 @@ fn read_children(
             continue;
         }
 
-        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+        let is_dir = entry.file_type().is_ok_and(|ft| ft.is_dir());
         entries.push(DirectoryNode {
             path,
             label,

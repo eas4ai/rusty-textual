@@ -47,7 +47,7 @@ fn key_panel_scrolls_with_actions() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w)
+        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w);
     };
     {
         let mut __e = rusty_textual::event::EventCtx::default();
@@ -55,7 +55,7 @@ fn key_panel_scrolls_with_actions() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w)
+        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w);
     };
     {
         let mut __e = rusty_textual::event::EventCtx::default();
@@ -63,7 +63,7 @@ fn key_panel_scrolls_with_actions() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w)
+        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w);
     };
 
     let after = FrameBuffer::from_renderable(&console, &options, &panel, None);
@@ -86,7 +86,7 @@ fn key_panel_updates_on_bindings_changed_event() {
         panel.on_event(
             &Event::BindingsChanged(vec![BindingHint::new("x, y", "Updated action")]),
             &mut __w,
-        )
+        );
     };
 
     let buf = FrameBuffer::from_renderable(&console, &options, &panel, None);
@@ -113,7 +113,7 @@ fn key_panel_does_not_consume_scroll_actions_without_overflow() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w)
+        panel.on_event(&Event::Action(Action::ScrollDown), &mut __w);
     };
     assert!(!ctx.handled());
 }
@@ -151,7 +151,7 @@ fn key_panel_supports_scrollbar_drag() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.handled());
     assert!(ctx.repaint_requested());

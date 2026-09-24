@@ -64,7 +64,7 @@ fn rich_log_scrolls_via_actions() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        log.on_event(&Event::Action(Action::ScrollDown), &mut __w)
+        log.on_event(&Event::Action(Action::ScrollDown), &mut __w);
     };
 
     let after = FrameBuffer::from_renderable(&console, &options, &log, None);
@@ -87,7 +87,7 @@ fn rich_log_preserves_view_anchor_when_trimming_max_lines() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        log.on_event(&Event::Action(Action::ScrollDown), &mut __w)
+        log.on_event(&Event::Action(Action::ScrollDown), &mut __w);
     };
 
     let before = FrameBuffer::from_renderable(&console, &options, &log, None);

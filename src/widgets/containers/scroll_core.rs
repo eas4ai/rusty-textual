@@ -8,22 +8,27 @@ use crate::widgets::scrollbar;
 pub struct ScrollCore;
 
 impl ScrollCore {
+    #[must_use]
     pub fn max_offset(content_len: usize, viewport_len: usize) -> usize {
         scrollbar::max_offset(content_len, viewport_len)
     }
 
+    #[must_use]
     pub fn clamp_offset(offset: usize, content_len: usize, viewport_len: usize) -> usize {
         scrollbar::clamp_offset(offset, content_len, viewport_len)
     }
 
+    #[must_use]
     pub fn scroll_by(offset: usize, delta: i32, content_len: usize, viewport_len: usize) -> usize {
         scrollbar::scroll_by(offset, delta, content_len, viewport_len)
     }
 
+    #[must_use]
     pub fn scroll_end(content_len: usize, viewport_len: usize) -> usize {
         scrollbar::scroll_end(content_len, viewport_len)
     }
 
+    #[must_use]
     pub fn thumb(
         track_len: usize,
         content_len: usize,
@@ -33,6 +38,7 @@ impl ScrollCore {
         scrollbar::thumb_range(track_len, content_len, viewport_len, offset)
     }
 
+    #[must_use]
     pub fn drag_offset(
         pointer: usize,
         grab_offset: usize,
@@ -51,6 +57,7 @@ impl ScrollCore {
         )
     }
 
+    #[must_use]
     pub fn scrollbar_styles() -> (rich_rs::Style, rich_rs::Style, rich_rs::Style) {
         ScrollView::line_scrollbar_styles()
     }

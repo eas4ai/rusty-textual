@@ -137,7 +137,7 @@ pub(crate) fn apply_style_to_segments(
                     }
                 }
             }
-            let text_opacity = style.text_opacity.map(|value| value as f32 / 100.0);
+            let text_opacity = style.text_opacity.map(|value| f32::from(value) / 100.0);
             // Python parity: auto/text-opacity folds composite over the
             // opacity-flattened background — the intermediate
             // `parent.blend(widget_bg, opacity)` that Python threads into
@@ -187,10 +187,7 @@ pub(crate) fn apply_style_to_segments(
             }
             // Preserve per-segment foregrounds unless unset.
             if s.color.is_none() && has_glyph {
-                let bg_for_text = s
-                    .bgcolor
-                    .map(crate::style::color_from_simple)
-                    .unwrap_or(under_bg);
+                let bg_for_text = s.bgcolor.map_or(under_bg, crate::style::color_from_simple);
 
                 if let Some(fg) = style.fg {
                     let mut fg = fg;
@@ -226,10 +223,7 @@ pub(crate) fn apply_style_to_segments(
                     style_changed = true;
                 }
             } else if let (Some(opacity), Some(existing)) = (text_opacity, s.color) {
-                let bg_for_text = s
-                    .bgcolor
-                    .map(crate::style::color_from_simple)
-                    .unwrap_or(under_bg);
+                let bg_for_text = s.bgcolor.map_or(under_bg, crate::style::color_from_simple);
                 let existing = crate::style::color_from_simple(existing);
                 let flat = TextOpacity::<()>::blend_foreground_over_background(
                     existing,
@@ -322,7 +316,7 @@ pub(crate) fn apply_widget_opacity_to_segments(
     if opacity_percent >= 100 {
         return segments;
     }
-    let opacity = (opacity_percent as f32 / 100.0).clamp(0.0, 1.0);
+    let opacity = (f32::from(opacity_percent) / 100.0).clamp(0.0, 1.0);
     let fallback_bg = crate::style::parse_color_like("$background");
     let parent_bg = crate::css::current_composited_background()
         .or_else(|| parent_style.and_then(|style| style.bg))

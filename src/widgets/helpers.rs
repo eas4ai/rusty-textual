@@ -236,10 +236,10 @@ pub(crate) fn constraints_from_style(style: &Style) -> LayoutConstraints {
 }
 
 pub(crate) fn border_spacing_from_style(style: &Style) -> (usize, usize, usize, usize) {
-    let top = if style.border_top.is_set() { 1 } else { 0 };
-    let right = if style.border_right.is_set() { 1 } else { 0 };
-    let bottom = if style.border_bottom.is_set() { 1 } else { 0 };
-    let left = if style.border_left.is_set() { 1 } else { 0 };
+    let top = usize::from(style.border_top.is_set());
+    let right = usize::from(style.border_right.is_set());
+    let bottom = usize::from(style.border_bottom.is_set());
+    let left = usize::from(style.border_left.is_set());
     (top, bottom, left, right)
 }
 
@@ -304,10 +304,7 @@ pub(crate) fn apply_border_edges(
     // surface (e.g. focused Input `:focus { background-tint: $foreground 5% }`
     // lightens $surface #1e1e1e -> #272727 on the border, not just the content row).
     let inner_bg = {
-        let base = style
-            .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+        let base = style.bg.map_or(parent_bg, |c| c.flatten_over(parent_bg));
         if let Some(tint) = style.background_tint {
             crate::renderables::Tint::<()>::blend_color_with_percent(base, tint.color, tint.percent)
         } else {
@@ -322,7 +319,7 @@ pub(crate) fn apply_border_edges(
     // We replicate that as a float factor passed down to `border_inner_outer_styles`.
     let pre_blend_opacity: Option<f32> = opacity_percent
         .filter(|&o| o < 100)
-        .map(|o| o as f32 / 100.0);
+        .map(|o| f32::from(o) / 100.0);
     let border_debug = border_debug_matches(debug_widget_label);
     if border_debug {
         debug_border(&format!(
@@ -610,8 +607,8 @@ enum WindowsSafeBordersMode {
 
 fn parse_windows_safe_borders_mode(value: Option<&str>) -> WindowsSafeBordersMode {
     match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
-        Some("1") | Some("true") | Some("yes") | Some("on") => WindowsSafeBordersMode::On,
-        Some("0") | Some("false") | Some("no") | Some("off") => WindowsSafeBordersMode::Off,
+        Some("1" | "true" | "yes" | "on") => WindowsSafeBordersMode::On,
+        Some("0" | "false" | "no" | "off") => WindowsSafeBordersMode::Off,
         Some("auto") | None => WindowsSafeBordersMode::Auto,
         _ => WindowsSafeBordersMode::Auto,
     }
@@ -738,8 +735,8 @@ fn border_horizontal_row(
     let row_chars = chars[row_idx];
     let row_locs = locations[row_idx];
 
-    let left_w = if has_left { 1 } else { 0 };
-    let right_w = if has_right { 1 } else { 0 };
+    let left_w = usize::from(has_left);
+    let right_w = usize::from(has_right);
     let mid_w = width.saturating_sub(left_w + right_w);
 
     let mut out: Vec<Segment> = Vec::new();
@@ -949,8 +946,7 @@ fn overlay_border_text(
     let fill_char: String = middle_seg
         .as_ref()
         .and_then(|s| s.text.chars().next())
-        .map(|c| c.to_string())
-        .unwrap_or_else(|| "─".to_string());
+        .map_or_else(|| "─".to_string(), |c| c.to_string());
     let make_fill = |count: usize| -> Option<Segment> {
         if count == 0 {
             return None;

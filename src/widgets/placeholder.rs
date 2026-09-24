@@ -4,7 +4,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 
 use crate::event::Event;
-use crate::message::*;
+use crate::message::PlaceholderVariantChanged;
 use crate::style::Color;
 
 use super::{NodeSeed, Widget};
@@ -15,7 +15,7 @@ use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget
 pub enum PlaceholderVariant {
     /// Shows the label or widget identifier.
     Default,
-    /// Shows the WxH dimensions.
+    /// Shows the `WxH` dimensions.
     Size,
     /// Shows Lorem Ipsum text.
     Text,
@@ -115,6 +115,7 @@ impl Placeholder {
         ph
     }
 
+    #[must_use]
     pub fn with_variant(mut self, variant: PlaceholderVariant) -> Self {
         // Remove old variant class and add new one in seed.
         let old_class = self.variant.class_name().to_string();
@@ -128,6 +129,7 @@ impl Placeholder {
 
     // ── Reactive getters ─────────────────────────────────────────────────
 
+    #[must_use]
     pub fn variant(&self) -> PlaceholderVariant {
         self.variant
     }
@@ -186,7 +188,7 @@ impl Placeholder {
                 }
             }
             PlaceholderVariant::Size => {
-                format!("{} x {}", width, height)
+                format!("{width} x {height}")
             }
             PlaceholderVariant::Text => {
                 // Repeat the lorem ipsum with paragraph breaks (matches Python Textual).

@@ -7,11 +7,11 @@
 //! fixed highlighter colour scheme.
 //!
 //! Rust lexes with **syntect** (the pygments analogue already in the
-//! dependency tree via rich-rs) and maps TextMate scopes onto the same theme
+//! dependency tree via rich-rs) and maps `TextMate` scopes onto the same theme
 //! tokens. Two deliberate emulation details:
 //!
 //! - pygments emits `Token.Name` (-> `$text-primary`) for EVERY bare
-//!   identifier, while TextMate grammars leave plain identifiers unscoped.
+//!   identifier, while `TextMate` grammars leave plain identifiers unscoped.
 //!   [`highlight_lines`] post-styles identifier runs inside unstyled spans so
 //!   names render `$text-primary` exactly as Python does.
 //! - Styles with fractional alpha (`$text 60%`, `$text-success 80%`) are
@@ -116,13 +116,15 @@ pub(crate) struct HighlightSpan {
 }
 
 /// Scope-selector rules mirroring Python `HighlightTheme.STYLES` (pygments
-/// token -> style), expressed as TextMate scope prefixes. For a scope stack the
+/// token -> style), expressed as `TextMate` scope prefixes. For a scope stack the
 /// INNERMOST scope wins; within one scope the most specific (longest) matching
 /// selector wins — the analogue of pygments' token-hierarchy fallback.
 fn rules() -> &'static [(Scope, HighlightStyle)] {
     static RULES: OnceLock<Vec<(Scope, HighlightStyle)>> = OnceLock::new();
     RULES.get_or_init(|| {
-        use HighlightColor::*;
+        use HighlightColor::{
+            Text, TextAccent, TextError, TextPrimary, TextSecondary, TextSuccess, TextWarning,
+        };
         let mk = |s: &str| Scope::new(s).expect("valid scope selector");
         vec![
             // Token.Literal.String.Doc: "$text-success 80% italic"
@@ -227,7 +229,7 @@ fn style_for_stack(stack: &ScopeStack) -> Option<HighlightStyle> {
         for (selector, style) in rules() {
             if selector.is_prefix_of(*scope) {
                 let len = selector.len();
-                if best.map(|(l, _)| len > l).unwrap_or(true) {
+                if best.is_none_or(|(l, _)| len > l) {
                     best = Some((len, *style));
                 }
             }
@@ -269,8 +271,7 @@ fn split_identifiers(text: &str, out: &mut Vec<HighlightSpan>) {
         let end = tail
             .char_indices()
             .find(|(_, c)| !(c.is_alphanumeric() || *c == '_'))
-            .map(|(i, _)| i)
-            .unwrap_or(tail.len());
+            .map_or(tail.len(), |(i, _)| i);
         out.push(HighlightSpan {
             text: tail[..end].to_string(),
             style: name_style,
@@ -364,7 +365,7 @@ mod tests {
     }
 
     /// The stopwatch of gap C: the widgets/markdown demo's python fence.
-    /// Empirically measured Python (pygments + HighlightTheme) renders:
+    /// Empirically measured Python (pygments + `HighlightTheme`) renders:
     /// `def` accent, `loop_last` warning+underline, `values`/`Iterable`
     /// primary, `->` bold, docstring success 80% italic.
     #[test]

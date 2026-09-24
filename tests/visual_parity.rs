@@ -13,8 +13,8 @@
 //! workstream (PENDING) or flagged READY (matches → promote into PASSING). The
 //! test fails only on a PASSING regression.
 //!
-//!   REPORT_ONLY=1  cargo test --test visual_parity   # full tally, never panics
-//!   cargo test --test visual_parity                  # assert PASSING set
+//!   `REPORT_ONLY=1`  cargo test --test `visual_parity`   # full tally, never panics
+//!   cargo test --test `visual_parity`                  # assert PASSING set
 
 use std::io::Read;
 use std::path::PathBuf;
@@ -481,12 +481,11 @@ fn visual_parity_batch() {
     let mut ready: Vec<String> = Vec::new();
 
     for case in &cases {
-        let golden = match std::fs::read_to_string(golden_path(&case.name)) {
-            Ok(g) => g,
-            Err(_) => {
-                n_skip += 1;
-                continue;
-            }
+        let golden = if let Ok(g) = std::fs::read_to_string(golden_path(&case.name)) {
+            g
+        } else {
+            n_skip += 1;
+            continue;
         };
         let bin = repo()
             .join("docs/examples/target/debug/examples")
@@ -554,7 +553,9 @@ fn visual_parity_batch() {
             ready.join(", ")
         );
     }
-    if !report_only && !regressions.is_empty() {
-        panic!("styled PASSING regressed: {}", regressions.join(", "));
-    }
+    assert!(
+        !(!report_only && !regressions.is_empty()),
+        "styled PASSING regressed: {}",
+        regressions.join(", ")
+    );
 }

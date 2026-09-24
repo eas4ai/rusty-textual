@@ -33,9 +33,9 @@ fn simple_color_rgb(color: rich_rs::SimpleColor) -> (u8, u8, u8) {
 }
 
 fn color_distance(a: (u8, u8, u8), b: (u8, u8, u8)) -> i32 {
-    let dr = a.0 as i32 - b.0 as i32;
-    let dg = a.1 as i32 - b.1 as i32;
-    let db = a.2 as i32 - b.2 as i32;
+    let dr = i32::from(a.0) - i32::from(b.0);
+    let dg = i32::from(a.1) - i32::from(b.1);
+    let db = i32::from(a.2) - i32::from(b.2);
     dr * dr + dg * dg + db * db
 }
 
@@ -117,7 +117,7 @@ fn buttons_demo_header_renders_with_button_tcss_loaded() {
 fn disabled_non_flat_primary_text_is_dimmer_than_enabled() {
     let mut stylesheet = rusty_textual::css::default_widget_stylesheet();
     stylesheet.extend(&StyleSheet::parse(
-        r#"
+        r"
         Row {
             width: auto;
             height: auto;
@@ -125,7 +125,7 @@ fn disabled_non_flat_primary_text_is_dimmer_than_enabled() {
         Button {
             margin: 0 1;
         }
-    "#,
+    ",
     ));
     let _guard = set_style_context(stylesheet);
 

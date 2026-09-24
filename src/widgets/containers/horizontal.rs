@@ -18,6 +18,7 @@ impl Horizontal {
     crate::delegate_ident_methods!(inner);
     crate::delegate_border_title_methods!(inner);
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             inner: Container::new(),

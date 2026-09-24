@@ -2,7 +2,7 @@
 // DC-29: OptionList aligned with Python Textual _option_list.py DEFAULT_CSS
 // DC-30: SelectionList aligned with Python Textual _selection_list.py DEFAULT_CSS
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 OptionList {
     height: auto;
     max-height: 100%;
@@ -186,4 +186,4 @@ SelectionList {
         bg: $panel;
     }
 }
-"#;
+";

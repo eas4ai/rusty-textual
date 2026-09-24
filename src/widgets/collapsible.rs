@@ -6,7 +6,7 @@ use crate::compose::ComposeResult;
 use crate::content::Content;
 use crate::css;
 use crate::event::Event;
-use crate::message::*;
+use crate::message::{CollapsibleCollapsed, CollapsibleExpanded};
 
 use super::{NodeSeed, Widget};
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
@@ -104,6 +104,7 @@ impl CollapsibleTitle {
         self.pressed = pressed;
     }
 
+    #[must_use]
     pub fn is_pressed(&self) -> bool {
         self.pressed
     }
@@ -183,7 +184,7 @@ impl crate::widgets::Render for CollapsibleTitle {
         "CollapsibleTitle"
     }
 
-    /// Render the symbol + label via Content::render_strips.
+    /// Render the symbol + label via `Content::render_strips`.
     /// The arena renderer applies the node's resolved style (color / text-style
     /// / padding / background) on top.
     fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
@@ -199,8 +200,7 @@ impl crate::widgets::Render for CollapsibleTitle {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
         let mut render_style = visual_style.clone();
         render_style.bg = Some(effective_bg);
 
@@ -376,6 +376,7 @@ impl Collapsible {
         }
     }
 
+    #[must_use]
     pub fn collapsed(mut self, collapsed: bool) -> Self {
         self.collapsed = collapsed;
         if collapsed {
@@ -408,6 +409,7 @@ impl Collapsible {
     }
 
     /// Read-only access to the collapsible's (not-yet-extracted) children.
+    #[must_use]
     pub fn children(&self) -> &[Box<dyn Widget>] {
         &self.children
     }
@@ -419,6 +421,7 @@ impl Collapsible {
 
     // ── Reactive getters ─────────────────────────────────────────────────
 
+    #[must_use]
     pub fn is_collapsed(&self) -> bool {
         self.collapsed
     }

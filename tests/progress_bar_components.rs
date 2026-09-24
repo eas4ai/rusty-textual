@@ -1,6 +1,6 @@
-//! Component-classes Phase 3 (D8): ProgressBar sub-widget split.
+//! Component-classes Phase 3 (D8): `ProgressBar` sub-widget split.
 //!
-//! ProgressBar composes real arena children mirroring Python
+//! `ProgressBar` composes real arena children mirroring Python
 //! `_progress_bar.py`: `Bar` (id `bar`), `PercentageStatus` (id
 //! `percentage`), `ETAStatus` (id `eta`) — conditionally on
 //! `show_bar` / `show_percentage` / `show_eta`. These tests gate:
@@ -28,7 +28,7 @@ fn throwaway_ctx() -> ReactiveCtx {
     ReactiveCtx::new(rusty_textual::node_id::NodeId::default())
 }
 
-/// Build a tree with a single ProgressBar under an AppRoot and return it.
+/// Build a tree with a single `ProgressBar` under an `AppRoot` and return it.
 fn tree_with_progress_bar(bar: ProgressBar) -> WidgetTree {
     struct Host {
         root: AppRoot,
@@ -92,7 +92,7 @@ fn show_flags_gate_composed_children() {
 }
 
 /// The scoped defaults (`ProgressBar Bar { width: 32 }` + percentage 5 +
-/// eta 9) are live layout inputs: a `width: auto` ProgressBar arranges to
+/// eta 9) are live layout inputs: a `width: auto` `ProgressBar` arranges to
 /// 46 cells from its children, not from a hardcoded intrinsic hint.
 #[test]
 fn auto_width_derives_from_child_layout() {
@@ -209,8 +209,8 @@ fn bar_determinate_app_css_takes_effect() {
     .expect("run_test");
 }
 
-/// Value propagation: a reactive progress update (Handle::update path)
-/// recomposes the children — the PercentageStatus shows the new value.
+/// Value propagation: a reactive progress update (`Handle::update` path)
+/// recomposes the children — the `PercentageStatus` shows the new value.
 #[test]
 fn progress_update_recomposes_children() {
     BarCssApp {
@@ -277,9 +277,9 @@ fn rendered_row_structure_matches_monolithic_layout() {
     .expect("run_test");
 }
 
-/// Post-mount `set_show_eta(false)` (the docs_progress_bar mount sequence:
+/// Post-mount `set_show_eta(false)` (the `docs_progress_bar` mount sequence:
 /// Python `ProgressBar(total=100, show_eta=False)`) recomposes without the
-/// ETAStatus child.
+/// `ETAStatus` child.
 #[test]
 fn post_mount_show_eta_false_removes_eta_child() {
     BarCssApp {

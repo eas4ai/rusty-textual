@@ -20,6 +20,7 @@ impl HorizontalScroll {
     crate::delegate_ident_methods!(inner);
     crate::delegate_border_title_methods!(inner);
 
+    #[must_use]
     pub fn new() -> Self {
         // Overflow is NOT set inline here: Python `containers.py::HorizontalScroll`
         // declares `overflow-x: auto; overflow-y: hidden` via DEFAULT_CSS (an

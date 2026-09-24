@@ -34,6 +34,7 @@ impl LoadingIndicator {
     crate::seed_ident_methods!();
 
     /// Create a new `LoadingIndicator`.
+    #[must_use]
     pub fn new() -> Self {
         let mut seed = NodeSeed::default();
         seed.classes.push("loading-indicator".to_string());
@@ -48,6 +49,7 @@ impl LoadingIndicator {
     ///
     /// When disabled, renders a static "Loading..." text instead of animated dots,
     /// matching Python Textual's behavior when `animation_level == "none"`.
+    #[must_use]
     pub fn with_animation(mut self, enabled: bool) -> Self {
         self.animation_enabled = enabled;
         self
@@ -77,7 +79,7 @@ impl Interactive for LoadingIndicator {
     }
 
     /// Block input events during capture phase (like Python's `on_input` stopper).
-    /// Non-input events (Tick, Resize, AppFocus, BindingsChanged) are allowed through.
+    /// Non-input events (Tick, Resize, `AppFocus`, `BindingsChanged`) are allowed through.
     fn on_event_capture(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
         match event {
             Event::Key(_)
@@ -132,7 +134,7 @@ impl Render for LoadingIndicator {
 
         for i in 0..dot_count {
             // Each dot is offset in phase from the previous.
-            let phase = (elapsed - i as f64 / 8.0).rem_euclid(1.0);
+            let phase = (elapsed - f64::from(i) / 8.0).rem_euclid(1.0);
             // Quadratic easing: brighter at the leading edge.
             let blend_factor = (1.0 - phase).powi(2);
 
@@ -234,8 +236,8 @@ fn render_static_loading(width: usize, height: usize, style: rich_rs::Style) -> 
 fn blend_rgb(a: Color, b: Color, t: f64) -> Color {
     let t = t.clamp(0.0, 1.0) as f32;
     let mix = |x: u8, y: u8| -> u8 {
-        let xf = x as f32;
-        let yf = y as f32;
+        let xf = f32::from(x);
+        let yf = f32::from(y);
         (xf + (yf - xf) * t).round().clamp(0.0, 255.0) as u8
     };
     Color::rgb(mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b))
@@ -246,7 +248,7 @@ fn lighten(c: Color, amount: f64) -> Color {
     blend_rgb(c, Color::rgb(255, 255, 255), amount)
 }
 
-/// 3-stop gradient: bg_blend(0.0) → mid(0.7) → bright(1.0).
+/// 3-stop gradient: `bg_blend(0.0)` → mid(0.7) → bright(1.0).
 /// `t` is the position along the gradient (0.0..=1.0).
 fn gradient_3stop(dim: Color, mid: Color, bright: Color, t: f64) -> Color {
     let dim_blended = blend_rgb(dim, mid, 0.1); // bg at 10% toward fg

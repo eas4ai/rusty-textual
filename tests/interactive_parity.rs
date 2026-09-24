@@ -114,10 +114,10 @@ struct CounterApp {
     count: Arc<AtomicU32>,
 }
 
-const COUNTER_CSS: &str = r#"
+const COUNTER_CSS: &str = r"
 Screen { align: center middle; }
 Vertical { width: auto; height: auto; }
-"#;
+";
 
 fn count_label(count: u32) -> String {
     format!("Count: {count}")
@@ -161,9 +161,9 @@ struct TickApp {
     ticks: Arc<AtomicU32>,
 }
 
-const TICK_CSS: &str = r#"
+const TICK_CSS: &str = r"
 Screen { align: center middle; }
-"#;
+";
 
 fn tick_label(ticks: u32) -> String {
     format!("Ticks: {ticks}")
@@ -202,9 +202,9 @@ impl TextualApp for TickApp {
 #[derive(Default)]
 struct DeadApp;
 
-const DEAD_CSS: &str = r#"
+const DEAD_CSS: &str = r"
 Screen { align: center middle; }
-"#;
+";
 
 impl TextualApp for DeadApp {
     fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {

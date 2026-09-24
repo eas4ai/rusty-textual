@@ -68,6 +68,7 @@ impl App {
     /// Resolve a screen reference to its widget tree (Python
     /// `app.get_screen(name)` / `app.screen`). `None` when no live tree
     /// matches.
+    #[must_use]
     pub fn screen_tree(&self, screen: ScreenRef<'_>) -> Option<&WidgetTree> {
         let tree_id = self.resolve_screen_ref(screen)?;
         self.tree_by_id(tree_id)
@@ -114,7 +115,7 @@ impl App {
     /// (`run_on_node_widget_r_in`), so the update converges identically to the
     /// deferred command path: dispatch-recipient guard, owning-tree stamp for
     /// commands enqueued from the closure, reactive fixpoint when the tree is
-    /// the active one, and EventCtx absorption. A mutation on a non-active
+    /// the active one, and `EventCtx` absorption. A mutation on a non-active
     /// tree requests a full relayout/repaint so the compositor repaints every
     /// visible layer (an update behind a translucent screen shows immediately;
     /// behind an opaque screen it is state-only until reveal, both matching

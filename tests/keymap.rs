@@ -1,10 +1,10 @@
-//! Keymap subsystem end-to-end tests (SPEC_keymap phase K2).
+//! Keymap subsystem end-to-end tests (`SPEC_keymap` phase K2).
 //!
 //! Ports of `test_keymap.py` (replace / unknown id / inherited same id /
 //! different id / pre-mount) and the `test_binding.py` normalization case,
 //! plus Rust-specific regression guards for the two keymap transforms
 //! (dispatch flatten vs shape-preserving hint substitution) and the 1.0.2
-//! binding fixes (priority order, char-key normalization, check_action
+//! binding fixes (priority order, char-key normalization, `check_action`
 //! gating) under a non-empty keymap.
 //!
 //! Python's `Counter` fixture sets the keymap in `on_mount`; the Rust ports
@@ -59,11 +59,17 @@ impl TextualApp for CounterApp {
     fn on_app_action_str(&mut self, _app: &mut App, action: &str, ctx: &mut WidgetCtx) {
         match action {
             "increment" => {
-                *self.count.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+                *self
+                    .count
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) += 1;
                 ctx.set_handled();
             }
             "decrement" => {
-                *self.count.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+                *self
+                    .count
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) -= 1;
                 ctx.set_handled();
             }
             _ => {}
@@ -81,11 +87,21 @@ fn keymap_default_binding_replaces_old_binding() {
         |pilot| {
             // The original bindings are removed - action not called.
             pilot.press(&["i", "up"])?;
-            assert_eq!(*observed.lock().unwrap_or_else(|e| e.into_inner()), 0);
+            assert_eq!(
+                *observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+                0
+            );
 
             // The new bindings are active and call the action.
             pilot.press(&["right", "k"])?;
-            assert_eq!(*observed.lock().unwrap_or_else(|e| e.into_inner()), 2);
+            assert_eq!(
+                *observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+                2
+            );
             Ok(())
         },
     )
@@ -101,7 +117,12 @@ fn keymap_with_unknown_id_is_noop() {
         CounterApp::new(count, km(&[("this.is.an.unknown.id", "d")])),
         |pilot| {
             pilot.press(&["d"])?;
-            assert_eq!(*observed.lock().unwrap_or_else(|e| e.into_inner()), -1);
+            assert_eq!(
+                *observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+                -1
+            );
             Ok(())
         },
     )
@@ -120,7 +141,9 @@ fn keymap_present_but_irrelevant_keeps_default_resolution() {
         |pilot| {
             pilot.press(&["i", "up", "d"])?;
             assert_eq!(
-                *observed.lock().unwrap_or_else(|e| e.into_inner()),
+                *observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
                 1,
                 "defaults must resolve unchanged through the slow path (+1 +1 -1)"
             );
@@ -141,10 +164,20 @@ fn punctuation_keymap_value_matches_pressed_key() {
         CounterApp::new(count, km(&[("app.increment", "?")])),
         |pilot| {
             pilot.press(&["?"])?;
-            assert_eq!(*observed.lock().unwrap_or_else(|e| e.into_inner()), 1);
+            assert_eq!(
+                *observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+                1
+            );
             // The default keys were replaced.
             pilot.press(&["i"])?;
-            assert_eq!(*observed.lock().unwrap_or_else(|e| e.into_inner()), 1);
+            assert_eq!(
+                *observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+                1
+            );
             Ok(())
         },
     )
@@ -156,7 +189,7 @@ fn punctuation_keymap_value_matches_pressed_key() {
 // ---------------------------------------------------------------------------
 
 /// A focusable widget declaring an id-carrying "x" -> increment binding
-/// (the Rust analog of test_keymap.py's `Parent(Widget, can_focus=True)`).
+/// (the Rust analog of `test_keymap.py`'s `Parent(Widget, can_focus=True)`).
 struct IncrementWidget {
     binding_id: &'static str,
     counter: Arc<Mutex<i32>>,
@@ -179,7 +212,10 @@ impl Widget for IncrementWidget {
 
     fn execute_action(&mut self, action: &ParsedAction, ctx: &mut WidgetCtx) -> bool {
         if action.name == "increment" {
-            *self.counter.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+            *self
+                .counter
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) += 1;
             ctx.set_handled();
             return true;
         }
@@ -233,7 +269,8 @@ fn keymap_inherited_bindings_same_id() {
         keymap: km(&[("increment", "i")]),
     };
     run_test(app, |pilot| {
-        let parent = |o: &Arc<Mutex<i32>>| *o.lock().unwrap_or_else(|e| e.into_inner());
+        let parent =
+            |o: &Arc<Mutex<i32>>| *o.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
 
         // Default binding is unbound due to keymap.
         pilot.press(&["x"])?;
@@ -279,7 +316,8 @@ fn keymap_child_with_different_id_overridden() {
         keymap: km(&[("parent.increment", "i")]),
     };
     run_test(app, |pilot| {
-        let count = |o: &Arc<Mutex<i32>>| *o.lock().unwrap_or_else(|e| e.into_inner());
+        let count =
+            |o: &Arc<Mutex<i32>>| *o.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // Default binding is unbound due to keymap.
         pilot.press(&["x"])?;
         assert_eq!(count(&parent_observed), 0);
@@ -336,7 +374,10 @@ fn set_keymap_before_app_mount() {
 
         fn on_app_action_str(&mut self, _app: &mut App, action: &str, ctx: &mut WidgetCtx) {
             if action == "test" {
-                *self.worked.lock().unwrap_or_else(|e| e.into_inner()) = true;
+                *self
+                    .worked
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
                 ctx.set_handled();
             }
         }
@@ -349,7 +390,11 @@ fn set_keymap_before_app_mount() {
         Ok(())
     })
     .expect("run_test");
-    assert!(*observed.lock().unwrap_or_else(|e| e.into_inner()));
+    assert!(
+        *observed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    );
 }
 
 // Port of test_binding.py::test_keymap_key: set_keymap/update_keymap
@@ -409,7 +454,7 @@ fn remapped_priority_binding_still_beats_focused_normal_binding() {
             if action.name == "widget_act" {
                 self.records
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push("widget_act".to_string());
                 ctx.set_handled();
                 return true;
@@ -445,7 +490,7 @@ fn remapped_priority_binding_still_beats_focused_normal_binding() {
             if action == "app_prio" {
                 self.records
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push("app_prio".to_string());
                 ctx.set_handled();
             }
@@ -461,7 +506,9 @@ fn remapped_priority_binding_still_beats_focused_normal_binding() {
     })
     .expect("run_test");
     assert_eq!(
-        *observed.lock().unwrap_or_else(|e| e.into_inner()),
+        *observed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
         vec!["app_prio".to_string()],
         "the remapped app priority binding must win the priority phase over \
          the focused widget's normal binding on the same key"
@@ -507,7 +554,7 @@ fn check_action_gate_still_applies_to_remapped_binding() {
             if action == "gated" || action == "open" {
                 self.fired
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push(action.to_string());
                 ctx.set_handled();
             }
@@ -522,7 +569,9 @@ fn check_action_gate_still_applies_to_remapped_binding() {
     })
     .expect("run_test");
     assert_eq!(
-        *observed.lock().unwrap_or_else(|e| e.into_inner()),
+        *observed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
         vec!["open".to_string()],
         "the remapped gated binding must stay suppressed by check_action; \
          the remapped allowed binding must fire"
@@ -610,7 +659,7 @@ fn footer_shows_remapped_punctuation_key() {
 // ---------------------------------------------------------------------------
 
 /// Counter app that records `handle_bindings_clash` payloads and call count
-/// (the Rust `Counter` fixture of test_keymap.py with clash capture).
+/// (the Rust `Counter` fixture of `test_keymap.py` with clash capture).
 struct ClashApp {
     count: Arc<Mutex<i32>>,
     clashes: Arc<Mutex<Vec<BindingClash>>>,
@@ -634,18 +683,30 @@ impl TextualApp for ClashApp {
     }
 
     fn handle_bindings_clash(&mut self, clashed: &[BindingClash]) {
-        *self.calls.lock().unwrap_or_else(|e| e.into_inner()) += 1;
-        *self.clashes.lock().unwrap_or_else(|e| e.into_inner()) = clashed.to_vec();
+        *self
+            .calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) += 1;
+        *self
+            .clashes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = clashed.to_vec();
     }
 
     fn on_app_action_str(&mut self, _app: &mut App, action: &str, ctx: &mut WidgetCtx) {
         match action {
             "increment" => {
-                *self.count.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+                *self
+                    .count
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) += 1;
                 ctx.set_handled();
             }
             "decrement" => {
-                *self.count.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+                *self
+                    .count
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) -= 1;
                 ctx.set_handled();
             }
             _ => {}
@@ -674,7 +735,10 @@ fn keymap_clash_reports_verbatim_self_clash() {
         |pilot| {
             pilot.press(&["d"])?;
 
-            let observed = clashes_o.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let observed = clashes_o
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
             assert_eq!(
                 observed.len(),
                 1,
@@ -696,8 +760,18 @@ fn keymap_clash_reports_verbatim_self_clash() {
                 "the clashed node must be the app node"
             );
             // The remapped increment binding fired on "d".
-            assert_eq!(*count_o.lock().unwrap_or_else(|e| e.into_inner()), 1);
-            assert_eq!(*calls_o.lock().unwrap_or_else(|e| e.into_inner()), 1);
+            assert_eq!(
+                *count_o
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+                1
+            );
+            assert_eq!(
+                *calls_o
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+                1
+            );
 
             // Cadence: the hook fires per clashing KEYPRESS, never from idle
             // loop passes (the hint pass produces no clash information).
@@ -705,13 +779,17 @@ fn keymap_clash_reports_verbatim_self_clash() {
             pilot.pause()?;
             pilot.pause()?;
             assert_eq!(
-                *calls_o.lock().unwrap_or_else(|e| e.into_inner()),
+                *calls_o
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
                 1,
                 "idle frames must not re-fire the clash hook"
             );
             pilot.press(&["d"])?;
             assert_eq!(
-                *calls_o.lock().unwrap_or_else(|e| e.into_inner()),
+                *calls_o
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
                 2,
                 "each clashing keypress fires the hook once"
             );
@@ -728,7 +806,7 @@ fn keymap_clash_reports_verbatim_self_clash() {
 fn keymap_clash_under_active_screen_reports_app_root_source() {
     struct PlainScreen;
     impl Screen for PlainScreen {
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             "PlainScreen"
         }
         fn compose(&self) -> Box<dyn Widget> {
@@ -754,7 +832,10 @@ fn keymap_clash_under_active_screen_reports_app_root_source() {
             pilot.pause()?;
             pilot.press(&["d"])?;
 
-            let observed = clashes_o.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let observed = clashes_o
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
             assert_eq!(
                 observed.len(),
                 1,
@@ -798,7 +879,10 @@ fn set_keymap_rebroadcasts_bindings_changed_even_when_identical() {
 
         fn on_event(&mut self, event: &Event, _ctx: &mut WidgetCtx) {
             if matches!(event, Event::BindingsChanged(_)) {
-                *self.hits.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+                *self
+                    .hits
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) += 1;
             }
         }
     }
@@ -822,7 +906,11 @@ fn set_keymap_rebroadcasts_bindings_changed_even_when_identical() {
     let hits: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let observed = Arc::clone(&hits);
     run_test(KeymapUpdateApp { hits }, |pilot| {
-        let count = || *observed.lock().unwrap_or_else(|e| e.into_inner());
+        let count = || {
+            *observed
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        };
         pilot.pause()?;
         pilot.pause()?;
         let base = count();

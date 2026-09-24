@@ -33,6 +33,7 @@ pub struct ScrollBarRender {
 }
 
 impl ScrollBarRender {
+    #[must_use]
     pub fn thumb_range(
         track_len: usize,
         virtual_size: usize,
@@ -69,7 +70,8 @@ impl ScrollBarRender {
     ///
     /// `track_fg`: fg for track (whitespace) cells. Python `_Styled(render, rich_style)` applies
     /// the host widget `color` to ALL segments (including track whitespace). When `Some`, this fg
-    /// is baked into the track_style so `apply_style_to_segments` sees `s.color.is_some()`.
+    /// is baked into the `track_style` so `apply_style_to_segments` sees `s.color.is_some()`.
+    #[must_use]
     pub fn render_bar(
         &self,
         track_len: usize,
@@ -226,6 +228,7 @@ pub struct ScrollbarPolicy {
 }
 
 impl ScrollbarPolicy {
+    #[must_use]
     pub fn from_style(
         style: &Style,
         default_vertical_size: usize,
@@ -247,16 +250,15 @@ impl ScrollbarPolicy {
             vertical_size: style
                 .scrollbar_size_vertical
                 .or(style.scrollbar_size)
-                .map(|size| size as usize)
-                .unwrap_or(default_vertical_size.max(1)),
+                .map_or(default_vertical_size.max(1), |size| size as usize),
             horizontal_size: style
                 .scrollbar_size_horizontal
                 .or(style.scrollbar_size)
-                .map(|size| size as usize)
-                .unwrap_or(default_horizontal_size.max(1)),
+                .map_or(default_horizontal_size.max(1), |size| size as usize),
         }
     }
 
+    #[must_use]
     pub fn resolve(
         self,
         widget_width: usize,
@@ -380,6 +382,7 @@ pub struct ScrollbarGeometry {
 }
 
 impl ScrollbarGeometry {
+    #[must_use]
     pub fn from_runtime_state(
         widget: (usize, usize),
         content: (usize, usize),
@@ -409,27 +412,33 @@ impl ScrollbarGeometry {
         }
     }
 
+    #[must_use]
     pub fn max_offset_x(&self) -> usize {
         max_offset(self.content_width, self.viewport_width)
     }
 
+    #[must_use]
     pub fn max_offset_y(&self) -> usize {
         max_offset(self.content_height, self.viewport_height)
     }
 
+    #[must_use]
     pub fn clamp_offset_x(&self, offset: usize) -> usize {
         clamp_offset(offset, self.content_width, self.viewport_width)
     }
 
+    #[must_use]
     pub fn clamp_offset_y(&self, offset: usize) -> usize {
         clamp_offset(offset, self.content_height, self.viewport_height)
     }
 
+    #[must_use]
     pub fn vertical_lane_start(&self) -> Option<usize> {
         (self.vertical_lane_width > 0)
             .then_some(self.widget_width.saturating_sub(self.vertical_lane_width))
     }
 
+    #[must_use]
     pub fn horizontal_lane_start(&self) -> Option<usize> {
         (self.horizontal_lane_height > 0).then_some(
             self.widget_height
@@ -437,14 +446,17 @@ impl ScrollbarGeometry {
         )
     }
 
+    #[must_use]
     pub fn is_vertical_scrollable(&self) -> bool {
         self.vertical_lane_width > 0 && self.content_height > self.viewport_height
     }
 
+    #[must_use]
     pub fn is_horizontal_scrollable(&self) -> bool {
         self.horizontal_lane_height > 0 && self.content_width > self.viewport_width
     }
 
+    #[must_use]
     pub fn vertical_thumb(&self, offset_y: usize) -> (usize, usize) {
         thumb_range(
             self.viewport_height,
@@ -454,6 +466,7 @@ impl ScrollbarGeometry {
         )
     }
 
+    #[must_use]
     pub fn horizontal_thumb(&self, offset_x: usize) -> (usize, usize) {
         thumb_range(
             self.viewport_width,
@@ -463,6 +476,7 @@ impl ScrollbarGeometry {
         )
     }
 
+    #[must_use]
     pub fn hit_test(
         &self,
         x: usize,
@@ -526,6 +540,7 @@ impl ScrollbarGeometry {
         None
     }
 
+    #[must_use]
     pub fn page_offset_for_track_click(
         &self,
         axis: ScrollbarAxis,
@@ -562,6 +577,7 @@ impl ScrollbarGeometry {
         clamp_offset(next, content_len, viewport_len)
     }
 
+    #[must_use]
     pub fn drag_offset(
         &self,
         axis: ScrollbarAxis,
@@ -590,14 +606,17 @@ impl ScrollbarGeometry {
     }
 }
 
+#[must_use]
 pub fn max_offset(content_len: usize, viewport_len: usize) -> usize {
     content_len.saturating_sub(viewport_len.max(1))
 }
 
+#[must_use]
 pub fn clamp_offset(offset: usize, content_len: usize, viewport_len: usize) -> usize {
     offset.min(max_offset(content_len, viewport_len))
 }
 
+#[must_use]
 pub fn scroll_by(offset: usize, delta: i32, content_len: usize, viewport_len: usize) -> usize {
     let next = if delta.is_negative() {
         offset.saturating_sub(delta.unsigned_abs() as usize)
@@ -607,10 +626,12 @@ pub fn scroll_by(offset: usize, delta: i32, content_len: usize, viewport_len: us
     clamp_offset(next, content_len, viewport_len)
 }
 
+#[must_use]
 pub fn scroll_end(content_len: usize, viewport_len: usize) -> usize {
     max_offset(content_len, viewport_len)
 }
 
+#[must_use]
 pub fn thumb_range(
     track_len: usize,
     content_len: usize,
@@ -620,6 +641,7 @@ pub fn thumb_range(
     ScrollBarRender::thumb_range(track_len, content_len, viewport_len, offset as f32)
 }
 
+#[must_use]
 pub fn drag_to_offset(
     pointer: usize,
     grab_offset: usize,
@@ -672,6 +694,7 @@ fn quantize_drag_position(position: f32) -> f32 {
 impl ScrollBar {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new(vertical: bool, thickness: usize) -> Self {
         Self {
             vertical,
@@ -711,14 +734,17 @@ impl ScrollBar {
         self.position = position.max(0.0);
     }
 
+    #[must_use]
     pub fn position(&self) -> f32 {
         self.position
     }
 
+    #[must_use]
     pub fn grabbed(&self) -> bool {
         self.grabbed
     }
 
+    #[must_use]
     pub fn axis(&self) -> ScrollbarAxis {
         if self.vertical {
             ScrollbarAxis::Vertical
@@ -991,6 +1017,7 @@ pub struct ScrollBarCorner {
 impl ScrollBarCorner {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             seed: NodeSeed::default(),
@@ -1323,7 +1350,7 @@ mod tests {
 
     /// Python `ScrollBar._render_bar` (scrollbar.py:311-313): a bar whose
     /// window covers the whole virtual extent renders with `window_size = 0` —
-    /// a PLAIN track (bg only), no thumb. Regression for the RichLog
+    /// a PLAIN track (bg only), no thumb. Regression for the `RichLog`
     /// `overflow-y: scroll` gutter, which painted a full-length reverse-video
     /// thumb where Python shows the bare `$scrollbar-background` strip.
     #[test]
@@ -1343,7 +1370,7 @@ mod tests {
             segments
                 .iter()
                 .filter(|seg| seg.control.is_none())
-                .all(|seg| seg.style.map(|s| s.reverse != Some(true)).unwrap_or(true)),
+                .all(|seg| seg.style.is_none_or(|s| s.reverse != Some(true))),
             "an unscrollable bar must not paint a reverse-video thumb"
         );
         assert!(
@@ -1578,11 +1605,11 @@ mod tests {
         );
     }
 
-    /// Regression: a vertical ScrollBar must paint glyphs `thickness` cells wide.
+    /// Regression: a vertical `ScrollBar` must paint glyphs `thickness` cells wide.
     /// The runtime drives `set_thickness` from the CSS-resolved `scrollbar-size`
     /// lane (e.g. `scrollbar-size: 10 4` → vertical lane width 4); previously the
     /// thickness stayed at the creation default (2) regardless of CSS, so a 4-wide
-    /// lane was painted only 2 cells wide (styles/scrollbar_size parity gap).
+    /// lane was painted only 2 cells wide (`styles/scrollbar_size` parity gap).
     #[test]
     fn scrollbar_thickness_drives_vertical_glyph_width() {
         let mut bar = ScrollBar::new(true, 2);

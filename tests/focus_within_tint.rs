@@ -20,14 +20,14 @@ fn focus_within_applies_background_tint() {
     // Container tints its surface when a descendant is focused; the child Input
     // has an explicit surface bg so we can observe the container tint composited
     // onto the child that inherits it.
-    let css = r#"
+    let css = r"
 Vertical {
     background: #1e1e1e;
     &:focus-within {
         background-tint: #e0e0e0 5%;
     }
 }
-"#;
+";
     let mut sheet = default_widget_stylesheet();
     sheet.extend(&StyleSheet::parse(css));
     let _guard = set_style_context(sheet);

@@ -187,7 +187,7 @@ fn typed_mismatch_is_loud() {
         Err(QueryError::TypeMismatch { actual, .. }) => {
             assert_eq!(actual, "Probe");
         }
-        other => panic!("expected TypeMismatch, got {:?}", other),
+        other => panic!("expected TypeMismatch, got {other:?}"),
     }
 }
 

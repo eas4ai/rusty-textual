@@ -87,6 +87,7 @@ pub struct DiffApp {
 }
 
 impl DiffApp {
+    #[must_use]
     pub fn new(old: String, new: String) -> Self {
         Self { old, new }
     }

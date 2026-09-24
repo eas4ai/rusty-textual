@@ -8,7 +8,7 @@ use super::{Document, EditResult, Location, Selection};
 /// [`Edit::apply`] and [`Edit::undo`] take `(&mut Document, Selection)` and
 /// record the selection intent in [`Edit::updated_selection`]; the `TextArea`
 /// edit funnel owns applying that selection after re-wrap, preserving the
-/// Python ordering (edit, wrap_range, then selection restore).
+/// Python ordering (edit, `wrap_range`, then selection restore).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Edit {
     /// The text to insert. An empty string is equivalent to deletion.
@@ -51,26 +51,31 @@ impl Edit {
     }
 
     /// The location impacted by this edit nearest the document start.
+    #[must_use]
     pub fn top(&self) -> Location {
         self.from_location.min(self.to_location)
     }
 
     /// The location impacted by this edit nearest the document end.
+    #[must_use]
     pub fn bottom(&self) -> Location {
         self.from_location.max(self.to_location)
     }
 
     /// The result of the original [`Edit::apply`], if performed.
+    #[must_use]
     pub fn edit_result(&self) -> Option<&EditResult> {
         self.edit_result.as_ref()
     }
 
     /// Where the selection should move to after this edit (or after undo).
+    #[must_use]
     pub fn updated_selection(&self) -> Option<Selection> {
         self.updated_selection
     }
 
     /// The selection recorded when the edit was originally performed.
+    #[must_use]
     pub fn original_selection(&self) -> Option<Selection> {
         self.original_selection
     }

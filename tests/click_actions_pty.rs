@@ -53,8 +53,7 @@ fn profile_dir_name() -> String {
             }
         })
         .and_then(|p| p.file_name())
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "debug".to_string())
+        .map_or_else(|| "debug".to_string(), |s| s.to_string_lossy().into_owned())
 }
 
 fn docs_example_binary(name: &str) -> PathBuf {

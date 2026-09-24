@@ -6,7 +6,7 @@
 //! they are not part of the cascade at all. `layers` cascades as a single
 //! replace-wins field, so declaring the system layers in the Screen default
 //! CSS (the pre-hardening approach) broke exactly that way: the user list
-//! REPLACED `_toastrack` and the ToastRack fell into the default bucket.
+//! REPLACED `_toastrack` and the `ToastRack` fell into the default bucket.
 //!
 //! Rust mirrors Python: the Screen default CSS declares NO system layers;
 //! every layers-ORDER consumer resolves a node's layer list through
@@ -156,12 +156,12 @@ mod tests {
     impl crate::TextualApp for LayeredButtonsApp {
         fn configure(&mut self, app: &mut crate::App) -> crate::Result<()> {
             app.load_stylesheet(
-                r##"
+                r"
                 Screen { align: center middle; layers: below above; }
                 Button { width: 28; height: 8; }
                 #b1 { layer: above; }
                 #b2 { layer: below; offset: 12 6; }
-                "##,
+                ",
             );
             Ok(())
         }

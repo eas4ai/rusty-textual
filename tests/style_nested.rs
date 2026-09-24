@@ -15,11 +15,11 @@ fn render_with_sheet(
 
 #[test]
 fn nested_descendant_selector_applies() {
-    let css = r#"
+    let css = r"
     Row {
         Label { underline: true; }
     }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
 
     let mut row = Row::new().with_child(Label::new("hi"));
@@ -32,11 +32,11 @@ fn nested_descendant_selector_applies() {
 
 #[test]
 fn nested_amp_class_selector_applies() {
-    let css = r#"
+    let css = r"
     Label {
         &.notice { bold: true; }
     }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
 
     let mut label = Container::new().with_child(Label::new("hi").class("notice"));
@@ -49,12 +49,12 @@ fn nested_amp_class_selector_applies() {
 
 #[test]
 fn nested_parent_and_child_rules_both_apply() {
-    let css = r#"
+    let css = r"
     Label {
         color: red;
         &.notice { bold: true; }
     }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
 
     let mut label = Container::new().with_child(Label::new("hi").class("notice"));

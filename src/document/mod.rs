@@ -60,6 +60,7 @@ pub struct Cursor {
 
 impl Cursor {
     /// Convert to a `(row, column)` document location.
+    #[must_use]
     pub fn location(self) -> Location {
         (self.row, self.col)
     }
@@ -91,6 +92,7 @@ pub struct Selection {
 
 impl Selection {
     /// Create a Selection with the same start and end point: a "cursor".
+    #[must_use]
     pub fn cursor(pos: Cursor) -> Self {
         Self {
             start: pos,
@@ -99,14 +101,16 @@ impl Selection {
     }
 
     /// True if the selection has zero width, i.e. it is just a cursor.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.start == self.end
     }
 }
 
 /// Detect the document's newline style (Python `_detect_newline_style`):
-/// `"\r\n"` (Windows) wins over `"\n"` (Unix), then `"\r"` (old MacOS),
+/// `"\r\n"` (Windows) wins over `"\n"` (Unix), then `"\r"` (old `MacOS`),
 /// defaulting to `"\n"`.
+#[must_use]
 pub fn detect_newline_style(text: &str) -> &'static str {
     if text.contains("\r\n") {
         "\r\n"
@@ -123,6 +127,7 @@ pub fn detect_newline_style(text: &str) -> &'static str {
 /// `str.splitlines` over `VALID_NEWLINES`). A trailing newline yields a
 /// trailing empty line, mirroring Python's `Document.__init__`; empty text
 /// yields a single empty line.
+#[must_use]
 pub fn split_lines(text: &str) -> Vec<String> {
     if text.is_empty() {
         return vec![String::new()];

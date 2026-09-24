@@ -7,7 +7,7 @@
 /// and `check_action()` to dim footer bindings at history ends.
 ///
 /// Rust: `MarkdownViewer::register_content()` + `go()` for navigation,
-/// `check_action()` for dimming, `NavigatorUpdated` for refresh_bindings.
+/// `check_action()` for dimming, `NavigatorUpdated` for `refresh_bindings`.
 use rusty_textual::message::NavigatorUpdated;
 use rusty_textual::prelude::*;
 
@@ -16,12 +16,12 @@ const EXAMPLE_MD: &str = include_str!("example.md");
 
 #[derive(Reactive)]
 struct MarkdownApp {
-    /// (at_start, at_end) of the viewer's navigator — drives check_action.
+    /// (`at_start`, `at_end`) of the viewer's navigator — drives `check_action`.
     #[reactive(watch_with_app, init = false)]
     nav_state: (bool, bool),
     /// Optional file path from CLI args.
     initial_path: Option<String>,
-    /// Typed handle slot for the MarkdownViewer child.
+    /// Typed handle slot for the `MarkdownViewer` child.
     viewer: HandleSlot<MarkdownViewer>,
 }
 

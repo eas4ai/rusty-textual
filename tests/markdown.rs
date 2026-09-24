@@ -4,7 +4,7 @@ use rusty_textual::render::FrameBuffer;
 use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame};
 
 /// Render a widget through the compose/tree path (the way the runtime renders it),
-/// applying the default widget stylesheet, into a FrameBuffer for assertions/snapshots.
+/// applying the default widget stylesheet, into a `FrameBuffer` for assertions/snapshots.
 ///
 /// The `Markdown` widget is compose-only — its content lives in composed children that
 /// only render when mounted in a widget tree, so tests must render it this way rather

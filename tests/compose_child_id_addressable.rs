@@ -1,7 +1,7 @@
 //! Regression: composed children carrying a `ChildDecl::with_id` must be
 //! addressable by `#id` after mount.
 //!
-//! Root cause ("with_compose id-drop"): several `*::with_compose` builders and
+//! Root cause ("`with_compose` id-drop"): several `*::with_compose` builders and
 //! the `ScrollableContainer` flatten path dropped the `ChildDecl` id/class
 //! metadata instead of threading it onto the mounted arena node, so a composed
 //! child (e.g. `ChildDecl::from(Checkbox::new(..)).with_id("initial_focus")`)

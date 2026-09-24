@@ -35,11 +35,13 @@ impl Panel {
         self
     }
 
+    #[must_use]
     pub fn padding(mut self, padding: usize) -> Self {
         self.padding = padding;
         self
     }
 
+    #[must_use]
     pub fn border(mut self, border: bool) -> Self {
         self.border = border;
         self
@@ -84,7 +86,7 @@ impl crate::widgets::Interactive for Panel {
         if self.child_extracted {
             return;
         }
-        let border_width: usize = if self.border { 1 } else { 0 };
+        let border_width: usize = usize::from(self.border);
         let total_padding = self.padding.saturating_mul(2);
         let inner_width = usize::from(width)
             .saturating_sub(border_width.saturating_mul(2) + total_padding)
@@ -176,7 +178,7 @@ impl crate::widgets::Render for Panel {
     fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
         if self.child_extracted {
             // Tree-mode: render border + title chrome only, with blank content.
-            let border_width: usize = if self.border { 1 } else { 0 };
+            let border_width: usize = usize::from(self.border);
             let total_padding = self.padding * 2;
             let width = options.size.0.max(1);
             let height = options.size.1.max(1);
@@ -249,7 +251,7 @@ impl crate::widgets::Render for Panel {
             return out;
         }
 
-        let border_width: usize = if self.border { 1 } else { 0 };
+        let border_width: usize = usize::from(self.border);
         let total_padding = self.padding * 2;
         let width = options.size.0.max(1);
         let height = options.size.1.max(1);

@@ -510,7 +510,7 @@ fn p2g34_keyline_style_fields() {
 #[test]
 fn p2g34_hatch_css_parse_renders_without_crash() {
     // NOTE: parse-only — verifies CSS parser + no-crash, not runtime hatch rendering.
-    let css = r#"Container { hatch: cross #ff0000; }"#;
+    let css = r"Container { hatch: cross #ff0000; }";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 

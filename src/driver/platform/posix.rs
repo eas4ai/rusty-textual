@@ -76,7 +76,7 @@ impl PlatformDriver for PosixPlatformDriver {
                 "\x1b[>{}u",
                 crate::driver::negotiate::KITTY_FLAGS
             )
-            .and_then(|_| std::io::stdout().flush())
+            .and_then(|()| std::io::stdout().flush())
             .is_ok()
         } else {
             false
@@ -191,8 +191,8 @@ pub(crate) fn detect_kitty_keyboard_support(protocol: KeyboardProtocol) -> bool 
             .map(str::to_lowercase)
             .as_deref()
         {
-            Some("off") | Some("0") | Some("false") => Some(false),
-            Some("on") | Some("1") | Some("true") => Some(true),
+            Some("off" | "0" | "false") => Some(false),
+            Some("on" | "1" | "true") => Some(true),
             _ => None,
         },
     };

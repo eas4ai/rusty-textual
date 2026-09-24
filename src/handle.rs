@@ -130,11 +130,13 @@ impl<W: Widget> Handle<W> {
     }
 
     /// Arena identity (for interop with NodeId-based APIs, e.g. focus, messages).
+    #[must_use]
     pub fn node_id(self) -> NodeId {
         self.node
     }
 
     /// Identity of the owning `WidgetTree` (screens own separate trees).
+    #[must_use]
     pub fn tree_id(self) -> u64 {
         self.tree_id
     }
@@ -148,6 +150,7 @@ impl<W: Widget> Handle<W> {
     }
 
     /// Whether the handle still names a live node in `tree`.
+    #[must_use]
     pub fn is_mounted_in(self, tree: &WidgetTree) -> bool {
         tree.tree_id() == self.tree_id && tree.contains(self.node)
     }
@@ -212,6 +215,7 @@ impl<W: Widget> Handle<W> {
     }
 
     /// Whether the handle still names a live node in the active tree.
+    #[must_use]
     pub fn is_mounted(self, app: &crate::runtime::App) -> bool {
         app.handle_is_mounted(self)
     }
@@ -256,6 +260,7 @@ impl<W: Widget> fmt::Debug for HandleSlot<W> {
 
 impl<W: Widget> HandleSlot<W> {
     /// Create a new, unfilled slot.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             cell: Arc::new(Mutex::new(None)),
@@ -264,6 +269,7 @@ impl<W: Widget> HandleSlot<W> {
     }
 
     /// `None` until the bound widget has been mounted.
+    #[must_use]
     pub fn get(&self) -> Option<Handle<W>> {
         let guard = self.cell.lock().unwrap_or_else(|e| e.into_inner());
         guard.map(|(node, tree_id)| Handle::new(node, tree_id))
@@ -365,7 +371,7 @@ mod tests {
             }) => {
                 assert_eq!(actual, "Probe");
             }
-            other => panic!("expected TypeMismatch, got {:?}", other),
+            other => panic!("expected TypeMismatch, got {other:?}"),
         }
     }
 

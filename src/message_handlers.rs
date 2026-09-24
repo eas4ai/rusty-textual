@@ -36,6 +36,7 @@ impl<A> Default for MessageHandlers<A> {
 }
 
 impl<A> MessageHandlers<A> {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
@@ -100,6 +101,7 @@ impl<A> MessageHandlers<A> {
         ran
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

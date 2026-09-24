@@ -9,7 +9,10 @@ use textual_macros::widget;
 use tree_sitter::{Parser, Query, QueryCursor};
 
 use crate::event::Event;
-use crate::message::*;
+use crate::message::{
+    MessageEvent, TextAreaChanged, TextAreaSelectionChanged, TextEditClipboardCopyRequested,
+    TextEditClipboardPaste, TextEditClipboardPasteRequested,
+};
 use crate::style::{Color, Style, parse_color_like};
 use crate::{Error, Result};
 
@@ -565,14 +568,14 @@ impl TextArea {
         self.history.record(edit);
         // Re-wrap BETWEEN the edit and the selection restore (Python
         // ordering: selection assignment scrolls using wrapped geometry).
-        if old_gutter_width != self.line_number_gutter_width() {
-            // The gutter width changed (line count digit transition), so
-            // the wrap width changed: full re-wrap.
-            self.rewrap_full();
-        } else {
+        if old_gutter_width == self.line_number_gutter_width() {
             self.wrapped
                 .wrap_range(&self.document, edit_top, edit_bottom, result.end_location);
             self.clamp_scroll_to_wrapped_height();
+        } else {
+            // The gutter width changed (line count digit transition), so
+            // the wrap width changed: full re-wrap.
+            self.rewrap_full();
         }
         if let Some(selection) = updated_selection {
             self.set_selection(selection);
@@ -619,8 +622,7 @@ impl TextArea {
             edit.undo(&mut self.document);
             let end_location = edit
                 .edit_result()
-                .map(|result| result.end_location)
-                .unwrap_or((0, 0));
+                .map_or((0, 0), |result| result.end_location);
             if edit.top() < minimum_top {
                 minimum_top = edit.top();
             }
@@ -632,9 +634,7 @@ impl TextArea {
             }
         }
         self.doc_revision = self.doc_revision.wrapping_add(1);
-        if old_gutter_width != self.line_number_gutter_width() {
-            self.rewrap_full();
-        } else {
+        if old_gutter_width == self.line_number_gutter_width() {
             self.wrapped.wrap_range(
                 &self.document,
                 minimum_top,
@@ -642,6 +642,8 @@ impl TextArea {
                 maximum_new_bottom,
             );
             self.clamp_scroll_to_wrapped_height();
+        } else {
+            self.rewrap_full();
         }
         for edit in edits.iter_mut().rev() {
             if let Some(selection) = edit.updated_selection() {
@@ -663,8 +665,7 @@ impl TextArea {
             edit.apply(&mut self.document, self.selection, false);
             let end_location = edit
                 .edit_result()
-                .map(|result| result.end_location)
-                .unwrap_or((0, 0));
+                .map_or((0, 0), |result| result.end_location);
             if edit.top() < minimum_top {
                 minimum_top = edit.top();
             }
@@ -676,9 +677,7 @@ impl TextArea {
             }
         }
         self.doc_revision = self.doc_revision.wrapping_add(1);
-        if old_gutter_width != self.line_number_gutter_width() {
-            self.rewrap_full();
-        } else {
+        if old_gutter_width == self.line_number_gutter_width() {
             self.wrapped.wrap_range(
                 &self.document,
                 minimum_top,
@@ -686,6 +685,8 @@ impl TextArea {
                 maximum_new_bottom,
             );
             self.clamp_scroll_to_wrapped_height();
+        } else {
+            self.rewrap_full();
         }
         for edit in edits.iter_mut() {
             if let Some(selection) = edit.updated_selection() {
@@ -716,7 +717,7 @@ impl TextArea {
 
     /// Clamp `scroll_row` (a visual offset) so that deleting wrapped lines
     /// near the bottom cannot leave the viewport past the end (the maximum
-    /// scroll is `wrapped height - viewport height`, ScrollView semantics).
+    /// scroll is `wrapped height - viewport height`, `ScrollView` semantics).
     fn clamp_scroll_to_wrapped_height(&mut self) {
         let view_height = if self.layout_initialized {
             self.layout_h.max(1) as usize
@@ -1417,15 +1418,15 @@ impl crate::widgets::Focus for TextArea {
 impl crate::widgets::Interactive for TextArea {
     fn on_node_state_changed(&mut self, old: NodeState, new: NodeState) {
         if old.focused != new.focused {
-            if !new.focused {
-                self.mouse_down = false;
-                self.cursor_visible = false;
-                self.cursor_blink_next_at = None;
-            } else {
+            if new.focused {
                 self.reset_blink();
                 // Gaining focus creates an undo checkpoint (Python
                 // `_watch_has_focus`).
                 self.history.checkpoint();
+            } else {
+                self.mouse_down = false;
+                self.cursor_visible = false;
+                self.cursor_blink_next_at = None;
             }
         }
     }
@@ -1447,11 +1448,11 @@ impl crate::widgets::Interactive for TextArea {
         match event {
             Event::AppFocus(active) => {
                 self.app_active = *active;
-                if !*active {
+                if *active {
+                    self.reset_blink();
+                } else {
                     self.cursor_visible = false;
                     self.cursor_blink_next_at = None;
-                } else {
-                    self.reset_blink();
                 }
                 ctx.request_repaint();
             }

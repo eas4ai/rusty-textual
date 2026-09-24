@@ -34,7 +34,7 @@ pub struct AppRoot {
     /// (index into `children`, sink) recorded by `with_child_handle` /
     /// `with_compose` (for decls bound via `HandleSlot::bind`).
     child_handle_sinks: Vec<(usize, crate::handle::HandleSink)>,
-    /// (index into `children`, css_id, classes) recorded by `with_compose` so
+    /// (index into `children`, `css_id`, classes) recorded by `with_compose` so
     /// `.with_id()`/`.with_classes()` metadata on declared children reaches the
     /// mounted node.
     child_decl_meta: Vec<crate::widgets::ChildDeclMeta>,
@@ -64,7 +64,7 @@ fn scrollbar_drag_trace_enabled() -> bool {
     *ENABLED.get_or_init(|| {
         std::env::var("TEXTUAL_DEBUG_SCROLLBAR_DRAG_TRACE")
             .ok()
-            .map(|value| {
+            .is_some_and(|value| {
                 let normalized = value.trim().to_ascii_lowercase();
                 !(normalized.is_empty()
                     || normalized == "0"
@@ -72,13 +72,13 @@ fn scrollbar_drag_trace_enabled() -> bool {
                     || normalized == "off"
                     || normalized == "no")
             })
-            .unwrap_or(false)
     })
 }
 
 impl AppRoot {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             children: Vec::new(),
@@ -298,7 +298,7 @@ impl crate::widgets::Interactive for AppRoot {
         if scrollbar_drag_trace_enabled() {
             debug_input(&format!(
                 "[app-root-layout] self=0x{:x} node={} layout={}x{}",
-                self as *const _ as usize,
+                std::ptr::from_ref(self) as usize,
                 crate::node_id::node_id_to_ffi(self.node_id()),
                 self.last_layout_width,
                 self.last_layout_height
@@ -572,7 +572,7 @@ impl crate::widgets::Render for AppRoot {
         if scrollbar_drag_trace_enabled() {
             debug_input(&format!(
                 "[app-root-geom] self=0x{:x} node={} widget={}x{} content={}x{} viewport={}x{} offsets=({:.3}, {:.3})",
-                self as *const _ as usize,
+                std::ptr::from_ref(self) as usize,
                 crate::node_id::node_id_to_ffi(self.node_id()),
                 width,
                 height,
@@ -652,7 +652,7 @@ mod focus_tests {
         let ids: Vec<_> = tree
             .walk_depth_first(root_id)
             .into_iter()
-            .filter(|&id| tree.get(id).map(|n| n.widget.focusable()).unwrap_or(false))
+            .filter(|&id| tree.get(id).is_some_and(|n| n.widget.focusable()))
             .collect();
         assert_eq!(ids.len(), 2);
         assert_eq!(ids[0], first_id);

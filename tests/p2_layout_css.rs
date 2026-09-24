@@ -4,7 +4,7 @@
 //! - P2G-24: position (relative|absolute)
 //! - P2G-25: box-sizing (border-box|content-box)
 //! - P2G-26: split (top|right|bottom|left)
-//! - P2G-27: per-side spacing (effective_padding / effective_margin)
+//! - P2G-27: per-side spacing (`effective_padding` / `effective_margin`)
 //! - P2G-33: row-span / column-span
 
 use rich_rs::{Console, ConsoleOptions, Segments};

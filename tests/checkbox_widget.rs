@@ -34,7 +34,7 @@ fn checkbox_toggles_from_keyboard_and_emits_message() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        checkbox.on_event(&Event::Key(key), &mut __w)
+        checkbox.on_event(&Event::Key(key), &mut __w);
     };
     assert!(ctx.handled());
     assert!(checkbox.checked());
@@ -70,7 +70,7 @@ fn checkbox_click_activates_only_on_mouse_up_over_target() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.handled());
     assert!(!checkbox.checked());
@@ -90,7 +90,7 @@ fn checkbox_click_activates_only_on_mouse_up_over_target() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.handled());
     assert!(checkbox.checked());
@@ -108,7 +108,7 @@ fn checkbox_disabled_ignores_input() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        checkbox.on_event(&Event::Key(key), &mut __w)
+        checkbox.on_event(&Event::Key(key), &mut __w);
     };
     assert!(!checkbox.checked());
     assert!(!ctx.handled());

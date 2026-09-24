@@ -259,6 +259,7 @@ impl Digits {
     }
 
     /// Get the current display value.
+    #[must_use]
     pub fn value(&self) -> &str {
         &self.value
     }
@@ -277,6 +278,7 @@ impl Digits {
     ///
     /// Known characters occupy 3 cells each; unknown characters are measured
     /// via `rich_rs::cell_len` (handles wide CJK and other multi-cell chars).
+    #[must_use]
     pub fn get_width(text: &str) -> usize {
         text.chars()
             .map(|ch| {

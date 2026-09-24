@@ -4,7 +4,7 @@
 // DC-04: Widget base aligned with Python Textual widget.py DEFAULT_CSS
 // DC-05: Label aligned with Python Textual _label.py DEFAULT_CSS
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 Widget {
     scrollbar-background: $scrollbar-background;
     scrollbar-background-hover: $scrollbar-background-hover;
@@ -130,4 +130,4 @@ Spacer { bg: $background; }
 *:disabled:can-focus {
     opacity: 70%;
 }
-"#;
+";

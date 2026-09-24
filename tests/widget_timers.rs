@@ -1,4 +1,4 @@
-//! Acceptance tests for widget-owned timers (WidgetCtx build, step 4).
+//! Acceptance tests for widget-owned timers (`WidgetCtx` build, step 4).
 //!
 //! A widget registers a repeating interval in `on_mount_ctx` via
 //! `ctx.set_interval`; the callback mutates a reactive field, whose watcher

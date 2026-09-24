@@ -109,7 +109,7 @@ fn markdown_screen() -> AppRoot {
     AppRoot::new().with_child(Markdown::new(GALLERY_MARKDOWN))
 }
 
-/// A data-heavy DataTable: header row plus a keyboard-driven cell cursor.
+/// A data-heavy `DataTable`: header row plus a keyboard-driven cell cursor.
 fn table_screen() -> AppRoot {
     let headers: Vec<String> = ["Mission", "Vehicle", "Crew", "Launched", "Outcome"]
         .into_iter()
@@ -192,7 +192,12 @@ impl TextualApp for ShotApp {
 fn snap(shot: ShotApp, file: &str, width: u16, height: u16, title: &str) -> Result<()> {
     // Activate the theme globally before the App parses any stylesheet, so
     // every token resolves against the target theme from the start.
-    rusty_textual::theme::set_active_theme(shot.theme);
+    if !rusty_textual::theme::set_active_theme(shot.theme) {
+        return Err(rusty_textual::Error::Message(format!(
+            "unknown theme {:?} for {file}",
+            shot.theme
+        )));
+    }
     let path = format!("imgs/{file}");
     let title = title.to_string();
     let interact = shot.interact;

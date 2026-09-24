@@ -56,7 +56,7 @@ fn tabbed_content_keyboard_changes_active_pane() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        tabs.on_event(&Event::Key(key), &mut __w)
+        tabs.on_event(&Event::Key(key), &mut __w);
     };
     assert!(ctx.handled());
     assert_eq!(tabs.active_id(), Some("two"));
@@ -84,7 +84,7 @@ fn tabbed_content_mouse_click_header_changes_active_pane() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.handled());
     assert_eq!(tabs.active_id(), Some("two"));
@@ -97,9 +97,9 @@ fn tabbed_content_component_id_css_selector_is_supported() {
     options.size = (24, 2);
     options.max_width = 24;
     options.max_height = 2;
-    let css = r#"
+    let css = r"
     TabbedContent #--content-tab-green { fg: green; }
-    "#;
+    ";
     let _guard = set_style_context(StyleSheet::parse(css));
     let tabs = TabbedContent::new()
         .with_pane(TabPane::new("Red", Label::new("red")).id("red"))
@@ -284,7 +284,7 @@ fn tabbed_content_keyboard_navigation_skips_disabled_and_hidden_panes() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        tabs.on_event(&Event::Key(right.clone()), &mut __w)
+        tabs.on_event(&Event::Key(right.clone()), &mut __w);
     };
     assert!(ctx.handled());
     assert_eq!(tabs.active_id(), Some("four"));
@@ -295,7 +295,7 @@ fn tabbed_content_keyboard_navigation_skips_disabled_and_hidden_panes() {
             rusty_textual::node_id::NodeId::default(),
             &mut wrap_ctx,
         );
-        tabs.on_event(&Event::Key(right), &mut __w)
+        tabs.on_event(&Event::Key(right), &mut __w);
     };
     assert!(wrap_ctx.handled());
     assert_eq!(tabs.active_id(), Some("one"));
@@ -353,7 +353,7 @@ fn tabbed_content_mouse_click_disabled_pane_tab_does_not_activate() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(!ctx.handled());
     assert_eq!(tabs.active_id(), Some("one"));

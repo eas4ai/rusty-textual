@@ -31,12 +31,14 @@ impl std::hash::Hash for Color {
 }
 
 impl Color {
+    #[must_use]
     pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b, a: 1.0 }
     }
 
     /// Construct from 8-bit RGBA, where `a` is the legacy 0..=255 alpha. Prefer
     /// `rgba_f` / `with_alpha` for fractional alpha precision.
+    #[must_use]
     pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self {
             r,
@@ -47,6 +49,7 @@ impl Color {
     }
 
     /// Construct with a fractional alpha in `[0.0, 1.0]` (Python-faithful).
+    #[must_use]
     pub fn rgba_f(r: u8, g: u8, b: u8, a: f32) -> Self {
         Self {
             r,
@@ -58,10 +61,12 @@ impl Color {
 
     /// Alpha as a legacy 0..=255 byte (rounded). Use only at the ANSI/render
     /// boundary; internal blends should consume the float `a` directly.
+    #[must_use]
     pub fn alpha_u8(self) -> u8 {
         (self.a.clamp(0.0, 1.0) * 255.0).round() as u8
     }
 
+    #[must_use]
     pub fn with_alpha(self, alpha: f32) -> Self {
         Self {
             a: alpha.clamp(0.0, 1.0),
@@ -69,6 +74,7 @@ impl Color {
         }
     }
 
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         let value = value.trim();
         if value.is_empty() {
@@ -136,6 +142,7 @@ impl Color {
         None
     }
 
+    #[must_use]
     pub fn to_simple_opaque(self) -> rich_rs::SimpleColor {
         rich_rs::SimpleColor::Rgb {
             r: self.r,
@@ -150,10 +157,11 @@ impl Color {
     /// Use this instead of `with_alpha(f).flatten_over()` when the alpha is known
     /// as a float — it avoids the u8 alpha quantization that drifts the result by
     /// one (e.g. `auto`/contrast text at 87%).
+    #[must_use]
     pub fn blend_over_float(self, under: Color, factor: f32) -> Color {
         let factor = factor.clamp(0.0, 1.0);
         let mix = |o: u8, u: u8| -> u8 {
-            (u as f32 + (o as f32 - u as f32) * factor).clamp(0.0, 255.0) as u8
+            (f32::from(u) + (f32::from(o) - f32::from(u)) * factor).clamp(0.0, 255.0) as u8
         };
         Color::rgb(
             mix(self.r, under.r),
@@ -163,16 +171,19 @@ impl Color {
     }
 
     /// Python `Color.inverse` — `Color(255 - r, 255 - g, 255 - b, a)`.
+    #[must_use]
     pub fn inverse(self) -> Color {
         Color::rgba_f(255 - self.r, 255 - self.g, 255 - self.b, self.a)
     }
 
     /// Python `Color.clamped` — channels are already `u8` (in-range); only alpha
     /// can drift, so clamp it to `[0,1]`.
+    #[must_use]
     pub fn clamped(self) -> Color {
         Color::rgba_f(self.r, self.g, self.b, self.a.clamp(0.0, 1.0))
     }
 
+    #[must_use]
     pub fn flatten_over(self, under: Color) -> Color {
         if self.a >= 1.0 {
             return Color::rgb(self.r, self.g, self.b);
@@ -197,14 +208,15 @@ impl Color {
     /// by one (e.g. `#153854` vs `#153954` over `$surface`). Apply this to
     /// GENERATED theme tokens only; CSS-literal percentages (`red 10%`) stay
     /// fractional in Python and must NOT be quantized.
+    #[must_use]
     pub fn quantize_alpha_hex(self) -> Color {
         if self.a >= 1.0 || self.a <= 0.0 {
             return self;
         }
         // f64 multiply (round-to-nearest) then truncate, exactly like CPython's
         // `int(a * 255)` (e.g. 0.6 → 153, 0.3 → 76, 0.04 → 10).
-        let byte = ((self.a as f64) * 255.0) as u8;
-        Color::rgba_f(self.r, self.g, self.b, byte as f32 / 255.0)
+        let byte = (f64::from(self.a) * 255.0) as u8;
+        Color::rgba_f(self.r, self.g, self.b, f32::from(byte) / 255.0)
     }
 }
 
@@ -339,6 +351,7 @@ pub(crate) fn ansi_simple_to_truecolor(
     }
 }
 
+#[must_use]
 pub fn parse_color_like(value: &str) -> Option<Color> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("transparent") {
@@ -551,17 +564,20 @@ pub struct AutoColor {
 }
 
 impl AutoColor {
+    #[must_use]
     pub fn new(alpha_percent: u8) -> Self {
         Self {
             alpha_percent: alpha_percent.min(100),
         }
     }
 
+    #[must_use]
     pub fn alpha(self) -> f32 {
-        self.alpha_percent as f32 / 100.0
+        f32::from(self.alpha_percent) / 100.0
     }
 }
 
+#[must_use]
 pub fn parse_auto_color_like(value: &str) -> Option<AutoColor> {
     let value = value.trim();
     if value.is_empty() {
@@ -801,7 +817,7 @@ fn resolve_textual_dark_token(name: &str) -> Option<Color> {
     if let Some((base_name, kind, n)) = parse_shade(name) {
         let color = base.get(base_name).copied()?;
         let step = 0.15_f64 / 2.0;
-        let delta = step * (n as f64);
+        let delta = step * f64::from(n);
         return Some(match kind {
             ShadeKind::Lighten => lighten_lab(color, delta),
             ShadeKind::Darken => darken_lab(color, delta),
@@ -858,8 +874,8 @@ fn blend(a: Color, b: Color, t: f32) -> Color {
     let (aa, ba) = (a.a, b.a);
     let t = t.clamp(0.0, 1.0);
     let mix = |x: u8, y: u8| -> u8 {
-        let xf = x as f32;
-        let yf = y as f32;
+        let xf = f32::from(x);
+        let yf = f32::from(y);
         (xf + (yf - xf) * t).clamp(0.0, 255.0) as u8
     };
     let alpha = (aa + (ba - aa) * t).clamp(0.0, 1.0);
@@ -883,9 +899,9 @@ pub(crate) fn darken_lab(color: Color, amount: f64) -> Color {
 
 pub(crate) fn contrast_text(color: Color) -> Color {
     let (r, g, b) = to_rgb(color);
-    let r = r as f32 / 255.0;
-    let g = g as f32 / 255.0;
-    let b = b as f32 / 255.0;
+    let r = f32::from(r) / 255.0;
+    let g = f32::from(g) / 255.0;
+    let b = f32::from(b) / 255.0;
     let brightness = (299.0 * r + 587.0 * g + 114.0 * b) / 1000.0;
     if brightness < 0.5 {
         from_rgb(255, 255, 255)
@@ -895,12 +911,12 @@ pub(crate) fn contrast_text(color: Color) -> Color {
 }
 
 /// Convert an RGB color to CIE-L*a*b* via XYZ, byte-exact to Python Textual's
-/// `textual.color.rgb_to_lab` (easyrgb form, f64). Cf. http://www.easyrgb.com/en/math.php.
+/// `textual.color.rgb_to_lab` (easyrgb form, f64). Cf. <http://www.easyrgb.com/en/math.php>.
 fn rgb_to_lab(color: Color) -> (f64, f64, f64) {
     let (r8, g8, b8) = to_rgb(color);
-    let mut r = r8 as f64 / 255.0;
-    let mut g = g8 as f64 / 255.0;
-    let mut b = b8 as f64 / 255.0;
+    let mut r = f64::from(r8) / 255.0;
+    let mut g = f64::from(g8) / 255.0;
+    let mut b = f64::from(b8) / 255.0;
 
     r = if r > 0.04045 {
         ((r + 0.055) / 1.055).powf(2.4)
@@ -1000,14 +1016,14 @@ fn lab_to_rgb(l: f64, a: f64, b: f64, alpha: f32) -> Color {
 }
 
 pub(crate) fn blend_colors(a: Color, b: Color, percent: u8) -> Color {
-    blend(a, b, (percent as f32 / 100.0).clamp(0.0, 1.0))
+    blend(a, b, (f32::from(percent) / 100.0).clamp(0.0, 1.0))
 }
 
 /// Interpolate a single 8-bit channel, Python-faithful (`int(a + (b-a)*t)` —
 /// computed in float and TRUNCATED, matching `Color.blend`/`tint`).
 pub(crate) fn blend_channels_trunc(a: u8, b: u8, t: f32) -> u8 {
     let t = t.clamp(0.0, 1.0);
-    (a as f32 + (b as f32 - a as f32) * t).clamp(0.0, 255.0) as u8
+    (f32::from(a) + (f32::from(b) - f32::from(a)) * t).clamp(0.0, 255.0) as u8
 }
 
 /// Python `DIM_FACTOR` (`textual/constants.py`): how much of the foreground
@@ -1086,6 +1102,7 @@ pub enum Scalar {
 /// Returns `None` for `Auto`/`Fraction` (those are resolved by the 1D resolver,
 /// not by a direct percentage of a known base).
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn resolve_scalar_exact(
     scalar: &Scalar,
     parent_size: u16,
@@ -1096,16 +1113,17 @@ pub fn resolve_scalar_exact(
 ) -> Option<f64> {
     match scalar {
         Scalar::Auto | Scalar::Fraction(_) => None,
-        Scalar::Cells(n) => Some(*n as f64),
-        Scalar::Percent(p) => Some(parent_size as f64 * *p as f64 / 100.0),
-        Scalar::Width(p) => Some(parent_width as f64 * *p as f64 / 100.0),
-        Scalar::Height(p) => Some(parent_height as f64 * *p as f64 / 100.0),
-        Scalar::ViewWidth(p) => Some(viewport_width as f64 * *p as f64 / 100.0),
-        Scalar::ViewHeight(p) => Some(viewport_height as f64 * *p as f64 / 100.0),
+        Scalar::Cells(n) => Some(f64::from(*n)),
+        Scalar::Percent(p) => Some(f64::from(parent_size) * f64::from(*p) / 100.0),
+        Scalar::Width(p) => Some(f64::from(parent_width) * f64::from(*p) / 100.0),
+        Scalar::Height(p) => Some(f64::from(parent_height) * f64::from(*p) / 100.0),
+        Scalar::ViewWidth(p) => Some(f64::from(viewport_width) * f64::from(*p) / 100.0),
+        Scalar::ViewHeight(p) => Some(f64::from(viewport_height) * f64::from(*p) / 100.0),
     }
 }
 
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn resolve_scalar(
     scalar: &Scalar,
     parent_size: u16,
@@ -1125,18 +1143,18 @@ pub fn resolve_scalar(
     match scalar {
         Scalar::Auto => 0,
         Scalar::Cells(n) => *n,
-        Scalar::Percent(p) => (parent_size as f32 * p / 100.0).floor() as u16,
+        Scalar::Percent(p) => (f32::from(parent_size) * p / 100.0).floor() as u16,
         Scalar::Fraction(f) => {
             if siblings_fr_total > 0.0 {
-                (available as f32 * f / siblings_fr_total).floor() as u16
+                (f32::from(available) * f / siblings_fr_total).floor() as u16
             } else {
                 0
             }
         }
-        Scalar::Width(p) => (parent_width as f32 * p / 100.0).floor() as u16,
-        Scalar::Height(p) => (parent_height as f32 * p / 100.0).floor() as u16,
-        Scalar::ViewWidth(p) => (viewport_width as f32 * p / 100.0).floor() as u16,
-        Scalar::ViewHeight(p) => (viewport_height as f32 * p / 100.0).floor() as u16,
+        Scalar::Width(p) => (f32::from(parent_width) * p / 100.0).floor() as u16,
+        Scalar::Height(p) => (f32::from(parent_height) * p / 100.0).floor() as u16,
+        Scalar::ViewWidth(p) => (f32::from(viewport_width) * p / 100.0).floor() as u16,
+        Scalar::ViewHeight(p) => (f32::from(viewport_height) * p / 100.0).floor() as u16,
     }
 }
 
@@ -1150,6 +1168,7 @@ pub struct Spacing {
 }
 
 impl Spacing {
+    #[must_use]
     pub fn all(value: u16) -> Self {
         Self {
             top: value,
@@ -1159,6 +1178,7 @@ impl Spacing {
         }
     }
 
+    #[must_use]
     pub fn vertical_horizontal(vertical: u16, horizontal: u16) -> Self {
         Self {
             top: vertical,
@@ -1168,6 +1188,7 @@ impl Spacing {
         }
     }
 
+    #[must_use]
     pub fn new(top: u16, right: u16, bottom: u16, left: u16) -> Self {
         Self {
             top,
@@ -1445,6 +1466,7 @@ pub enum BorderType {
 }
 
 impl BorderType {
+    #[must_use]
     pub fn as_edge_type(self) -> &'static str {
         match self {
             BorderType::Solid => "solid",
@@ -1470,6 +1492,7 @@ impl BorderType {
     /// Parse a border-type keyword (Python `VALID_BORDER`, lowercase).
     /// `none`/`hidden` are NOT border types here — they normalize to no border
     /// (`BorderEdge::None`) and are handled by the parser.
+    #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "solid" => Self::Solid,
@@ -1509,10 +1532,12 @@ pub enum BorderEdge {
 }
 
 impl BorderEdge {
+    #[must_use]
     pub fn is_set(&self) -> bool {
         matches!(self, BorderEdge::Edge { .. })
     }
 
+    #[must_use]
     pub fn edge_type(&self) -> &'static str {
         match self {
             BorderEdge::Edge { border_type, .. } => border_type.as_edge_type(),
@@ -1520,6 +1545,7 @@ impl BorderEdge {
         }
     }
 
+    #[must_use]
     pub fn color(&self) -> Option<Color> {
         match self {
             BorderEdge::Edge { color, .. } => Some(*color),
@@ -1662,6 +1688,7 @@ impl std::fmt::Debug for ImportanceBitset {
 }
 
 impl ImportanceBitset {
+    #[must_use]
     pub fn new() -> Self {
         Self(0)
     }
@@ -1670,10 +1697,12 @@ impl ImportanceBitset {
         self.0 |= 1u128 << (prop as u8);
     }
 
+    #[must_use]
     pub fn get(&self, prop: StyleProperty) -> bool {
         (self.0 & (1u128 << (prop as u8))) != 0
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0 == 0
     }
@@ -1859,6 +1888,7 @@ pub struct Tint {
 }
 
 impl Tint {
+    #[must_use]
     pub fn new(color: Color, percent: u8) -> Self {
         Self {
             color,
@@ -1866,8 +1896,9 @@ impl Tint {
         }
     }
 
+    #[must_use]
     pub fn amount(self) -> f32 {
-        (self.percent as f32) / 100.0
+        f32::from(self.percent) / 100.0
     }
 }
 
@@ -1960,64 +1991,76 @@ macro_rules! cascade_border_field {
 }
 
 impl Style {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     // --- Text / color builders ---
 
+    #[must_use]
     pub fn fg(mut self, color: Color) -> Self {
         self.fg = Some(color);
         self.fg_auto = None;
         self
     }
 
+    #[must_use]
     pub fn fg_auto(mut self, auto: AutoColor) -> Self {
         self.fg_auto = Some(auto);
         self.fg = None;
         self
     }
 
+    #[must_use]
     pub fn bg(mut self, color: Color) -> Self {
         self.bg = Some(color);
         self
     }
 
+    #[must_use]
     pub fn text_opacity(mut self, percent: u8) -> Self {
         self.text_opacity = Some(percent.min(100));
         self
     }
 
+    #[must_use]
     pub fn opacity(mut self, percent: u8) -> Self {
         self.opacity = Some(percent.min(100));
         self
     }
 
+    #[must_use]
     pub fn bold(mut self, value: bool) -> Self {
         self.bold = Some(value);
         self
     }
 
+    #[must_use]
     pub fn dim(mut self, value: bool) -> Self {
         self.dim = Some(value);
         self
     }
 
+    #[must_use]
     pub fn italic(mut self, value: bool) -> Self {
         self.italic = Some(value);
         self
     }
 
+    #[must_use]
     pub fn underline(mut self, value: bool) -> Self {
         self.underline = Some(value);
         self
     }
 
+    #[must_use]
     pub fn reverse(mut self, value: bool) -> Self {
         self.reverse = Some(value);
         self
     }
 
+    #[must_use]
     pub fn strike(mut self, value: bool) -> Self {
         self.strike = Some(value);
         self
@@ -2025,11 +2068,13 @@ impl Style {
 
     // --- Border builders ---
 
+    #[must_use]
     pub fn border(mut self, value: bool) -> Self {
         self.border = Some(value);
         self
     }
 
+    #[must_use]
     pub fn border_top(mut self, color: Color) -> Self {
         self.border_top = BorderEdge::Edge {
             border_type: BorderType::Solid,
@@ -2038,6 +2083,7 @@ impl Style {
         self
     }
 
+    #[must_use]
     pub fn border_right(mut self, color: Color) -> Self {
         self.border_right = BorderEdge::Edge {
             border_type: BorderType::Solid,
@@ -2046,6 +2092,7 @@ impl Style {
         self
     }
 
+    #[must_use]
     pub fn border_bottom(mut self, color: Color) -> Self {
         self.border_bottom = BorderEdge::Edge {
             border_type: BorderType::Solid,
@@ -2054,6 +2101,7 @@ impl Style {
         self
     }
 
+    #[must_use]
     pub fn border_left(mut self, color: Color) -> Self {
         self.border_left = BorderEdge::Edge {
             border_type: BorderType::Solid,
@@ -2064,11 +2112,13 @@ impl Style {
 
     // --- Spacing builders ---
 
+    #[must_use]
     pub fn margin(mut self, margin: Spacing) -> Self {
         self.margin = Some(margin);
         self
     }
 
+    #[must_use]
     pub fn padding(mut self, padding: Spacing) -> Self {
         self.padding = Some(padding);
         self
@@ -2076,6 +2126,7 @@ impl Style {
 
     /// Render-time horizontal padding applied to each content line.
     /// Does NOT affect the box model (not included in `effective_padding()`).
+    #[must_use]
     pub fn line_pad(mut self, value: usize) -> Self {
         self.line_pad = Some(value as u16);
         self
@@ -2083,31 +2134,37 @@ impl Style {
 
     // --- Size builders (Scalar-based) ---
 
+    #[must_use]
     pub fn width(mut self, value: Scalar) -> Self {
         self.width = Some(value);
         self
     }
 
+    #[must_use]
     pub fn height(mut self, value: Scalar) -> Self {
         self.height = Some(value);
         self
     }
 
+    #[must_use]
     pub fn min_width(mut self, value: Scalar) -> Self {
         self.min_width = Some(value);
         self
     }
 
+    #[must_use]
     pub fn max_width(mut self, value: Scalar) -> Self {
         self.max_width = Some(value);
         self
     }
 
+    #[must_use]
     pub fn min_height(mut self, value: Scalar) -> Self {
         self.min_height = Some(value);
         self
     }
 
+    #[must_use]
     pub fn max_height(mut self, value: Scalar) -> Self {
         self.max_height = Some(value);
         self
@@ -2115,16 +2172,19 @@ impl Style {
 
     // --- Transition builders ---
 
+    #[must_use]
     pub fn transition_duration(mut self, value: Duration) -> Self {
         self.transition_duration = Some(value);
         self
     }
 
+    #[must_use]
     pub fn transition_delay(mut self, value: Duration) -> Self {
         self.transition_delay = Some(value);
         self
     }
 
+    #[must_use]
     pub fn transition_timing(mut self, value: TransitionTiming) -> Self {
         self.transition_timing = Some(value);
         self
@@ -2135,6 +2195,7 @@ impl Style {
     /// Compute effective padding by merging the shorthand `padding` with per-side
     /// overrides (`padding_top`, `padding_right`, etc.). Per-side values take
     /// priority over the corresponding side of the shorthand.
+    #[must_use]
     pub fn effective_padding(&self) -> Spacing {
         let base = self.padding.unwrap_or_default();
         Spacing {
@@ -2148,6 +2209,7 @@ impl Style {
     /// Compute effective margin by merging the shorthand `margin` with per-side
     /// overrides (`margin_top`, `margin_right`, etc.). Per-side values take
     /// priority over the corresponding side of the shorthand.
+    #[must_use]
     pub fn effective_margin(&self) -> Spacing {
         let base = self.margin.unwrap_or_default();
         Spacing {
@@ -2161,6 +2223,7 @@ impl Style {
     // --- Cascade: `other` overrides `self` for any field that is `Some`,
     //     unless `self` has `!important` and `other` does not. ---
 
+    #[must_use]
     pub fn combine(&self, other: &Style) -> Style {
         self.combine_inner(other, true)
     }
@@ -2172,6 +2235,7 @@ impl Style {
     /// outranks the whole default layer, so default `!important` loses to
     /// user normal. Importance bits follow the winning values, so surviving
     /// default `!important` bits still outrank later inline styles.
+    #[must_use]
     pub fn combine_override(&self, other: &Style) -> Style {
         self.combine_inner(other, false)
     }
@@ -3043,6 +3107,7 @@ impl Style {
 
     // --- Inheritance: inheritable properties fall through from parent ---
 
+    #[must_use]
     pub fn inherit_from(&self, parent: &Style) -> Style {
         let (fg, fg_auto) = if let Some(color) = self.fg {
             (Some(color), None)
@@ -3209,11 +3274,13 @@ impl Style {
             || self.strike.is_some()
     }
 
+    #[must_use]
     pub fn to_rich(&self) -> Option<rich_rs::Style> {
         let default_bg = parse_color_like("$background").unwrap_or(Color::rgb(0, 0, 0));
         self.to_rich_over(default_bg)
     }
 
+    #[must_use]
     pub fn to_rich_over(&self, default_bg: Color) -> Option<rich_rs::Style> {
         if !self.has_rich_text_attrs() {
             return None;
@@ -3258,6 +3325,7 @@ impl Style {
         Some(style)
     }
 
+    #[must_use]
     pub fn to_rich_without_colors(&self) -> Option<rich_rs::Style> {
         if self.bold.is_none()
             && self.dim.is_none()
@@ -3290,6 +3358,7 @@ impl Style {
         Some(style)
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.fg.is_none()
             && self.fg_auto.is_none()
@@ -3867,10 +3936,12 @@ pub struct Theme {
 }
 
 impl Theme {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn base(mut self, style: Style) -> Self {
         self.base = style;
         self
@@ -4071,7 +4142,7 @@ mod tests {
     /// `byte / 255`). Python emits `block-cursor-blurred-background` as
     /// `#0178D44C` (a = 76/255 ≈ 0.298), so blending over `$surface` gives
     /// `#153854` — carrying the raw `0.30` gave `#153954` (g off by one), the
-    /// DataTable blurred-cursor parity diff.
+    /// `DataTable` blurred-cursor parity diff.
     #[test]
     fn generated_alpha_tokens_are_hex_quantized() {
         let cases: &[(&str, u8)] = &[
@@ -4719,13 +4790,11 @@ mod tests {
             // Only this property should be set.
             for (j, &other) in props.iter().enumerate() {
                 if i == j {
-                    assert!(b.get(other), "{:?} should be set", other);
+                    assert!(b.get(other), "{other:?} should be set");
                 } else {
                     assert!(
                         !b.get(other),
-                        "{:?} should NOT be set when {:?} is",
-                        other,
-                        prop
+                        "{other:?} should NOT be set when {prop:?} is"
                     );
                 }
             }
@@ -4945,8 +5014,7 @@ mod tests {
             assert_eq!(
                 BorderType::from_name(t.as_edge_type()),
                 Some(t),
-                "round-trip failed for {:?}",
-                t
+                "round-trip failed for {t:?}"
             );
         }
         // none/hidden/bogus must not resolve to a BorderType

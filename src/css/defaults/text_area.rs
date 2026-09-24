@@ -1,7 +1,7 @@
 // TextArea widget defaults
 // DC-15: aligned with Python Textual _text_area.py DEFAULT_CSS
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 TextArea {
     width: 1fr;
     height: 1fr;
@@ -82,4 +82,4 @@ TextArea {
         }
     }
 }
-"#;
+";

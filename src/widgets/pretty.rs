@@ -65,7 +65,7 @@ impl Pretty {
     /// The value's `Debug` representation is captured at construction time.
     pub fn new<T: Debug>(value: &T) -> Self {
         Self {
-            source: PrettySource::Static(format!("{:?}", value)),
+            source: PrettySource::Static(format!("{value:?}")),
             layout_width: 1,
             seed: NodeSeed::default(),
             border_title_text: None,
@@ -107,7 +107,7 @@ impl Pretty {
     /// For shared sources, writes the new debug string to the shared mutex.
     /// For static sources, replaces the stored string directly.
     pub fn update<T: Debug>(&mut self, value: &T) {
-        let s = format!("{:?}", value);
+        let s = format!("{value:?}");
         match &self.source {
             PrettySource::Shared(arc) => {
                 *arc.lock().unwrap_or_else(|e| e.into_inner()) = s;
@@ -372,7 +372,7 @@ mod tests {
     #[test]
     fn pretty_debug_impl() {
         let pretty = Pretty::new(&vec![1, 2]);
-        let dbg = format!("{:?}", pretty);
+        let dbg = format!("{pretty:?}");
         assert!(dbg.contains("Pretty"));
         assert!(dbg.contains("[1, 2]"));
     }

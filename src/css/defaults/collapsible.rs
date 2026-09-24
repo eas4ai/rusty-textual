@@ -1,6 +1,6 @@
 // Collapsible widget defaults
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 Collapsible {
     width: 1fr;
     height: auto;
@@ -42,4 +42,4 @@ CollapsibleTitle {
         color: $block-cursor-foreground;
     }
 }
-"#;
+";

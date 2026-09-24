@@ -32,11 +32,11 @@ fn render_with_sheet(
 
 #[test]
 fn stylesheet_parser_applies_rules() {
-    let css = r#"
+    let css = r"
 Label { fg: red; bold: true; }
 #hero { underline: true; }
 .notice { bg: blue; }
-"#;
+";
 
     let sheet = StyleSheet::parse(css);
     let mut label = Container::new().with_child(Label::new("hi").id("hero").class("notice"));
@@ -54,9 +54,9 @@ Label { fg: red; bold: true; }
 
 #[test]
 fn rgba_background_is_composited_over_base_background() {
-    let css = r#"
+    let css = r"
 Label { bg: rgba(255,0,0,0.5); }
-"#;
+";
     let sheet = StyleSheet::parse(css);
     let mut label = Label::new("x");
     let buf = render_with_sheet(&mut label, 1, 1, sheet);
@@ -70,14 +70,14 @@ Label { bg: rgba(255,0,0,0.5); }
 
 #[test]
 fn stylesheet_parser_text_style_tokens_and_not_semantics() {
-    let css = r#"
+    let css = r"
 Label {
     text-style: $button-focus-text-style not underline;
 }
 Input {
     text-style: $input-cursor-text-style;
 }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let rules = sheet.rules();
     assert_eq!(rules.len(), 1);
@@ -93,7 +93,7 @@ fn stylesheet_parser_skips_block_comments() {
     // `/* */` comments may appear before/between rules and inside blocks. They
     // must be stripped so the rule that follows a comment is still parsed (a
     // comment-before-rule previously folded into the selector and dropped it).
-    let css = r#"
+    let css = r"
 /* leading comment */
 Label {
     /* inline comment */
@@ -103,7 +103,7 @@ Label {
 Input {
     width: 5;
 }
-"#;
+";
     let sheet = StyleSheet::parse(css);
     let rules = sheet.rules();
     assert_eq!(
@@ -156,13 +156,13 @@ fn parse_color_like_supports_transparent_and_ansi_names() {
 
 #[test]
 fn stylesheet_parser_markdown_heading_tokens_resolve_in_parse_flow() {
-    let css = r#"
+    let css = r"
 Label {
     bg: $markdown-h1-background;
     fg: $markdown-h1-color;
     text-style: $markdown-h1-text-style;
 }
-"#;
+";
     let sheet = StyleSheet::parse(css);
     let rules = sheet.rules();
     assert_eq!(rules.len(), 1);
@@ -178,11 +178,11 @@ Label {
 
 #[test]
 fn stylesheet_parser_markdown_h6_text_style_token_maps_to_dim() {
-    let css = r#"
+    let css = r"
 Label {
     text-style: $markdown-h6-text-style;
 }
-"#;
+";
     let sheet = StyleSheet::parse(css);
     let rules = sheet.rules();
     assert_eq!(rules.len(), 1);
@@ -197,11 +197,11 @@ Label {
 
 #[test]
 fn stylesheet_parser_color_auto_percent_sets_fg_auto() {
-    let css = r#"
+    let css = r"
 Label {
     color: auto 90%;
 }
-"#;
+";
     let sheet = StyleSheet::parse(css);
     let style = sheet.rules()[0].style();
     assert_eq!(style.fg, None);
@@ -210,11 +210,11 @@ Label {
 
 #[test]
 fn stylesheet_parser_fg_auto_percent_sets_fg_auto() {
-    let css = r#"
+    let css = r"
 Label {
     fg: auto 50%;
 }
-"#;
+";
     let sheet = StyleSheet::parse(css);
     let style = sheet.rules()[0].style();
     assert_eq!(style.fg, None);

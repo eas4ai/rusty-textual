@@ -1,6 +1,6 @@
 //! P2 gate tests: widget-specific CSS property consumption.
 //!
-//! P2G-30: ScrollView scrollbar CSS properties (color/size/gutter/visibility).
+//! P2G-30: `ScrollView` scrollbar CSS properties (color/size/gutter/visibility).
 //! P2G-32: Link widget CSS link-styling properties (normal + hover).
 //! P2G-36: Per-property transitions (parser + resolution).
 
@@ -22,7 +22,7 @@ use rusty_textual::style::{
 #[test]
 fn p2g30_scrollbar_color_parses() {
     // NOTE: parse-only — verifies CSS parser, not runtime scrollbar rendering.
-    let css = r#"ScrollView { scrollbar-color: #ff0000; }"#;
+    let css = r"ScrollView { scrollbar-color: #ff0000; }";
     let sheet = StyleSheet::parse(css);
     let rules = sheet.rules();
     assert!(!rules.is_empty(), "should parse scrollbar-color rule");
@@ -37,7 +37,7 @@ fn p2g30_scrollbar_color_parses() {
 #[test]
 fn p2g30_scrollbar_background_parses() {
     // NOTE: parse-only — verifies CSS parser, not runtime scrollbar rendering.
-    let css = r#"ScrollView { scrollbar-background: #112233; }"#;
+    let css = r"ScrollView { scrollbar-background: #112233; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(
@@ -49,14 +49,14 @@ fn p2g30_scrollbar_background_parses() {
 #[test]
 fn p2g30_scrollbar_hover_active_colors() {
     // NOTE: parse-only — verifies CSS parser, not runtime scrollbar rendering.
-    let css = r#"
+    let css = r"
         ScrollView {
             scrollbar-color-hover: #aabbcc;
             scrollbar-color-active: #ddeeff;
             scrollbar-background-hover: #001122;
             scrollbar-background-active: #334455;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(
@@ -80,7 +80,7 @@ fn p2g30_scrollbar_hover_active_colors() {
 #[test]
 fn p2g30_scrollbar_corner_color() {
     // NOTE: parse-only — verifies CSS parser, not runtime scrollbar rendering.
-    let css = r#"ScrollView { scrollbar-corner-color: #abcdef; }"#;
+    let css = r"ScrollView { scrollbar-corner-color: #abcdef; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(
@@ -92,7 +92,7 @@ fn p2g30_scrollbar_corner_color() {
 #[test]
 fn p2g30_scrollbar_gutter_stable() {
     // NOTE: parse-only — verifies CSS parser, not runtime scrollbar rendering.
-    let css = r#"ScrollView { scrollbar-gutter: stable; }"#;
+    let css = r"ScrollView { scrollbar-gutter: stable; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(style.scrollbar_gutter, Some(ScrollbarGutter::Stable));
@@ -101,7 +101,7 @@ fn p2g30_scrollbar_gutter_stable() {
 #[test]
 fn p2g30_scrollbar_gutter_auto() {
     // NOTE: parse-only — verifies CSS parser, not runtime scrollbar rendering.
-    let css = r#"ScrollView { scrollbar-gutter: auto; }"#;
+    let css = r"ScrollView { scrollbar-gutter: auto; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(style.scrollbar_gutter, Some(ScrollbarGutter::Auto));
@@ -110,7 +110,7 @@ fn p2g30_scrollbar_gutter_auto() {
 #[test]
 fn p2g30_scrollbar_size_shorthand() {
     // NOTE: parse-only — verifies CSS parser, not runtime scrollbar rendering.
-    let css = r#"ScrollView { scrollbar-size: 3; }"#;
+    let css = r"ScrollView { scrollbar-size: 3; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(style.scrollbar_size, Some(3));
@@ -119,12 +119,12 @@ fn p2g30_scrollbar_size_shorthand() {
 #[test]
 fn p2g30_scrollbar_size_per_axis() {
     // NOTE: parse-only — verifies CSS parser, not runtime scrollbar rendering.
-    let css = r#"
+    let css = r"
         ScrollView {
             scrollbar-size-horizontal: 2;
             scrollbar-size-vertical: 4;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(style.scrollbar_size_horizontal, Some(2));
@@ -134,7 +134,7 @@ fn p2g30_scrollbar_size_per_axis() {
 #[test]
 fn p2g30_scrollbar_visibility_hidden() {
     // NOTE: parse-only — verifies CSS parser, not runtime scrollbar rendering.
-    let css = r#"ScrollView { scrollbar-visibility: hidden; }"#;
+    let css = r"ScrollView { scrollbar-visibility: hidden; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(
@@ -146,7 +146,7 @@ fn p2g30_scrollbar_visibility_hidden() {
 #[test]
 fn p2g30_scrollbar_visibility_visible() {
     // NOTE: parse-only — verifies CSS parser, not runtime scrollbar rendering.
-    let css = r#"ScrollView { scrollbar-visibility: visible; }"#;
+    let css = r"ScrollView { scrollbar-visibility: visible; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(
@@ -158,7 +158,7 @@ fn p2g30_scrollbar_visibility_visible() {
 #[test]
 fn p2g30_scrollbar_visibility_auto() {
     // NOTE: parse-only — verifies CSS parser, not runtime scrollbar rendering.
-    let css = r#"ScrollView { scrollbar-visibility: auto; }"#;
+    let css = r"ScrollView { scrollbar-visibility: auto; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(style.scrollbar_visibility, Some(ScrollbarVisibility::Auto));
@@ -168,7 +168,7 @@ fn p2g30_scrollbar_visibility_auto() {
 fn p2g30_scroll_view_render_with_css_scrollbar_size() {
     // Verify that ScrollView respects CSS scrollbar-size-vertical for
     // vertical scrollbar width (default is 2, we set 3).
-    let css = r#"ScrollView { scrollbar-size-vertical: 3; }"#;
+    let css = r"ScrollView { scrollbar-size-vertical: 3; }";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -198,7 +198,7 @@ fn p2g30_scroll_view_render_with_css_scrollbar_size() {
 
 #[test]
 fn p2g30_scroll_view_visibility_hidden_no_scrollbar() {
-    let css = r#"ScrollView { scrollbar-visibility: hidden; }"#;
+    let css = r"ScrollView { scrollbar-visibility: hidden; }";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -220,15 +220,14 @@ fn p2g30_scroll_view_visibility_hidden_no_scrollbar() {
         assert_eq!(
             line.len(),
             1,
-            "line {} should have 1 segment (no scrollbar chrome) when visibility=hidden",
-            i
+            "line {i} should have 1 segment (no scrollbar chrome) when visibility=hidden"
         );
     }
 }
 
 #[test]
 fn p2g30_scroll_view_hover_subpart_colors_are_consumed() {
-    let css = r#"
+    let css = r"
         ScrollView {
             scrollbar-size-vertical: 1;
             scrollbar-color: #101010;
@@ -236,7 +235,7 @@ fn p2g30_scroll_view_hover_subpart_colors_are_consumed() {
             scrollbar-background: #202020;
             scrollbar-background-hover: #2222aa;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -270,13 +269,13 @@ fn p2g30_scroll_view_hover_subpart_colors_are_consumed() {
 
 #[test]
 fn p2g30_scroll_view_drag_thumb_uses_active_color() {
-    let css = r#"
+    let css = r"
         ScrollView {
             scrollbar-size-vertical: 1;
             scrollbar-color: #101010;
             scrollbar-color-active: #ff5500;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -308,7 +307,7 @@ fn p2g30_scroll_view_drag_thumb_uses_active_color() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(
         ctx.handled(),
@@ -325,7 +324,7 @@ fn p2g30_scroll_view_drag_thumb_uses_active_color() {
 #[test]
 fn p2g32_link_color_parses() {
     // NOTE: parse-only — verifies CSS parser, not runtime link rendering.
-    let css = r#"Link { link-color: #ff0000; }"#;
+    let css = r"Link { link-color: #ff0000; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(
@@ -338,7 +337,7 @@ fn p2g32_link_color_parses() {
 #[test]
 fn p2g32_link_background_parses() {
     // NOTE: parse-only — verifies CSS parser, not runtime link rendering.
-    let css = r#"Link { link-background: #00ff00; }"#;
+    let css = r"Link { link-background: #00ff00; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(
@@ -350,7 +349,7 @@ fn p2g32_link_background_parses() {
 #[test]
 fn p2g32_link_style_parses() {
     // NOTE: parse-only — verifies CSS parser, not runtime link rendering.
-    let css = r#"Link { link-style: bold underline; }"#;
+    let css = r"Link { link-style: bold underline; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     let flags = style.link_style.expect("link_style should be set");
@@ -362,13 +361,13 @@ fn p2g32_link_style_parses() {
 #[test]
 fn p2g32_link_hover_variants_parse() {
     // NOTE: parse-only — verifies CSS parser, not runtime link rendering.
-    let css = r#"
+    let css = r"
         Link {
             link-color-hover: #aabb00;
             link-background-hover: #00aabb;
             link-style-hover: italic;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(
@@ -387,7 +386,7 @@ fn p2g32_link_hover_variants_parse() {
 
 #[test]
 fn p2g32_link_background_initial_clears_property() {
-    let css = r#"
+    let css = r"
         Link {
             link-background: #00ff00;
             link-background: initial;
@@ -395,7 +394,7 @@ fn p2g32_link_background_initial_clears_property() {
             link-background-hover: initial;
             link-style: bold;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(
@@ -410,7 +409,7 @@ fn p2g32_link_background_initial_clears_property() {
 
 #[test]
 fn p2g32_color_initial_clears_fg_bg_and_link_colors() {
-    let css = r#"
+    let css = r"
         Link {
             color: #010203;
             color: initial;
@@ -422,7 +421,7 @@ fn p2g32_color_initial_clears_fg_bg_and_link_colors() {
             link-color-hover: initial;
             link-style: underline;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     assert_eq!(style.fg, None, "color: initial should clear fg");
@@ -440,7 +439,7 @@ fn p2g32_color_initial_clears_fg_bg_and_link_colors() {
 
 #[test]
 fn dce12_color_auto_percent_parses_to_fg_auto() {
-    let css = r#"Label { color: auto 90%; }"#;
+    let css = r"Label { color: auto 90%; }";
     let sheet = StyleSheet::parse(css);
     let style = sheet.rules()[0].style();
     assert_eq!(style.fg, None);
@@ -449,7 +448,7 @@ fn dce12_color_auto_percent_parses_to_fg_auto() {
 
 #[test]
 fn dce12_fg_auto_percent_parses_to_fg_auto() {
-    let css = r#"Label { fg: auto 50%; }"#;
+    let css = r"Label { fg: auto 50%; }";
     let sheet = StyleSheet::parse(css);
     let style = sheet.rules()[0].style();
     assert_eq!(style.fg, None);
@@ -458,13 +457,13 @@ fn dce12_fg_auto_percent_parses_to_fg_auto() {
 
 #[test]
 fn dce11_tint_applies_to_rendered_foreground_and_background() {
-    let css = r#"
+    let css = r"
 Label {
     color: #ff0000;
     background: #00ff00;
     tint: #000000 100%;
 }
-"#;
+";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -486,7 +485,7 @@ Label {
 
 #[test]
 fn p2g32_link_render_applies_css_color() {
-    let css = r#"Link { link-color: #ff0000; }"#;
+    let css = r"Link { link-color: #ff0000; }";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -513,12 +512,12 @@ fn p2g32_link_render_applies_css_color() {
 
 #[test]
 fn p2g32_link_hover_applies_hover_css() {
-    let css = r#"
+    let css = r"
         Link {
             link-color: #aaaaaa;
             link-color-hover: #ff0000;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -557,12 +556,12 @@ fn p2g32_link_hover_applies_hover_css() {
 
 #[test]
 fn p2g32_link_normal_does_not_use_hover_css() {
-    let css = r#"
+    let css = r"
         Link {
             link-color: #aaaaaa;
             link-color-hover: #ff0000;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -597,7 +596,7 @@ fn p2g32_link_normal_does_not_use_hover_css() {
 #[test]
 fn p2g36_transition_shorthand_parses_single_property() {
     // NOTE: parse-only — verifies CSS parser, not runtime transition behavior.
-    let css = r#"ScrollView { transition: offset_y 500ms linear; }"#;
+    let css = r"ScrollView { transition: offset_y 500ms linear; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     let transitions = style
@@ -614,11 +613,11 @@ fn p2g36_transition_shorthand_parses_single_property() {
 #[test]
 fn p2g36_transition_shorthand_parses_multi_property() {
     // NOTE: parse-only — verifies CSS parser, not runtime transition behavior.
-    let css = r#"
+    let css = r"
         ScrollView {
             transition: opacity 300ms linear 100ms, background 200ms;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     let transitions = style
@@ -646,7 +645,7 @@ fn p2g36_transition_shorthand_parses_multi_property() {
 #[test]
 fn p2g36_transition_also_sets_generic_fields_from_first_item() {
     // NOTE: parse-only — verifies CSS parser, not runtime transition behavior.
-    let css = r#"ScrollView { transition: offset_y 400ms in_out_cubic 50ms; }"#;
+    let css = r"ScrollView { transition: offset_y 400ms in_out_cubic 50ms; }";
     let sheet = StyleSheet::parse(css);
     let style = &sheet.rules()[0].style();
     // Generic transition fields should match the first item.
@@ -658,7 +657,7 @@ fn p2g36_transition_also_sets_generic_fields_from_first_item() {
 #[test]
 fn p2g36_resolve_transition_for_specific_property() {
     let style = Style::new()
-        .transition_duration(Duration::from_millis(1000))
+        .transition_duration(Duration::from_secs(1))
         .transition_timing(TransitionTiming::OutCubic);
     let mut style = style;
     style.transitions = Some(vec![
@@ -693,7 +692,7 @@ fn p2g36_resolve_transition_for_specific_property() {
     // "unknown" should fall back to generic transition.
     let (dur, _del, ease) =
         rusty_textual::runtime::resolve_transition_for_property(&style, "unknown").unwrap();
-    assert_eq!(dur, Duration::from_millis(1000));
+    assert_eq!(dur, Duration::from_secs(1));
     assert_eq!(ease, AnimationEase::OutCubic);
 }
 
@@ -746,11 +745,11 @@ fn p2g36_resolve_transition_no_transitions_no_generic() {
 
 #[test]
 fn dce08_text_style_not_examples_parse() {
-    let css = r#"
+    let css = r"
         Label.a { text-style: not reverse; }
         Label.b { text-style: bold not underline; }
         Label.c { text-style: bold italic not dim; }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let rules = sheet.rules();
     assert_eq!(rules.len(), 3);
@@ -770,12 +769,12 @@ fn dce08_text_style_not_examples_parse() {
 
 #[test]
 fn dce09_text_style_token_refs_parse() {
-    let css = r#"
+    let css = r"
         Label.a { text-style: $button-focus-text-style; }
         Label.b { text-style: $block-cursor-text-style; }
         Label.c { text-style: $block-cursor-blurred-text-style; }
         Label.d { text-style: $input-cursor-text-style; }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let rules = sheet.rules();
     assert_eq!(rules.len(), 2);
@@ -798,12 +797,12 @@ fn p2_32_non_hovered_link_uses_normal_link_color() {
     // Hover and disabled state are managed by the runtime node record
     // (NodeState); outside of dispatch the link is neither hovered nor disabled,
     // so normal link-color is applied.
-    let css = r#"
+    let css = r"
         Link {
             link-color: #aaaaaa;
             link-color-hover: #ff0000;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 

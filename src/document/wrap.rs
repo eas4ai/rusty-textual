@@ -30,6 +30,7 @@ use super::graphemes::{cell_len, grapheme_cell_width};
 ///
 /// Degenerate tab model: every tab expands to exactly 1 cell regardless of
 /// `tab_size` (see the module docs).
+#[must_use]
 pub fn get_tab_widths(line: &str) -> Vec<(&str, usize)> {
     let mut parts = Vec::new();
     let mut start = 0usize;
@@ -53,29 +54,22 @@ fn chunks(text: &str) -> Vec<(usize, usize, &str)> {
     let mut pos = 0usize;
     while pos < text.len() {
         let rest = &text[pos..];
-        let first_is_whitespace = rest
-            .chars()
-            .next()
-            .map(char::is_whitespace)
-            .unwrap_or(false);
+        let first_is_whitespace = rest.chars().next().is_some_and(char::is_whitespace);
         let end = if first_is_whitespace {
             // `\s+`: a run of whitespace.
             rest.char_indices()
                 .find(|(_, ch)| !ch.is_whitespace())
-                .map(|(index, _)| index)
-                .unwrap_or(rest.len())
+                .map_or(rest.len(), |(index, _)| index)
         } else {
             // `\S+\s*`: a word plus its trailing whitespace.
             let after_word = rest
                 .char_indices()
                 .find(|(_, ch)| ch.is_whitespace())
-                .map(|(index, _)| index)
-                .unwrap_or(rest.len());
+                .map_or(rest.len(), |(index, _)| index);
             rest[after_word..]
                 .char_indices()
                 .find(|(_, ch)| !ch.is_whitespace())
-                .map(|(index, _)| after_word + index)
-                .unwrap_or(rest.len())
+                .map_or(rest.len(), |(index, _)| after_word + index)
         };
         result.push((pos, pos + end, &text[pos..pos + end]));
         pos += end;
@@ -90,6 +84,7 @@ fn chunks(text: &str) -> Vec<(usize, usize, &str)> {
 /// `width == 0` means no wrapping (returns no offsets). With `fold`, words
 /// wider than `width` are folded onto new lines at grapheme cluster
 /// boundaries; without it they are cropped visually (no break inside).
+#[must_use]
 pub fn compute_wrap_offsets(text: &str, width: usize, fold: bool) -> Vec<usize> {
     if width == 0 {
         return Vec::new();

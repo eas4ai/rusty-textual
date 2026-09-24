@@ -186,13 +186,10 @@ fn suspend_process_default() -> io::Result<()> {
 
 /// Truthy env-flag check: `1`/`true`/`yes`/`on` (case-insensitive) enable it.
 fn env_flag(name: &str) -> bool {
-    std::env::var(name)
-        .ok()
-        .map(|value| {
-            let value = value.trim().to_ascii_lowercase();
-            matches!(value.as_str(), "1" | "true" | "yes" | "on")
-        })
-        .unwrap_or(false)
+    std::env::var(name).ok().is_some_and(|value| {
+        let value = value.trim().to_ascii_lowercase();
+        matches!(value.as_str(), "1" | "true" | "yes" | "on")
+    })
 }
 
 /// Snapshot-style query result over arena node ids.
@@ -206,18 +203,22 @@ impl DomQuery {
         Self { nodes }
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
 
+    #[must_use]
     pub fn ids(&self) -> &[NodeId] {
         &self.nodes
     }
 
+    #[must_use]
     pub fn into_ids(self) -> Vec<NodeId> {
         self.nodes
     }
@@ -295,19 +296,26 @@ pub struct DomQueryMut<'a> {
     nodes: Vec<NodeId>,
 }
 
+// Chainable DOM operations apply their effect on the call, like Python's
+// `query().add_class()`. The returned query only enables chaining, so a
+// caller may drop it; `#[must_use]` would flag correct statement-style use.
+#[allow(clippy::must_use_candidate, clippy::return_self_not_must_use)]
 impl<'a> DomQueryMut<'a> {
     fn new(app: &'a mut App, nodes: Vec<NodeId>) -> Self {
         Self { app, nodes }
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
 
+    #[must_use]
     pub fn ids(&self) -> &[NodeId] {
         &self.nodes
     }
@@ -620,6 +628,7 @@ pub struct SuspendGuard<'a> {
 
 impl SuspendGuard<'_> {
     /// Whether the suspension is still active (the guard has not been dropped).
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.app.is_suspended()
     }
@@ -653,6 +662,7 @@ pub struct AwaitRemove {
 
 impl AwaitRemove {
     /// The ids detached by the removal, parents before children.
+    #[must_use]
     pub fn removed(&self) -> &[NodeId] {
         &self.removed
     }
@@ -662,6 +672,7 @@ impl AwaitRemove {
     /// True once a lifecycle drain ran after the removal was captured; an
     /// idle pump (no events dispatched) never completes a handle whose work
     /// is still queued.
+    #[must_use]
     pub fn is_complete(&self, app: &App) -> bool {
         app.lifecycle_drain_generation() > self.drain_generation
     }
@@ -784,7 +795,7 @@ pub struct App {
     pending_widget_timer_fires: Vec<u64>,
     /// Messages posted from an `update_via` / timer / `on_mount_ctx` closure
     /// (their sender is the closure's node). The shared flush bubbles them from
-    /// that node after its rounds converge (WidgetCtx `PostUp`).
+    /// that node after its rounds converge (`WidgetCtx` `PostUp`).
     pending_widget_posts: Vec<MessageEvent>,
     /// Type-erased handle to the user app struct (`Arc<Mutex<T>>`), set by the
     /// `TextualApp` adapter at mount time. Lets timer callbacks re-enter the app
@@ -815,7 +826,7 @@ pub struct App {
     dynamic_watchers: Vec<DynamicWatcher>,
     /// Runtime hook used by `action_suspend_process()` (injectable in tests).
     suspend_process_impl: SuspendProcessFn,
-    /// Pending highlight clear: (node_id, clear_at_instant).
+    /// Pending highlight clear: (`node_id`, `clear_at_instant`).
     /// Set by HIGHLIGHT devtools command, cleared after timeout.
     pending_highlight_clear: Option<(NodeId, std::time::Instant)>,
     /// Callback for `check_action` — set by `TextualAppAdapter` to forward calls
@@ -918,7 +929,7 @@ pub struct App {
     /// headless harness keeps it on the `App` so successive `advance_ticks` /
     /// `advance_clock` calls deliver strictly-increasing tick values (mirroring
     /// the live loop's `tick += 1` per frame), which on-tick-driven animations
-    /// (LoadingIndicator, button flash, …) rely on to progress.
+    /// (`LoadingIndicator`, button flash, …) rely on to progress.
     headless_tick: u64,
     /// Whether the headless pump has registered this thread as the UI thread.
     ///
@@ -974,8 +985,7 @@ impl App {
         let frame = FrameBuffer::new(size.width as usize, size.height as usize, None);
         let sync_output = std::env::var("TEXTUAL_SYNC_OUTPUT")
             .ok()
-            .map(|s| s != "0" && s.to_lowercase() != "false")
-            .unwrap_or(true);
+            .is_none_or(|s| s != "0" && s.to_lowercase() != "false");
         let app = Self {
             driver,
             console,
@@ -1179,6 +1189,7 @@ impl App {
     }
 
     /// True while the timer is still registered (not yet fired-out or stopped).
+    #[must_use]
     pub fn timer_is_active(&self, handle: TimerHandle) -> bool {
         self.timers.contains(handle.0)
     }
@@ -1439,11 +1450,13 @@ impl App {
     }
 
     /// Current app-level title (as last set via `set_title()`).
+    #[must_use]
     pub fn title(&self) -> &str {
         &self.app_title
     }
 
     /// Current app-level sub-title (as last set via `set_sub_title()`).
+    #[must_use]
     pub fn sub_title(&self) -> Option<&str> {
         self.app_sub_title.as_deref()
     }
@@ -1505,6 +1518,7 @@ impl App {
     }
 
     /// Return current runtime pseudo-class flags (`inline`, `ansi`, `nocolor`).
+    #[must_use]
     pub fn css_runtime_pseudos(&self) -> (bool, bool, bool) {
         (self.app_inline, self.app_ansi, self.app_nocolor)
     }
@@ -1535,6 +1549,7 @@ impl App {
 
     /// Whether inactive screens currently receive the per-frame widget tick.
     /// See [`App::set_tick_inactive_screens`].
+    #[must_use]
     pub fn tick_inactive_screens(&self) -> bool {
         self.tick_inactive_screens
     }
@@ -1559,6 +1574,7 @@ impl App {
     /// Find a widget tree by its process-unique [`WidgetTree::tree_id`], over
     /// the screen stack (top-down) plus the app-root tree. `None` when no live
     /// tree carries that id (e.g. its screen was popped).
+    #[must_use]
     pub fn tree_by_id(&self, tree_id: u64) -> Option<&WidgetTree> {
         for index in (0..self.screen_stack.len()).rev() {
             if let Some(entry) = self.screen_stack.get(index)
@@ -1620,12 +1636,11 @@ impl App {
     ///
     /// Returns a snapshot query object in tree traversal order.
     pub fn query(&self, selector: &str) -> std::result::Result<DomQuery, QueryError> {
-        match self.active_widget_tree() {
-            Some(tree) => tree.query(selector).map(DomQuery::from_nodes),
-            None => {
-                Self::validate_selector(selector)?;
-                Ok(DomQuery::from_nodes(Vec::new()))
-            }
+        if let Some(tree) = self.active_widget_tree() {
+            tree.query(selector).map(DomQuery::from_nodes)
+        } else {
+            Self::validate_selector(selector)?;
+            Ok(DomQuery::from_nodes(Vec::new()))
         }
     }
 
@@ -1639,6 +1654,7 @@ impl App {
     /// unknown). Lets headless tests (including example smoke tests) assert
     /// row order and non-overlap without reaching into crate-internal fields.
     #[doc(hidden)]
+    #[must_use]
     pub fn layout_rect_for_test(&self, node: NodeId) -> Option<(u16, u16, u16, u16)> {
         let tree = self.active_widget_tree()?;
         crate::layout::inspect_node_rects(tree, node).map(|(layout, _)| layout)
@@ -1663,17 +1679,16 @@ impl App {
 
     /// Query immediate children of the tree root.
     pub fn query_children(&self, selector: &str) -> std::result::Result<DomQuery, QueryError> {
-        match self.active_widget_tree() {
-            Some(tree) => match tree.root() {
+        if let Some(tree) = self.active_widget_tree() {
+            match tree.root() {
                 Some(root) => tree
                     .query_children(root, selector)
                     .map(DomQuery::from_nodes),
                 None => Ok(DomQuery::from_nodes(Vec::new())),
-            },
-            None => {
-                Self::validate_selector(selector)?;
-                Ok(DomQuery::from_nodes(Vec::new()))
             }
+        } else {
+            Self::validate_selector(selector)?;
+            Ok(DomQuery::from_nodes(Vec::new()))
         }
     }
 
@@ -2042,6 +2057,7 @@ impl App {
     }
 
     /// Read an app-scoped typed value by key.
+    #[must_use]
     pub fn get_data<T>(&self, key: &str) -> Option<T>
     where
         T: Any + Clone + Send + Sync + 'static,
@@ -2071,8 +2087,7 @@ impl App {
         let wrapped: Arc<DataBindApplyFn> = Arc::new(move |widget, value| {
             value
                 .downcast_ref::<T>()
-                .map(|typed| apply(widget, typed))
-                .unwrap_or(false)
+                .is_some_and(|typed| apply(widget, typed))
         });
         self.data_bindings.push(DataBinding {
             key: key.clone(),
@@ -2184,11 +2199,7 @@ impl App {
             focus_chain = tree
                 .walk_depth_first(root)
                 .into_iter()
-                .filter(|&id| {
-                    tree.get(id)
-                        .map(|node| node.widget.focusable())
-                        .unwrap_or(false)
-                })
+                .filter(|&id| tree.get(id).is_some_and(|node| node.widget.focusable()))
                 .collect();
         }
         let Some(&first) = focus_chain.first() else {
@@ -2648,6 +2659,7 @@ impl App {
     }
 
     /// Whether a [`SuspendGuard`] from [`App::suspend`] is currently live.
+    #[must_use]
     pub fn is_suspended(&self) -> bool {
         self.suspended
     }
@@ -2677,6 +2689,7 @@ impl App {
     ///
     /// Backs [`AwaitRemove::is_complete`]: removals capture this counter and
     /// complete once the event loop has run a later lifecycle drain.
+    #[must_use]
     pub fn lifecycle_drain_generation(&self) -> u64 {
         self.lifecycle_drain_generation
     }
@@ -2921,6 +2934,7 @@ impl App {
     /// an app reactive use this sentinel as their watcher target, mirroring
     /// Python where the compose-parent of `child.data_bind(App.time)` is the
     /// singleton `App`/`Screen`.
+    #[must_use]
     pub fn app_reactive_source() -> NodeId {
         NodeId::default()
     }
@@ -3080,7 +3094,7 @@ impl App {
     /// Borrow a widget mutably by node id for a scoped update.
     ///
     /// Runs `f` against the widget through the shared [`run_on_node_widget_r`]
-    /// path (dispatch-recipient guard + reactive-fixpoint / EventCtx absorption),
+    /// path (dispatch-recipient guard + reactive-fixpoint / `EventCtx` absorption),
     /// so it converges identically to the other node-scoped mutation entry points.
     /// Returns `None` when the node is absent (the `Option<R>` contract). The
     /// closure is ctx-less, so post-mount side effects (class changes,
@@ -3236,11 +3250,11 @@ impl App {
         // offset here would count it twice and over-scroll by exactly the
         // current offset on every call after the first (Python parity:
         // `Widget.virtual_region` is likewise scroll-independent).
-        let virt_x = (widget_rect.x0 as i64)
-            .saturating_sub(anc_rect.x0 as i64)
+        let virt_x = i64::from(widget_rect.x0)
+            .saturating_sub(i64::from(anc_rect.x0))
             .max(0) as usize;
-        let virt_y = (widget_rect.y0 as i64)
-            .saturating_sub(anc_rect.y0 as i64)
+        let virt_y = i64::from(widget_rect.y0)
+            .saturating_sub(i64::from(anc_rect.y0))
             .max(0) as usize;
         let widget_w = widget_rect.x1.saturating_sub(widget_rect.x0) as usize;
         let widget_h = widget_rect.y1.saturating_sub(widget_rect.y0) as usize;
@@ -3358,6 +3372,7 @@ impl App {
     /// Mirrors the guard Python uses (`self._thread_id == threading.get_ident()`)
     /// to reject `call_from_thread` from the app thread. Exposed for workers that
     /// want to branch instead of receiving [`CallFromThreadError::SameThread`].
+    #[must_use]
     pub fn is_ui_thread() -> bool {
         tasks::is_ui_thread()
     }
@@ -3421,7 +3436,7 @@ impl App {
         self.typed_handle::<W>(node_id)
     }
 
-    /// Checked typed upgrade of a NodeId in the active tree.
+    /// Checked typed upgrade of a `NodeId` in the active tree.
     ///
     /// Typed wrapper over the same arena access as `with_widget_mut_as`;
     /// for one-off access to a `NodeId` from a message (e.g. `MessageEvent.sender`).
@@ -3444,7 +3459,7 @@ impl App {
         Ok(crate::handle::Handle::new(node_id, tree.tree_id()))
     }
 
-    /// Plumbing for `Handle::read` (active_widget_tree is pub(super)).
+    /// Plumbing for `Handle::read` (`active_widget_tree` is pub(super)).
     pub(crate) fn handle_read<W: Widget, R>(
         &self,
         handle: crate::handle::Handle<W>,
@@ -3478,8 +3493,7 @@ impl App {
     /// Plumbing for `Handle::is_mounted`.
     pub(crate) fn handle_is_mounted<W: Widget>(&self, handle: crate::handle::Handle<W>) -> bool {
         self.active_widget_tree()
-            .map(|tree| handle.is_mounted_in(tree))
-            .unwrap_or(false)
+            .is_some_and(|tree| handle.is_mounted_in(tree))
     }
 
     /// Build the arena-based widget tree by extracting children from the root widget.
@@ -3661,6 +3675,7 @@ impl App {
         .with_control(sender)
     }
 
+    #[must_use]
     pub fn driver(&self) -> &TerminalDriver {
         &self.driver
     }
@@ -3685,11 +3700,13 @@ impl App {
     }
 
     /// Names of all registered themes, sorted (Python `App.available_themes`).
+    #[must_use]
     pub fn available_themes(&self) -> Vec<String> {
         crate::theme::available_theme_names()
     }
 
     /// The currently active theme name.
+    #[must_use]
     pub fn theme_name(&self) -> &str {
         &self.theme_name
     }
@@ -3700,6 +3717,7 @@ impl App {
     /// publicly so headless `Pilot` tests can assert a `toggle_dark` actually
     /// flipped the state, even when the rendered frame (e.g. a blank screen with
     /// default-styled chrome) shows no per-cell color change.
+    #[must_use]
     pub fn is_dark(&self) -> bool {
         self.dark_mode
     }
@@ -3709,6 +3727,7 @@ impl App {
     /// Under the `Pilot` harness `action_suspend_process` records the request
     /// (instead of sending a real `SIGTSTP`) so suspend-on-interaction demos can
     /// assert the trigger fired without suspending the test runner.
+    #[must_use]
     pub fn headless_suspend_count(&self) -> u32 {
         self.headless_suspend_count
     }
@@ -3722,9 +3741,7 @@ impl App {
             return false;
         }
         self.theme_name = name.to_string();
-        self.dark_mode = crate::theme::get_theme(name)
-            .map(|t| t.dark)
-            .unwrap_or(true);
+        self.dark_mode = crate::theme::get_theme(name).is_none_or(|t| t.dark);
         self.rebuild_base_from_active_theme();
         self.refresh_css_for_theme();
         true
@@ -3786,6 +3803,7 @@ impl App {
         self.cycle_theme()
     }
 
+    #[must_use]
     pub fn binding_hints(&self) -> Vec<BindingHint> {
         let mut out = Vec::new();
         for quit in &self.quit_keys {
@@ -3910,6 +3928,7 @@ impl App {
         self.custom_binding_hints.len() != before
     }
 
+    #[must_use]
     pub fn visible_binding_hints(&self) -> Vec<BindingHint> {
         self.binding_hints()
             .into_iter()
@@ -3974,6 +3993,7 @@ impl App {
     }
 
     /// The current keymap (normalized values), for introspection and tests.
+    #[must_use]
     pub fn keymap(&self) -> &crate::bindings::Keymap {
         &self.keymap
     }
@@ -4121,8 +4141,7 @@ impl App {
         let root = tree.root()?;
         tree.walk_depth_first(root).into_iter().find(|&id| {
             tree.get(id)
-                .map(|node| node.widget.style_type() == "ToastRack")
-                .unwrap_or(false)
+                .is_some_and(|node| node.widget.style_type() == "ToastRack")
         })
     }
 
@@ -4145,8 +4164,7 @@ impl App {
                     || bind.modifiers.contains(KeyModifiers::SUPER)
             })
             .or_else(|| self.quit_keys.first())
-            .map(|bind| bind.key_name())
-            .unwrap_or_else(|| "ctrl+q".to_string());
+            .map_or_else(|| "ctrl+q".to_string(), |bind| bind.key_name());
         self.notify(
             format!("Press [b]{key}[/b] to quit the app"),
             "Do you want to quit?",
@@ -4274,16 +4292,19 @@ impl App {
     }
 
     /// The value passed to [`App::exit`] (Python `App.return_value`).
+    #[must_use]
     pub fn return_value(&self) -> Option<&str> {
         self.return_value.as_deref()
     }
 
     /// The code passed to [`App::exit`] (Python `App.return_code`).
+    #[must_use]
     pub fn return_code(&self) -> i32 {
         self.return_code
     }
 
     /// The shutdown message passed to [`App::exit`], if any.
+    #[must_use]
     pub fn exit_message(&self) -> Option<&str> {
         self.exit_message.as_deref()
     }
@@ -4320,12 +4341,14 @@ impl App {
     }
 
     /// The last URL passed to [`App::open_url`] while headless, if any.
+    #[must_use]
     pub fn last_opened_url(&self) -> Option<&str> {
         self.last_opened_url.as_deref()
     }
 
     /// True while no animation is running. Test/Pilot helper backing
     /// [`Pilot::wait_for_animation`](crate::runtime::Pilot::wait_for_animation).
+    #[must_use]
     pub fn animator_is_idle(&self) -> bool {
         !self.animator.has_animations()
     }
@@ -4372,6 +4395,7 @@ impl App {
     }
 
     /// Explicit mouse-capture target, if any (see [`App::capture_mouse`]).
+    #[must_use]
     pub fn mouse_captured(&self) -> Option<NodeId> {
         self.click_tracker.capture_target()
     }
@@ -4455,10 +4479,7 @@ impl App {
         if !tree.contains(target) {
             return false;
         }
-        let focusable = tree
-            .get(target)
-            .map(|node| node.widget.focusable())
-            .unwrap_or(false);
+        let focusable = tree.get(target).is_some_and(|node| node.widget.focusable());
         if !focusable {
             return false;
         }
@@ -4536,16 +4557,19 @@ impl App {
     }
 
     /// Number of screens on the stack.
+    #[must_use]
     pub fn screen_count(&self) -> usize {
         self.screen_stack.len()
     }
 
     /// Get the title from the active screen (if it defines one).
+    #[must_use]
     pub fn active_screen_title(&self) -> Option<String> {
         self.screen_stack.active_title()
     }
 
     /// Get the sub-title from the active screen (if it defines one).
+    #[must_use]
     pub fn active_screen_sub_title(&self) -> Option<String> {
         self.screen_stack.active_sub_title()
     }
@@ -4627,11 +4651,13 @@ impl App {
     }
 
     /// The name of the currently active mode, if any.
+    #[must_use]
     pub fn current_mode(&self) -> Option<&str> {
         self.current_mode.as_deref()
     }
 
     /// Returns the list of registered mode names.
+    #[must_use]
     pub fn mode_names(&self) -> Vec<&str> {
         self.modes.keys().map(|s| s.as_str()).collect()
     }
@@ -4709,8 +4735,7 @@ impl App {
             // No hover target: forward through the real root widget so app
             // wrappers can still observe pointer movement outside widget hits.
             debug_input(&format!(
-                "[hover] fallback root-move via real-root screen=({}, {})",
-                x, y
+                "[hover] fallback root-move via real-root screen=({x}, {y})"
             ));
             root.on_mouse_move(x as u16, y as u16)
         };
@@ -4811,49 +4836,46 @@ impl App {
         }
 
         let mut changed = false;
-        match next {
-            Some((owner, text)) => {
-                // Keep the anchor stable while the pointer stays over the same
-                // owner (Python re-anchors only when the hover timer re-fires on
-                // a new owner); re-anchor when the owner changes or the bubble
-                // was hidden.
-                let reanchor = self
-                    .with_widget_mut_as::<Tooltip, _>(tooltip_id, |tooltip| {
-                        !(tooltip.is_visible() && tooltip.system_owner() == Some(owner))
-                    })
-                    .unwrap_or(true);
-                changed |= self
-                    .with_widget_mut_as::<Tooltip, _>(tooltip_id, |tooltip| {
-                        tooltip.apply_system_state(owner, text)
-                    })
-                    .unwrap_or(false);
-                if reanchor {
-                    // The anchor is the mouse-relative screen point to center the
-                    // bubble on (Python `screen.absolute_offset = mouse_position`).
-                    // It is stored as the node's `absolute_offset`; CSS
-                    // `offset-x: -50%` + `margin` then position it and the
-                    // `overlay: screen` paint pass constrains it into the frame.
-                    let (anchor_x, anchor_y) = self
-                        .tooltip_anchor_for_owner(owner, screen_x, screen_y)
-                        .unwrap_or((0, 0));
-                    if let Some(tree) = self.active_widget_tree_mut() {
-                        changed |= tree.set_absolute_offset(
-                            tooltip_id,
-                            Some((i32::from(anchor_x), i32::from(anchor_y))),
-                        );
-                    }
-                }
-                changed |= self.set_runtime_display_for_node(tooltip_id, true);
-            }
-            None => {
-                changed |= self
-                    .with_widget_mut_as::<Tooltip, _>(tooltip_id, Tooltip::hide_system)
-                    .unwrap_or(false);
+        if let Some((owner, text)) = next {
+            // Keep the anchor stable while the pointer stays over the same
+            // owner (Python re-anchors only when the hover timer re-fires on
+            // a new owner); re-anchor when the owner changes or the bubble
+            // was hidden.
+            let reanchor = self
+                .with_widget_mut_as::<Tooltip, _>(tooltip_id, |tooltip| {
+                    !(tooltip.is_visible() && tooltip.system_owner() == Some(owner))
+                })
+                .unwrap_or(true);
+            changed |= self
+                .with_widget_mut_as::<Tooltip, _>(tooltip_id, |tooltip| {
+                    tooltip.apply_system_state(owner, text)
+                })
+                .unwrap_or(false);
+            if reanchor {
+                // The anchor is the mouse-relative screen point to center the
+                // bubble on (Python `screen.absolute_offset = mouse_position`).
+                // It is stored as the node's `absolute_offset`; CSS
+                // `offset-x: -50%` + `margin` then position it and the
+                // `overlay: screen` paint pass constrains it into the frame.
+                let (anchor_x, anchor_y) = self
+                    .tooltip_anchor_for_owner(owner, screen_x, screen_y)
+                    .unwrap_or((0, 0));
                 if let Some(tree) = self.active_widget_tree_mut() {
-                    changed |= tree.set_absolute_offset(tooltip_id, None);
+                    changed |= tree.set_absolute_offset(
+                        tooltip_id,
+                        Some((i32::from(anchor_x), i32::from(anchor_y))),
+                    );
                 }
-                changed |= self.set_runtime_display_for_node(tooltip_id, false);
             }
+            changed |= self.set_runtime_display_for_node(tooltip_id, true);
+        } else {
+            changed |= self
+                .with_widget_mut_as::<Tooltip, _>(tooltip_id, Tooltip::hide_system)
+                .unwrap_or(false);
+            if let Some(tree) = self.active_widget_tree_mut() {
+                changed |= tree.set_absolute_offset(tooltip_id, None);
+            }
+            changed |= self.set_runtime_display_for_node(tooltip_id, false);
         }
 
         changed
@@ -5007,27 +5029,23 @@ impl App {
                 ));
             } else {
                 debug_input(&format!(
-                    "[hover] widget_at source=frame+tree x={} y={} target=None",
-                    x, y
+                    "[hover] widget_at source=frame+tree x={x} y={y} target=None"
                 ));
             }
             chosen
+        } else if let Some(target) = frame_target {
+            debug_input(&format!(
+                "[hover] widget_at source=frame x={} y={} target={}",
+                x,
+                y,
+                node_id_to_ffi(target)
+            ));
+            Some(target)
         } else {
-            if let Some(target) = frame_target {
-                debug_input(&format!(
-                    "[hover] widget_at source=frame x={} y={} target={}",
-                    x,
-                    y,
-                    node_id_to_ffi(target)
-                ));
-                Some(target)
-            } else {
-                debug_input(&format!(
-                    "[hover] widget_at source=none x={} y={} target=None (tree-missing)",
-                    x, y
-                ));
-                None
-            }
+            debug_input(&format!(
+                "[hover] widget_at source=none x={x} y={y} target=None (tree-missing)"
+            ));
+            None
         }
     }
 
@@ -5079,8 +5097,7 @@ impl App {
             let now = Instant::now();
             let dt_ms = self
                 .last_resize_at
-                .map(|t| now.duration_since(t).as_millis())
-                .unwrap_or(0);
+                .map_or(0, |t| now.duration_since(t).as_millis());
             self.last_resize_at = Some(now);
             self.resize_burst = self.resize_burst.saturating_add(1);
             debug_render(&format!(
@@ -5116,10 +5133,7 @@ impl App {
         let Ok(modified) = meta.modified() else {
             return None;
         };
-        let changed = watch
-            .last_modified
-            .map(|prev| modified > prev)
-            .unwrap_or(true);
+        let changed = watch.last_modified.is_none_or(|prev| modified > prev);
         if !changed {
             return None;
         }
@@ -5194,7 +5208,7 @@ fn debug_target_label(tree: &WidgetTree, id: Option<NodeId>) -> String {
     match id {
         Some(node_id) => {
             if let Some(node) = tree.get(node_id) {
-                let parent = tree.parent(node_id).map(node_id_to_ffi).unwrap_or(0);
+                let parent = tree.parent(node_id).map_or(0, node_id_to_ffi);
                 format!(
                     "Some(id={},type={},parent={},children={})",
                     node_id_to_ffi(node_id),
@@ -5600,8 +5614,7 @@ mod tests {
         let hidden = app
             .active_widget_tree()
             .and_then(|tree| tree.get(tooltip_id))
-            .map(|node| !node.runtime_display)
-            .unwrap_or(false);
+            .is_some_and(|node| !node.runtime_display);
         assert!(hidden, "system tooltip should start hidden");
     }
 
@@ -5622,16 +5635,12 @@ mod tests {
             tree.set_hover_state(target, true);
         }
 
-        let (focused, hovered) = app
-            .widget_tree
-            .as_ref()
-            .map(|tree| {
-                (
-                    tree.node_state(target).focused,
-                    tree.node_state(target).hovered,
-                )
-            })
-            .unwrap_or((false, false));
+        let (focused, hovered) = app.widget_tree.as_ref().map_or((false, false), |tree| {
+            (
+                tree.node_state(target).focused,
+                tree.node_state(target).hovered,
+            )
+        });
         assert!(focused);
         assert!(hovered);
     }
@@ -5949,8 +5958,7 @@ mod tests {
         let first_visible = app
             .active_widget_tree()
             .and_then(|tree| tree.get(tooltip_id))
-            .map(|node| node.runtime_display)
-            .unwrap_or(false);
+            .is_some_and(|node| node.runtime_display);
         assert!(first_visible);
         // Hovering the SAME owner keeps the anchor stable (no re-anchor) and is a
         // no-op overall.
@@ -6099,8 +6107,7 @@ mod tests {
         let visible = app
             .active_widget_tree()
             .and_then(|tree| tree.get(tooltip_id))
-            .map(|node| node.runtime_display)
-            .unwrap_or(true);
+            .is_none_or(|node| node.runtime_display);
         assert!(!visible, "tooltip should remain hidden during cooldown");
     }
 

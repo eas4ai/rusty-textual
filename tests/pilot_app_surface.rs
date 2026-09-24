@@ -39,7 +39,9 @@ fn counter_app() -> (CounterApp, Arc<Mutex<usize>>) {
 }
 
 fn press_count(presses: &Arc<Mutex<usize>>) -> usize {
-    *presses.lock().unwrap_or_else(|e| e.into_inner())
+    *presses
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Python `App.exit(result, return_code, message)` records the payload and
@@ -274,7 +276,7 @@ fn mouse_down_up_pair_clicks_button() {
         // Absolute-coordinate variants share the same injectors.
         let node = pilot.app().query_one("#hit").expect("hit node");
         let (x0, y0, x1, y1) = pilot.app().node_screen_rect(node).expect("hit rect");
-        let (cx, cy) = ((x0 + x1) / 2, (y0 + y1) / 2);
+        let (cx, cy) = (u16::midpoint(x0, x1), u16::midpoint(y0, y1));
         pilot.mouse_down_at(cx, cy)?;
         pilot.mouse_up_at(cx, cy)?;
         assert_eq!(press_count(&presses), 2);

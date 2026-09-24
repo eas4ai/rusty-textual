@@ -1,4 +1,4 @@
-//! DateInput headless tests: focus opens the strip, typing/keys drive the
+//! `DateInput` headless tests: focus opens the strip, typing/keys drive the
 //! date, and every commit posts `DateChanged`.
 use rusty_textual::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -28,7 +28,7 @@ impl TextualApp for DateApp {
         if let Some(m) = message.downcast_ref::<DateChanged>() {
             self.log
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .changed
                 .push((m.year, m.month, m.day));
         }
@@ -51,7 +51,7 @@ fn is_open(pilot: &mut Pilot, node: NodeId) -> bool {
 
 fn logged(log: &Arc<Mutex<DateLog>>) -> Vec<(i32, u8, u8)> {
     log.lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .changed
         .clone()
 }

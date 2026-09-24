@@ -128,11 +128,11 @@ struct WatcherWidget {
 impl WatcherWidget {
     fn watch_label(&mut self, _old: &String, new: &String, _ctx: &mut ReactiveCtx) {
         // Store a side-effect we can check in tests.
-        self.color = format!("watched:{}", new);
+        self.color = format!("watched:{new}");
     }
 
     fn watch_width(&mut self, old: &usize, new: &usize, _ctx: &mut ReactiveCtx) {
-        self.color = format!("width:{}→{}", old, new);
+        self.color = format!("width:{old}→{new}");
     }
 }
 
@@ -297,7 +297,7 @@ struct InitFalseWidget {
 
 impl InitFalseWidget {
     fn watch_watched(&mut self, _old: &String, new: &String, _ctx: &mut ReactiveCtx) {
-        self.normal = format!("watched:{}", new);
+        self.normal = format!("watched:{new}");
     }
 }
 
@@ -513,7 +513,7 @@ struct PhaseWidget {
 
 impl PhaseWidget {
     fn watch_trigger(&mut self, _old: &i32, new: &i32, _ctx: &mut ReactiveCtx) {
-        self.side_effect = format!("triggered:{}", new);
+        self.side_effect = format!("triggered:{new}");
     }
 }
 
@@ -747,7 +747,7 @@ struct WatchWithAppWidget {
 impl WatchWithAppWidget {
     fn watch_value(&mut self, app: &mut App, _old: &i32, new: &i32, _ctx: &mut ReactiveCtx) {
         // Use app to record observation (set_title is a no-op test surface)
-        app.set_title(format!("value={}", new));
+        app.set_title(format!("value={new}"));
     }
 }
 
@@ -787,7 +787,7 @@ struct VarWatchWithAppWidget {
 
 impl VarWatchWithAppWidget {
     fn watch_show(&mut self, app: &mut App, _old: &bool, new: &bool, _ctx: &mut ReactiveCtx) {
-        app.set_title(format!("show={}", new));
+        app.set_title(format!("show={new}"));
     }
 }
 
@@ -877,7 +877,7 @@ impl MixedWatchWidget {
     }
 
     fn watch_with_app(&mut self, app: &mut App, _old: &i32, new: &i32, _ctx: &mut ReactiveCtx) {
-        app.set_title(format!("with_app={}", new));
+        app.set_title(format!("with_app={new}"));
     }
 }
 
@@ -936,11 +936,11 @@ struct AlwaysUpdateWidget {
 
 impl AlwaysUpdateWidget {
     fn watch_first_name(&mut self, _old: &String, new: &String, _ctx: &mut ReactiveCtx) {
-        self.calls.push(format!("first_name {}", new));
+        self.calls.push(format!("first_name {new}"));
     }
 
     fn watch_last_name(&mut self, _old: &String, new: &String, _ctx: &mut ReactiveCtx) {
-        self.calls.push(format!("last_name {}", new));
+        self.calls.push(format!("last_name {new}"));
     }
 }
 

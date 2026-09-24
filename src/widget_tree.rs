@@ -89,7 +89,7 @@ pub enum LifecycleEvent {
 /// Axis-aligned rectangle in terminal cells.
 ///
 /// A separate copy from `runtime::types::Rect` because that module is private.
-/// The two will be unified when the render pipeline migrates to WidgetTree (P1-12).
+/// The two will be unified when the render pipeline migrates to `WidgetTree` (P1-12).
 ///
 /// Coordinates are **signed** (`i32`) so a placement can carry a negative
 /// position (for example a widget with `offset: 0 -3` whose top border sits
@@ -232,6 +232,7 @@ impl WidgetTree {
     }
 
     /// Process-unique identity of this tree.
+    #[must_use]
     pub fn tree_id(&self) -> u64 {
         self.tree_id
     }
@@ -239,11 +240,13 @@ impl WidgetTree {
     // -- Accessors ----------------------------------------------------------
 
     /// The root node, if any.
+    #[must_use]
     pub fn root(&self) -> Option<NodeId> {
         self.root
     }
 
     /// Immutable access to a node.
+    #[must_use]
     pub fn get(&self, node: NodeId) -> Option<&WidgetNode> {
         self.arena.get(node)
     }
@@ -254,16 +257,19 @@ impl WidgetTree {
     }
 
     /// Whether a node is present in the arena.
+    #[must_use]
     pub fn contains(&self, node: NodeId) -> bool {
         self.arena.contains_key(node)
     }
 
     /// Number of live nodes.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.arena.len()
     }
 
     /// Whether the tree has no nodes.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.arena.is_empty()
     }
@@ -279,6 +285,7 @@ impl WidgetTree {
     }
 
     /// Whether there are pending lifecycle events waiting to be drained.
+    #[must_use]
     pub fn has_pending_lifecycle(&self) -> bool {
         !self.pending_lifecycle.is_empty()
     }
@@ -464,6 +471,7 @@ impl WidgetTree {
     }
 
     /// Position of `child` within `parent`'s children list, if present.
+    #[must_use]
     pub fn child_index(&self, parent: NodeId, child: NodeId) -> Option<usize> {
         self.arena
             .get(parent)
@@ -576,11 +584,11 @@ impl WidgetTree {
     }
 
     /// Check whether a node has a CSS class.
+    #[must_use]
     pub fn has_class(&self, node: NodeId, class: &str) -> bool {
         self.arena
             .get(node)
-            .map(|n| n.classes.contains(class))
-            .unwrap_or(false)
+            .is_some_and(|n| n.classes.contains(class))
     }
 
     /// Replace all CSS classes on a node.
@@ -596,11 +604,13 @@ impl WidgetTree {
     // -- Traversal (P1-09) --------------------------------------------------
 
     /// The parent of `node`, if any.
+    #[must_use]
     pub fn parent(&self, node: NodeId) -> Option<NodeId> {
         self.arena.get(node).and_then(|n| n.parent)
     }
 
     /// Ordered children of `node`.
+    #[must_use]
     pub fn children(&self, node: NodeId) -> &[NodeId] {
         self.arena
             .get(node)
@@ -614,6 +624,7 @@ impl WidgetTree {
     /// `ancestor` is found along the way, `false` if the root is reached
     /// without a match.  Returns `false` when `ancestor == descendant`
     /// (self is not an ancestor of self).
+    #[must_use]
     pub fn is_ancestor_of(&self, ancestor: NodeId, descendant: NodeId) -> bool {
         if ancestor == descendant {
             return false;
@@ -630,6 +641,7 @@ impl WidgetTree {
 
     /// Ancestor chain from `node` upward (not including `node` itself).
     /// Returns `[parent, grandparent, …, root]`.
+    #[must_use]
     pub fn ancestors(&self, node: NodeId) -> Vec<NodeId> {
         let mut result = Vec::new();
         let mut current = self.parent(node);
@@ -642,6 +654,7 @@ impl WidgetTree {
 
     /// Depth-first (pre-order) walk starting at `root`.
     /// Includes `root` as the first element.
+    #[must_use]
     pub fn walk_depth_first(&self, root: NodeId) -> Vec<NodeId> {
         let mut result = Vec::new();
         let mut stack = vec![root];
@@ -661,6 +674,7 @@ impl WidgetTree {
 
     /// Breadth-first walk starting at `root`.
     /// Includes `root` as the first element.
+    #[must_use]
     pub fn walk_breadth_first(&self, root: NodeId) -> Vec<NodeId> {
         let mut result = Vec::new();
         let mut queue = VecDeque::new();
@@ -725,8 +739,9 @@ impl WidgetTree {
     }
 
     /// Whether a node is displayed (default: `true`).
+    #[must_use]
     pub fn is_displayed(&self, node: NodeId) -> bool {
-        self.arena.get(node).map(|n| n.display).unwrap_or(false)
+        self.arena.get(node).is_some_and(|n| n.display)
     }
 
     // -- Visibility toggle (P2-14) ------------------------------------------
@@ -740,16 +755,17 @@ impl WidgetTree {
     }
 
     /// Returns the CSS visibility of a node (default: `Visible`).
+    #[must_use]
     pub fn visibility(&self, node: NodeId) -> Visibility {
         self.arena
             .get(node)
-            .map(|n| n.visibility)
-            .unwrap_or(Visibility::Visible)
+            .map_or(Visibility::Visible, |n| n.visibility)
     }
 
     // -- CSS id (T-4) --------------------------------------------------------
 
     /// Return the CSS id for a node (e.g. the part after `#` in `#foo`).
+    #[must_use]
     pub fn css_id(&self, node: NodeId) -> Option<&str> {
         self.arena.get(node).and_then(|n| n.css_id.as_deref())
     }
@@ -794,6 +810,7 @@ impl WidgetTree {
     // -- Inline styles (T-4) ------------------------------------------------
 
     /// Return the inline styles for a node.
+    #[must_use]
     pub fn styles(&self, node: NodeId) -> Option<&WidgetStyles> {
         self.arena.get(node).map(|n| &n.styles)
     }
@@ -808,6 +825,7 @@ impl WidgetTree {
     // -- Interaction state (T-4) --------------------------------------------
 
     /// Return the interaction state for a node (default: `NodeState::default()`).
+    #[must_use]
     pub fn node_state(&self, node: NodeId) -> NodeState {
         self.arena.get(node).map(|n| n.state).unwrap_or_default()
     }
@@ -925,7 +943,7 @@ impl WidgetTree {
             )));
         }
         let mut result = Vec::new();
-        for &node in self.walk_depth_first(root).iter() {
+        for &node in &self.walk_depth_first(root) {
             if node == root {
                 continue;
             }
@@ -2037,7 +2055,7 @@ mod tests {
 
     // -- Step 1: NodeState / NodeSeed / writer API tests ---------------------
 
-    /// Widget that implements take_node_seed() for testing seed consumption.
+    /// Widget that implements `take_node_seed()` for testing seed consumption.
     struct SeededWidget {
         seed: NodeSeed,
     }
@@ -2152,15 +2170,12 @@ mod tests {
         // The selector parser may or may not support id selectors in query
         // (this tests the node_selector_meta integration).
         // If id selectors are supported, child is the single match.
-        match result {
-            Ok(matches) => {
-                if !matches.is_empty() {
-                    assert!(matches.contains(&child));
-                }
+        if let Ok(matches) = result {
+            if !matches.is_empty() {
+                assert!(matches.contains(&child));
             }
-            Err(_) => {
-                // id selectors may not be implemented in parse_selector_list yet; skip
-            }
+        } else {
+            // id selectors may not be implemented in parse_selector_list yet; skip
         }
     }
 

@@ -144,7 +144,7 @@ fn data_table_row_cursor_actions_can_scroll_horizontal_viewport() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        table.on_event(&Event::Action(Action::ScrollRight), &mut __w)
+        table.on_event(&Event::Action(Action::ScrollRight), &mut __w);
     };
     assert!(ctx.handled());
 

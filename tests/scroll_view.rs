@@ -40,7 +40,7 @@ impl Widget for NoIntrinsicHeightWidget {
         let mut out = rich_rs::Segments::new();
         let height = options.size.1.max(1);
         for index in 0..height {
-            out.push(rich_rs::Segment::new(format!("line {:02}", index)));
+            out.push(rich_rs::Segment::new(format!("line {index:02}")));
             if index + 1 < height {
                 out.push(rich_rs::Segment::line());
             }
@@ -87,7 +87,7 @@ impl Widget for StretchWidget {
         let mut out = rich_rs::Segments::new();
         let height = options.size.1.max(1);
         for index in 0..height {
-            out.push(rich_rs::Segment::new(format!("stretch {:02}", index)));
+            out.push(rich_rs::Segment::new(format!("stretch {index:02}")));
             if index + 1 < height {
                 out.push(rich_rs::Segment::line());
             }

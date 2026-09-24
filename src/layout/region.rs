@@ -3,10 +3,10 @@ use crate::widget_tree::Rect;
 
 /// Extract border spacing (top, bottom, left, right) from a style.
 pub(crate) fn border_spacing(style: &Style) -> (u16, u16, u16, u16) {
-    let top = if style.border_top.is_set() { 1 } else { 0 };
-    let right = if style.border_right.is_set() { 1 } else { 0 };
-    let bottom = if style.border_bottom.is_set() { 1 } else { 0 };
-    let left = if style.border_left.is_set() { 1 } else { 0 };
+    let top = u16::from(style.border_top.is_set());
+    let right = u16::from(style.border_right.is_set());
+    let bottom = u16::from(style.border_bottom.is_set());
+    let left = u16::from(style.border_left.is_set());
     (top, bottom, left, right)
 }
 
@@ -37,6 +37,7 @@ impl Region {
         height: 0,
     };
 
+    #[must_use]
     pub fn new(x: i32, y: i32, width: u16, height: u16) -> Self {
         Self {
             x,

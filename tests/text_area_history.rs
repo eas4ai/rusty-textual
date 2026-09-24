@@ -34,7 +34,7 @@ fn focused_state() -> NodeState {
     }
 }
 
-/// The Python `TextAreaApp` fixture: a TextArea whose history is replaced
+/// The Python `TextAreaApp` fixture: a `TextArea` whose history is replaced
 /// wholesale with a mock-clock instance (whole-history replacement is part
 /// of the contract).
 fn text_area_with_mock_history() -> (TextArea, MockClock) {

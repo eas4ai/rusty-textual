@@ -87,7 +87,7 @@ fn panel_forwards_layout_and_messages() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        panel.on_message(&message, &mut __w)
+        panel.on_message(&message, &mut __w);
     };
     assert_eq!(handles.message_calls.load(Ordering::Relaxed), 1);
 }
@@ -111,7 +111,7 @@ fn frame_forwards_layout_messages_and_scroll() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        frame.on_message(&message, &mut __w)
+        frame.on_message(&message, &mut __w);
     };
     assert_eq!(handles.message_calls.load(Ordering::Relaxed), 1);
 
@@ -120,7 +120,7 @@ fn frame_forwards_layout_messages_and_scroll() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        frame.on_mouse_scroll(0, 1, &mut __w)
+        frame.on_mouse_scroll(0, 1, &mut __w);
     };
     assert_eq!(handles.scroll_calls.load(Ordering::Relaxed), 1);
 }

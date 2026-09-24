@@ -1,9 +1,9 @@
 //! P1G-12 + P1G-15 integration tests for the tree-mode render pipeline.
 //!
 //! These tests exercise the arena-based tree pipeline:
-//!   build_widget_tree_from_root -> run_layout_pass / render_tree_to_frame
+//!   `build_widget_tree_from_root` -> `run_layout_pass` / `render_tree_to_frame`
 //!
-//! They do NOT use the legacy FrameBuffer::from_renderable path.
+//! They do NOT use the legacy `FrameBuffer::from_renderable` path.
 
 use rich_rs::Console;
 use rusty_textual::compose;
@@ -142,7 +142,7 @@ fn p1g12a_nested_container_vertical_labels_render() {
 // P1G-12(b): Clip + scroll offsets preserve child visibility/targetability
 // ===========================================================================
 
-/// ScrollView with many children: only the first few visible children
+/// `ScrollView` with many children: only the first few visible children
 /// should appear in the rendered output within the viewport.
 #[test]
 fn p1g12b_scroll_view_clips_to_viewport() {
@@ -193,7 +193,7 @@ fn p1g12b_scroll_view_clips_to_viewport() {
     );
 }
 
-/// VerticalScroll with many children: not all can fit in the viewport.
+/// `VerticalScroll` with many children: not all can fit in the viewport.
 /// The viewport constrains how many children are rendered.
 #[test]
 fn p1g12b_vertical_scroll_clips_excess_children() {
@@ -435,7 +435,7 @@ fn p1g15b_horizontal_alias_preserves_structure_and_renders() {
     );
 }
 
-/// VerticalScroll alias preserves tree structure.
+/// `VerticalScroll` alias preserves tree structure.
 #[test]
 fn p1g15b_vertical_scroll_alias_preserves_structure() {
     let mut root = VerticalScroll::new()
@@ -456,7 +456,7 @@ fn p1g15b_vertical_scroll_alias_preserves_structure() {
     );
 }
 
-/// HorizontalScroll alias preserves tree structure.
+/// `HorizontalScroll` alias preserves tree structure.
 #[test]
 fn p1g15b_horizontal_scroll_alias_preserves_structure() {
     let mut root = HorizontalScroll::new()
@@ -477,7 +477,7 @@ fn p1g15b_horizontal_scroll_alias_preserves_structure() {
     );
 }
 
-/// ScrollableContainer alias preserves tree structure.
+/// `ScrollableContainer` alias preserves tree structure.
 #[test]
 fn p1g15b_scrollable_container_alias_preserves_structure() {
     let mut root = ScrollableContainer::new()
@@ -498,7 +498,7 @@ fn p1g15b_scrollable_container_alias_preserves_structure() {
     );
 }
 
-/// HorizontalGroup alias preserves tree structure and layout.
+/// `HorizontalGroup` alias preserves tree structure and layout.
 #[test]
 fn p1g15b_horizontal_group_preserves_structure() {
     let mut root = HorizontalGroup::new()
@@ -518,7 +518,7 @@ fn p1g15b_horizontal_group_preserves_structure() {
 // P1G-15(c): Deep wrapper-chain proof
 // ===========================================================================
 
-/// Dock -> ScrollView -> HorizontalGroup -> VerticalScroll -> Button
+/// Dock -> `ScrollView` -> `HorizontalGroup` -> `VerticalScroll` -> Button
 /// The DEEP chain: verify button text renders, all intermediate wrappers
 /// contribute to tree structure, and tree depth matches expected nesting.
 #[test]
@@ -560,7 +560,7 @@ fn p1g15c_deep_wrapper_chain_dock_scroll_hgroup_vscroll_button() {
     );
 }
 
-/// Variant of the deep chain with header + button inside the VerticalScroll.
+/// Variant of the deep chain with header + button inside the `VerticalScroll`.
 #[test]
 fn p1g15c_deep_chain_with_compose_and_labels() {
     let mut root = Dock::new().push_fill(ScrollView::new(
@@ -597,7 +597,7 @@ fn p1g15c_deep_chain_with_compose_and_labels() {
 // Additional coverage: layout_pass standalone + tree structure invariants
 // ===========================================================================
 
-/// run_layout_pass produces a tree where all nodes can be walked and the
+/// `run_layout_pass` produces a tree where all nodes can be walked and the
 /// tree is structurally valid after layout.
 #[test]
 fn layout_pass_tree_structure_remains_valid() {
@@ -645,7 +645,7 @@ fn layout_pass_tree_structure_remains_valid() {
 }
 
 /// After tree build, children are no longer in the original widget's local
-/// children vec (take_composed_children drained them). The tree pipeline
+/// children vec (`take_composed_children` drained them). The tree pipeline
 /// fully owns them.
 #[test]
 fn tree_build_drains_container_local_children() {
@@ -679,7 +679,7 @@ fn tree_build_drains_container_local_children() {
 }
 
 /// Multiple alias wrappers in parallel: Vertical + Horizontal side by side
-/// in a HorizontalGroup. Both sub-trees should render correctly.
+/// in a `HorizontalGroup`. Both sub-trees should render correctly.
 #[test]
 fn parallel_alias_wrappers_both_render() {
     let mut root = HorizontalGroup::new()
@@ -807,14 +807,14 @@ fn p1g15_layout_honors_horizontal_child_combinator_width() {
     let children = tree.children(root_id).to_vec();
 
     let sheet = StyleSheet::parse(
-        r#"
+        r"
 Horizontal {
     layout: horizontal;
 }
 Horizontal > VerticalScroll {
     width: 24;
 }
-"#,
+",
     );
     let _guard = rusty_textual::css::set_style_context(sheet);
     run_layout_pass(&mut tree, (80, 24));

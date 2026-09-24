@@ -344,7 +344,7 @@ pub trait TextualApp: Send + 'static {
     }
 }
 
-/// Command provider lifecycle for TextualApp command palette integration.
+/// Command provider lifecycle for `TextualApp` command palette integration.
 pub trait CommandPaletteProvider: Send + Sync {
     /// Called when the command palette opens.
     fn startup(&mut self, _ctx: &mut crate::event::WidgetCtx) {}
@@ -369,18 +369,22 @@ pub struct OverlayScreenStack {
 }
 
 impl OverlayScreenStack {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.stack.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.stack.is_empty()
     }
 
+    #[must_use]
     pub fn current(&self) -> Option<NodeId> {
         self.stack.last().copied()
     }
@@ -2469,7 +2473,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            stack.clear(sender, &mut __w)
+            stack.clear(sender, &mut __w);
         };
         assert!(stack.is_empty());
 
@@ -3073,7 +3077,7 @@ mod tests {
     // App-level reactive bridge tests (Work Item 2)
     // =========================================================================
 
-    /// A TextualApp that exposes a `count` field with a manual reactive setter
+    /// A `TextualApp` that exposes a `count` field with a manual reactive setter
     /// and records watcher calls in `watch_log`. Overrides `reactive_widget_mut`
     /// to enable dispatch.
     struct ReactiveTestApp {
@@ -3386,7 +3390,7 @@ mod tests {
     // T2b: New bridge tests — chained changes, cycle guard, styles flag, init order
     // ---------------------------------------------------------------------------
 
-    /// A TextualApp that chains reactive changes: watcher for `a` records a
+    /// A `TextualApp` that chains reactive changes: watcher for `a` records a
     /// change for `b`, which has its own watcher.
     struct ChainedReactiveApp {
         a: i32,
@@ -3470,7 +3474,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            adapter.dispatch_app_reactive(&mut runtime, &mut __w)
+            adapter.dispatch_app_reactive(&mut runtime, &mut __w);
         };
 
         let guard = app_state.lock().unwrap();
@@ -3556,7 +3560,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            adapter.dispatch_app_reactive(&mut runtime, &mut __w)
+            adapter.dispatch_app_reactive(&mut runtime, &mut __w);
         };
 
         let guard = app_state.lock().unwrap();
@@ -3566,7 +3570,7 @@ mod tests {
         assert!(!runtime.reactive_ctx().has_changes());
     }
 
-    /// An app whose watcher calls ctx.request_styles().
+    /// An app whose watcher calls `ctx.request_styles()`.
     struct StylesRequestApp {
         val: i32,
     }
@@ -3623,7 +3627,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            adapter.dispatch_app_reactive(&mut runtime, &mut __w)
+            adapter.dispatch_app_reactive(&mut runtime, &mut __w);
         };
 
         assert!(ctx.repaint_requested(), "repaint should be requested");
@@ -3633,7 +3637,7 @@ mod tests {
         );
     }
 
-    /// An app that logs watcher call order to verify init fires before on_mount_with_app.
+    /// An app that logs watcher call order to verify init fires before `on_mount_with_app`.
     struct InitOrderApp {
         log: Vec<&'static str>,
     }
@@ -3899,10 +3903,7 @@ mod tests {
         runtime.build_widget_tree(&mut root);
 
         // Initially one Label.
-        let before = runtime
-            .query("Label")
-            .map(|q| q.into_ids().len())
-            .unwrap_or(0);
+        let before = runtime.query("Label").map_or(0, |q| q.into_ids().len());
         assert_eq!(before, 1, "one Label before recompose");
 
         // Set n = 3 (records a recompose change), then run the bridge.
@@ -3913,14 +3914,11 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            adapter_for_state.dispatch_app_reactive(&mut runtime, &mut __w)
+            adapter_for_state.dispatch_app_reactive(&mut runtime, &mut __w);
         };
 
         // The app-content subtree was recomposed: now three Labels.
-        let after = runtime
-            .query("Label")
-            .map(|q| q.into_ids().len())
-            .unwrap_or(0);
+        let after = runtime.query("Label").map_or(0, |q| q.into_ids().len());
         assert_eq!(after, 3, "three Labels after recompose");
         assert!(
             ctx.invalidation().layout,

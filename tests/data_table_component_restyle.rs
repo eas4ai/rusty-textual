@@ -1,6 +1,6 @@
-//! DataTable component-class restyling (component-classes Phase 2).
+//! `DataTable` component-class restyling (component-classes Phase 2).
 //!
-//! DataTable's internal colours must be sourced from the `datatable--*`
+//! `DataTable`'s internal colours must be sourced from the `datatable--*`
 //! component classes (Python parity) instead of hand-derived theme tokens, so
 //! user CSS can restyle the table:
 //!
@@ -35,7 +35,7 @@ fn rgb(c: Color) -> (u8, u8, u8) {
     (c.r, c.g, c.b)
 }
 
-/// Test app: one DataTable (id `my-table`, class `some-class`) and one Input
+/// Test app: one `DataTable` (id `my-table`, class `some-class`) and one Input
 /// (so focus can be moved OFF the table), with optional extra user CSS and
 /// zebra stripes.
 struct TableApp {
@@ -125,7 +125,7 @@ fn token(name: &str) -> Color {
 /// Focused table: header carries the `:focus` `background-tint: $foreground 5%`
 /// fold over `$panel` (tint provenance), the cursor cell is the strong
 /// `$block-cursor-background` ($primary) with NO tint re-applied on top
-/// (no_style pinned), and its foreground is `$block-cursor-foreground`
+/// (`no_style` pinned), and its foreground is `$block-cursor-foreground`
 /// flattened over the cursor background.
 #[test]
 fn focused_defaults_header_tint_and_cursor_colors() {

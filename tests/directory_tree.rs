@@ -108,7 +108,7 @@ fn directory_tree_lazy_loads_children_on_expand_message_flow() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
     assert!(message_ctx.handled());
 
@@ -145,7 +145,7 @@ fn directory_tree_lazy_loads_children_on_expand_message_flow() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
 
     let after_tick = FrameBuffer::from_renderable(&console, &options, &tree, None);
@@ -181,7 +181,7 @@ fn directory_tree_refresh_preserves_expanded_paths() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
     assert!(message_ctx.handled());
 
@@ -222,7 +222,7 @@ fn directory_tree_collapsing_node_cancels_pending_lazy_load() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
     assert!(expand_ctx.handled());
 
@@ -243,7 +243,7 @@ fn directory_tree_collapsing_node_cancels_pending_lazy_load() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
     assert!(collapse_ctx.handled());
 
@@ -270,7 +270,7 @@ fn directory_tree_collapsing_node_cancels_pending_lazy_load() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
 
     let console = Console::new();
@@ -306,7 +306,7 @@ fn directory_tree_handles_forwarded_selection_messages() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
 
     assert!(message_ctx.handled());
@@ -337,7 +337,7 @@ fn directory_tree_emits_directory_selected_message_for_directory_nodes() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
 
     assert!(message_ctx.handled());
@@ -360,7 +360,7 @@ fn directory_tree_keyboard_navigation_is_forwarded_to_inner_tree() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        tree.on_event(&Event::Key(down), &mut __w)
+        tree.on_event(&Event::Key(down), &mut __w);
     };
     assert!(ctx.handled());
 }
@@ -416,7 +416,7 @@ fn directory_tree_unmount_clears_focus_hover_and_pending_loads() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
     assert!(expand_ctx.handled());
 
@@ -444,7 +444,7 @@ fn directory_tree_unmount_clears_focus_hover_and_pending_loads() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
 
     // Focus/hover are now in the node record; without a dispatch guard they read as false.
@@ -471,8 +471,7 @@ fn directory_tree_filter_applies_on_async_lazy_subdir_load() {
     fn no_dotfiles(path: &std::path::Path) -> bool {
         path.file_name()
             .and_then(|name| name.to_str())
-            .map(|name| !name.starts_with('.'))
-            .unwrap_or(true)
+            .is_none_or(|name| !name.starts_with('.'))
     }
 
     let temp = TempTreeDir::new("directory-tree-async-filter-render");
@@ -503,7 +502,7 @@ fn directory_tree_filter_applies_on_async_lazy_subdir_load() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
 
     let mut expand_ctx = EventCtx::default();
@@ -523,7 +522,7 @@ fn directory_tree_filter_applies_on_async_lazy_subdir_load() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
     assert!(expand_ctx.handled());
 
@@ -565,7 +564,7 @@ fn directory_tree_filter_applies_on_async_lazy_subdir_load() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
 
     let console = Console::new();

@@ -66,7 +66,7 @@ fn tabs_keyboard_changes_active_tab() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        tabs.on_event(&Event::Key(key), &mut __w)
+        tabs.on_event(&Event::Key(key), &mut __w);
     };
     assert!(ctx.handled());
     assert!(tabs.is_active("two"));
@@ -92,7 +92,7 @@ fn tabs_mouse_click_on_header_changes_active_tab() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.handled());
     assert!(tabs.is_active("two"));
@@ -121,7 +121,7 @@ fn tabs_mouse_hit_testing_handles_wide_grapheme_titles() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.handled());
     assert!(tabs.is_active("deux"));
@@ -247,7 +247,7 @@ fn tabs_keyboard_navigation_skips_disabled_and_hidden_tabs() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        tabs.on_event(&Event::Key(right.clone()), &mut __w)
+        tabs.on_event(&Event::Key(right.clone()), &mut __w);
     };
     assert!(ctx.handled());
     assert!(tabs.is_active("four"));
@@ -258,7 +258,7 @@ fn tabs_keyboard_navigation_skips_disabled_and_hidden_tabs() {
             rusty_textual::node_id::NodeId::default(),
             &mut wrap_ctx,
         );
-        tabs.on_event(&Event::Key(right), &mut __w)
+        tabs.on_event(&Event::Key(right), &mut __w);
     };
     assert!(wrap_ctx.handled());
     assert!(tabs.is_active("one"));
@@ -286,7 +286,7 @@ fn tabs_mouse_click_disabled_tab_does_not_activate() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(!ctx.handled());
     assert!(tabs.is_active("one"));

@@ -58,7 +58,7 @@ fn help_panel_updates_bindings_from_binding_hints_event() {
         panel.on_event(
             &Event::BindingsChanged(vec![BindingHint::new("f1", "Toggle help")]),
             &mut __w,
-        )
+        );
     };
 
     let buf = FrameBuffer::from_renderable(&console, &options, &panel, None);
@@ -105,7 +105,7 @@ fn help_panel_hides_help_section_when_app_is_inactive() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        panel.on_event(&Event::AppFocus(false), &mut __w)
+        panel.on_event(&Event::AppFocus(false), &mut __w);
     };
     let inactive = FrameBuffer::from_renderable(&console, &options, &panel, None);
     let inactive_lines = inactive.as_plain_lines();
@@ -122,7 +122,7 @@ fn help_panel_hides_help_section_when_app_is_inactive() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        panel.on_event(&Event::AppFocus(true), &mut __w)
+        panel.on_event(&Event::AppFocus(true), &mut __w);
     };
     let active = FrameBuffer::from_renderable(&console, &options, &panel, None);
     let active_lines = active.as_plain_lines();
@@ -142,7 +142,7 @@ fn help_panel_show_help_class_tracks_app_focus_state() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        panel.on_event(&Event::AppFocus(false), &mut __w)
+        panel.on_event(&Event::AppFocus(false), &mut __w);
     };
     assert!(
         ctx.repaint_requested(),
@@ -158,7 +158,7 @@ fn help_panel_show_help_class_tracks_app_focus_state() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx2,
         );
-        panel.on_event(&Event::AppFocus(true), &mut __w)
+        panel.on_event(&Event::AppFocus(true), &mut __w);
     };
     assert!(
         ctx2.repaint_requested(),
@@ -184,7 +184,7 @@ fn help_panel_help_can_be_driven_via_messages() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
 
     assert!(ctx.handled());
@@ -205,7 +205,7 @@ fn help_panel_help_can_be_driven_via_messages() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
     assert!(clear_ctx.handled());
     assert!(!panel.showing_help());
@@ -229,7 +229,7 @@ fn help_panel_handles_focused_help_pipeline_messages() {
                 },
             ),
             &mut __w,
-        )
+        );
     };
     assert!(panel.showing_help());
     assert_eq!(panel.help(), "## Focused widget help");
@@ -243,7 +243,7 @@ fn help_panel_handles_focused_help_pipeline_messages() {
         panel.on_message(
             &MessageEvent::new(NodeId::default(), HelpPanelFocusedHelpCleared),
             &mut __w,
-        )
+        );
     };
     assert!(!panel.showing_help());
     assert_eq!(panel.help(), "");
@@ -260,7 +260,7 @@ fn help_panel_unmount_resets_app_focus_gate() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        panel.on_event(&Event::AppFocus(false), &mut __w)
+        panel.on_event(&Event::AppFocus(false), &mut __w);
     };
 
     // After unmount, app_active is reset to true so help re-shows on remount.

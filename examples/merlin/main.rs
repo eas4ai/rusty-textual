@@ -49,7 +49,7 @@ fn fmt_elapsed(secs: u64) -> String {
     format!("{}:{:02}", secs / 60, secs % 60)
 }
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -80,7 +80,7 @@ LabelSwitch Label {
     width: 100%;
     text-style: bold;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // LabelSwitch: a numbered label over a Switch (Python `LabelSwitch`)
@@ -92,6 +92,7 @@ pub struct LabelSwitch {
 }
 
 impl LabelSwitch {
+    #[must_use]
     pub fn new(switch_no: u8) -> Self {
         Self {
             switch_no,
@@ -150,12 +151,12 @@ impl Default for MerlinApp {
 }
 
 impl MerlinApp {
+    #[must_use]
     pub fn new() -> Self {
         // xorshift64 seeded from wall-clock (no rand dependency for example).
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0x9E3779B97F4A7C15)
+            .map_or(0x9E3779B97F4A7C15, |d| d.as_nanos() as u64)
             .max(1);
         Self {
             start: None,

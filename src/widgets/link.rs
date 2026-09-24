@@ -3,7 +3,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments, StyleMeta};
 use textual_macros::widget;
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::LinkClicked;
 
 use super::{Focus, Interactive, Layout, NodeSeed, Render};
 
@@ -42,15 +42,18 @@ impl Link {
         }
     }
 
+    #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
 
+    #[must_use]
     pub fn url(&self) -> &str {
         &self.url
     }
 
     /// Get the tooltip text, if set.
+    #[must_use]
     pub fn tooltip(&self) -> Option<&str> {
         self.tooltip.as_deref()
     }
@@ -361,7 +364,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            link.activate(&mut __w)
+            link.activate(&mut __w);
         };
         assert!(ctx.handled());
         let messages = ctx.take_messages();
@@ -383,7 +386,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            link.activate(&mut __w)
+            link.activate(&mut __w);
         };
         let messages = ctx.take_messages();
         assert!(messages.is_empty());

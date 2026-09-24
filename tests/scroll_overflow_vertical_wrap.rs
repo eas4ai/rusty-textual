@@ -1,7 +1,7 @@
 //! Regression test for the box-model VERTICAL-WRAP fix (c15-scrollroots, root #3).
 //!
 //! On a host that allows horizontal overflow (`Screen { overflow: auto auto }`), an
-//! EXPLICIT `width: auto` child (a `Label`, whose DEFAULT_CSS sets `width: auto`)
+//! EXPLICIT `width: auto` child (a `Label`, whose `DEFAULT_CSS` sets `width: auto`)
 //! must be laid out at its FULL unwrapped content width. If it instead wraps to the
 //! narrow viewport, its `height: auto` counts the extra wrapped rows and inflates
 //! the host's virtual content height — which shifts the scrollbar thumb and paints a

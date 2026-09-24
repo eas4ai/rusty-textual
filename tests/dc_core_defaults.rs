@@ -156,28 +156,28 @@ fn dc_05_label_min_height_1() {
 #[test]
 fn dc_05_label_variant_success_parses() {
     let sheet =
-        StyleSheet::parse(r#"Label { &.success { color: $text-success; bg: $success-muted; } }"#);
+        StyleSheet::parse(r"Label { &.success { color: $text-success; bg: $success-muted; } }");
     // Should produce rules (base + nested) without panicking.
     assert!(!sheet.rules().is_empty());
 }
 
 #[test]
 fn dc_05_label_variant_error_parses() {
-    let sheet = StyleSheet::parse(r#"Label { &.error { color: $text-error; bg: $error-muted; } }"#);
+    let sheet = StyleSheet::parse(r"Label { &.error { color: $text-error; bg: $error-muted; } }");
     assert!(!sheet.rules().is_empty());
 }
 
 #[test]
 fn dc_05_label_variant_warning_parses() {
     let sheet =
-        StyleSheet::parse(r#"Label { &.warning { color: $text-warning; bg: $warning-muted; } }"#);
+        StyleSheet::parse(r"Label { &.warning { color: $text-warning; bg: $warning-muted; } }");
     assert!(!sheet.rules().is_empty());
 }
 
 #[test]
 fn dc_05_label_variant_primary_parses() {
     let sheet =
-        StyleSheet::parse(r#"Label { &.primary { color: $text-primary; bg: $primary-muted; } }"#);
+        StyleSheet::parse(r"Label { &.primary { color: $text-primary; bg: $primary-muted; } }");
     assert!(!sheet.rules().is_empty());
 }
 
@@ -402,7 +402,7 @@ fn dc_36_collapsible_title_width_auto() {
 fn dc_36_collapsible_nested_rules_parse() {
     // Verify the full Collapsible CSS with nesting parses without panic.
     let sheet = StyleSheet::parse(
-        r#"
+        r"
         Collapsible {
             width: 1fr;
             height: auto;
@@ -413,7 +413,7 @@ fn dc_36_collapsible_nested_rules_parse() {
             &:focus-within { background-tint: $foreground 5%; }
             &.-collapsed > Contents { display: none; }
         }
-    "#,
+    ",
     );
     assert!(!sheet.rules().is_empty(), "Collapsible CSS should parse");
 }
@@ -422,7 +422,7 @@ fn dc_36_collapsible_nested_rules_parse() {
 fn dc_36_collapsible_title_nested_rules_parse() {
     // Verify the full CollapsibleTitle CSS with nesting parses without panic.
     let sheet = StyleSheet::parse(
-        r#"
+        r"
         CollapsibleTitle {
             width: auto;
             height: auto;
@@ -433,7 +433,7 @@ fn dc_36_collapsible_title_nested_rules_parse() {
             &:hover { bg: $block-hover-background; color: $foreground; }
             &:focus { text-style: $block-cursor-text-style; bg: $block-cursor-background; color: $block-cursor-foreground; }
         }
-    "#,
+    ",
     );
     assert!(
         !sheet.rules().is_empty(),
@@ -448,12 +448,12 @@ fn dc_36_collapsible_title_nested_rules_parse() {
 #[test]
 fn dc_01_screen_inline_parses() {
     let sheet = StyleSheet::parse(
-        r#"
+        r"
         Screen {
             layout: vertical; overflow-y: auto; bg: $background;
             &:inline { height: auto; min-height: 1; border-top: tall $background; border-bottom: tall $background; }
         }
-    "#,
+    ",
     );
     assert!(
         sheet.rules().len() >= 2,
@@ -464,7 +464,7 @@ fn dc_01_screen_inline_parses() {
 #[test]
 fn dc_01_screen_ansi_parses() {
     let sheet = StyleSheet::parse(
-        r#"
+        r"
         Screen {
             layout: vertical; overflow-y: auto; bg: $background;
             &:ansi {
@@ -472,7 +472,7 @@ fn dc_01_screen_ansi_parses() {
                 &.-screen-suspended { text-style: dim; }
             }
         }
-    "#,
+    ",
     );
     assert!(
         sheet.rules().len() >= 2,
@@ -483,11 +483,11 @@ fn dc_01_screen_ansi_parses() {
 #[test]
 fn dc_01_screen_selection_class_parses() {
     let sheet = StyleSheet::parse(
-        r#"
+        r"
         Screen {
             & > .screen--selection { background: $primary 50%; }
         }
-    "#,
+    ",
     );
     assert!(
         !sheet.rules().is_empty(),
@@ -502,12 +502,12 @@ fn dc_01_screen_selection_class_parses() {
 #[test]
 fn dc_03_modalscreen_ansi_parses() {
     let sheet = StyleSheet::parse(
-        r#"
+        r"
         ModalScreen {
             layout: vertical; overflow-y: auto; bg: $background;
             &:ansi { background: transparent; }
         }
-    "#,
+    ",
     );
     assert!(
         sheet.rules().len() >= 2,
@@ -522,7 +522,7 @@ fn dc_03_modalscreen_ansi_parses() {
 #[test]
 fn dc_05_label_variant_secondary_parses() {
     let sheet = StyleSheet::parse(
-        r#"Label { &.secondary { color: $text-secondary; bg: $secondary-muted; } }"#,
+        r"Label { &.secondary { color: $text-secondary; bg: $secondary-muted; } }",
     );
     assert!(!sheet.rules().is_empty());
 }
@@ -530,7 +530,7 @@ fn dc_05_label_variant_secondary_parses() {
 #[test]
 fn dc_05_label_variant_accent_parses() {
     let sheet =
-        StyleSheet::parse(r#"Label { &.accent { color: $text-accent; bg: $accent-muted; } }"#);
+        StyleSheet::parse(r"Label { &.accent { color: $text-accent; bg: $accent-muted; } }");
     assert!(!sheet.rules().is_empty());
 }
 

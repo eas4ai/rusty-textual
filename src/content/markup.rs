@@ -4,7 +4,7 @@
 //! This mirrors `textual/markup.py`'s `_to_content` function semantics, but is a
 //! clean Rust implementation — **not** a wrapper around rich-rs markup.
 //!
-//! ## Design rules (from CONTENT_LAYER_KEYSTONE.md and Python fidelity review)
+//! ## Design rules (from `CONTENT_LAYER_KEYSTONE.md` and Python fidelity review)
 //!
 //! ### Deferred resolution (Python-faithful)
 //! Python's `Span.style` is `Style | str` — the raw tag body (e.g. `"bold"`,
@@ -84,7 +84,7 @@ fn resolve_style_keyword(token: &str) -> Option<&'static str> {
 /// This function is called at **render / resolve time** (not at parse time).
 /// It handles the same token grammar as Python's `parse_style`:
 /// - `bold`, `italic`, etc. → set the respective style flag.
-/// - `not bold` → set bold=false (style_state toggle).
+/// - `not bold` → set bold=false (`style_state` toggle).
 /// - `on <color>` → background color.
 /// - `link=url`, `@click=action` → key-value meta (no visual style).
 /// - `auto` → leave color as None (resolved at Theme level).
@@ -322,13 +322,13 @@ pub(crate) struct RawSpan {
 /// Parse Textual markup into `(plain_text, spans)`.
 ///
 /// Behaviour mirrors `_to_content` in `textual/markup.py`:
-/// - `[bold]text[/bold]` → RawSpan covering "text" with raw_tag="bold".
-/// - `[foobar]text[/foobar]` → RawSpan with raw_tag="foobar" (null style at render).
-/// - `[link=url]text[/link]` → RawSpan with link in meta, raw_tag="link=url".
-/// - `[@click=action]text[/]` → RawSpan with @click in meta.
+/// - `[bold]text[/bold]` → `RawSpan` covering "text" with `raw_tag="bold`".
+/// - `[foobar]text[/foobar]` → `RawSpan` with `raw_tag="foobar`" (null style at render).
+/// - `[link=url]text[/link]` → `RawSpan` with link in meta, `raw_tag="link=url`".
+/// - `[@click=action]text[/]` → `RawSpan` with @click in meta.
 /// - Tags with genuine *text* content inside the brackets (unparsable by the
 ///   style tokeniser because they contain non-token characters) are emitted as
-///   literal text, matching Python's "contains_text" branch.
+///   literal text, matching Python's "`contains_text`" branch.
 /// - `\[` → literal `[` (escape).
 /// - Auto-closing unclosed opening tags at end of input.
 ///
@@ -515,7 +515,7 @@ pub(crate) fn parse_markup_with_vars(
 
 /// Apply `string.Template.safe_substitute` semantics to a single text token.
 ///
-/// Mirrors CPython `string.Template` with its default `delimiter = '$'` and
+/// Mirrors `CPython` `string.Template` with its default `delimiter = '$'` and
 /// `idpattern = (?a:[_a-z][_a-z0-9]*)` (ASCII, case-insensitive matching):
 ///
 /// - `$$` → literal `$` (escape)
@@ -917,7 +917,7 @@ mod tests {
     }
 
     /// Python-faithful: unrecognised tag like [foobar] is CONSUMED (not literal text).
-    /// The tag body is stored as raw_tag; it resolves to null style at render time.
+    /// The tag body is stored as `raw_tag`; it resolves to null style at render time.
     #[test]
     fn test_unrecognised_tag_is_consumed_not_literal() {
         let (text, spans) = parse_markup("[foobar]test[/foobar]");

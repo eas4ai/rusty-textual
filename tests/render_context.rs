@@ -47,7 +47,7 @@ impl Widget for Probe {
     }
 }
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Probe {
     width: 10;
     height: 1;
@@ -63,7 +63,7 @@ Probe {
     width: 20;
     height: 3;
 }
-"##;
+";
 
 struct SeamApp {
     styled: Arc<Mutex<Option<Captured>>>,

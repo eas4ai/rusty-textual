@@ -335,7 +335,7 @@ impl ScrollView {
                 .filter(|segment| !segment.is_control())
                 .any(|segment| segment.text.chars().any(|ch| ch != ' '))
         });
-        last_non_blank.map(|idx| idx + 1).unwrap_or(1)
+        last_non_blank.map_or(1, |idx| idx + 1)
     }
 
     fn max_offset(&self) -> usize {
@@ -613,13 +613,11 @@ impl ScrollView {
         let v_size = style
             .scrollbar_size_vertical
             .or(style.scrollbar_size)
-            .map(|s| s as usize)
-            .unwrap_or(2);
+            .map_or(2, |s| s as usize);
         let h_size = style
             .scrollbar_size_horizontal
             .or(style.scrollbar_size)
-            .map(|s| s as usize)
-            .unwrap_or(1);
+            .map_or(1, |s| s as usize);
 
         ResolvedScrollbar {
             overflow_x: style.overflow_x.unwrap_or(fallback_overflow),
@@ -1215,15 +1213,12 @@ impl crate::widgets::Interactive for ScrollView {
                     changed = true;
                 }
             }
-        } else {
-            if !self.child_extracted {
-                let (child_x, child_y) = self.child_coords(x, y);
-                debug_input(&format!(
-                    "[hover][scrollview] x={} y={} child=({}, {})",
-                    x, y, child_x, child_y
-                ));
-                changed |= self.child.on_mouse_move(child_x, child_y);
-            }
+        } else if !self.child_extracted {
+            let (child_x, child_y) = self.child_coords(x, y);
+            debug_input(&format!(
+                "[hover][scrollview] x={x} y={y} child=({child_x}, {child_y})"
+            ));
+            changed |= self.child.on_mouse_move(child_x, child_y);
         }
         changed
     }
@@ -2142,10 +2137,7 @@ mod tests {
             );
             assert!(
                 offset >= previous,
-                "offset must not decrease as pointer increases: pointer={} prev={} now={}",
-                pointer,
-                previous,
-                offset
+                "offset must not decrease as pointer increases: pointer={pointer} prev={previous} now={offset}"
             );
             previous = offset;
         }

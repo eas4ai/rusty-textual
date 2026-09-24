@@ -451,6 +451,7 @@ fn resolve_screen_css(css: &str) -> crate::error::Result<String> {
 
 impl ScreenStack {
     /// Create an empty screen stack.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             screens: Vec::new(),
@@ -524,6 +525,7 @@ impl ScreenStack {
     }
 
     /// Return the mode name of the topmost screen (if it has one).
+    #[must_use]
     pub fn top_mode_name(&self) -> Option<&str> {
         self.screens.last().and_then(|e| e.mode_name.as_deref())
     }
@@ -700,16 +702,19 @@ impl ScreenStack {
     }
 
     /// Number of screens on the stack.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.screens.len()
     }
 
     /// Whether the stack is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.screens.is_empty()
     }
 
     /// Get the title from the topmost screen (if it defines one).
+    #[must_use]
     pub fn active_title(&self) -> Option<String> {
         self.top()
             .and_then(|e| e.with_screen(|s| s.title().map(str::to_string)))
@@ -717,6 +722,7 @@ impl ScreenStack {
     }
 
     /// Get the sub-title from the topmost screen (if it defines one).
+    #[must_use]
     pub fn active_sub_title(&self) -> Option<String> {
         self.top()
             .and_then(|e| e.with_screen(|s| s.sub_title().map(str::to_string)))
@@ -1567,7 +1573,7 @@ mod tests {
     use crate::node_id::NodeId;
     use crate::runtime::dispatch_message_queue_tree;
 
-    /// A modal QuitScreen mirroring `modal03.py`:
+    /// A modal `QuitScreen` mirroring `modal03.py`:
     /// - owns a `("escape", "dismiss", "Cancel")` binding,
     /// - dismisses with `true` when a `#quit` button is pressed and `false`
     ///   otherwise, via its own `on_button_pressed` handler.

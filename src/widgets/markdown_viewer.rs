@@ -39,6 +39,7 @@ pub struct MarkdownTableOfContents {
 }
 
 impl MarkdownTableOfContents {
+    #[must_use]
     pub fn new(headings: Vec<HeadingEntry>) -> Self {
         Self {
             shared_headings: Arc::new(RwLock::new(headings)),
@@ -356,7 +357,7 @@ impl Navigator {
         let location = location.into();
         // Truncate forward history.
         self.history
-            .truncate(self.cursor + if self.history.is_empty() { 0 } else { 1 });
+            .truncate(self.cursor + usize::from(!self.history.is_empty()));
         self.history.push(location);
         self.cursor = self.history.len() - 1;
         true
@@ -383,11 +384,13 @@ impl Navigator {
     }
 
     /// True if at the start of history (can't go back).
+    #[must_use]
     pub fn at_start(&self) -> bool {
         self.cursor == 0
     }
 
     /// True if at the end of history (can't go forward).
+    #[must_use]
     pub fn at_end(&self) -> bool {
         self.history.is_empty() || self.cursor >= self.history.len() - 1
     }
@@ -412,7 +415,7 @@ impl Navigator {
 /// host. Children are composed as:
 /// - `Markdown` — the rendered content (scrollable)
 /// - `MarkdownTableOfContents` — docked left via CSS
-/// - Scrollbar widgets (from ScrollableContainer)
+/// - Scrollbar widgets (from `ScrollableContainer`)
 ///
 /// ## CSS class `-show-table-of-contents`
 /// Added when `show_table_of_contents` is true; the default CSS uses this class
@@ -447,7 +450,7 @@ pub struct MarkdownViewer {
 impl MarkdownViewer {
     crate::seed_ident_methods!();
 
-    /// Create a new MarkdownViewer with initial content.
+    /// Create a new `MarkdownViewer` with initial content.
     ///
     /// For path-based navigation, use `register_content()` and `go()`.
     /// For simple single-document display, pass content directly.
@@ -614,8 +617,7 @@ impl MarkdownViewer {
         let viewport_width = self
             .inner
             .scroll_viewport_size()
-            .map(|(w, _)| w)
-            .unwrap_or(80)
+            .map_or(80, |(w, _)| w)
             .max(1);
 
         let toc_width = if self.is_showing_table_of_contents() {

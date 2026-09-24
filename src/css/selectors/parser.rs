@@ -28,6 +28,7 @@ struct CssParseIssue {
 }
 
 impl StyleSheet {
+    #[must_use]
     pub fn parse(input: &str) -> Self {
         let (sheet, issues) = parse_with_issues(input);
         emit_parse_issues(&issues);
@@ -935,7 +936,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                     style = style.fg_auto(auto);
                 } else if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style = style.fg(color);
@@ -944,7 +945,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
             "bg" | "background" => {
                 if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style = style.bg(color);
@@ -1633,7 +1634,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                 }
                 if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style.link_color = Some(color);
@@ -1642,7 +1643,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
             "link-background" => {
                 if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style.link_background = Some(color);
@@ -1654,7 +1655,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
             "link-color-hover" => {
                 if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style.link_color_hover = Some(color);
@@ -1663,7 +1664,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
             "link-background-hover" => {
                 if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style.link_background_hover = Some(color);
@@ -1800,7 +1801,7 @@ fn parse_spacing(value: &str) -> Option<crate::style::Spacing> {
 /// Returns `None` if any token is invalid — Python raises a declaration error
 /// here; this parser's convention for invalid declaration values is "drop the
 /// declaration" (cf. `transition-duration`, this file), plus a style-debug log
-/// so the failure is observable via TEXTUAL_DEBUG_STYLE_FILE.
+/// so the failure is observable via `TEXTUAL_DEBUG_STYLE_FILE`.
 fn parse_border_value(value: &str) -> Option<BorderEdge> {
     let value = value.trim();
     if value.is_empty() {
@@ -1844,7 +1845,7 @@ fn parse_border_value(value: &str) -> Option<BorderEdge> {
     let border_type = border_type.unwrap_or(BorderType::Solid);
     let mut color = color.unwrap_or(crate::style::Color::rgb(0, 255, 0));
     if let Some(p) = alpha_percent {
-        color = color.with_alpha(p as f32 / 100.0);
+        color = color.with_alpha(f32::from(p) / 100.0);
     }
     Some(BorderEdge::Edge { border_type, color })
 }
@@ -2438,7 +2439,7 @@ mod tests {
         // The whole nesting02-style block must parse to the same rule set as
         // the equivalent flat (nesting01-style) stylesheet.
         let nested = StyleSheet::parse(
-            r#"
+            r"
             #questions {
                 border: heavy red;
                 .button {
@@ -2447,15 +2448,15 @@ mod tests {
                     &.negative { border: heavy blue; }
                 }
             }
-            "#,
+            ",
         );
         let flat = StyleSheet::parse(
-            r#"
+            r"
             #questions { border: heavy red; }
             #questions .button { width: 1fr; }
             #questions .button.affirmative { border: heavy green; }
             #questions .button.negative { border: heavy blue; }
-            "#,
+            ",
         );
         assert_eq!(
             nested.rules.len(),
@@ -3316,14 +3317,14 @@ mod tests {
     #[test]
     fn parse_stylesheet_with_alignment_properties() {
         use super::super::ast::StyleSheet;
-        let css = r#"
+        let css = r"
             Screen {
                 align: center middle;
                 content-align: right bottom;
                 text-align: justify;
                 offset: 3 -1;
             }
-        "#;
+        ";
         let sheet = StyleSheet::parse(css);
         assert_eq!(sheet.rules.len(), 1);
         let style = &sheet.rules[0].style;
@@ -3514,7 +3515,7 @@ mod tests {
     #[test]
     fn parse_markdown_fence_dark_defaults() {
         use super::super::ast::StyleSheet;
-        let css = r#"MarkdownFence { color: rgb(210, 210, 210); background: black 10%; }"#;
+        let css = r"MarkdownFence { color: rgb(210, 210, 210); background: black 10%; }";
         let sheet = StyleSheet::parse(css);
         assert_eq!(sheet.rules.len(), 1);
         let s = &sheet.rules[0].style;
@@ -3667,7 +3668,7 @@ mod tests {
 
     #[test]
     fn parse_nested_amp_and_descendant_rules() {
-        let css = r#"
+        let css = r"
         Screen {
             color: red;
             &.active {
@@ -3677,7 +3678,7 @@ mod tests {
                 underline: true;
             }
         }
-        "#;
+        ";
         let (sheet, issues) = parse_with_issues(css);
         assert!(issues.is_empty(), "unexpected parse issues: {issues:?}");
         assert_eq!(sheet.rules.len(), 3);
@@ -3693,13 +3694,13 @@ mod tests {
 
     #[test]
     fn parse_nested_selector_groups_cartesian_expansion() {
-        let css = r#"
+        let css = r"
         Label, Button {
             &.foo, &.bar {
                 bold: true;
             }
         }
-        "#;
+        ";
         let (sheet, issues) = parse_with_issues(css);
         assert!(issues.is_empty(), "unexpected parse issues: {issues:?}");
         let selectors: Vec<String> = sheet
@@ -3795,12 +3796,12 @@ mod tests {
 
     #[test]
     fn parse_unsupported_at_rule_records_issue() {
-        let css = r#"
+        let css = r"
         @media (max-width: 20) {
             Label { color: red; }
         }
         Label { underline: true; }
-        "#;
+        ";
         let (sheet, issues) = parse_with_issues(css);
         assert!(
             issues

@@ -6,7 +6,7 @@
 //! exactly as when the same widget is mounted dynamically via recompose.
 //! Pre-fix, `WidgetTree::fire_mount_callbacks` salvaged only the messages and
 //! silently dropped every other synth-`EventCtx` side effect (worker requests,
-//! animation requests, run_action, stop). These tests pin the repro from
+//! animation requests, `run_action`, stop). These tests pin the repro from
 //! `docs/devel/DESIGN_mount_and_cross_screen.md` section 1.
 //!
 //! NOTE: worker completion is timing-sensitive under heavy load (same PTY

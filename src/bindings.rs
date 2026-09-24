@@ -119,6 +119,7 @@ pub struct BindingsMap {
 
 impl BindingsMap {
     /// Create an empty bindings map.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -180,6 +181,7 @@ impl BindingsMap {
 
     /// The ordered `(key, bindings)` entries (Python exposes
     /// `key_to_bindings` publicly; this is the read-only Rust analog).
+    #[must_use]
     pub fn entries(&self) -> &[(String, Vec<BindingDecl>)] {
         &self.key_to_bindings
     }
@@ -193,6 +195,7 @@ impl BindingsMap {
     }
 
     /// Bindings with `show == true`, in map order (Python `shown_keys`).
+    #[must_use]
     pub fn shown_keys(&self) -> Vec<&BindingDecl> {
         self.key_to_bindings
             .iter()
@@ -276,11 +279,10 @@ impl BindingsMap {
                                 .id
                                 .as_deref()
                                 .filter(|id| !id.is_empty())
-                                .map(|id| {
+                                .is_some_and(|id| {
                                     keymap.get(id).map(String::as_str)
                                         != Some(clashed_binding.key.as_str())
-                                })
-                                .unwrap_or(false);
+                                });
                             if !rebound_away && !clashed_bindings.contains(&clashed_binding) {
                                 clashed_bindings.push(clashed_binding);
                             }
@@ -330,12 +332,11 @@ impl BindingsMap {
 
     /// Append a binding under its key (`dict.setdefault(key, []).append(..)`).
     fn push_binding(&mut self, binding: BindingDecl) {
-        match self.position(&binding.key) {
-            Some(idx) => self.key_to_bindings[idx].1.push(binding),
-            None => {
-                let key = binding.key.clone();
-                self.key_to_bindings.push((key, vec![binding]));
-            }
+        if let Some(idx) = self.position(&binding.key) {
+            self.key_to_bindings[idx].1.push(binding)
+        } else {
+            let key = binding.key.clone();
+            self.key_to_bindings.push((key, vec![binding]));
         }
     }
 

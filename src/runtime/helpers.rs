@@ -226,8 +226,7 @@ pub(crate) fn raw_focused_node_id(tree: &WidgetTree) -> Option<NodeId> {
 /// `visibility: visible`.
 fn node_self_shown(tree: &WidgetTree, node_id: NodeId) -> bool {
     tree.get(node_id)
-        .map(|node| node.display && node.visibility == crate::style::Visibility::Visible)
-        .unwrap_or(false)
+        .is_some_and(|node| node.display && node.visibility == crate::style::Visibility::Visible)
 }
 
 /// Python `Screen.get_focusable_widget_at` (`screen.py`): the widget under
@@ -288,8 +287,7 @@ pub(crate) fn reset_focus_for_hidden_node(tree: &mut WidgetTree) -> bool {
             }
             let focusable = tree
                 .get(sibling)
-                .map(|node| node.widget.focusable() && !node.state.disabled)
-                .unwrap_or(false);
+                .is_some_and(|node| node.widget.focusable() && !node.state.disabled);
             if focusable && node_self_shown(tree, sibling) {
                 tree.set_focus_state(sibling, true);
                 return true;
@@ -337,6 +335,7 @@ fn build_path_to_node_local(tree: &WidgetTree, target: NodeId) -> Vec<NodeId> {
 
 /// Find the deepest visible node at a screen coordinate using tree layout
 /// geometry, independent of rendered segment metadata.
+#[must_use]
 pub fn widget_at_tree_layout(tree: &WidgetTree, x: u16, y: u16) -> Option<NodeId> {
     let root = tree.root()?;
     let mut hit_any: Option<NodeId> = None;
@@ -389,6 +388,7 @@ pub fn widget_at_tree_layout(tree: &WidgetTree, x: u16, y: u16) -> Option<NodeId
 
 /// Translate screen coordinates to content-local coordinates using tree node
 /// geometry (prefers `content_rect`, falls back to `layout_rect`).
+#[must_use]
 pub fn tree_content_local_coords(
     tree: &WidgetTree,
     target: NodeId,
@@ -626,10 +626,10 @@ pub(crate) fn generate_enter_leave_events(
         events.push((
             old,
             Event::Leave(MouseLeaveEvent {
-                x,
-                y,
                 screen_x,
                 screen_y,
+                x,
+                y,
             }),
         ));
     }
@@ -637,10 +637,10 @@ pub(crate) fn generate_enter_leave_events(
         events.push((
             new,
             Event::Enter(MouseEnterEvent {
-                x,
-                y,
                 screen_x,
                 screen_y,
+                x,
+                y,
             }),
         ));
     }

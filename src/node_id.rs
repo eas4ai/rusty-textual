@@ -18,6 +18,7 @@ pub type NodeId = slotmap::DefaultKey;
 /// The returned value is an opaque encoding of the key's version and index.
 /// Use [`node_id_from_ffi`] to recover the original `NodeId`.
 #[inline]
+#[must_use]
 pub fn node_id_to_ffi(id: NodeId) -> u64 {
     use slotmap::Key;
     id.data().as_ffi()
@@ -31,6 +32,7 @@ pub fn node_id_to_ffi(id: NodeId) -> u64 {
 /// Passing arbitrary integers produces a syntactically valid but semantically
 /// bogus key — any subsequent `SlotMap` lookup will simply return `None`.
 #[inline]
+#[must_use]
 pub fn node_id_from_ffi(ffi: u64) -> NodeId {
     slotmap::KeyData::from_ffi(ffi).into()
 }

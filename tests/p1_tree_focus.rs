@@ -43,7 +43,7 @@ impl TreeFocusProbe {
             self.focused = focused;
             self.sink
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(format!("{}:{focused}", self.id));
         }
     }
@@ -79,7 +79,7 @@ impl Widget for TreeFocusProbe {
             Event::DescendantFocus(e) => {
                 self.sink
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push(format!(
                         "{}:descendant-focus:{}",
                         self.id,
@@ -89,7 +89,7 @@ impl Widget for TreeFocusProbe {
             Event::DescendantBlur(e) => {
                 self.sink
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push(format!(
                         "{}:descendant-blur:{}",
                         self.id,
@@ -127,7 +127,7 @@ impl TreeHoverProbe {
             self.hovered = hovered;
             self.sink
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(format!("{}:{hovered}", self.id));
         }
     }
@@ -201,11 +201,7 @@ fn p1g13_focus_crosses_wrapper_boundary_via_tree_dispatch() {
     let focusable: Vec<NodeId> = all_nodes
         .iter()
         .copied()
-        .filter(|&id| {
-            tree.get(id)
-                .map(|_| tree.children(id).is_empty()) // leaf nodes
-                .unwrap_or(false)
-        })
+        .filter(|&id| tree.get(id).is_some_and(|_| tree.children(id).is_empty()))
         .collect();
 
     // We expect at least 3 focusable leaves (A, B, C).
@@ -278,7 +274,10 @@ fn p1g13_focus_crosses_wrapper_boundary_via_tree_dispatch() {
     );
 
     // Verify sink recorded the full traversal.
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"A:true".to_string()),
         "probe A should have received focus; events={events:?}"
@@ -355,7 +354,10 @@ fn p1g13_focus_traverses_deep_wrapper_chain() {
         "focus should traverse deep wrapper chain to deep_B"
     );
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"deep_A:true".to_string()),
         "deep_A should gain focus; events={events:?}"
@@ -410,7 +412,10 @@ fn p1g13_hover_enter_requests_repaint_via_tree_dispatch() {
         "hover enter should request repaint"
     );
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"btn1:true".to_string()),
         "btn1 should be marked hovered after Enter; events={events:?}"
@@ -457,7 +462,10 @@ fn p1g13_hover_leave_clears_state_via_tree_dispatch() {
         "hover leave should request repaint"
     );
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"h1:true".to_string()),
         "h1 should have been hovered; events={events:?}"
@@ -517,7 +525,10 @@ fn p1g13_hover_transfer_between_siblings_via_tree_dispatch() {
         }),
     );
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"top:true".to_string()),
         "top should have been hovered; events={events:?}"
@@ -583,7 +594,10 @@ fn p1g13_focus_transfer_clears_previous_in_separate_branches() {
     );
 
     // Verify sink: left gained then lost, right gained.
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"left:true".to_string()),
         "left should have gained focus; events={events:?}"
@@ -691,7 +705,10 @@ fn p1g13_focused_node_id_tree_tracks_single_focus() {
     );
 
     // Verify non-focusable Label doesn't interfere.
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"alpha:true".to_string()),
         "alpha should record focus; events={events:?}"
@@ -798,7 +815,7 @@ fn p1g13_key_event_dispatched_to_focused_node_via_tree() {
                 Event::Key(key_data) => {
                     self.keys
                         .lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .push(key_data.key.clone());
                     ctx.set_handled();
                 }
@@ -838,7 +855,10 @@ fn p1g13_key_event_dispatched_to_focused_node_via_tree() {
         "key event should be handled by focused probe"
     );
 
-    let recorded = keys.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let recorded = keys
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         !recorded.is_empty(),
         "focused probe should receive the key event; recorded={recorded:?}"
@@ -878,14 +898,20 @@ fn p1g13_buttons_advanced_like_chain_focus_transfer_is_single_owner() {
     let mut left_a = None;
     let mut right_a = None;
     for leaf in leaves {
-        let before_len = sink.lock().unwrap_or_else(|e| e.into_inner()).len();
+        let before_len = sink
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len();
         let outcome = dispatch_event_to_target_tree(
             &mut tree,
             leaf,
             &Event::Focus(FocusEvent { node: leaf }),
         );
         let focused = focused_node_id_tree(&tree);
-        let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let events = sink
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         let new_events = &events[before_len..];
         if outcome.handled && focused == Some(leaf) {
             if new_events.iter().any(|event| event == "left_a:true") {
@@ -924,7 +950,10 @@ fn p1g13_buttons_advanced_like_chain_focus_transfer_is_single_owner() {
     );
     assert_eq!(focused_node_id_tree(&tree), Some(right_a));
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(events.contains(&"left_a:true".to_string()));
     assert!(events.contains(&"left_a:false".to_string()));
     assert!(events.contains(&"right_a:true".to_string()));
@@ -956,7 +985,9 @@ fn p1g13_descendant_focus_blur_bubble_without_touching_state() {
 
     let child_ffi = rusty_textual::node_id::node_id_to_ffi(child_id);
     assert_eq!(
-        *sink.lock().unwrap_or_else(|e| e.into_inner()),
+        *sink
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
         vec![
             format!("C:descendant-focus:{child_ffi}"),
             format!("P:descendant-focus:{child_ffi}"),

@@ -20,6 +20,7 @@ impl VerticalScroll {
     crate::delegate_ident_methods!(inner);
     crate::delegate_border_title_methods!(inner);
 
+    #[must_use]
     pub fn new() -> Self {
         // Overflow is NOT set inline here: Python `containers.py::VerticalScroll`
         // declares `overflow-x: hidden; overflow-y: auto` via DEFAULT_CSS (an

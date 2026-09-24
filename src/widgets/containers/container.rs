@@ -36,7 +36,7 @@ pub struct Container {
     border_title: Option<String>,
     /// Optional text drawn on the bottom border (Python `widget.border_subtitle`).
     border_subtitle: Option<String>,
-    /// (index into `children`, css_id, classes) recorded by `with_compose` so
+    /// (index into `children`, `css_id`, classes) recorded by `with_compose` so
     /// `.with_id()`/`.with_classes()` metadata on declared children reaches the
     /// mounted node.
     child_decl_meta: Vec<crate::widgets::ChildDeclMeta>,
@@ -81,6 +81,7 @@ impl Default for Container {
 impl Container {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             children: Vec::new(),
@@ -219,7 +220,7 @@ impl Container {
         &mut self.children
     }
 
-    /// Mutable access to the pre-mount `NodeSeed` (css_id, classes, inline styles).
+    /// Mutable access to the pre-mount `NodeSeed` (`css_id`, classes, inline styles).
     ///
     /// Valid until the widget is mounted into the arena tree; after mount the
     /// node record is the single source of truth and seed changes have no effect.
@@ -375,10 +376,10 @@ impl crate::widgets::Layout for Container {
     }
 
     fn style(&self) -> Option<crate::style::Style> {
-        if self.seed.styles.style != Default::default() {
-            Some(self.seed.styles.style.clone())
-        } else {
+        if self.seed.styles.style == Default::default() {
             None
+        } else {
+            Some(self.seed.styles.style.clone())
         }
     }
 }

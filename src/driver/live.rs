@@ -45,7 +45,11 @@ fn transact(mode: u16, timeout: Duration) -> Option<Vec<u8>> {
     transact_with(
         &negotiate::decrqm_query(mode),
         timeout,
-        |q| io::stdout().write_all(q).and_then(|_| io::stdout().flush()),
+        |q| {
+            io::stdout()
+                .write_all(q)
+                .and_then(|()| io::stdout().flush())
+        },
         crossterm::event::poll,
         || {
             let mut one = [0u8; 1];

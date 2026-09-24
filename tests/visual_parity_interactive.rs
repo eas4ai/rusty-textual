@@ -6,8 +6,8 @@
 //! focus-state color bugs (e.g. a focused Button's `text-style: reverse` band) get
 //! caught instead of eyeballed.
 //!
-//!   DEBUG_CASE=<name>    cargo test --test visual_parity_interactive   # print first per-cell diffs
-//!   cargo test --test visual_parity_interactive                       # assert
+//!   `DEBUG_CASE`=<name>    cargo test --test `visual_parity_interactive`   # print first per-cell diffs
+//!   cargo test --test `visual_parity_interactive`                       # assert
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -175,12 +175,11 @@ fn interactive_parity() {
             eprintln!("SKIP {} (no bin)", case.name);
             continue;
         }
-        let golden = match std::fs::read_to_string(golden_path(case.name)) {
-            Ok(g) => g,
-            Err(_) => {
-                eprintln!("SKIP {} (no golden)", case.name);
-                continue;
-            }
+        let golden = if let Ok(g) = std::fs::read_to_string(golden_path(case.name)) {
+            g
+        } else {
+            eprintln!("SKIP {} (no golden)", case.name);
+            continue;
         };
         let actual = capture(
             CommandBuilder::new(bin.to_str().unwrap()),

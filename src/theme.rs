@@ -81,6 +81,7 @@ impl NamedTheme {
     /// Port of `ColorSystem._generate` (truecolor) — the ANSI themes
     /// (`ansi-dark`/`ansi-light`) are intentionally not generated here; they
     /// resolve through the default path which already handles `ansi_*` names.
+    #[must_use]
     pub fn generate(&self) -> HashMap<String, Color> {
         generate_tokens(self)
     }
@@ -144,34 +145,39 @@ fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
         .collect();
 
     let primary = parse(&theme.primary);
-    let secondary = theme.secondary.as_deref().map(parse).unwrap_or(primary);
-    let warning = theme.warning.as_deref().map(parse).unwrap_or(primary);
-    let error = theme.error.as_deref().map(parse).unwrap_or(secondary);
-    let success = theme.success.as_deref().map(parse).unwrap_or(secondary);
-    let accent = theme.accent.as_deref().map(parse).unwrap_or(primary);
+    let secondary = theme.secondary.as_deref().map_or(primary, parse);
+    let warning = theme.warning.as_deref().map_or(primary, parse);
+    let error = theme.error.as_deref().map_or(secondary, parse);
+    let success = theme.success.as_deref().map_or(secondary, parse);
+    let accent = theme.accent.as_deref().map_or(primary, parse);
 
     let dark = theme.dark;
     let spread = theme.luminosity_spread;
 
-    let background = theme.background.as_deref().map(parse).unwrap_or_else(|| {
-        parse(if dark {
-            DEFAULT_DARK_BACKGROUND
-        } else {
-            DEFAULT_LIGHT_BACKGROUND
-        })
-    });
-    let surface = theme.surface.as_deref().map(parse).unwrap_or_else(|| {
-        parse(if dark {
-            DEFAULT_DARK_SURFACE
-        } else {
-            DEFAULT_LIGHT_SURFACE
-        })
-    });
+    let background = theme.background.as_deref().map_or_else(
+        || {
+            parse(if dark {
+                DEFAULT_DARK_BACKGROUND
+            } else {
+                DEFAULT_LIGHT_BACKGROUND
+            })
+        },
+        parse,
+    );
+    let surface = theme.surface.as_deref().map_or_else(
+        || {
+            parse(if dark {
+                DEFAULT_DARK_SURFACE
+            } else {
+                DEFAULT_LIGHT_SURFACE
+            })
+        },
+        parse,
+    );
     let foreground = theme
         .foreground
         .as_deref()
-        .map(parse)
-        .unwrap_or_else(|| background.inverse());
+        .map_or_else(|| background.inverse(), parse);
 
     // Colored text + panel/boost. (`background.ansi` is always None here — ANSI
     // themes are not generated.)
@@ -210,8 +216,7 @@ fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
             boost = theme
                 .boost
                 .as_deref()
-                .map(parse)
-                .unwrap_or_else(|| contrast_full.with_alpha(0.04));
+                .map_or_else(|| contrast_full.with_alpha(0.04), parse);
             panel = add(panel, boost);
         }
         panel
@@ -236,13 +241,13 @@ fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
 
     // f64 throughout the luminosity arithmetic so the delta fed into the LAB
     // lighten/darken is byte-exact with Python (`spread / 2`, `n * step` in f64).
-    let luminosity_step = spread as f64 / 2.0;
+    let luminosity_step = f64::from(spread) / 2.0;
     let dark_shades = ["primary-background", "secondary-background"];
 
     for (name, color) in shade_colors {
         let is_dark_shade = dark && dark_shades.contains(&name);
         for n in -NUMBER_OF_SHADES..=NUMBER_OF_SHADES {
-            let luminosity_delta = n as f64 * luminosity_step;
+            let luminosity_delta = f64::from(n) * luminosity_step;
             let key = shade_key(name, n);
             if is_dark_shade {
                 if let Some(v) = var.get(key.as_str()) {
@@ -255,7 +260,7 @@ fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
                 let shade_color = blend_alpha(
                     dark_background,
                     Color::rgb(255, 255, 255),
-                    (spread as f64 + luminosity_delta) as f32,
+                    (f64::from(spread) + luminosity_delta) as f32,
                     1.0,
                 )
                 .clamped();
@@ -329,7 +334,7 @@ fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
         darken_lab(surface, 0.025).clamped()
     });
     insert_or_var(&mut colors, &var, "surface-active", || {
-        lighten_lab(surface, spread as f64 / 2.5).clamped()
+        lighten_lab(surface, f64::from(spread) / 2.5).clamped()
     });
 
     // Scrollbars: `background-darken-1 + primary.with_alpha(0.4/0.5)`.
@@ -491,6 +496,7 @@ pub fn register_theme(theme: NamedTheme) {
 }
 
 /// Names of all registered themes, sorted.
+#[must_use]
 pub fn available_theme_names() -> Vec<String> {
     let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
     let mut names: Vec<String> = reg.themes.keys().cloned().collect();
@@ -499,12 +505,14 @@ pub fn available_theme_names() -> Vec<String> {
 }
 
 /// Look up a registered theme by name.
+#[must_use]
 pub fn get_theme(name: &str) -> Option<NamedTheme> {
     let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
     reg.themes.get(name).cloned()
 }
 
 /// The currently active theme name (`textual-dark` if the default path is in use).
+#[must_use]
 pub fn active_theme_name() -> String {
     let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
     reg.active
@@ -517,6 +525,7 @@ pub fn active_theme_name() -> String {
 /// When the activated theme is the default `textual-dark`, the global override
 /// is cleared so the hand-tuned static path in `style.rs` is used (preserving
 /// the calibrated goldens).
+#[must_use]
 pub fn set_active_theme(name: &str) -> bool {
     let mut reg = registry().lock().unwrap_or_else(|e| e.into_inner());
     let Some(theme) = reg.themes.get(name).cloned() else {
@@ -579,6 +588,7 @@ fn vars(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
 }
 
 /// The built-in named themes, ported exactly from Python `BUILTIN_THEMES`.
+#[must_use]
 pub fn builtin_themes() -> Vec<NamedTheme> {
     let mut out = Vec::new();
 

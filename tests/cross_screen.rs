@@ -1,4 +1,4 @@
-//! Cross-screen widget access (design note "mount_and_cross_screen", Gap 7).
+//! Cross-screen widget access (design note "`mount_and_cross_screen`", Gap 7).
 //!
 //! Phase B1: the App-level synchronous surface. `&mut App` outside dispatch
 //! holds no tree borrow, so `ScreenRef`-addressed queries and mutations are
@@ -344,7 +344,7 @@ fn popped_screen_tree_id_resolves_to_nothing() {
 struct UpdaterModal;
 
 impl Screen for UpdaterModal {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "updater-modal"
     }
 
@@ -451,7 +451,7 @@ impl Widget for KeyUpdater {
 struct KeyModal;
 
 impl Screen for KeyModal {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "key-modal"
     }
 
@@ -506,12 +506,12 @@ impl TextualApp for OffsetLogApp {
     }
 }
 
-/// A translucent modal (ModalScreen default background) with a small top-left
+/// A translucent modal (`ModalScreen` default background) with a small top-left
 /// dialog carrying the update button, leaving the underlay rows visible.
 struct DimUpdaterModal;
 
 impl Screen for DimUpdaterModal {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "dim-updater"
     }
 
@@ -589,7 +589,7 @@ struct SelfTargetModal {
 }
 
 impl Screen for SelfTargetModal {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "self-target"
     }
 

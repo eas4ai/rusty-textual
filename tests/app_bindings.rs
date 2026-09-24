@@ -26,7 +26,7 @@ fn tree_nav_bindings_are_hidden() {
     }
 }
 
-/// A freshly-created TreeNode must start collapsed (expanded=false),
+/// A freshly-created `TreeNode` must start collapsed (expanded=false),
 /// matching Python Textual where new nodes are NOT auto-expanded.
 #[test]
 fn tree_node_starts_collapsed() {
@@ -80,7 +80,7 @@ fn dynamic_disabled_binding_does_not_fire_on_keypress() {
             if action.starts_with("register") {
                 self.actions
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push(action.to_string());
                 ctx.set_handled();
             }
@@ -96,7 +96,9 @@ fn dynamic_disabled_binding_does_not_fire_on_keypress() {
     .expect("run_test");
 
     assert_eq!(
-        *recorded.lock().unwrap_or_else(|e| e.into_inner()),
+        *recorded
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
         vec!["register('a')".to_string()],
         "only the enabled binding ('a') may run; 'b' (Some(false)) and 'c' (None) are gated off"
     );
@@ -125,7 +127,10 @@ fn character_bindings_fire_on_keypress() {
 
         fn on_app_action_str(&mut self, _app: &mut App, action: &str, ctx: &mut WidgetCtx) {
             if action == "increment" {
-                *self.counter.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+                *self
+                    .counter
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) += 1;
                 ctx.set_handled();
             }
         }
@@ -136,25 +141,33 @@ fn character_bindings_fire_on_keypress() {
     run_test(BindApp { counter }, |pilot| {
         pilot.press(&["."])?;
         assert_eq!(
-            *observed.lock().unwrap_or_else(|e| e.into_inner()),
+            *observed
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
             1,
             "'.' must fire the '.' binding alternative"
         );
         pilot.press(&["~"])?;
         assert_eq!(
-            *observed.lock().unwrap_or_else(|e| e.into_inner()),
+            *observed
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
             2,
             "'~' must fire the '~' binding alternative"
         );
         pilot.press(&["space"])?;
         assert_eq!(
-            *observed.lock().unwrap_or_else(|e| e.into_inner()),
+            *observed
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
             3,
             "space must fire the 'space' binding alternative"
         );
         pilot.press(&["x"])?;
         assert_eq!(
-            *observed.lock().unwrap_or_else(|e| e.into_inner()),
+            *observed
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
             3,
             "an unbound key must not fire the binding"
         );

@@ -2,7 +2,9 @@ use rich_rs::{Console, ConsoleOptions, MetaValue, Renderable, Segment, Segments,
 use textual_macros::widget;
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    MessageEvent, OptionHighlighted, OptionSelected, ScrollbarAxis, ScrollbarScrollTo,
+};
 
 #[path = "toggle_option.rs"]
 pub(crate) mod toggle_option;
@@ -158,6 +160,7 @@ impl OptionList {
     crate::seed_ident_methods!();
 
     /// Create an empty `OptionList`.
+    #[must_use]
     pub fn new() -> Self {
         let seed = NodeSeed {
             classes: vec!["option-list".to_string()],
@@ -194,6 +197,7 @@ impl OptionList {
     /// raises `DuplicateID` out of `__init__`; construction-time duplicates are
     /// programmer error, not recoverable state. Use the incremental
     /// [`Self::add_option`] / [`Self::add_options`] family for fallible adds.
+    #[must_use]
     pub fn with_items(items: Vec<OptionItem>) -> Self {
         let mut list = Self::new();
         list.id_to_index = match Self::build_registry(&items) {
@@ -225,12 +229,14 @@ impl OptionList {
     }
 
     /// Builder: set the scroll step (number of rows per scroll tick).
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);
         self
     }
 
     /// Builder: set disabled state for the entire list.
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
@@ -363,26 +369,31 @@ impl OptionList {
     }
 
     /// Number of items (including separators).
+    #[must_use]
     pub fn option_count(&self) -> usize {
         self.items.len()
     }
 
     /// Get a reference to an item by index.
+    #[must_use]
     pub fn get_option(&self, index: usize) -> Option<&OptionItem> {
         self.items.get(index)
     }
 
     /// The currently highlighted index, or `None`.
+    #[must_use]
     pub fn highlighted(&self) -> Option<usize> {
         self.cursor.highlighted()
     }
 
     /// The currently hovered option index, or `None`.
+    #[must_use]
     pub fn hovered_index(&self) -> Option<usize> {
         self.hovered_index
     }
 
     /// The current scroll offset (first visible item index).
+    #[must_use]
     pub fn offset_for_click(&self) -> usize {
         self.offset
     }
@@ -403,6 +414,7 @@ impl OptionList {
     }
 
     /// Return the first selectable index, if any.
+    #[must_use]
     pub fn first_selectable_index(&self) -> Option<usize> {
         self.first_selectable()
     }
@@ -877,8 +889,7 @@ impl OptionList {
         let height = self
             .items
             .get(highlighted)
-            .map(|item| self.item_height(item))
-            .unwrap_or(1);
+            .map_or(1, |item| self.item_height(item));
         let last_line = first_line + height.saturating_sub(1);
         if first_line < self.offset {
             self.offset = first_line;
@@ -1057,7 +1068,7 @@ impl crate::widgets::Focus for OptionList {
     }
 
     /// Python `OptionList.BINDINGS` (all `show=False`). Declarative bindings
-    /// are resolved focused→root, so a focused OptionList's `down →
+    /// are resolved focused→root, so a focused `OptionList`'s `down →
     /// cursor_down` wins over an ancestor scroll container's `down →
     /// scroll_down` — exactly like Python's binding chain. Raw `on_event` key
     /// handling would LOSE to the ancestor binding (bindings dispatch first),
@@ -1447,7 +1458,7 @@ impl crate::widgets::Render for OptionList {
                                 // bringing each line back up to full `width`.
                                 if pad_left > 0 {
                                     let indent = Segment::styled(" ".repeat(pad_left), style);
-                                    for line in raw.iter_mut() {
+                                    for line in &mut raw {
                                         line.insert(0, indent.clone());
                                     }
                                 }
@@ -1528,7 +1539,7 @@ mod tests {
         }
     }
 
-    /// Run an OptionList binding action (the canonical keyboard path — keys
+    /// Run an `OptionList` binding action (the canonical keyboard path — keys
     /// reach the list through its declarative `bindings()`, not raw `on_event`).
     fn run_action(list: &mut OptionList, name: &str, ctx: &mut EventCtx) -> bool {
         let parsed = crate::action::parse_action(name).expect("parse action");
@@ -1657,7 +1668,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.step_highlight(1, &mut __w)
+            list.step_highlight(1, &mut __w);
         };
         // Should skip the separator and land on Beta (index 2).
         assert_eq!(list.highlighted(), Some(2));
@@ -1681,7 +1692,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.step_highlight(1, &mut __w)
+            list.step_highlight(1, &mut __w);
         };
         assert_eq!(list.highlighted(), Some(2));
     }
@@ -1705,7 +1716,7 @@ mod tests {
                     crate::node_id::NodeId::default(),
                     &mut ctx,
                 );
-                list.highlight_index(last, &mut __w)
+                list.highlight_index(last, &mut __w);
             };
         }
         assert_eq!(list.highlighted(), Some(3));
@@ -1717,7 +1728,7 @@ mod tests {
                     crate::node_id::NodeId::default(),
                     &mut ctx,
                 );
-                list.highlight_index(first, &mut __w)
+                list.highlight_index(first, &mut __w);
             };
         }
         assert_eq!(list.highlighted(), Some(0));
@@ -1735,7 +1746,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.confirm_selection(&mut __w)
+            list.confirm_selection(&mut __w);
         };
         let messages = ctx.take_messages();
         assert!(messages.iter().any(|m| {
@@ -1817,7 +1828,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.step_highlight(-1, &mut __w)
+            list.step_highlight(-1, &mut __w);
         };
         assert_eq!(list.highlighted(), Some(2));
     }

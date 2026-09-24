@@ -7,6 +7,14 @@ until the API stabilizes.
 
 ## [Unreleased]
 
+### Changed
+
+- Strict clippy (`clippy::pedantic`) is on. 859 public functions and
+  methods that only compute a value are now `#[must_use]`, so ignoring
+  their result warns. `DomQueryMut`'s chainable operations (`add_class`,
+  `set`, `focus`, `remove`, ...) are not `#[must_use]`: they act on the
+  call, and the returned query only enables chaining.
+
 ## [1.1.0] - 2026-07-16
 
 The first minor release: full Python-parity depth plus a proven extension story,

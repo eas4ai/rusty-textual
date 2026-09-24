@@ -5,7 +5,10 @@ use rich_rs::{Console, ConsoleOptions, Renderable, Segments};
 use crate::action::ParsedAction;
 use crate::compose::{ChildDecl, ComposeResult};
 use crate::event::WidgetCtx;
-use crate::message::*;
+use crate::message::{
+    AppFocus, MessageEvent, OptionSelected, SelectChanged, SelectCurrentToggle,
+    SelectOverlayDismiss,
+};
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
 
 use super::option_list::OptionItem;
@@ -109,6 +112,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
     // ── Public API ──────────────────────────────────────────────────
 
     /// The currently selected value, or `None`.
+    #[must_use]
     pub fn value(&self) -> Option<&T> {
         self.cursor
             .selected()
@@ -143,11 +147,13 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
     }
 
     /// Whether the dropdown overlay is currently open.
+    #[must_use]
     pub fn is_open(&self) -> bool {
         self.expanded
     }
 
     /// Whether blank (no selection) is allowed.
+    #[must_use]
     pub fn allow_blank(&self) -> bool {
         self.allow_blank
     }
@@ -196,6 +202,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
     /// When `true` (default, Python parity), the initial state is no selection
     /// (placeholder shown) and the user can deselect. When `false` the first
     /// option is auto-selected and the user cannot clear the selection.
+    #[must_use]
     pub fn with_allow_blank(mut self, allow: bool) -> Self {
         self.allow_blank = allow;
         if allow {
@@ -207,6 +214,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
     }
 
     /// Builder: set disabled state for the entire select.
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         if disabled {
@@ -253,7 +261,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
             .map(|index| self.options[index].0.clone())
     }
 
-    /// Whether a real value is selected (drives SelectCurrent's `-has-value`).
+    /// Whether a real value is selected (drives `SelectCurrent`'s `-has-value`).
     fn has_value(&self) -> bool {
         self.cursor.selected().is_some()
     }

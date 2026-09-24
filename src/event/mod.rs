@@ -243,16 +243,19 @@ impl AnimationRequest {
         }
     }
 
+    #[must_use]
     pub fn with_delay(mut self, delay: Duration) -> Self {
         self.delay = delay;
         self
     }
 
+    #[must_use]
     pub fn with_ease(mut self, ease: AnimationEase) -> Self {
         self.ease = ease;
         self
     }
 
+    #[must_use]
     pub fn with_level(mut self, level: AnimationLevel) -> Self {
         self.level = level;
         self
@@ -307,16 +310,19 @@ impl StyleAnimationRequest {
         }
     }
 
+    #[must_use]
     pub fn with_delay(mut self, delay: Duration) -> Self {
         self.delay = delay;
         self
     }
 
+    #[must_use]
     pub fn with_ease(mut self, ease: AnimationEase) -> Self {
         self.ease = ease;
         self
     }
 
+    #[must_use]
     pub fn with_level(mut self, level: AnimationLevel) -> Self {
         self.level = level;
         self
@@ -386,6 +392,7 @@ pub enum Action {
 }
 
 impl Action {
+    #[must_use]
     pub fn description(self) -> &'static str {
         match self {
             Action::FocusNext => "Focus next",
@@ -477,6 +484,7 @@ impl BindingHint {
         self
     }
 
+    #[must_use]
     pub fn hidden(mut self, hidden: bool) -> Self {
         self.show = !hidden;
         self
@@ -502,11 +510,13 @@ impl BindingHint {
         self
     }
 
+    #[must_use]
     pub fn with_priority(mut self, priority: bool) -> Self {
         self.priority = priority;
         self
     }
 
+    #[must_use]
     pub fn with_system(mut self, system: bool) -> Self {
         self.system = system;
         self
@@ -514,10 +524,12 @@ impl BindingHint {
 }
 
 impl KeyBind {
+    #[must_use]
     pub fn new(code: KeyCode, modifiers: KeyModifiers) -> Self {
         Self { code, modifiers }
     }
 
+    #[must_use]
     pub fn from_event(key: &KeyEventData) -> Self {
         Self {
             code: key.code,
@@ -525,10 +537,12 @@ impl KeyBind {
         }
     }
 
+    #[must_use]
     pub fn key_name(&self) -> String {
         KeyEventData::from_crossterm(KeyEvent::new(self.code, self.modifiers)).key
     }
 
+    #[must_use]
     pub fn display_key(&self) -> String {
         format_key_display(&self.key_name())
     }
@@ -540,6 +554,7 @@ pub struct ActionMap {
 }
 
 impl ActionMap {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -548,10 +563,12 @@ impl ActionMap {
         self.bindings.insert(key, action);
     }
 
+    #[must_use]
     pub fn lookup(&self, key: &KeyBind) -> Option<Action> {
         self.bindings.get(key).copied()
     }
 
+    #[must_use]
     pub fn entries(&self) -> Vec<(KeyBind, Action)> {
         self.bindings
             .iter()
@@ -598,6 +615,7 @@ pub struct InvalidationFlags {
 }
 
 impl InvalidationFlags {
+    #[must_use]
     pub fn content() -> Self {
         Self {
             content: true,
@@ -606,6 +624,7 @@ impl InvalidationFlags {
         }
     }
 
+    #[must_use]
     pub fn style() -> Self {
         Self {
             content: true,
@@ -614,6 +633,7 @@ impl InvalidationFlags {
         }
     }
 
+    #[must_use]
     pub fn layout() -> Self {
         Self {
             content: true,
@@ -631,6 +651,7 @@ impl InvalidationFlags {
 
 impl EventCtx {
     /// The arena node ID for the widget currently being dispatched to.
+    #[must_use]
     pub fn node_id(&self) -> NodeId {
         self.node_id
     }
@@ -640,6 +661,7 @@ impl EventCtx {
         self.node_id = id;
     }
 
+    #[must_use]
     pub fn handled(&self) -> bool {
         self.handled
     }
@@ -670,10 +692,12 @@ impl EventCtx {
         self.invalidation.merge(InvalidationFlags::content());
     }
 
+    #[must_use]
     pub fn repaint_requested(&self) -> bool {
         self.repaint_requested
     }
 
+    #[must_use]
     pub fn invalidation(&self) -> InvalidationFlags {
         self.invalidation
     }
@@ -708,6 +732,7 @@ impl EventCtx {
         self.stop_requested = true;
     }
 
+    #[must_use]
     pub fn stop_requested(&self) -> bool {
         self.stop_requested
     }
@@ -777,6 +802,7 @@ impl EventCtx {
     /// Whether message type `M` is currently prevented from posting.
     ///
     /// Mirrors Python `MessagePump._is_prevented`.
+    #[must_use]
     pub fn is_prevented<M: Message>(&self) -> bool {
         self.is_type_prevented(TypeId::of::<M>())
     }
@@ -1085,11 +1111,13 @@ impl EventCtx {
     /// Number of messages currently queued by this context (not yet drained by
     /// the runtime). Useful for asserting that a `prevent(...)` scope suppressed
     /// a post.
+    #[must_use]
     pub fn pending_message_count(&self) -> usize {
         self.messages.len()
     }
 
     /// Whether a message of type `M` is currently queued in this context.
+    #[must_use]
     pub fn has_pending_message<M: Message>(&self) -> bool {
         self.messages.iter().any(|m| m.is::<M>())
     }
@@ -1099,7 +1127,7 @@ impl EventCtx {
     }
 
     /// Animation infrastructure — will be wired when the animation system
-    /// drives CSS transition requests through EventCtx.
+    /// drives CSS transition requests through `EventCtx`.
     #[allow(dead_code)]
     pub(crate) fn take_style_animation_requests(&mut self) -> Vec<StyleAnimationRequest> {
         std::mem::take(&mut self.style_animation_requests)
@@ -1186,12 +1214,14 @@ impl<'a> WidgetCtx<'a> {
 
     /// The arena-assigned identity of this widget.
     #[inline]
+    #[must_use]
     pub fn node_id(&self) -> NodeId {
         self.node_id
     }
 
     /// Access the underlying `EventCtx` for repaint/stop/invalidation requests.
     #[inline]
+    #[must_use]
     pub fn event_ctx(&self) -> &EventCtx {
         self.event_ctx
     }
@@ -1246,19 +1276,19 @@ impl<'a> WidgetCtx<'a> {
     // takes the EventCtx path — two behaviours for one call shape. Route them all
     // through the ONE canonical EventCtx path (same as `request_repaint` above).
 
-    /// Request a layout/style/content invalidation (canonical EventCtx path).
+    /// Request a layout/style/content invalidation (canonical `EventCtx` path).
     #[inline]
     pub fn request_layout(&mut self) {
         self.event_ctx.request_layout_invalidation();
     }
 
-    /// Request style recomputation (canonical EventCtx path).
+    /// Request style recomputation (canonical `EventCtx` path).
     #[inline]
     pub fn request_styles(&mut self) {
         self.event_ctx.request_style_invalidation();
     }
 
-    /// Request subtree recomposition of this widget (canonical EventCtx path).
+    /// Request subtree recomposition of this widget (canonical `EventCtx` path).
     #[inline]
     pub fn request_recompose(&mut self) {
         self.event_ctx.request_recompose_node(self.node_id);
@@ -1275,35 +1305,39 @@ impl<'a> WidgetCtx<'a> {
 
     /// Whether the event has been marked handled.
     #[inline]
+    #[must_use]
     pub fn handled(&self) -> bool {
         self.event_ctx.handled()
     }
 
     /// Whether a repaint has been requested during dispatch.
     #[inline]
+    #[must_use]
     pub fn repaint_requested(&self) -> bool {
         self.event_ctx.repaint_requested()
     }
 
     /// Whether a runtime stop has been requested.
     #[inline]
+    #[must_use]
     pub fn stop_requested(&self) -> bool {
         self.event_ctx.stop_requested()
     }
 
     /// The accumulated invalidation flags for this dispatch.
     #[inline]
+    #[must_use]
     pub fn invalidation(&self) -> InvalidationFlags {
         self.event_ctx.invalidation()
     }
 
-    /// Request a layout invalidation (canonical EventCtx path).
+    /// Request a layout invalidation (canonical `EventCtx` path).
     #[inline]
     pub fn request_layout_invalidation(&mut self) {
         self.event_ctx.request_layout_invalidation();
     }
 
-    /// Request a style invalidation (canonical EventCtx path).
+    /// Request a style invalidation (canonical `EventCtx` path).
     #[inline]
     pub fn request_style_invalidation(&mut self) {
         self.event_ctx.request_style_invalidation();
@@ -1460,7 +1494,7 @@ impl<'a> WidgetCtx<'a> {
 // deref coercion with zero macro change. The EventCtx surface stays reachable
 // through the inherent methods above (which shadow any same-named ReactiveCtx
 // method, e.g. `request_repaint`).
-impl<'a> std::ops::Deref for WidgetCtx<'a> {
+impl std::ops::Deref for WidgetCtx<'_> {
     type Target = ReactiveCtx;
 
     #[inline]
@@ -1469,7 +1503,7 @@ impl<'a> std::ops::Deref for WidgetCtx<'a> {
     }
 }
 
-impl<'a> std::ops::DerefMut for WidgetCtx<'a> {
+impl std::ops::DerefMut for WidgetCtx<'_> {
     #[inline]
     fn deref_mut(&mut self) -> &mut ReactiveCtx {
         &mut self.reactive

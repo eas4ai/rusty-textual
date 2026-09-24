@@ -1,4 +1,4 @@
-//! OptionList / SelectionList stable-id identity tests.
+//! `OptionList` / `SelectionList` stable-id identity tests.
 //!
 //! Ports of the Python Textual test files (adapted to the Rust widget-level
 //! API; Python raises become typed `OptionListError` results):

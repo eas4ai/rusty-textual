@@ -22,7 +22,7 @@ use std::path::PathBuf;
 // Embedded CSS
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     background: $panel;
 }
@@ -54,7 +54,7 @@ Screen {
 #status {
     dock: bottom;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // Reminder state + JSON persistence (serde_json::Value only — no new crates)
@@ -142,10 +142,12 @@ pub struct ReminderApp {
 }
 
 impl ReminderApp {
+    #[must_use]
     pub fn new() -> Self {
         Self::with_store(PathBuf::from(STORE))
     }
 
+    #[must_use]
     pub fn with_store(store: PathBuf) -> Self {
         let reminders = load_store(&store);
         let next_id = reminders.iter().map(|r| r.id).max().unwrap_or(0) + 1;

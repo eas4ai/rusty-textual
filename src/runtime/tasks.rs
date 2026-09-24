@@ -506,7 +506,7 @@ fn read_directory_request(path: String, show_hidden: bool) -> AsyncTaskResult {
         if !show_hidden && name.starts_with('.') {
             continue;
         }
-        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+        let is_dir = entry.file_type().is_ok_and(|ft| ft.is_dir());
         entries.push(AsyncDirectoryEntry {
             path: entry_path.display().to_string(),
             label: name.to_string(),
@@ -720,7 +720,7 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(CallFromThreadError::Disconnected) | Err(CallFromThreadError::NotRunning)
+                Err(CallFromThreadError::Disconnected | CallFromThreadError::NotRunning)
             ),
             "worker must unblock on shutdown, got {result:?}"
         );
@@ -823,11 +823,11 @@ mod tests {
     }
 
     /// End-to-end: a worker thread calls `push_screen_wait`, the UI thread drives
-    /// the push (via the call_from_thread queue) and then a button press on the
+    /// the push (via the `call_from_thread` queue) and then a button press on the
     /// screen dismisses it with a value; the worker must resume with that value.
     ///
     /// This plays the role of the event loop on the test (UI) thread: it drains
-    /// the call_from_thread queue (running the push with `&mut App`), then
+    /// the `call_from_thread` queue (running the push with `&mut App`), then
     /// dispatches a real `ButtonPressed` into the active screen tree — exercising
     /// `Screen::on_button_pressed` → `ctx.dismiss(..)` — and drains screen
     /// dismissals, which pops the screen and fires the result callback that

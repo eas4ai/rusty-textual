@@ -81,15 +81,18 @@ impl Tab {
         self
     }
 
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
+    #[must_use]
     pub fn label(&self) -> &str {
         self.label.as_str()
     }
 
+    #[must_use]
     pub fn tab_id(&self) -> Option<&str> {
         self.id.as_deref()
     }
@@ -155,8 +158,7 @@ impl crate::widgets::Render for Tab {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
         let mut render_style = visual_style.clone();
         render_style.bg = Some(effective_bg);
 
@@ -325,8 +327,7 @@ impl Tabs {
         let mut tab = tab.into();
         let tab_id = tab
             .tab_id()
-            .map(str::to_string)
-            .unwrap_or_else(|| self.next_tab_id());
+            .map_or_else(|| self.next_tab_id(), str::to_string);
         tab.id = Some(tab_id.clone());
         let mut state = self.state.lock().expect("tabs state lock");
         let was_empty = state.active.is_none();
@@ -379,11 +380,13 @@ impl Tabs {
         self.dock = Some(dock);
     }
 
+    #[must_use]
     pub fn active(&self) -> Option<String> {
         let state = self.state.lock().expect("tabs state lock");
         state.active.clone()
     }
 
+    #[must_use]
     pub fn is_active(&self, id: &str) -> bool {
         let state = self.state.lock().expect("tabs state lock");
         state.active.as_deref() == Some(id)
@@ -394,24 +397,25 @@ impl Tabs {
         f(state.active.as_deref())
     }
 
+    #[must_use]
     pub fn active_index(&self) -> Option<usize> {
         let state = self.state.lock().expect("tabs state lock");
         let id = state.active.as_ref()?;
         self.index_for_id(&state, id)
     }
 
+    #[must_use]
     pub fn is_tab_disabled(&self, id: &str) -> bool {
         let state = self.state.lock().expect("tabs state lock");
         self.query_tab_by_id(&state, id)
-            .map(|tab| tab.disabled)
-            .unwrap_or(false)
+            .is_some_and(|tab| tab.disabled)
     }
 
+    #[must_use]
     pub fn is_tab_hidden(&self, id: &str) -> bool {
         let state = self.state.lock().expect("tabs state lock");
         self.query_tab_by_id(&state, id)
-            .map(|tab| tab.hidden)
-            .unwrap_or(false)
+            .is_some_and(|tab| tab.hidden)
     }
 
     pub fn set_active_id(&mut self, id: &str, ctx: Option<&mut crate::event::WidgetCtx>) -> bool {
@@ -551,6 +555,7 @@ impl Tabs {
             .push(Box::new(TabsCleared));
     }
 
+    #[must_use]
     pub fn tab_count(&self) -> usize {
         let state = self.state.lock().expect("tabs state lock");
         state.tabs.len()
@@ -849,19 +854,14 @@ impl Tabs {
     }
 
     fn is_visible(&self, state: &TabsState, index: usize) -> bool {
-        state
-            .tabs
-            .get(index)
-            .map(|tab| !tab.hidden)
-            .unwrap_or(false)
+        state.tabs.get(index).is_some_and(|tab| !tab.hidden)
     }
 
     fn is_activatable(&self, state: &TabsState, index: usize) -> bool {
         state
             .tabs
             .get(index)
-            .map(|tab| !tab.hidden && !tab.disabled)
-            .unwrap_or(false)
+            .is_some_and(|tab| !tab.hidden && !tab.disabled)
     }
 
     fn potential_active_indices(&self, state: &TabsState) -> Vec<usize> {
@@ -991,8 +991,7 @@ impl Tabs {
         let label_width = state
             .tabs
             .get(index)
-            .map(|tab| rich_rs::cell_len(tab.label.as_str()))
-            .unwrap_or(0)
+            .map_or(0, |tab| rich_rs::cell_len(tab.label.as_str()))
             .max(1);
         let span_width = end.saturating_sub(start);
         if span_width <= label_width {
@@ -1025,10 +1024,10 @@ impl Tabs {
         let delay = style
             .transition_delay
             .unwrap_or(Self::UNDERLINE_ANIMATION_DELAY);
-        let ease = style
-            .transition_timing
-            .map(Self::transition_timing_to_animation_ease)
-            .unwrap_or(AnimationEase::InOutCubic);
+        let ease = style.transition_timing.map_or(
+            AnimationEase::InOutCubic,
+            Self::transition_timing_to_animation_ease,
+        );
         (duration, delay, ease)
     }
 
@@ -1182,11 +1181,11 @@ impl crate::widgets::Interactive for Tabs {
     fn on_layout(&mut self, width: u16, _height: u16) {
         self.last_size = Some((width, _height));
         let next_layout_width = usize::from(width).max(1);
-        if next_layout_width != self.layout_width {
+        if next_layout_width == self.layout_width {
             self.layout_width = next_layout_width;
-            self.sync_underline_to_active();
         } else {
             self.layout_width = next_layout_width;
+            self.sync_underline_to_active();
         }
     }
 

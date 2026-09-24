@@ -4,7 +4,12 @@ use textual_macros::widget;
 
 use crate::content::Content;
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    DataTableCellHighlighted, DataTableCellSelected, DataTableColumnHighlighted,
+    DataTableColumnSelected, DataTableHeaderSelected, DataTableRowHighlighted,
+    DataTableRowLabelSelected, DataTableRowSelected, MessageEvent, ScrollbarAxis,
+    ScrollbarScrollTo,
+};
 use crate::style::{Color, Style, TextAlign, parse_color_like};
 
 use crate::action::ParsedAction;
@@ -129,6 +134,7 @@ pub enum SortKey {
 
 impl SortKey {
     /// A numeric key.
+    #[must_use]
     pub fn number(n: f64) -> Self {
         SortKey::Number(n)
     }
@@ -146,6 +152,7 @@ impl SortKey {
     /// Infer a numeric key from `s` if it parses as a number, else a string key.
     /// Mirrors Python where numeric cells compare numerically and text cells
     /// lexicographically.
+    #[must_use]
     pub fn infer(s: &str) -> Self {
         match s.trim().parse::<f64>() {
             Ok(n) => SortKey::Number(n),
@@ -285,6 +292,7 @@ struct HorizontalScrollbarState {
 impl DataTable {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new(headers: Vec<String>, rows: Vec<Vec<String>>) -> Self {
         let mut out = Self {
             column_keys: Vec::new(),
@@ -323,6 +331,7 @@ impl DataTable {
     }
 
     /// Create an empty table (columns and rows added later).
+    #[must_use]
     pub fn empty() -> Self {
         Self::default()
     }
@@ -476,80 +485,96 @@ impl DataTable {
     /// every data cell in `Text(..., justify=…)`.
     pub fn set_all_data_cells_justify(&mut self, justify: CellJustify) {
         let align: TextAlign = justify.into();
-        for row in self.rows.iter_mut() {
+        for row in &mut self.rows {
             for cell in row.iter_mut() {
                 cell.align = align;
             }
         }
     }
 
+    #[must_use]
     pub fn row_key_at(&self, row: usize) -> Option<&RowKey> {
         self.row_keys.get(row)
     }
 
+    #[must_use]
     pub fn column_key_at(&self, column: usize) -> Option<&ColumnKey> {
         self.column_keys.get(column)
     }
 
+    #[must_use]
     pub fn row_index_of(&self, key: &RowKey) -> Option<usize> {
         self.row_keys.iter().position(|existing| existing == key)
     }
 
+    #[must_use]
     pub fn column_index_of(&self, key: &ColumnKey) -> Option<usize> {
         self.column_keys.iter().position(|existing| existing == key)
     }
 
+    #[must_use]
     pub fn cell_key_at(&self, row: usize, column: usize) -> Option<(RowKey, ColumnKey)> {
         let row_key = self.row_key_at(row)?;
         let column_key = self.column_key_at(column)?;
         Some((row_key.clone(), column_key.clone()))
     }
 
+    #[must_use]
     pub fn cursor_cell_key(&self) -> Option<(RowKey, ColumnKey)> {
         self.cell_key_at(self.selected, self.cursor_column)
     }
 
     // ── Reactive getters ─────────────────────────────────────────────────
 
+    #[must_use]
     pub fn selected(&self) -> usize {
         self.selected
     }
 
+    #[must_use]
     pub fn selected_column(&self) -> usize {
         self.cursor_column
     }
 
+    #[must_use]
     pub fn cursor(&self) -> (usize, usize) {
         (self.selected, self.cursor_column)
     }
 
+    #[must_use]
     pub fn fixed_rows(&self) -> usize {
         self.fixed_rows
     }
 
+    #[must_use]
     pub fn fixed_columns(&self) -> usize {
         self.fixed_columns
     }
 
+    #[must_use]
     pub fn show_header(&self) -> bool {
         self.show_header
     }
 
     /// Python `show_cursor`: cursor navigation and selection are suppressed
     /// while false (default true).
+    #[must_use]
     pub fn show_cursor(&self) -> bool {
         self.show_cursor
     }
 
     /// Python `header_height`: height of the header in rows (default 1).
+    #[must_use]
     pub fn header_height(&self) -> usize {
         self.header_height
     }
 
+    #[must_use]
     pub fn show_row_labels(&self) -> bool {
         self.show_row_labels
     }
 
+    #[must_use]
     pub fn zebra_stripes(&self) -> bool {
         self.zebra_stripes
     }
@@ -579,7 +604,9 @@ impl DataTable {
             return false;
         }
         let new_selected = index.min(self.rows.len() - 1);
-        if self.selected != new_selected {
+        if self.selected == new_selected {
+            false
+        } else {
             let old = self.selected;
             self.selected = new_selected;
             self.ensure_visible(self.visible_rows());
@@ -590,8 +617,6 @@ impl DataTable {
                 Box::new(self.selected),
             );
             true
-        } else {
-            false
         }
     }
 
@@ -767,6 +792,7 @@ impl DataTable {
 
     // ── Builder methods ─────────────────────────────────────────────────
 
+    #[must_use]
     pub fn cursor_type(mut self, ct: CursorType) -> Self {
         self.cursor_type = ct;
         self
@@ -851,7 +877,7 @@ impl DataTable {
         self.sort_with(reverse, |row| {
             SortKey::tuple(
                 cols.iter()
-                    .map(|&c| SortKey::infer(row.get(c).map(|cell| cell.plain()).unwrap_or(""))),
+                    .map(|&c| SortKey::infer(row.get(c).map_or("", |cell| cell.plain()))),
             )
         });
     }
@@ -879,7 +905,7 @@ impl DataTable {
         self.sort_with(reverse, |row| {
             let values: Vec<&str> = cols
                 .iter()
-                .map(|&c| row.get(c).map(|cell| cell.plain()).unwrap_or(""))
+                .map(|&c| row.get(c).map_or("", |cell| cell.plain()))
                 .collect();
             key_fn(&values)
         });
@@ -943,6 +969,7 @@ impl DataTable {
 
     /// Get all plain-text values in a row, or `None` if the row index is out of
     /// bounds.
+    #[must_use]
     pub fn get_row(&self, row: usize) -> Option<Vec<String>> {
         self.rows
             .get(row)
@@ -950,11 +977,13 @@ impl DataTable {
     }
 
     /// Number of rows in the table.
+    #[must_use]
     pub fn row_count(&self) -> usize {
         self.rows.len()
     }
 
     /// Number of columns in the table.
+    #[must_use]
     pub fn column_count(&self) -> usize {
         self.headers.len()
     }
@@ -1223,7 +1252,7 @@ impl DataTable {
             .rendered_column_indices_with_offset(self.horizontal_offset)
             .len()
             .saturating_sub(self.fixed_column_count());
-        visible.saturating_sub(1).max((width > 0) as usize)
+        visible.saturating_sub(1).max(usize::from(width > 0))
     }
 
     fn scroll_horizontal_by_columns(&mut self, delta: i32) -> bool {
@@ -1822,7 +1851,7 @@ impl crate::widgets::Interactive for DataTable {
                 // `column == -1`). The label region also offsets the x used for
                 // data-column hit-testing below.
                 let label_region = self.label_region_width();
-                let header_rows = if self.show_header { 1 } else { 0 };
+                let header_rows = u16::from(self.show_header);
                 if label_region > 0 && (mouse.x as usize) < label_region {
                     if mouse.y >= header_rows {
                         if let Some(row) = self.row_index_from_y(mouse.y as usize, visible_rows) {
@@ -2181,7 +2210,7 @@ impl crate::widgets::Interactive for DataTable {
 
 impl crate::widgets::Layout for DataTable {
     fn layout_height(&self) -> Option<usize> {
-        let header_rows = if self.show_header { 1 } else { 0 };
+        let header_rows = usize::from(self.show_header);
         let intrinsic = header_rows + self.rows.len().max(1);
         Some(intrinsic)
     }
@@ -2392,9 +2421,7 @@ impl crate::widgets::Render for DataTable {
         };
         let hover_bg = hover_bg.map(|c| c.flatten_over(row_base));
         let header_hover_bg = header_hover_bg.map(|c| c.flatten_over(header_base));
-        let fixed_base = fixed_bg
-            .map(|c| c.flatten_over(row_base))
-            .unwrap_or(row_base);
+        let fixed_base = fixed_bg.map_or(row_base, |c| c.flatten_over(row_base));
 
         // Per-cell visual base = background color + bold flag. The cell's own
         // foreground/italic/markup spans (carried by its `Content`) are composed
@@ -2451,14 +2478,13 @@ impl crate::widgets::Render for DataTable {
                     parse_color_like("$block-cursor-blurred-background")
                 }
             });
-            raw.map(|c| {
+            raw.map_or(row_base, |c| {
                 if c.a < 1.0 {
                     c.flatten_over(row_base)
                 } else {
                     c
                 }
             })
-            .unwrap_or(row_base)
         };
         let cursor_fg = {
             let raw = cursor_comp.fg.or_else(|| {
@@ -2468,14 +2494,13 @@ impl crate::widgets::Render for DataTable {
                     parse_color_like("$block-cursor-blurred-foreground")
                 }
             });
-            raw.map(|c| {
+            raw.map_or(cursor_base, |c| {
                 if c.a < 1.0 {
                     c.flatten_over(cursor_base)
                 } else {
                     c
                 }
             })
-            .unwrap_or(cursor_base)
         };
         let cursor_bold = cursor_comp
             .bold
@@ -2671,7 +2696,7 @@ impl crate::widgets::Render for DataTable {
         out
     }
 }
-/// Cell padding: 1 space on each side of each cell, matching Python DataTable.cell_padding = 1.
+/// Cell padding: 1 space on each side of each cell, matching Python `DataTable.cell_padding` = 1.
 /// Visual layout: [1 space][cell][2 spaces][cell][2 spaces]...[cell][fill to total_width]
 const CELL_PADDING: usize = 1;
 

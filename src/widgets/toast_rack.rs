@@ -81,6 +81,7 @@ pub struct ToastHolder {
 impl ToastHolder {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new(toast: Toast) -> Self {
         Self {
             toast,
@@ -132,6 +133,7 @@ impl ToastRack {
     /// `ToastRack.display = bool(notifications)`).
     const ACTIVE_CLASS: &'static str = "-active";
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
@@ -143,10 +145,12 @@ impl ToastRack {
     }
 
     /// Number of live toasts (test/observability).
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

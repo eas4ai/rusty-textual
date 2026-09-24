@@ -4,7 +4,7 @@ use textual_macros::widget;
 
 use crate::debug::{debug_input, debug_message};
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::ButtonPressed;
 #[cfg(test)]
 use crate::node_id::NodeId;
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
@@ -124,25 +124,30 @@ impl Button {
         Self::new(label).variant(ButtonVariant::Error)
     }
 
+    #[must_use]
     pub fn pressed(&self) -> bool {
         self.pressed != PressedState::None
     }
 
+    #[must_use]
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
         self.variant = variant;
         self.rebuild_classes()
     }
 
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self.rebuild_classes()
     }
 
+    #[must_use]
     pub fn flat(mut self, flat: bool) -> Self {
         self.flat = flat;
         self.rebuild_classes()
     }
 
+    #[must_use]
     pub fn compact(mut self, compact: bool) -> Self {
         self.compact = compact;
         self.rebuild_classes()
@@ -176,17 +181,20 @@ impl Button {
     /// When set, the rich `Text` is rendered instead of the plain label string.
     /// Use `Text::from_markup("[bold]Save[/]", true)` or similar to create
     /// styled button labels.
+    #[must_use]
     pub fn with_content(mut self, content: Text) -> Self {
         self.content = Some(content);
         self
     }
 
     /// Access the button's action string, if set.
+    #[must_use]
     pub fn action(&self) -> Option<&str> {
         self.action.as_deref()
     }
 
     /// Access the button's rich text content, if set.
+    #[must_use]
     pub fn content(&self) -> Option<&Text> {
         self.content.as_ref()
     }
@@ -194,6 +202,7 @@ impl Button {
     // ── Reactive getters ─────────────────────────────────────────────────
 
     /// Reactive getter for `label`.
+    #[must_use]
     pub fn label(&self) -> &str {
         &self.label
     }
@@ -314,6 +323,7 @@ impl Button {
         }
     }
 
+    #[must_use]
     pub fn describe(&self) -> String {
         let mut classes = self.seed.classes.clone();
         // Include -active when the button is in a pressed state.
@@ -328,7 +338,7 @@ impl Button {
             ButtonVariant::Warning => "warning",
             ButtonVariant::Error => "error",
         };
-        format!("Button(classes='{}', variant='{}')", class_str, variant)
+        format!("Button(classes='{class_str}', variant='{variant}')")
     }
 
     /// Dispatch the press: either the stored action or a `ButtonPressed` message.
@@ -656,8 +666,7 @@ impl Render for Button {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
         let mut render_style = visual_style.clone();
         render_style.bg = Some(effective_bg);
 

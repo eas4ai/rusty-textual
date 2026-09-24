@@ -1,4 +1,4 @@
-//! Wave-1 CommandPalette as a real composed modal screen.
+//! Wave-1 `CommandPalette` as a real composed modal screen.
 //!
 //! This is the target architecture from `docs/devel/CMD_PALETTE_INVESTIGATION.md`
 //! §3: a `SystemModalScreen` (Python `CommandPalette(SystemModalScreen[None])`,
@@ -319,6 +319,7 @@ pub struct CommandPaletteScreen {
 impl CommandPaletteScreen {
     /// Create the palette screen from a synchronous provider-command snapshot
     /// (`TextualAppAdapter::gather_command_palette_commands`).
+    #[must_use]
     pub fn new(commands: Vec<CommandPaletteCommand>) -> Self {
         Self {
             commands,

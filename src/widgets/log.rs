@@ -7,7 +7,9 @@ use rich_rs::{Console, ConsoleOptions, Renderable, Segment, Segments, Style as R
 use textual_macros::widget;
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    MessageEvent, RichLogScrolled, ScrollbarAxis, ScrollbarScrollTo, TextEditClipboardCopyRequested,
+};
 
 use super::helpers::adjust_line_length_no_bg;
 
@@ -19,7 +21,7 @@ pub(crate) const LOG_SCROLLBAR_CORNER_ID: &str = "__log_scrollbar_corner";
 
 // ── WP-25: LRU render cache ────────────────────────────────────────────────
 
-/// Simple LRU cache for rendered line segments, keyed by (line_index, content_hash).
+/// Simple LRU cache for rendered line segments, keyed by (`line_index`, `content_hash`).
 #[derive(Debug)]
 struct LogLineCache {
     entries: HashMap<(usize, u64), Vec<Segment>>,
@@ -50,7 +52,7 @@ impl LogLineCache {
         if self.entries.contains_key(&key) {
             self.order.retain(|k| *k != key);
         } else if self.entries.len() >= self.max_size {
-            if let Some(evicted) = self.order.first().cloned() {
+            if let Some(evicted) = self.order.first().copied() {
                 self.entries.remove(&evicted);
                 self.order.remove(0);
             }
@@ -72,7 +74,7 @@ impl LogLineCache {
 
 // ── WP-24: Selection state ─────────────────────────────────────────────────
 
-/// A position in the log: (line_index, column).
+/// A position in the log: (`line_index`, column).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct LogPos {
     line: usize,
@@ -140,6 +142,7 @@ impl Default for Log {
 impl Log {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             lines: Vec::new(),
@@ -445,7 +448,7 @@ impl Log {
 
     // ── WP-24: Selection helpers ────────────────────────────────────────
 
-    /// Convert mouse coordinates (content-local) to a LogPos.
+    /// Convert mouse coordinates (content-local) to a `LogPos`.
     fn mouse_to_pos(&self, x: usize, y: usize) -> LogPos {
         let line = (self.offset_y + y).min(self.line_count().saturating_sub(1));
         let col = if line < self.lines.len() {

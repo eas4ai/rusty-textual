@@ -31,14 +31,14 @@ impl Widget for CheckerBoard {
     }
 }
 
-const CSS: &str = r#"
+const CSS: &str = r"
 CheckerBoard .checkerboard--white-square {
     background: #A5BAC9;
 }
 CheckerBoard .checkerboard--black-square {
     background: #004578;
 }
-"#;
+";
 
 /// The free public function resolves a component class to the CSS-declared
 /// background colour (no hardcoding).
@@ -158,7 +158,7 @@ fn widget_type_rule_does_not_leak_into_component_style() {
 }
 
 /// G2b regression: a `Widget { color: ... }` UNIVERSAL rule must NOT match a
-/// component phantom (Python's bare DOMNode is not matched by Widget rules).
+/// component phantom (Python's bare `DOMNode` is not matched by Widget rules).
 #[test]
 fn widget_universal_rule_does_not_leak_into_component_style() {
     let _guard = set_style_context(StyleSheet::parse("Widget { color: #ff0000; }"));
@@ -188,11 +188,11 @@ fn type_class_compound_rule_does_not_style_component() {
 #[test]
 fn stateless_phantom_matches_negative_pseudos_only() {
     let _guard = set_style_context(StyleSheet::parse(
-        r#"
+        r"
         .checkerboard--white-square:blur { color: #ff0000; }
         .checkerboard--white-square:light { background: #00ff00; }
         .checkerboard--black-square:focus { color: #0000ff; }
-        "#,
+        ",
     ));
     let board = CheckerBoard;
     let white = resolve_component_style(&board, &["checkerboard--white-square"]);
@@ -210,10 +210,10 @@ fn stateless_phantom_matches_negative_pseudos_only() {
 #[test]
 fn merged_multi_name_later_name_wins_regardless_of_specificity() {
     let _guard = set_style_context(StyleSheet::parse(
-        r#"
+        r"
         CheckerBoard > .checkerboard--white-square { color: #ff0000; background: #111111; }
         .checkerboard--black-square { color: #0000ff; }
-        "#,
+        ",
     ));
     let board = CheckerBoard;
     let merged = rusty_textual::css::resolve_component_style_merged(

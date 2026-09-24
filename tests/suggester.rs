@@ -1,4 +1,4 @@
-//! Suggester cache behavior (port of Python tests/suggester/test_suggester.py).
+//! Suggester cache behavior (port of Python `tests/suggester/test_suggester.py`).
 //!
 //! The Rust `Suggester::suggest` entry point is synchronous and returns the
 //! suggestion directly, so the Python `SuggestionReady`-message tests have no

@@ -5,7 +5,9 @@ use textual_macros::widget;
 use crate::compose::ComposeResult;
 use crate::css;
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    ListItemChildClicked, ListViewItemActivated, ListViewSelectionChanged, MessageEvent,
+};
 
 use crate::action::ParsedAction;
 
@@ -117,6 +119,7 @@ impl ListView {
 
     // ── State accessors (also used by the headless command-palette model) ────
 
+    #[must_use]
     pub fn selected(&self) -> usize {
         self.selected
     }
@@ -125,25 +128,30 @@ impl ListView {
         self.item_text.get(self.selected).map(String::as_str)
     }
 
+    #[must_use]
     pub fn offset(&self) -> usize {
         self.offset
     }
 
+    #[must_use]
     pub fn hovered_index(&self) -> Option<usize> {
         self.hovered_index
     }
 
     /// The number of items in the list.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.item_text.len()
     }
 
     /// Whether the list has no items.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.item_text.is_empty()
     }
 
     /// The item texts, in order.
+    #[must_use]
     pub fn items(&self) -> &[String] {
         &self.item_text
     }
@@ -202,10 +210,12 @@ impl ListView {
         self.ensure_visible();
     }
 
+    #[must_use]
     pub fn is_item_disabled(&self, index: usize) -> bool {
         self.disabled.get(index).copied().unwrap_or(false)
     }
 
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);
         self

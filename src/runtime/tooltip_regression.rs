@@ -7,7 +7,7 @@
 //! node's `absolute_offset`. CSS `offset-x: -50%` then centers the bubble on the
 //! anchor and the `overlay: screen` deferred-paint pass floats it at the top z of
 //! the screen, constrained into the frame (`constrain: inside inflect`). No
-//! widget-local FrameBuffer compositor is involved — the retired `tooltip_frame`
+//! widget-local `FrameBuffer` compositor is involved — the retired `tooltip_frame`
 //! / `overlay_origin` path is gone.
 //!
 //! These tests pin the behaviours the design turns on:

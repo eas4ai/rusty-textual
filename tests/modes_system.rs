@@ -1,4 +1,4 @@
-//! Tests for the MODES system and CommandPaletteScreen integration.
+//! Tests for the MODES system and `CommandPaletteScreen` integration.
 
 use rusty_textual::message::CommandPaletteCommand;
 use rusty_textual::screen::{Screen, ScreenStack};
@@ -67,7 +67,7 @@ fn mode_factory_creates_screen() {
     assert_eq!(screen2.name(), "HelpMode");
 }
 
-/// Multiple mode factories can coexist in a HashMap (simulating App.modes).
+/// Multiple mode factories can coexist in a `HashMap` (simulating App.modes).
 #[test]
 fn mode_registry_map() {
     use std::collections::HashMap;
@@ -149,7 +149,7 @@ fn mode_switch_preserves_base_screens() {
     assert_eq!(popped.lock().unwrap().name(), "BaseScreen");
 }
 
-/// Switching to the same mode is a no-op (tested via current_mode tracking).
+/// Switching to the same mode is a no-op (tested via `current_mode` tracking).
 #[test]
 fn same_mode_noop() {
     let mut current_mode: Option<String> = None;
@@ -174,21 +174,21 @@ fn same_mode_noop() {
 // CommandPaletteScreen tests
 // ---------------------------------------------------------------------------
 
-/// CommandPaletteScreen has correct name.
+/// `CommandPaletteScreen` has correct name.
 #[test]
 fn command_palette_screen_name() {
     let screen = CommandPaletteScreen::new(Vec::new());
     assert_eq!(screen.name(), "CommandPaletteScreen");
 }
 
-/// CommandPaletteScreen is modal.
+/// `CommandPaletteScreen` is modal.
 #[test]
 fn command_palette_screen_is_modal() {
     let screen = CommandPaletteScreen::new(Vec::new());
     assert!(screen.is_modal());
 }
 
-/// CommandPaletteScreen composes its body (`CommandPalette` style type).
+/// `CommandPaletteScreen` composes its body (`CommandPalette` style type).
 #[test]
 fn command_palette_screen_composes_widget() {
     let screen = CommandPaletteScreen::new(Vec::new());
@@ -196,7 +196,7 @@ fn command_palette_screen_composes_widget() {
     assert_eq!(widget.style_type(), "CommandPalette");
 }
 
-/// CommandPaletteScreen with a provider-command snapshot.
+/// `CommandPaletteScreen` with a provider-command snapshot.
 #[test]
 fn command_palette_screen_with_commands() {
     let commands = vec![
@@ -218,7 +218,7 @@ fn command_palette_screen_with_commands() {
     assert_eq!(widget.style_type(), "CommandPalette");
 }
 
-/// AUTO_FOCUS targets the CommandInput (Python `Screen.AUTO_FOCUS`).
+/// `AUTO_FOCUS` targets the `CommandInput` (Python `Screen.AUTO_FOCUS`).
 #[test]
 fn command_palette_screen_auto_focus_is_command_input() {
     let screen = CommandPaletteScreen::new(Vec::new());
@@ -229,14 +229,14 @@ fn command_palette_screen_auto_focus_is_command_input() {
 // SystemModalScreen trait tests
 // ---------------------------------------------------------------------------
 
-/// SystemModalScreen default inherit_css is false (style-isolated system UI).
+/// `SystemModalScreen` default `inherit_css` is false (style-isolated system UI).
 #[test]
 fn system_modal_screen_no_inherit_css() {
     let screen = CommandPaletteScreen::new(Vec::new());
     assert!(!screen.inherit_css());
 }
 
-/// CommandPaletteScreen can be pushed to screen stack.
+/// `CommandPaletteScreen` can be pushed to screen stack.
 #[test]
 fn command_palette_screen_on_stack() {
     let mut stack = ScreenStack::new();
@@ -249,7 +249,7 @@ fn command_palette_screen_on_stack() {
     assert_eq!(popped.lock().unwrap().name(), "CommandPaletteScreen");
 }
 
-/// CommandPaletteScreen can be pushed and popped.
+/// `CommandPaletteScreen` can be pushed and popped.
 #[test]
 fn command_palette_screen_push_pop() {
     let mut stack = ScreenStack::new();
@@ -269,7 +269,7 @@ fn command_palette_screen_push_pop() {
     assert_eq!(base.lock().unwrap().name(), "Base");
 }
 
-/// Mode factory for CommandPaletteScreen.
+/// Mode factory for `CommandPaletteScreen`.
 #[test]
 fn command_palette_as_mode_factory() {
     use std::collections::HashMap;

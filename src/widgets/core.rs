@@ -38,12 +38,13 @@ pub enum StyleChangeKind {
 /// Compare two styles and classify the kind of change for invalidation.
 ///
 /// **Layout-affecting properties:** display, visibility, overflow, layout, dock,
-/// width, height, min_width, max_width, min_height, max_height, margin,
-/// padding, align, content_align, offset, constrain, grid_*.
+/// width, height, `min_width`, `max_width`, `min_height`, `max_height`, margin,
+/// padding, align, `content_align`, offset, constrain, grid_*.
 ///
 /// **Visual-only properties:** fg, bg, opacity, bold, dim, italic, underline,
-/// reverse, border edges, tint, text_align, pointer, layer, layers,
+/// reverse, border edges, tint, `text_align`, pointer, layer, layers,
 /// transition parameters.
+#[must_use]
 pub fn classify_style_change(old: &Style, new: &Style) -> StyleChangeKind {
     if old == new {
         return StyleChangeKind::None;
@@ -113,7 +114,7 @@ pub struct BindingDecl {
     pub description: String,
     /// Optional extended help shown in key/help panels.
     pub tooltip: Option<String>,
-    /// Optional namespace used by HelpPanel grouping/sectioning.
+    /// Optional namespace used by `HelpPanel` grouping/sectioning.
     pub namespace: Option<String>,
     /// Whether this binding is displayed in footer/help panels.
     pub show: bool,
@@ -127,6 +128,7 @@ pub struct BindingDecl {
 }
 
 impl BindingDecl {
+    #[must_use]
     pub fn new(key: &str, action: &str, description: &str) -> Self {
         Self {
             key: key.to_string(),
@@ -141,12 +143,14 @@ impl BindingDecl {
     }
 
     /// Mark this binding as hidden (not shown in footer/help).
+    #[must_use]
     pub fn hidden(mut self) -> Self {
         self.show = false;
         self
     }
 
     /// Mark this binding as priority (dispatched before normal bindings).
+    #[must_use]
     pub fn priority(mut self) -> Self {
         self.priority = true;
         self
@@ -1049,8 +1053,7 @@ fn tag_widget_meta_raw(ffi_value: i64, segments: Segments) -> Segments {
             .meta
             .as_ref()
             .and_then(|m| m.meta.as_ref())
-            .map(|map| map.contains_key(META_WIDGET_ID))
-            .unwrap_or(false);
+            .is_some_and(|map| map.contains_key(META_WIDGET_ID));
         if has_widget_id {
             out.push(seg);
             continue;
@@ -1174,8 +1177,7 @@ pub(crate) fn render_widget_with_meta<W: Widget + ?Sized>(
         .unwrap_or(fill_fallback_bg);
     let fill_inner_bg = resolved
         .bg
-        .map(|c| c.flatten_over(fill_parent_bg))
-        .unwrap_or(fill_parent_bg);
+        .map_or(fill_parent_bg, |c| c.flatten_over(fill_parent_bg));
 
     // Fill style that carries the resolved foreground over the inner background.
     // Mirrors Python's `visual_style.rich_style` (color = background + $foreground,
@@ -1191,8 +1193,7 @@ pub(crate) fn render_widget_with_meta<W: Widget + ?Sized>(
     let visual_parent_bg = crate::css::frozen_ancestor_bg_override().unwrap_or(fill_parent_bg);
     let visual_inner_bg = resolved
         .bg
-        .map(|c| c.flatten_over(visual_parent_bg))
-        .unwrap_or(visual_parent_bg);
+        .map_or(visual_parent_bg, |c| c.flatten_over(visual_parent_bg));
     let fill_fg_style = {
         let mut s = rich_rs::Style::new().with_bgcolor(visual_inner_bg.to_simple_opaque());
         if let Some(fg) = resolved.fg {
@@ -1479,25 +1480,30 @@ fn apply_content_alignment(
 }
 
 impl LayoutConstraints {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn min_width(mut self, value: usize) -> Self {
         self.min_width = Some(value.max(1));
         self
     }
 
+    #[must_use]
     pub fn max_width(mut self, value: usize) -> Self {
         self.max_width = Some(value.max(1));
         self
     }
 
+    #[must_use]
     pub fn min_height(mut self, value: usize) -> Self {
         self.min_height = Some(value.max(1));
         self
     }
 
+    #[must_use]
     pub fn max_height(mut self, value: usize) -> Self {
         self.max_height = Some(value.max(1));
         self
@@ -1660,40 +1666,48 @@ pub struct WidgetStyles {
 }
 
 impl WidgetStyles {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn fg(mut self, color: Color) -> Self {
         self.style = self.style.fg(color);
         self
     }
 
+    #[must_use]
     pub fn bg(mut self, color: Color) -> Self {
         self.style = self.style.bg(color);
         self
     }
 
+    #[must_use]
     pub fn bold(mut self, value: bool) -> Self {
         self.style = self.style.bold(value);
         self
     }
 
+    #[must_use]
     pub fn dim(mut self, value: bool) -> Self {
         self.style = self.style.dim(value);
         self
     }
 
+    #[must_use]
     pub fn italic(mut self, value: bool) -> Self {
         self.style = self.style.italic(value);
         self
     }
 
+    #[must_use]
     pub fn underline(mut self, value: bool) -> Self {
         self.style = self.style.underline(value);
         self
     }
 
+    #[must_use]
     pub fn border(mut self, value: bool) -> Self {
         self.style = self.style.border(value);
         self
@@ -1727,6 +1741,7 @@ impl WidgetStyles {
         self.style = std::mem::take(&mut self.style).border(value);
     }
 
+    #[must_use]
     pub fn width(mut self, value: usize) -> Self {
         let value = value.max(1);
         self.layout.min_width = Some(value);
@@ -1734,6 +1749,7 @@ impl WidgetStyles {
         self
     }
 
+    #[must_use]
     pub fn height(mut self, value: usize) -> Self {
         let value = value.max(1);
         self.layout.min_height = Some(value);
@@ -1741,21 +1757,25 @@ impl WidgetStyles {
         self
     }
 
+    #[must_use]
     pub fn min_width(mut self, value: usize) -> Self {
         self.layout.min_width = Some(value.max(1));
         self
     }
 
+    #[must_use]
     pub fn max_width(mut self, value: usize) -> Self {
         self.layout.max_width = Some(value.max(1));
         self
     }
 
+    #[must_use]
     pub fn min_height(mut self, value: usize) -> Self {
         self.layout.min_height = Some(value.max(1));
         self
     }
 
+    #[must_use]
     pub fn max_height(mut self, value: usize) -> Self {
         self.layout.max_height = Some(value.max(1));
         self
@@ -1791,6 +1811,7 @@ impl WidgetStyles {
 
     /// Compare with another set of widget styles and classify the change
     /// for invalidation purposes.
+    #[must_use]
     pub fn invalidation_kind(&self, other: &WidgetStyles) -> StyleChangeKind {
         classify_style_change(&self.style, &other.style)
     }

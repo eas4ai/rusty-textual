@@ -5,7 +5,10 @@ use textual_macros::widget;
 
 use crate::action::ParsedAction;
 use crate::event::Event;
-use crate::message::*;
+use crate::message::{
+    InputChanged, InputSubmitted, MessageEvent, TextEditClipboardCopyRequested,
+    TextEditClipboardPaste, TextEditClipboardPasteRequested,
+};
 use crate::validation::{Failure, ValidationResult, ValidatorRef};
 
 use super::{
@@ -518,6 +521,7 @@ impl MaskedInput {
         self
     }
 
+    #[must_use]
     pub fn with_validators(mut self, validators: Vec<ValidatorRef>) -> Self {
         self.validators = validators;
         self.revalidate();
@@ -540,10 +544,12 @@ impl MaskedInput {
     }
 
     /// Returns the current value as a string.
+    #[must_use]
     pub fn text(&self) -> String {
         self.value.iter().collect()
     }
 
+    #[must_use]
     pub fn validation_result(&self) -> &ValidationResult {
         &self.validation_result
     }
@@ -735,14 +741,12 @@ impl MaskedInput {
         } else {
             self.template.prev_separator_position(self.cursor)
         };
-        self.cursor = pos.map(|p| p + 1).unwrap_or(0);
+        self.cursor = pos.map_or(0, |p| p + 1);
     }
 
     fn action_cursor_right_word(&mut self) {
         let pos = self.template.next_separator_position(self.cursor);
-        self.cursor = pos
-            .map(|p| p + 1)
-            .unwrap_or_else(|| self.template.mask().len());
+        self.cursor = pos.map_or_else(|| self.template.mask().len(), |p| p + 1);
     }
 
     fn action_delete_right(&mut self) {
@@ -767,8 +771,7 @@ impl MaskedInput {
         let end = self
             .template
             .next_separator_position(self.cursor)
-            .map(|p| p + 1)
-            .unwrap_or(self.value.len());
+            .map_or(self.value.len(), |p| p + 1);
         let start = self.cursor;
         // Delete non-separator chars from start..end. Since delete shifts values,
         // we repeatedly delete at `start` for each non-separator position.
@@ -790,13 +793,11 @@ impl MaskedInput {
         let target = if self.cursor > 0 && self.template.at_separator(self.cursor - 1) {
             self.template
                 .prev_separator_position(self.cursor - 1)
-                .map(|p| p + 1)
-                .unwrap_or(0)
+                .map_or(0, |p| p + 1)
         } else {
             self.template
                 .prev_separator_position(self.cursor)
-                .map(|p| p + 1)
-                .unwrap_or(0)
+                .map_or(0, |p| p + 1)
         };
 
         let original_cursor = self.cursor;
@@ -1775,7 +1776,7 @@ mod tests {
         assert_eq!(input.text(), "");
     }
 
-    /// Regression (masked_input parity): after mount the arena node record is
+    /// Regression (`masked_input` parity): after mount the arena node record is
     /// the single source of truth for CSS classes, so `revalidate()`'s
     /// seed-class update alone never reaches `MaskedInput.-invalid` /
     /// `&.-invalid:focus` selectors (Python paints `border: tall $error` for a

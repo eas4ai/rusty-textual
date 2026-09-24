@@ -57,7 +57,7 @@ struct ProbeScreen {
 }
 
 impl Screen for ProbeScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "probe"
     }
 
@@ -72,7 +72,7 @@ impl Screen for ProbeScreen {
 struct CoverScreen;
 
 impl Screen for CoverScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "cover"
     }
 

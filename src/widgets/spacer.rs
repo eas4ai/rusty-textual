@@ -18,6 +18,7 @@ pub struct Spacer {
 impl Spacer {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new(height: usize) -> Self {
         Self {
             height: height.max(1),
@@ -26,6 +27,7 @@ impl Spacer {
         }
     }
 
+    #[must_use]
     pub fn width(mut self, width: usize) -> Self {
         self.width_hint = Some(width.max(1));
         self

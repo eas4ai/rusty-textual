@@ -1,5 +1,5 @@
 //! Textual `Content` subsystem — Phase A + B + C (data type, markup parser,
-//! wrap/format, truncate, pad/align, render_strips).
+//! wrap/format, truncate, pad/align, `render_strips`).
 //!
 //! `Content` is the styled-text model that replaces rich-rs `Text` for all
 //! Textual-level rendering.  It mirrors `textual/content.py`'s `Content` +
@@ -34,7 +34,7 @@
 //!
 //! ## Phase D — wired for Label/Static
 //! - [`Content::render_strips`] is now called from `Label::render()` in `text.rs`.
-//! - Remaining widgets (Button, DataTable, Input, Tree, etc.) still use the
+//! - Remaining widgets (Button, `DataTable`, Input, Tree, etc.) still use the
 //!   rich-rs `Text` / `render_str` path; migration is a future phase.
 //!
 //! See `docs/devel/CONTENT_LAYER_KEYSTONE.md` for the full phasing plan.
@@ -90,6 +90,7 @@ impl SpanStyle {
     }
 
     /// Convenience: resolve without theme context.  Unknown tokens → `Style::new()`.
+    #[must_use]
     pub fn resolve_default(&self) -> Style {
         self.resolve_with(|raw| {
             markup::parse_tag_style(raw)
@@ -99,6 +100,7 @@ impl SpanStyle {
     }
 
     /// Return the raw tag body if this is a `Raw` variant.
+    #[must_use]
     pub fn raw(&self) -> Option<&str> {
         match self {
             SpanStyle::Raw(s) => Some(s.as_str()),
@@ -147,6 +149,7 @@ pub struct Span {
 
 impl Span {
     /// Create a new `Span` with a pre-resolved style.
+    #[must_use]
     pub fn new(start: usize, end: usize, style: Style) -> Self {
         Self {
             start,
@@ -183,17 +186,20 @@ impl Span {
 
     /// Return the concrete `Style` for this span using the default (no-context)
     /// resolver.  For render paths, prefer `span_style.resolve_with(parse_fn)`.
+    #[must_use]
     pub fn style(&self) -> Style {
         self.span_style.resolve_default()
     }
 
     /// Return true if this span covers a non-empty range.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.end <= self.start
     }
 
     /// Shift the span's start and end by `distance` bytes (can be negative via
     /// saturating arithmetic — start clamps to 0).
+    #[must_use]
     pub fn shift(&self, distance: isize) -> Self {
         let start = (self.start as isize + distance).max(0) as usize;
         let end = (self.end as isize + distance).max(0) as usize;
@@ -206,6 +212,7 @@ impl Span {
     }
 
     /// Extend the span's end by `cells` bytes.
+    #[must_use]
     pub fn extend(&self, cells: usize) -> Self {
         Span {
             start: self.start,
@@ -245,7 +252,7 @@ impl Span {
 pub struct Content {
     text: String,
     spans: Vec<Span>,
-    /// Cached cell length (lazily computed; interior mutability via OnceLock).
+    /// Cached cell length (lazily computed; interior mutability via `OnceLock`).
     cell_length_cache: OnceLock<usize>,
 }
 
@@ -287,6 +294,7 @@ impl Content {
     /// Return the shared empty `Content` instance.
     ///
     /// Mirrors Python `Content.empty()`.
+    #[must_use]
     pub fn empty() -> Self {
         Self::new_uncached(String::new(), Vec::new())
     }
@@ -421,6 +429,7 @@ impl Content {
     /// styled.
     ///
     /// Mirrors Python `Content.blank(width, style)`.
+    #[must_use]
     pub fn blank(width: usize, style: Option<Style>) -> Self {
         if width == 0 {
             return Self::empty();
@@ -1105,7 +1114,7 @@ impl Content {
     /// # Phase D — wired into Label/Static render path
     ///
     /// `render_strips` is called from `Label::render()` in `text.rs` (Phase D).
-    /// Migration of remaining widgets (Button, DataTable, Input, Tree, etc.)
+    /// Migration of remaining widgets (Button, `DataTable`, Input, Tree, etc.)
     /// to this path is a future phase.
     #[allow(clippy::too_many_arguments)]
     pub fn render_strips<F>(
@@ -1339,7 +1348,7 @@ fn render_justified_line(
 ///
 /// The `has_glyph` guard is **not** applied here (C1 seam 1 fix).
 /// Bg-only treatment is restricted to alignment pad segments built by
-/// `make_bg_segment` (pad_left / pad_right in `render_content_line_to_segments`).
+/// `make_bg_segment` (`pad_left` / `pad_right` in `render_content_line_to_segments`).
 fn emit_rendered_segments(
     content: &Content,
     visual_style: &Style,
@@ -1390,7 +1399,7 @@ fn emit_rendered_segments(
         }
 
         // The text run is [offset, next_offset).
-        let next_offset = events.get(j).map(|e| e.0).unwrap_or(text.len());
+        let next_offset = events.get(j).map_or(text.len(), |e| e.0);
         if next_offset > pos {
             let run = &text[pos..next_offset];
             if !run.is_empty() {
@@ -1477,7 +1486,7 @@ fn attach_span_meta(seg: &mut rich_rs::Segment, meta: &[(String, String)]) {
 /// covered by a span with `reverse`, `underline`, etc. — must carry the full
 /// style, matching Python's `(style + text_style).rich_style`.
 ///
-/// - `effective_style` — the merged style (visual_style + span styles) for this run.
+/// - `effective_style` — the merged style (`visual_style` + span styles) for this run.
 /// - `visual_style`    — the base visual style (bg fallback when effective has none).
 fn make_segment(text: &str, effective_style: &Style, visual_style: &Style) -> rich_rs::Segment {
     make_full_segment_with_bg_fallback(text, effective_style, visual_style)
@@ -1615,7 +1624,7 @@ impl From<Content> for ContentPart {
 // ---------------------------------------------------------------------------
 
 /// Control codes that may break terminal output. Matches Python's
-/// `_STRIP_CONTROL_CODES`: Bell (7), Backspace (8), VTab (11), FF (12), CR (13).
+/// `_STRIP_CONTROL_CODES`: Bell (7), Backspace (8), `VTab` (11), FF (12), CR (13).
 fn strip_control_codes(mut s: String) -> String {
     const STRIP: &[char] = &['\x07', '\x08', '\x0B', '\x0C', '\r'];
     if s.chars().any(|c| STRIP.contains(&c)) {
@@ -1758,7 +1767,7 @@ mod tests {
         assert_eq!(c.plain(), "Hi Will and Will");
     }
 
-    /// `$$` is an escaped literal `$` (Python safe_substitute). Substitution only
+    /// `$$` is an escaped literal `$` (Python `safe_substitute`). Substitution only
     /// runs when variables are present (Python checks `variables or None`), so we
     /// pass a non-empty map here; the empty-map plain fast path is covered below.
     #[test]
@@ -2545,7 +2554,7 @@ mod tests {
         );
     }
 
-    /// With line_pad=1, every output line is padded 1 space on each side.
+    /// With `line_pad=1`, every output line is padded 1 space on each side.
     #[test]
     fn test_wrap_line_pad() {
         let c = Content::from_text("hello world");
@@ -2565,7 +2574,7 @@ mod tests {
         }
     }
 
-    /// no_wrap=true + overflow=fold should hard-fold.
+    /// `no_wrap=true` + overflow=fold should hard-fold.
     #[test]
     fn test_wrap_no_wrap_fold() {
         let c = Content::from_text("abcdefgh");
@@ -2575,7 +2584,7 @@ mod tests {
         assert_eq!(lines[1].plain(), "efgh");
     }
 
-    /// no_wrap=true + overflow=ellipsis should truncate with ellipsis.
+    /// `no_wrap=true` + overflow=ellipsis should truncate with ellipsis.
     #[test]
     fn test_wrap_no_wrap_ellipsis() {
         let c = Content::from_text("hello world");
@@ -2596,7 +2605,7 @@ mod tests {
         assert_eq!(lines[2].plain(), "baz");
     }
 
-    /// wrap_and_format with width=0 returns empty.
+    /// `wrap_and_format` with width=0 returns empty.
     #[test]
     fn test_wrap_zero_width() {
         let c = Content::from_text("hello");
@@ -2663,7 +2672,7 @@ mod tests {
     }
 
     /// Python baseline: plain content, left-align, width=10, height=1.
-    /// Segments should contain the text and no explicit fg (visual_style has no fg).
+    /// Segments should contain the text and no explicit fg (`visual_style` has no fg).
     #[test]
     fn test_render_strips_plain_no_visual_style() {
         let c = Content::from_text("hello");
@@ -2744,7 +2753,7 @@ mod tests {
         );
     }
 
-    /// Whitespace-only pad segment (from line_pad or alignment) must NOT carry fg.
+    /// Whitespace-only pad segment (from `line_pad` or alignment) must NOT carry fg.
     ///
     /// Python: pad segments are emitted with `style.background_style.rich_style`,
     /// which has bg but NO fg.  This is the `has_glyph` invariant.
@@ -2776,16 +2785,15 @@ mod tests {
         let pad_fg = pad_seg.style.as_ref().and_then(|s| s.color);
         assert!(
             pad_fg.is_none(),
-            "pad segment must not carry fg, got {:?}",
-            pad_fg
+            "pad segment must not carry fg, got {pad_fg:?}"
         );
         // But the pad segment should have the bg.
         let pad_bg = pad_seg.style.as_ref().and_then(|s| s.bgcolor);
         assert!(pad_bg.is_some(), "pad segment should carry bg");
     }
 
-    /// Span style (fg from markup) overrides visual_style fg on glyph cells.
-    /// Python: `style + text_style` (text_style from span wins over visual_style fg).
+    /// Span style (fg from markup) overrides `visual_style` fg on glyph cells.
+    /// Python: `style + text_style` (`text_style` from span wins over `visual_style` fg).
     #[test]
     fn test_render_strips_span_fg_overrides_visual() {
         // Content "[red]hi[/red]" with visual_style having blue fg.
@@ -2859,7 +2867,7 @@ mod tests {
     ///
     /// Python `Visual.to_strips` uses `(style + Style(reverse=False)).rich_style`
     /// for fill rows — NOT bg-only.  This test ensures the Rust implementation
-    /// matches: fill rows carry fg and bg from visual_style, with reverse=false.
+    /// matches: fill rows carry fg and bg from `visual_style`, with reverse=false.
     #[test]
     fn test_render_strips_vertical_fill_full_style() {
         let red = crate::style::Color::rgb(200, 0, 0);
@@ -2903,14 +2911,13 @@ mod tests {
                 assert_eq!(
                     rev,
                     Some(false),
-                    "fill row reverse must be false (not inherited true); got {:?}",
-                    rev
+                    "fill row reverse must be false (not inherited true); got {rev:?}"
                 );
             }
         }
     }
 
-    /// wrap_and_format integration: long text wraps into multiple rows.
+    /// `wrap_and_format` integration: long text wraps into multiple rows.
     #[test]
     fn test_render_strips_wraps_text() {
         let c = Content::from_text("hello world");
@@ -3026,7 +3033,7 @@ mod tests {
     /// produced by `wrap_and_format`), not alignment-pad segments.  Python's
     /// `Content.render()` yields them with `base_style` applied, and
     /// `_FormattedLine.to_strip` wraps them in `(style + text_style).rich_style` —
-    /// so they DO carry fg from the visual_style.
+    /// so they DO carry fg from the `visual_style`.
     ///
     /// This test verifies via a span-boundary approach: a span covering only the
     /// word ("hi") forces the leading/trailing spaces to be separate segments.
@@ -3131,8 +3138,7 @@ mod tests {
         assert_eq!(
             rev,
             Some(true),
-            "reverse on whitespace-only span must be preserved (C1 seam 1 fix); got {:?}",
-            rev
+            "reverse on whitespace-only span must be preserved (C1 seam 1 fix); got {rev:?}"
         );
     }
 
@@ -3175,8 +3181,7 @@ mod tests {
         assert_eq!(
             underline,
             Some(true),
-            "underline on whitespace-only span must be preserved (C1 seam 1 fix); got {:?}",
-            underline
+            "underline on whitespace-only span must be preserved (C1 seam 1 fix); got {underline:?}"
         );
     }
 
@@ -3236,8 +3241,7 @@ mod tests {
                     rev,
                     Some(false),
                     "fill row reverse must be false even when visual_style has reverse=true \
-                     (C1 seam 2); got {:?}",
-                    rev
+                     (C1 seam 2); got {rev:?}"
                 );
             }
         }
@@ -3261,8 +3265,7 @@ mod tests {
         let text = strip_text(&strips[0]);
         assert!(
             text.contains('…'),
-            "ellipsis overflow should produce '…'; got {:?}",
-            text
+            "ellipsis overflow should produce '…'; got {text:?}"
         );
     }
 

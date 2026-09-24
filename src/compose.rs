@@ -74,6 +74,7 @@ pub struct ChildDecl {
 
 impl ChildDecl {
     /// Create a new declaration from an already-constructed widget.
+    #[must_use]
     pub fn new(widget: Box<dyn Widget>) -> Self {
         Self {
             builder: WidgetBuilder::Ready(widget),
@@ -85,12 +86,14 @@ impl ChildDecl {
     }
 
     /// Set the CSS id for this declaration.
+    #[must_use]
     pub fn with_id(mut self, id: &str) -> Self {
         self.id = Some(id.to_string());
         self
     }
 
     /// Set initial CSS classes for this declaration.
+    #[must_use]
     pub fn with_classes(mut self, classes: &[&str]) -> Self {
         self.classes = classes.iter().map(|c| (*c).to_string()).collect();
         self
@@ -100,18 +103,21 @@ impl ChildDecl {
     ///
     /// These children will be mounted under the widget produced by this
     /// declaration's builder.
+    #[must_use]
     pub fn with_children(mut self, children: Vec<ChildDecl>) -> Self {
         self.children = children;
         self
     }
 
     /// The CSS id declared for this child (via [`with_id`](Self::with_id)), if any.
+    #[must_use]
     pub fn id(&self) -> Option<&str> {
         self.id.as_deref()
     }
 
     /// The CSS classes declared for this child (via
     /// [`with_classes`](Self::with_classes)).
+    #[must_use]
     pub fn classes(&self) -> &[String] {
         &self.classes
     }
@@ -330,15 +336,15 @@ mod tests {
     #[test]
     fn widget_builder_debug() {
         let builder = WidgetBuilder::Ready(Box::new(Stub::new()));
-        let dbg = format!("{:?}", builder);
+        let dbg = format!("{builder:?}");
         assert!(dbg.contains("Ready"));
     }
 
     #[test]
     fn child_decl_debug() {
         let decl = ChildDecl::from(Stub::new()).with_id("x");
-        let dbg = format!("{:?}", decl);
+        let dbg = format!("{decl:?}");
         assert!(dbg.contains("ChildDecl"));
-        assert!(dbg.contains("x"));
+        assert!(dbg.contains('x'));
     }
 }

@@ -189,10 +189,10 @@ struct CardApp {
     presses: Arc<AtomicU32>,
 }
 
-const CARD_CSS: &str = r#"
+const CARD_CSS: &str = r"
 Screen { align: center middle; }
 StatCard { width: auto; height: auto; }
-"#;
+";
 
 impl TextualApp for CardApp {
     fn configure(&mut self, app: &mut App) -> rusty_textual::Result<()> {
@@ -272,10 +272,10 @@ impl ClickCard {
     }
 }
 
-const CLICK_CARD_CSS: &str = r#"
+const CLICK_CARD_CSS: &str = r"
 Screen { align: center middle; }
 ClickCard { width: auto; height: auto; }
-"#;
+";
 
 struct ClickCardApp {
     presses: Arc<AtomicU32>,

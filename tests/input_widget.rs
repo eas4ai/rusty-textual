@@ -41,7 +41,7 @@ fn input_accepts_typing() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&Event::Key(key), &mut __w)
+        input.on_event(&Event::Key(key), &mut __w);
     };
 
     let buf = FrameBuffer::from_renderable(&console, &options, &input, None);
@@ -60,7 +60,7 @@ fn input_shift_selection_then_backspace_deletes_selected_text() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::End, KeyModifiers::NONE), &mut __w)
+        input.on_event(&key(KeyCode::End, KeyModifiers::NONE), &mut __w);
     };
     {
         let mut __e = rusty_textual::event::EventCtx::default();
@@ -68,7 +68,7 @@ fn input_shift_selection_then_backspace_deletes_selected_text() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::Left, KeyModifiers::SHIFT), &mut __w)
+        input.on_event(&key(KeyCode::Left, KeyModifiers::SHIFT), &mut __w);
     };
     {
         let mut __e = rusty_textual::event::EventCtx::default();
@@ -76,7 +76,7 @@ fn input_shift_selection_then_backspace_deletes_selected_text() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::Backspace, KeyModifiers::NONE), &mut __w)
+        input.on_event(&key(KeyCode::Backspace, KeyModifiers::NONE), &mut __w);
     };
 
     assert_eq!(input.text(), "hello worl");
@@ -95,7 +95,7 @@ fn input_ctrl_backspace_deletes_next_word() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::Home, KeyModifiers::NONE), &mut __w)
+        input.on_event(&key(KeyCode::Home, KeyModifiers::NONE), &mut __w);
     };
     {
         let mut __e = rusty_textual::event::EventCtx::default();
@@ -103,7 +103,7 @@ fn input_ctrl_backspace_deletes_next_word() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::Backspace, KeyModifiers::CONTROL), &mut __w)
+        input.on_event(&key(KeyCode::Backspace, KeyModifiers::CONTROL), &mut __w);
     };
 
     assert_eq!(input.text(), "beta");
@@ -115,7 +115,7 @@ fn input_ctrl_backspace_deletes_next_word() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::End, KeyModifiers::NONE), &mut __w)
+        input.on_event(&key(KeyCode::End, KeyModifiers::NONE), &mut __w);
     };
     {
         let mut __e = rusty_textual::event::EventCtx::default();
@@ -123,7 +123,7 @@ fn input_ctrl_backspace_deletes_next_word() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::Backspace, KeyModifiers::CONTROL), &mut __w)
+        input.on_event(&key(KeyCode::Backspace, KeyModifiers::CONTROL), &mut __w);
     };
 
     assert_eq!(input.text(), "beta");
@@ -140,7 +140,7 @@ fn input_super_left_and_alt_backspace_shortcuts_work() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::End, KeyModifiers::NONE), &mut __w)
+        input.on_event(&key(KeyCode::End, KeyModifiers::NONE), &mut __w);
     };
     {
         let mut __e = rusty_textual::event::EventCtx::default();
@@ -148,7 +148,7 @@ fn input_super_left_and_alt_backspace_shortcuts_work() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::Left, KeyModifiers::SUPER), &mut __w)
+        input.on_event(&key(KeyCode::Left, KeyModifiers::SUPER), &mut __w);
     };
     {
         let mut __e = rusty_textual::event::EventCtx::default();
@@ -156,7 +156,7 @@ fn input_super_left_and_alt_backspace_shortcuts_work() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::Char('Z'), KeyModifiers::NONE), &mut __w)
+        input.on_event(&key(KeyCode::Char('Z'), KeyModifiers::NONE), &mut __w);
     };
     assert_eq!(input.text(), "Zalpha beta");
 
@@ -168,7 +168,7 @@ fn input_super_left_and_alt_backspace_shortcuts_work() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::Home, KeyModifiers::NONE), &mut __w)
+        input.on_event(&key(KeyCode::Home, KeyModifiers::NONE), &mut __w);
     };
     {
         let mut __e = rusty_textual::event::EventCtx::default();
@@ -176,7 +176,7 @@ fn input_super_left_and_alt_backspace_shortcuts_work() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        input.on_event(&key(KeyCode::Backspace, KeyModifiers::ALT), &mut __w)
+        input.on_event(&key(KeyCode::Backspace, KeyModifiers::ALT), &mut __w);
     };
     assert_eq!(input.text(), "beta");
 }

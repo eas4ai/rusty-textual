@@ -341,7 +341,7 @@ mod tests {
     #[test]
     fn parse_headings_lists_and_table() {
         let blocks = parse_markdown_blocks(
-            r#"# Title
+            r"# Title
 
 Some text here.
 
@@ -355,7 +355,7 @@ Some text here.
 ```rust
 fn x() {}
 ```
-"#,
+",
         );
         assert!(matches!(
             blocks.first(),

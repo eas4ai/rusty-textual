@@ -64,7 +64,7 @@ fn tree_right_key_expands_selected_node() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        tree.on_event(&Event::Key(key), &mut __w)
+        tree.on_event(&Event::Key(key), &mut __w);
     };
     assert!(ctx.handled());
 
@@ -102,7 +102,7 @@ fn tree_click_on_branch_toggles() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.handled());
 
@@ -138,7 +138,7 @@ fn tree_mouse_scroll_clamps_to_bounds() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        tree.on_mouse_scroll(0, 100, &mut __w)
+        tree.on_mouse_scroll(0, 100, &mut __w);
     };
     assert!(ctx.handled());
 
@@ -156,7 +156,7 @@ fn tree_mouse_scroll_clamps_to_bounds() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        tree.on_mouse_scroll(0, -100, &mut __w)
+        tree.on_mouse_scroll(0, -100, &mut __w);
     };
     assert!(ctx.handled());
 
@@ -184,7 +184,7 @@ fn tree_navigation_skips_disabled_nodes() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        tree.on_event(&Event::Key(key), &mut __w)
+        tree.on_event(&Event::Key(key), &mut __w);
     };
     assert!(ctx.handled());
     assert_eq!(tree.selected(), 2);
@@ -215,7 +215,7 @@ fn tree_mouse_click_ignores_disabled_nodes() {
                 y: 1,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(!ctx.handled());
 }
@@ -247,7 +247,7 @@ fn tree_allows_expansion_without_preloaded_children() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        tree.on_event(&Event::Key(key), &mut __w)
+        tree.on_event(&Event::Key(key), &mut __w);
     };
     assert!(ctx.handled());
 
@@ -291,7 +291,7 @@ fn tree_enter_posts_activation_message_without_toggling() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        tree.on_event(&Event::Key(key), &mut __w)
+        tree.on_event(&Event::Key(key), &mut __w);
     };
     assert!(ctx.handled());
 
@@ -330,7 +330,7 @@ fn tree_twisty_click_toggles_without_activation_message() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.handled());
 

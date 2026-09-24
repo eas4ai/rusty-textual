@@ -15,7 +15,7 @@
 use rusty_textual::compose;
 use rusty_textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #panel {
     display: none;
     height: 3;
@@ -24,7 +24,7 @@ const CSS: &str = r##"
 #panel.visible {
     display: block;
 }
-"##;
+";
 
 struct ClassDisplayApp;
 

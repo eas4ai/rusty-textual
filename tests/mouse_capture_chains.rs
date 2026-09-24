@@ -32,7 +32,10 @@ impl Widget for ClickProbe {
     }
 
     fn on_event(&mut self, event: &Event, _ctx: &mut WidgetCtx) {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         match event {
             Event::MouseDown(_) => state.downs += 1,
             Event::MouseUp(_) => state.ups += 1,
@@ -65,7 +68,9 @@ fn probe_app() -> (ProbeApp, Arc<Mutex<ClickProbeState>>) {
 }
 
 fn snapshot(state: &Arc<Mutex<ClickProbeState>>) -> (usize, usize, Vec<u16>) {
-    let state = state.lock().unwrap_or_else(|e| e.into_inner());
+    let state = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     (state.downs, state.ups, state.chains.clone())
 }
 
@@ -201,7 +206,7 @@ impl MouseProbe {
     fn record(&self, kind: &str, x: u16, y: u16) {
         self.state
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .notices
             .push((self.tag.clone(), kind.to_string(), x, y));
     }
@@ -270,7 +275,7 @@ fn notice_app(ids: &[&str]) -> (NoticeApp, Arc<Mutex<NoticeState>>) {
 fn notices(state: &Arc<Mutex<NoticeState>>) -> Vec<(String, String, u16, u16)> {
     state
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .notices
         .clone()
 }

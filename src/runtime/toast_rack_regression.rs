@@ -147,8 +147,7 @@ fn rack_len(tree: &crate::widget_tree::WidgetTree) -> usize {
         .into_iter()
         .find(|&id| {
             tree.get(id)
-                .map(|node| node.widget.style_type() == "ToastRack")
-                .unwrap_or(false)
+                .is_some_and(|node| node.widget.style_type() == "ToastRack")
         })
         .expect("every screen tree mounts a system ToastRack");
     let widget: &dyn crate::widgets::Widget = tree.get(rack_id).unwrap().widget.as_ref();

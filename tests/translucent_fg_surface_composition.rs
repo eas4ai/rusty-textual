@@ -15,7 +15,7 @@ use rusty_textual::css::{StyleSheet, default_widget_stylesheet, set_style_contex
 use rusty_textual::prelude::*;
 use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Horizontal {
     background: $boost;
     height: 5;
@@ -28,7 +28,7 @@ Static {
 Digits {
     color: $foreground-muted;
 }
-"#;
+";
 
 fn render_case(child: impl Widget + 'static) -> rusty_textual::render::FrameBuffer {
     let mut stylesheet = default_widget_stylesheet();

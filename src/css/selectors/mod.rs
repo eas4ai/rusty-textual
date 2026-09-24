@@ -253,8 +253,7 @@ mod tests {
 
         assert!(
             fg.r >= 120 && fg.r <= 136 && fg.g >= 120 && fg.g <= 136 && fg.b >= 120 && fg.b <= 136,
-            "text-opacity 50% over black should produce medium gray, got {:?}",
-            fg
+            "text-opacity 50% over black should produce medium gray, got {fg:?}"
         );
     }
 
@@ -274,8 +273,7 @@ mod tests {
 
         assert!(
             fg.r < 80 && fg.g < 80 && fg.b < 80,
-            "auto fg should resolve dark after full light tint, got {:?}",
-            fg
+            "auto fg should resolve dark after full light tint, got {fg:?}"
         );
     }
 
@@ -352,9 +350,9 @@ mod tests {
         let fg = crate::style::color_from_simple(style.color.expect("fg"));
 
         let dist = |a: crate::style::Color, b: crate::style::Color| -> i32 {
-            let dr = a.r as i32 - b.r as i32;
-            let dg = a.g as i32 - b.g as i32;
-            let db = a.b as i32 - b.b as i32;
+            let dr = i32::from(a.r) - i32::from(b.r);
+            let dg = i32::from(a.g) - i32::from(b.g);
+            let db = i32::from(a.b) - i32::from(b.b);
             dr * dr + dg * dg + db * db
         };
 

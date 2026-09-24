@@ -26,8 +26,7 @@ fn pretty_switches_to_multiline_when_narrow() {
     // With rich_rs::Pretty, the output should expand to multiple lines when narrow
     assert!(
         lines.len() > 1,
-        "Expected multi-line output, got: {:?}",
-        lines
+        "Expected multi-line output, got: {lines:?}"
     );
 }
 

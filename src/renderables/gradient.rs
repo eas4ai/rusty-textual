@@ -14,6 +14,7 @@ pub struct VerticalGradient {
 }
 
 impl VerticalGradient {
+    #[must_use]
     pub fn new(from: Color, to: Color) -> Self {
         Self { from, to }
     }
@@ -62,6 +63,7 @@ pub struct LinearGradient {
 }
 
 impl LinearGradient {
+    #[must_use]
     pub fn new(angle_deg: f32, mut stops: Vec<(f32, Color)>) -> Self {
         if stops.is_empty() {
             stops.push((0.0, Color::rgb(0, 0, 0)));
@@ -76,6 +78,7 @@ impl LinearGradient {
     ///
     /// Matches Python `Gradient.get_color`: index into the precomputed
     /// `quality`-step ramp and blend between the two nearest entries.
+    #[must_use]
     pub fn get_color(&self, position: f32) -> Color {
         let position = position.clamp(0.0, 1.0);
         if position <= 0.0 {

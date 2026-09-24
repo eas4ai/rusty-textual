@@ -76,6 +76,7 @@ struct SystemCommandEntry {
 }
 
 impl SystemCommandsProvider {
+    #[must_use]
     pub fn new(commands: Vec<PaletteCommand>) -> Self {
         let indexed = commands
             .iter()
@@ -91,6 +92,7 @@ impl SystemCommandsProvider {
     /// Borrow the current command list.
     /// Public API accessor for command palette providers.
     #[allow(dead_code)]
+    #[must_use]
     pub fn commands(&self) -> &[PaletteCommand] {
         &self.commands
     }
@@ -275,6 +277,7 @@ impl FuzzyMatcher {
     }
 
     /// Convert matched indices into contiguous `[start, end)` character ranges.
+    #[must_use]
     pub fn highlight_ranges(query: &str, text: &str) -> Vec<(usize, usize)> {
         let Some((score, indices)) = Self::best_match_indices(query, text) else {
             return Vec::new();
@@ -301,6 +304,7 @@ impl FuzzyMatcher {
 
     /// Returns a score if all characters in `query` appear (in order) in `text`.
     /// Higher score = better match. Returns `None` if no match.
+    #[must_use]
     pub fn score(query: &str, text: &str) -> Option<f64> {
         Self::best_match_indices(query, text).map(|(score, _)| score)
     }
@@ -342,6 +346,7 @@ pub struct SearchIcon {
 impl SearchIcon {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             icon: "🔎".to_string(),
@@ -400,6 +405,7 @@ impl CommandInput {
         }
     }
 
+    #[must_use]
     pub fn text(&self) -> &str {
         self.input.text()
     }
@@ -408,6 +414,7 @@ impl CommandInput {
         self.input.set_text(value);
     }
 
+    #[must_use]
     pub fn input_node_id(&self) -> NodeId {
         self.input.node_id()
     }

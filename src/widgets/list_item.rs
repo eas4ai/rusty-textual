@@ -13,7 +13,7 @@ use textual_macros::widget;
 use crate::compose::ComposeResult;
 use crate::css;
 use crate::event::Event;
-use crate::message::*;
+use crate::message::ListItemChildClicked;
 
 use super::{Focus, Interactive, Layout, NodeSeed, Render};
 
@@ -68,6 +68,7 @@ impl ListItem {
 
     /// Create an empty `ListItem` (no children). Useful for building up an item
     /// via [`with_child`](Self::with_child) / [`push`](Self::push).
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             children: Vec::new(),
@@ -119,22 +120,26 @@ impl ListItem {
     }
 
     /// Builder: mark this item disabled (skipped by keyboard navigation).
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
     /// Whether this item is disabled.
+    #[must_use]
     pub fn is_disabled(&self) -> bool {
         self.disabled
     }
 
     /// The recovered text content of this item (first label-like child).
+    #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
 
     /// The ordinal index of this item within its `ListView`.
+    #[must_use]
     pub fn ordinal(&self) -> usize {
         self.ordinal
     }
@@ -145,6 +150,7 @@ impl ListItem {
     }
 
     /// Read-only access to the item's (not-yet-extracted) children.
+    #[must_use]
     pub fn children(&self) -> &[Box<dyn crate::widgets::Widget>] {
         &self.children
     }

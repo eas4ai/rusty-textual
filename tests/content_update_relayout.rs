@@ -16,12 +16,12 @@
 use rusty_textual::compose;
 use rusty_textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Horizontal {
     align: center middle;
     height: auto;
 }
-"##;
+";
 
 struct ContentUpdateApp;
 

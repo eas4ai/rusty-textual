@@ -1,7 +1,9 @@
 use rich_rs::{Console, ConsoleOptions, Renderable, Segment, Segments};
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    OptionHighlighted, SelectionListHighlighted, SelectionListSelectedChanged, SelectionListToggled,
+};
 
 use super::option_list::{OptionId, OptionItem, OptionList, OptionListError};
 use super::{NodeSeed, Widget, helpers::adjust_line_length_no_bg};
@@ -129,6 +131,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     crate::seed_ident_methods!();
 
     /// Create an empty `SelectionList`.
+    #[must_use]
     pub fn new() -> Self {
         let seed = NodeSeed {
             classes: vec!["selection-list".to_string()],
@@ -178,6 +181,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     }
 
     /// Builder: set disabled state for the entire list.
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
@@ -302,17 +306,20 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
 
     /// Returns a `Vec` of indices that are currently selected, in selection
     /// (insertion) order — Python `SelectionList.selected` parity.
+    #[must_use]
     pub fn selected(&self) -> Vec<usize> {
         self.selected_order.clone()
     }
 
     /// Whether the item at `index` is currently selected.
+    #[must_use]
     pub fn is_selected(&self, index: usize) -> bool {
         self.selected_set.get(index).copied().unwrap_or(false)
     }
 
     /// Returns the values of all currently selected items, in selection
     /// (insertion) order — Python `SelectionList.selected` parity.
+    #[must_use]
     pub fn selected_values(&self) -> Vec<&T> {
         self.selected_order
             .iter()
@@ -321,16 +328,19 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     }
 
     /// Returns the value associated with the item at `index`.
+    #[must_use]
     pub fn value_at(&self, index: usize) -> Option<&T> {
         self.values.get(index)
     }
 
     /// The currently highlighted index in the inner list.
+    #[must_use]
     pub fn highlighted(&self) -> Option<usize> {
         self.inner.highlighted()
     }
 
     /// Number of items.
+    #[must_use]
     pub fn item_count(&self) -> usize {
         self.inner.option_count()
     }
@@ -402,7 +412,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
             self.selected_set.remove(index);
         }
         self.selected_order.retain(|&i| i != index);
-        for stored in self.selected_order.iter_mut() {
+        for stored in &mut self.selected_order {
             if *stored > index {
                 *stored -= 1;
             }
@@ -517,7 +527,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Widget for SelectionList<T> {
     /// Python `SelectionList.BINDINGS` adds `space → select` (show=False) on
     /// top of the `OptionList.BINDINGS` it inherits, so both enter (inherited)
     /// and space route to `select`. Declarative bindings are resolved
-    /// focused→root, so a focused SelectionList's `down → cursor_down` wins
+    /// focused→root, so a focused `SelectionList`'s `down → cursor_down` wins
     /// over an ancestor scroll container's `down → scroll_down` — exactly like
     /// Python's binding chain. Raw `on_event` key handling would LOSE to the
     /// ancestor binding (bindings dispatch first), so the keyboard behavior
@@ -855,7 +865,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(0, &mut __w)
+            list.toggle(0, &mut __w);
         };
         assert!(list.is_selected(0));
 
@@ -864,7 +874,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(0, &mut __w)
+            list.toggle(0, &mut __w);
         };
         assert!(!list.is_selected(0));
     }
@@ -884,7 +894,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(0, &mut __w)
+            list.toggle(0, &mut __w);
         };
         let messages = ctx.take_messages();
         let toggled = messages
@@ -905,7 +915,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(1, &mut __w)
+            list.toggle(1, &mut __w);
         };
         let messages = ctx.take_messages();
         let toggled = messages
@@ -926,7 +936,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(0, &mut __w)
+            list.toggle(0, &mut __w);
         };
         let messages = ctx.take_messages();
         let toggled_pos = messages
@@ -1070,7 +1080,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select_all(&mut __w)
+            list.select_all(&mut __w);
         };
         // Python parity: `selected` reports SELECTION (insertion) order — "C"
         // was selected at construction, so select_all appends the others after.
@@ -1081,7 +1091,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.deselect_all(&mut __w)
+            list.deselect_all(&mut __w);
         };
         assert!(list.selected().is_empty());
     }
@@ -1100,7 +1110,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select(1, &mut __w)
+            list.select(1, &mut __w);
         };
         assert!(list.is_selected(1));
 
@@ -1110,7 +1120,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select(1, &mut __w)
+            list.select(1, &mut __w);
         };
         assert!(list.is_selected(1));
 
@@ -1119,7 +1129,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.deselect(1, &mut __w)
+            list.deselect(1, &mut __w);
         };
         assert!(!list.is_selected(1));
     }
@@ -1136,21 +1146,21 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(99, &mut __w)
+            list.toggle(99, &mut __w);
         };
         {
             let mut __w = crate::event::WidgetCtx::__from_dispatch(
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select(99, &mut __w)
+            list.select(99, &mut __w);
         };
         {
             let mut __w = crate::event::WidgetCtx::__from_dispatch(
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.deselect(99, &mut __w)
+            list.deselect(99, &mut __w);
         };
         assert!(!list.is_selected(99));
     }
@@ -1170,21 +1180,21 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(0, &mut __w)
+            list.toggle(0, &mut __w);
         };
         {
             let mut __w = crate::event::WidgetCtx::__from_dispatch(
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select(0, &mut __w)
+            list.select(0, &mut __w);
         };
         {
             let mut __w = crate::event::WidgetCtx::__from_dispatch(
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.deselect(0, &mut __w)
+            list.deselect(0, &mut __w);
         };
         assert!(!list.is_selected(0));
 
@@ -1193,7 +1203,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select_all(&mut __w)
+            list.select_all(&mut __w);
         };
         assert!(!list.is_selected(0));
         assert!(list.is_selected(1));
@@ -1216,7 +1226,7 @@ mod tests {
         assert!(!list.focusable());
     }
 
-    /// Run a SelectionList binding action (the canonical keyboard path — keys
+    /// Run a `SelectionList` binding action (the canonical keyboard path — keys
     /// reach the list through its declarative `bindings()`, not raw `on_event`).
     fn run_action(list: &mut SelectionList<String>, name: &str, ctx: &mut EventCtx) -> bool {
         let parsed = crate::action::parse_action(name).expect("parse action");
@@ -1297,7 +1307,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle_all(&mut __w)
+            list.toggle_all(&mut __w);
         };
         // A=true, B=false, C=still false (disabled), D=true
         assert!(list.is_selected(0));
@@ -1310,7 +1320,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle_all(&mut __w)
+            list.toggle_all(&mut __w);
         };
         // Back to: A=false, B=true, C=false, D=false
         assert!(!list.is_selected(0));

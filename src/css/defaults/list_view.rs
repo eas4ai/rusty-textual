@@ -1,6 +1,6 @@
 // ListView widget defaults
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 ListView {
     bg: $surface;
     layout: vertical;
@@ -34,4 +34,4 @@ ListView:focus > ListItem.-highlight {
     bg: $block-cursor-background;
     text-style: $block-cursor-text-style;
 }
-"#;
+";

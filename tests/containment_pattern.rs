@@ -15,7 +15,7 @@ use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_w
 // ---------------------------------------------------------------------------
 
 /// An outer wrapper that contains an inner Button and aliases "Button" for CSS.
-/// This is a minimal reproduction of the SPEC-RA5 GameCell containment pattern.
+/// This is a minimal reproduction of the SPEC-RA5 `GameCell` containment pattern.
 struct OuterWidget {
     inner: Button,
     child_extracted: bool,

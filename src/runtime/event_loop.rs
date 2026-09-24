@@ -195,7 +195,7 @@ fn scrollbar_drag_trace_enabled() -> bool {
     *ENABLED.get_or_init(|| {
         std::env::var("TEXTUAL_DEBUG_SCROLLBAR_DRAG_TRACE")
             .ok()
-            .map(|value| {
+            .is_some_and(|value| {
                 let normalized = value.trim().to_ascii_lowercase();
                 !(normalized.is_empty()
                     || normalized == "0"
@@ -203,7 +203,6 @@ fn scrollbar_drag_trace_enabled() -> bool {
                     || normalized == "off"
                     || normalized == "no")
             })
-            .unwrap_or(false)
     })
 }
 
@@ -279,6 +278,7 @@ fn report_unhandled_binding_action(source_node: NodeId, action_str: &str) {
 /// [`report_unhandled_binding_action`]). Observability hook for regression
 /// tests and tooling; the runtime never reads it back.
 #[doc(hidden)]
+#[must_use]
 pub fn take_unhandled_binding_reports() -> Vec<String> {
     UNHANDLED_BINDING_REPORTS.with(|reports| std::mem::take(&mut *reports.borrow_mut()))
 }
@@ -601,7 +601,7 @@ fn dispatch_simulated_key_like_input(
             };
             // Prefer the registry-resolved owner; otherwise fall back to the
             // binding's own source node.
-            let target = resolved.map(|ra| ra.node).unwrap_or(binding_node_id);
+            let target = resolved.map_or(binding_node_id, |ra| ra.node);
             if let Some(node) = tree_mut.get_mut(target) {
                 let mut ctx = EventCtx::default();
                 if execute_action_with_dispatch_target(&mut *node.widget, &parsed, &mut ctx, target)
@@ -755,8 +755,7 @@ fn hit_probe_enabled() -> bool {
     *ENABLED.get_or_init(|| {
         std::env::var("TEXTUAL_DEBUG_HIT_TEST_VERBOSE")
             .ok()
-            .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
-            .unwrap_or(false)
+            .is_some_and(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
     })
 }
 
@@ -764,8 +763,8 @@ fn point_direction(prev: Option<(u16, u16)>, curr: (u16, u16)) -> &'static str {
     let Some((px, py)) = prev else {
         return "start";
     };
-    let dx = curr.0 as i32 - px as i32;
-    let dy = curr.1 as i32 - py as i32;
+    let dx = i32::from(curr.0) - i32::from(px);
+    let dy = i32::from(curr.1) - i32::from(py);
     match (dx.signum(), dy.signum()) {
         (0, -1) => "up",
         (0, 1) => "down",
@@ -1310,8 +1309,7 @@ fn split_runtime_control_messages(
                 dispatch_simulated_key_like_input(app, root, synthetic, &mut pass);
             } else {
                 debug_input(&format!(
-                    "[runtime] app.simulate_key ignored invalid key spec {:?}",
-                    key
+                    "[runtime] app.simulate_key ignored invalid key spec {key:?}"
                 ));
             }
         } else if event.is::<crate::message::AppSuspendProcess>() {
@@ -1403,7 +1401,7 @@ fn snapshot_for(
 
 /// Node-record-based variant of [`snapshot_for`] for tree-mode paths.
 ///
-/// Reads css_id, classes, and interaction state exclusively from the
+/// Reads `css_id`, classes, and interaction state exclusively from the
 /// `WidgetNode` record (Step 6: legacy widget getters deleted).
 fn snapshot_for_node(
     node: &crate::widget_tree::WidgetNode,
@@ -1658,8 +1656,7 @@ pub fn resolve_transition_for_property(
     let delay = style.transition_delay.unwrap_or(Duration::ZERO);
     let ease = style
         .transition_timing
-        .map(transition_timing_to_ease)
-        .unwrap_or(AnimationEase::OutCubic);
+        .map_or(AnimationEase::OutCubic, transition_timing_to_ease);
     Some((duration, delay, ease))
 }
 
@@ -1669,14 +1666,14 @@ fn canonical_transition_property_name(property: &str) -> String {
 
 fn style_numeric_property(style: &crate::style::Style, property: &str) -> Option<f32> {
     match canonical_transition_property_name(property).as_str() {
-        "opacity" => Some(style.opacity.unwrap_or(100) as f32),
-        "text_opacity" => Some(style.text_opacity.unwrap_or(100) as f32),
+        "opacity" => Some(f32::from(style.opacity.unwrap_or(100))),
+        "text_opacity" => Some(f32::from(style.text_opacity.unwrap_or(100))),
         "offset_x" => style.offset.map(|offset| match offset.x {
-            crate::style::OffsetValue::Cells(v) => v as f32,
+            crate::style::OffsetValue::Cells(v) => f32::from(v),
             crate::style::OffsetValue::Percent(v) => v,
         }),
         "offset_y" => style.offset.map(|offset| match offset.y {
-            crate::style::OffsetValue::Cells(v) => v as f32,
+            crate::style::OffsetValue::Cells(v) => f32::from(v),
             crate::style::OffsetValue::Percent(v) => v,
         }),
         _ => None,
@@ -2182,8 +2179,7 @@ impl App {
                     let style_id = node
                         .css_id
                         .as_deref()
-                        .map(sanitize_snapshot_field)
-                        .unwrap_or_else(|| "-".to_string());
+                        .map_or_else(|| "-".to_string(), sanitize_snapshot_field);
 
                     let classes_field = node
                         .classes
@@ -2195,8 +2191,7 @@ impl App {
                     // Parent / children IDs.
                     let parent_field = node
                         .parent
-                        .map(|p| node_id_to_ffi(p).to_string())
-                        .unwrap_or_else(|| "-".to_string());
+                        .map_or_else(|| "-".to_string(), |p| node_id_to_ffi(p).to_string());
                     let children_field = if node.children.is_empty() {
                         "-".to_string()
                     } else {
@@ -2283,14 +2278,11 @@ impl App {
         snapshot.push_str(&format!(
             "hovered\t{}\n",
             self.hovered
-                .map(|id| node_id_to_ffi(id).to_string())
-                .unwrap_or_else(|| "-".to_string())
+                .map_or_else(|| "-".to_string(), |id| node_id_to_ffi(id).to_string())
         ));
         snapshot.push_str(&format!(
             "focused\t{}\n",
-            focused
-                .map(|id| node_id_to_ffi(id).to_string())
-                .unwrap_or_else(|| "-".to_string())
+            focused.map_or_else(|| "-".to_string(), |id| node_id_to_ffi(id).to_string())
         ));
         snapshot.push_str(&format!("widget_count\t{}\n", widget_lines.len()));
         for hint in &self.last_binding_hints {
@@ -2716,13 +2708,11 @@ impl App {
             let timeout = self
                 .animator
                 .next_timeout(now)
-                .map(|anim_timeout| tick_timeout.min(anim_timeout))
-                .unwrap_or(tick_timeout);
+                .map_or(tick_timeout, |anim_timeout| tick_timeout.min(anim_timeout));
             let timeout = self
                 .timers
                 .next_timeout(self.timers.now())
-                .map(|timer_timeout| timeout.min(timer_timeout))
-                .unwrap_or(timeout);
+                .map_or(timeout, |timer_timeout| timeout.min(timer_timeout));
             let poll_started = Instant::now();
             let input_event = if let Some(pending) = pending_input_event.take() {
                 Some(pending)
@@ -2832,7 +2822,7 @@ impl App {
                                     match op {
                                         crate::event::ClassOp::Add(c) => tree.add_class(node, &c),
                                         crate::event::ClassOp::Remove(c) => {
-                                            tree.remove_class(node, &c)
+                                            tree.remove_class(node, &c);
                                         }
                                     }
                                 }
@@ -2865,8 +2855,7 @@ impl App {
                         // Priority actions (e.g. command palette) run before raw key dispatch.
                         if let Some(action) = mapped_action.filter(|a| is_priority_action(*a)) {
                             debug_input(&format!(
-                                "[input] priority action-map {:?} -> {:?}",
-                                bind, action
+                                "[input] priority action-map {bind:?} -> {action:?}"
                             ));
                             // Wave 1: ctrl+p opens the composed CommandPaletteScreen
                             // via the adapter (on_app_message), NOT by dispatching
@@ -2958,7 +2947,7 @@ impl App {
                                         )
                                     })
                                 };
-                                let target = resolved.map(|ra| ra.node).unwrap_or(binding_node_id);
+                                let target = resolved.map_or(binding_node_id, |ra| ra.node);
                                 if let Some(node) = tree_mut.get_mut(target) {
                                     let mut ctx = EventCtx::default();
                                     let handled = execute_action_with_dispatch_target(
@@ -3317,10 +3306,7 @@ impl App {
                                         continue;
                                     }
                                 }
-                                debug_input(&format!(
-                                    "[input] action-map {:?} -> {:?}",
-                                    bind, action
-                                ));
+                                debug_input(&format!("[input] action-map {bind:?} -> {action:?}"));
                                 let mut outcome = if is_scroll_action(action) {
                                     self.dispatch_scroll_action_auto(root, action, self.hovered)
                                 } else {
@@ -3349,7 +3335,7 @@ impl App {
                                     break 'event_loop;
                                 }
                             } else {
-                                debug_input(&format!("[input] action-map {:?} -> none", bind));
+                                debug_input(&format!("[input] action-map {bind:?} -> none"));
                             }
                         }
                     }
@@ -3374,16 +3360,14 @@ impl App {
                                     let tree_target = self.active_widget_tree().and_then(|tree| {
                                         widget_at_tree_layout(tree, mouse.column, mouse.row)
                                     });
-                                    let chosen = self
-                                        .active_widget_tree()
-                                        .map(|tree| {
+                                    let chosen =
+                                        self.active_widget_tree().map_or(frame_target, |tree| {
                                             super::choose_deeper_target(
                                                 tree,
                                                 frame_target,
                                                 tree_target,
                                             )
-                                        })
-                                        .unwrap_or(frame_target);
+                                        });
                                     let relation = self
                                         .active_widget_tree()
                                         .and_then(|tree| match (frame_target, tree_target) {
@@ -3744,11 +3728,9 @@ impl App {
                                     .click_tracker
                                     .capture_target()
                                     .or_else(|| self.widget_at_auto(mouse.column, mouse.row));
-                                let (x, y) = target
-                                    .map(|id| {
-                                        self.content_local_coords_auto(id, mouse.column, mouse.row)
-                                    })
-                                    .unwrap_or((mouse.column, mouse.row));
+                                let (x, y) = target.map_or((mouse.column, mouse.row), |id| {
+                                    self.content_local_coords_auto(id, mouse.column, mouse.row)
+                                });
                                 let up_event = Event::MouseUp(MouseUpEvent {
                                     target,
                                     screen_x: mouse.column,
@@ -3927,11 +3909,9 @@ impl App {
                                 let (delta_x, delta_y) =
                                     mouse_scroll_deltas(mouse.kind, mouse.modifiers);
                                 let target = self.widget_at_auto(mouse.column, mouse.row);
-                                let (local_x, local_y) = target
-                                    .map(|id| {
-                                        self.content_local_coords_auto(id, mouse.column, mouse.row)
-                                    })
-                                    .unwrap_or((0, 0));
+                                let (local_x, local_y) = target.map_or((0, 0), |id| {
+                                    self.content_local_coords_auto(id, mouse.column, mouse.row)
+                                });
                                 debug_input(&format!(
                                     "[input] mouse scroll route target={:?} dx={} dy={}",
                                     target.map(node_id_to_ffi),
@@ -3971,9 +3951,10 @@ impl App {
                                 self.absorb_outcome(
                                     &mut diag_outcome,
                                     &mut pending_invalidation,
-                                    target
-                                        .map(InvalidationScope::Widget)
-                                        .unwrap_or(InvalidationScope::Global),
+                                    target.map_or(
+                                        InvalidationScope::Global,
+                                        InvalidationScope::Widget,
+                                    ),
                                 );
                                 let mut msg_outcome = self.dispatch_message_queue_with_runtime(
                                     root,
@@ -5103,7 +5084,7 @@ impl App {
     /// Mirrors the live loop's per-frame `root.on_tick(tick)` / `on_app_tick`
     /// (which the headless pump otherwise never fires). Each tick uses a
     /// strictly-increasing counter (`headless_tick`), so on-tick-driven
-    /// animations (LoadingIndicator's spinner phase, button flash, …) advance
+    /// animations (`LoadingIndicator`'s spinner phase, button flash, …) advance
     /// frame-by-frame deterministically. This is the headless analogue of the
     /// real loop ticking once per `tick_rate`.
     pub(crate) fn headless_advance_ticks(
@@ -5313,7 +5294,7 @@ impl App {
                         })
                     })
                 };
-                let target = resolved.map(|ra| ra.node).unwrap_or(binding_node_id);
+                let target = resolved.map_or(binding_node_id, |ra| ra.node);
                 if let Some(node) = tree_mut.get_mut(target) {
                     let mut ctx = EventCtx::default();
                     let handled = execute_action_with_dispatch_target(
@@ -5587,9 +5568,9 @@ impl App {
             .click_tracker
             .capture_target()
             .or_else(|| self.widget_at_auto(screen_x, screen_y));
-        let (x, y) = target
-            .map(|id| self.content_local_coords_auto(id, screen_x, screen_y))
-            .unwrap_or((screen_x, screen_y));
+        let (x, y) = target.map_or((screen_x, screen_y), |id| {
+            self.content_local_coords_auto(id, screen_x, screen_y)
+        });
         let up_event = Event::MouseUp(MouseUpEvent {
             target,
             screen_x,
@@ -5775,6 +5756,7 @@ impl App {
 
     /// Screen-space rect `(x0, y0, x1, y1)` of a rendered node, from the
     /// hit-test map. Used by Pilot to target clicks at a selector's centre.
+    #[must_use]
     pub fn node_screen_rect(&self, node: NodeId) -> Option<(u16, u16, u16, u16)> {
         self.hit_test.rect(node).map(|r| (r.x0, r.y0, r.x1, r.y1))
     }
@@ -5785,6 +5767,7 @@ impl App {
     /// pump keeps running so the Pilot test body can read state — so this is the
     /// way to assert that an exit-on-interaction demo actually fired its handler
     /// (its rendered frame is otherwise unchanged). Test/Pilot helper.
+    #[must_use]
     pub fn headless_stop_requested(&self) -> bool {
         self.headless_stop_requested
     }
@@ -5801,6 +5784,7 @@ impl App {
     /// [`FrameBuffer`]: crate::render::FrameBuffer
     /// [`save_frame_svg`]: Self::save_frame_svg
     /// [`frame_fingerprint`]: Self::frame_fingerprint
+    #[must_use]
     pub fn frame_plain_lines(&self) -> Vec<String> {
         self.frame.as_plain_lines()
     }
@@ -5809,6 +5793,7 @@ impl App {
     /// [`frame_plain_lines`] joined with `\n`.
     ///
     /// [`frame_plain_lines`]: Self::frame_plain_lines
+    #[must_use]
     pub fn frame_plain_text(&self) -> String {
         self.frame_plain_lines().join("\n")
     }
@@ -5817,6 +5802,7 @@ impl App {
     /// foreground/background). Two equal fingerprints mean visually identical
     /// frames; a change after input proves rendered output changed. Test/Pilot
     /// helper.
+    #[must_use]
     pub fn frame_fingerprint(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -5857,9 +5843,7 @@ impl App {
     /// `App.export_screenshot(title=...)`. `title` defaults to the app title.
     pub fn export_screenshot(&self, title: Option<&str>) -> crate::Result<String> {
         let mut console = self.frame_record_console()?;
-        let title = title
-            .map(str::to_string)
-            .unwrap_or_else(|| self.app_title.clone());
+        let title = title.map_or_else(|| self.app_title.clone(), str::to_string);
         Ok(console.export_svg(&title, None, true, None, 0.61, None))
     }
 
@@ -5872,28 +5856,26 @@ impl App {
         filename: Option<&str>,
         title: Option<&str>,
     ) -> crate::Result<String> {
-        let path = match filename {
-            Some(name) => name.to_string(),
-            None => {
-                let slug: String = self
-                    .app_title
-                    .chars()
-                    .map(|c| {
-                        if c.is_alphanumeric() {
-                            c.to_ascii_lowercase()
-                        } else {
-                            '_'
-                        }
-                    })
-                    .collect();
-                let slug = slug.trim_matches('_');
-                let slug = if slug.is_empty() { "screenshot" } else { slug };
-                let epoch = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                format!("{slug}-{epoch}.svg")
-            }
+        let path = if let Some(name) = filename {
+            name.to_string()
+        } else {
+            let slug: String = self
+                .app_title
+                .chars()
+                .map(|c| {
+                    if c.is_alphanumeric() {
+                        c.to_ascii_lowercase()
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            let slug = slug.trim_matches('_');
+            let slug = if slug.is_empty() { "screenshot" } else { slug };
+            let epoch = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            format!("{slug}-{epoch}.svg")
         };
         self.save_frame_svg(&path, title.unwrap_or(&self.app_title))?;
         Ok(path)
@@ -5951,6 +5933,7 @@ impl App {
     /// Mirrors reading `widget.styles.background` in Python Textual — the value
     /// set via `query_mut(sel).set_styles(|s| s.set_bg(..))`. Used by
     /// Pilot-driven tests to assert state the way Python's `test_rgb` does.
+    #[must_use]
     pub fn node_explicit_bg(&self, node: NodeId) -> Option<crate::style::Color> {
         self.active_widget_tree()
             .and_then(|tree| tree.get(node))
@@ -7747,8 +7730,7 @@ mod tests {
         let visible_before = app
             .active_widget_tree()
             .and_then(|tree| tree.get(tooltip_id))
-            .map(|node| node.runtime_display)
-            .unwrap_or(false);
+            .is_some_and(|node| node.runtime_display);
         assert!(visible_before, "precondition: tooltip should be visible");
 
         let mut runtime_root = AppRoot::new();
@@ -7762,8 +7744,7 @@ mod tests {
         let visible_after = app
             .active_widget_tree()
             .and_then(|tree| tree.get(tooltip_id))
-            .map(|node| node.runtime_display)
-            .unwrap_or(true);
+            .is_none_or(|node| node.runtime_display);
         assert!(
             !visible_after,
             "command palette open should dismiss tooltip immediately"
@@ -9830,7 +9811,7 @@ mod tests {
     }
 
     /// Live-loop path: the loop calls `run_event_loop_reactive_phase`
-    /// unconditionally each iteration (event_loop.rs:3897). A command enqueued
+    /// unconditionally each iteration (`event_loop.rs:3897`). A command enqueued
     /// by a handler is deferred, then applied by that shared flush.
     #[test]
     fn widget_command_applied_by_flush_live_loop_path() {
@@ -9870,7 +9851,7 @@ mod tests {
         assert!(pending.flags.layout, "class change requests relayout");
     }
 
-    /// Headless path: the pump gate (event_loop.rs:4537) now also fires on a
+    /// Headless path: the pump gate (`event_loop.rs:4537`) now also fires on a
     /// pending command, so a command enqueued by a handler drains through the
     /// same shared flush under `headless_pump` — no reactive entry required.
     #[test]
@@ -10011,7 +9992,7 @@ mod tests {
 
     /// GATE 2: widget A's handler updates child B via `query_one::<B>().update_via`;
     /// B's watcher fires in the SAME flush pass (drain resolves B by type, runs the
-    /// closure with a fresh WidgetCtx, then dispatches B's reactive fixpoint).
+    /// closure with a fresh `WidgetCtx`, then dispatches B's reactive fixpoint).
     #[test]
     fn query_one_update_via_fires_target_watcher_same_pass() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK

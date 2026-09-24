@@ -232,6 +232,7 @@ pub struct DispatchOutcome {
 }
 
 impl DispatchOutcome {
+    #[must_use]
     pub fn should_repaint(&self) -> bool {
         self.handled || self.repaint_requested || self.invalidation.content
     }
@@ -414,7 +415,7 @@ pub(crate) fn resize_trace_enabled() -> bool {
     *ENABLED.get_or_init(|| {
         std::env::var("TEXTUAL_DEBUG_RESIZE_TRACE")
             .ok()
-            .map(|value| {
+            .is_some_and(|value| {
                 let normalized = value.trim().to_ascii_lowercase();
                 !(normalized.is_empty()
                     || normalized == "0"
@@ -422,7 +423,6 @@ pub(crate) fn resize_trace_enabled() -> bool {
                     || normalized == "off"
                     || normalized == "no")
             })
-            .unwrap_or(false)
     })
 }
 

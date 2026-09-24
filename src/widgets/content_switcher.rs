@@ -124,6 +124,7 @@ impl Default for ContentSwitcher {
 impl ContentSwitcher {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             children: Vec::new(),
@@ -185,6 +186,7 @@ impl ContentSwitcher {
             .position(|id| id.as_deref() == Some(current))
     }
 
+    #[must_use]
     pub fn current(&self) -> Option<&str> {
         self.current.as_deref()
     }
@@ -200,6 +202,7 @@ impl ContentSwitcher {
     /// Returns a reference to the currently visible content widget, if any.
     ///
     /// The visible child is determined by matching `current` against the child id index.
+    #[must_use]
     pub fn visible_content(&self) -> Option<&dyn Widget> {
         self.visible_child()
     }
@@ -216,6 +219,7 @@ impl ContentSwitcher {
     }
 
     /// Read-only access to all children (not just the visible one).
+    #[must_use]
     pub fn children(&self) -> &[Box<dyn Widget>] {
         &self.children
     }
@@ -237,12 +241,7 @@ impl crate::widgets::Render for ContentSwitcher {
         // available. Without this, `current` never matches and ALL panes are
         // hidden (empty ContentSwitcher).
         for (idx, child) in self.children.iter().enumerate() {
-            if self
-                .child_ids
-                .get(idx)
-                .map(Option::is_none)
-                .unwrap_or(false)
-            {
+            if self.child_ids.get(idx).is_some_and(Option::is_none) {
                 if let Some(id) = child.style_id() {
                     self.child_ids[idx] = Some(id.to_string());
                 }
@@ -263,14 +262,13 @@ impl crate::widgets::Render for ContentSwitcher {
         let width = options.size.0.max(1);
         let height = options.size.1.max(1);
 
-        let child = match self.visible_child() {
-            Some(child) => child,
-            None => {
-                // No visible child: render empty space
-                let mut out = Segments::new();
-                out.push(Segment::styled(" ".repeat(width), rich_rs::Style::new()));
-                return out;
-            }
+        let child = if let Some(child) = self.visible_child() {
+            child
+        } else {
+            // No visible child: render empty space
+            let mut out = Segments::new();
+            out.push(Segment::styled(" ".repeat(width), rich_rs::Style::new()));
+            return out;
         };
 
         let meta = css::selector_meta_generic(child);

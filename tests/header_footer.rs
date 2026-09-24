@@ -61,7 +61,7 @@ fn footer_updates_from_bindings_changed_event() {
                 BindingHint::new("ctrl+p", "palette").with_key_display("^p"),
             ]),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.repaint_requested());
 
@@ -92,7 +92,7 @@ fn footer_docks_command_palette_binding_to_right_slot() {
                     .with_group("command_palette"),
             ]),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.repaint_requested());
 
@@ -124,7 +124,7 @@ fn footer_groups_consecutive_bindings_with_same_group() {
                 BindingHint::new("enter", "submit"),
             ]),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.repaint_requested());
 
@@ -156,7 +156,7 @@ fn footer_applies_deferred_bindings_on_focus_gain() {
             rusty_textual::node_id::NodeId::default(),
             &mut unfocus_ctx,
         );
-        footer.on_event(&Event::AppFocus(false), &mut __w)
+        footer.on_event(&Event::AppFocus(false), &mut __w);
     };
 
     let mut bindings_ctx = EventCtx::default();
@@ -170,7 +170,7 @@ fn footer_applies_deferred_bindings_on_focus_gain() {
                 BindingHint::new("ctrl+p", "palette").with_key_display("^p"),
             ]),
             &mut __w,
-        )
+        );
     };
     assert!(!bindings_ctx.repaint_requested());
 
@@ -185,7 +185,7 @@ fn footer_applies_deferred_bindings_on_focus_gain() {
             rusty_textual::node_id::NodeId::default(),
             &mut focus_ctx,
         );
-        footer.on_event(&Event::AppFocus(true), &mut __w)
+        footer.on_event(&Event::AppFocus(true), &mut __w);
     };
     assert!(focus_ctx.repaint_requested());
 
@@ -221,7 +221,7 @@ fn footer_compact_mode_tightens_spacing() {
 
 #[test]
 fn footer_key_type_selector_styles_key_hint_cells() {
-    let css = r#"
+    let css = r"
         Footer {
             bg: #101010;
             color: #ffffff;
@@ -234,7 +234,7 @@ fn footer_key_type_selector_styles_key_hint_cells() {
             color: #00ff88;
             bg: #303030;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -260,7 +260,7 @@ fn footer_key_type_selector_styles_key_hint_cells() {
 
 #[test]
 fn footer_key_hover_selector_styles_when_mouse_moves_over_binding() {
-    let css = r#"
+    let css = r"
         Footer {
             bg: #101010;
             color: #ffffff;
@@ -273,7 +273,7 @@ fn footer_key_hover_selector_styles_when_mouse_moves_over_binding() {
             color: #ff8800;
             bg: #404040;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -301,7 +301,7 @@ fn footer_key_hover_selector_styles_when_mouse_moves_over_binding() {
 
 #[test]
 fn footer_key_hover_background_applies_across_entire_item() {
-    let css = r#"
+    let css = r"
         Footer {
             bg: #101010;
             color: #ffffff;
@@ -320,7 +320,7 @@ fn footer_key_hover_background_applies_across_entire_item() {
         FooterKey:hover {
             bg: #404040;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -348,7 +348,7 @@ fn footer_key_hover_background_applies_across_entire_item() {
 
 #[test]
 fn footer_key_hover_applies_to_command_palette_item() {
-    let css = r#"
+    let css = r"
         Footer {
             bg: #101010;
             color: #ffffff;
@@ -359,7 +359,7 @@ fn footer_key_hover_applies_to_command_palette_item() {
         FooterKey:hover {
             bg: #404040;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -381,7 +381,7 @@ fn footer_key_hover_applies_to_command_palette_item() {
                     .with_group("command_palette"),
             ]),
             &mut __w,
-        )
+        );
     };
     footer.on_layout(width as u16, 1);
     let before = FrameBuffer::from_renderable(&console, &options, &footer, None);
@@ -402,7 +402,7 @@ fn footer_key_hover_applies_to_command_palette_item() {
 
 #[test]
 fn footer_paints_full_row_background_when_bindings_change_shape() {
-    let css = r#"
+    let css = r"
         Footer {
             bg: #112233;
             color: #ffffff;
@@ -423,7 +423,7 @@ fn footer_paints_full_row_background_when_bindings_change_shape() {
             bg: #112233;
             color: #ffffff;
         }
-    "#;
+    ";
     let sheet = StyleSheet::parse(css);
     let _guard = set_style_context(sheet);
 
@@ -445,7 +445,7 @@ fn footer_paints_full_row_background_when_bindings_change_shape() {
                     .with_group("command_palette"),
             ]),
             &mut __w,
-        )
+        );
     };
     assert!(ctx.repaint_requested());
 
@@ -479,7 +479,7 @@ fn header_mouse_up_toggles_tall_outside_icon() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(down_ctx.handled());
 
@@ -498,7 +498,7 @@ fn header_mouse_up_toggles_tall_outside_icon() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
 
     assert!(ctx.handled());
@@ -524,7 +524,7 @@ fn header_icon_click_does_not_toggle_tall() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(down_ctx.handled());
 
@@ -543,7 +543,7 @@ fn header_icon_click_does_not_toggle_tall() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
 
     assert!(ctx.handled());
@@ -562,7 +562,7 @@ fn header_can_render_clock() {
 
     let buf = render_tree_to_frame(&mut tree, &mut header, &console, 80, 1);
     let line = &buf.as_plain_lines()[0];
-    assert!(line.contains(":"));
+    assert!(line.contains(':'));
 }
 
 #[test]
@@ -584,7 +584,7 @@ fn header_cross_region_press_release_is_noop() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(down_ctx.handled());
 
@@ -603,7 +603,7 @@ fn header_cross_region_press_release_is_noop() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     assert!(up_ctx.handled());
     assert_eq!(header.layout_height(), Some(1));

@@ -41,7 +41,7 @@ pub(super) struct VisibleNode {
     pub(super) disabled: bool,
     pub(super) expandable: bool,
     pub(super) component_classes: Vec<String>,
-    /// Optional user data associated with the underlying TreeNode.
+    /// Optional user data associated with the underlying `TreeNode`.
     pub(super) data: Option<String>,
     /// For each visual depth level, whether the ancestor at that level is the last sibling.
     /// Used for rendering tree guide lines (│, ├, └).
@@ -50,7 +50,7 @@ pub(super) struct VisibleNode {
 
 impl Tree {
     pub(super) fn visible_nodes(&self) -> Vec<VisibleNode> {
-        let depth_offset: usize = if self.show_root { 0 } else { 1 };
+        let depth_offset: usize = usize::from(!self.show_root);
 
         fn walk(
             tree: &Tree,
@@ -286,11 +286,10 @@ impl Tree {
             // leads the label is the toggle affordance (Python attaches
             // TOGGLE_STYLE to that prefix). Extend the hit-zone over the
             // label's leading icon (up to and including its trailing space).
-            let icon_cells = node
-                .label
-                .find(' ')
-                .map(|byte_idx| rich_rs::cell_len(&node.label[..=byte_idx]))
-                .unwrap_or_else(|| rich_rs::cell_len(&node.label));
+            let icon_cells = node.label.find(' ').map_or_else(
+                || rich_rs::cell_len(&node.label),
+                |byte_idx| rich_rs::cell_len(&node.label[..=byte_idx]),
+            );
             max_x = max_x.saturating_add(icon_cells);
         }
         max_x.saturating_sub(1)

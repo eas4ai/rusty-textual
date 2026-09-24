@@ -28,6 +28,7 @@ impl Styled {
         }
     }
 
+    #[must_use]
     pub fn style(mut self, style: Style) -> Self {
         self.seed.styles.style = style;
         self

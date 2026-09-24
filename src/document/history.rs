@@ -23,6 +23,7 @@ pub trait HistoryClock: std::fmt::Debug + Send + Sync {
 pub struct MonotonicClock(Instant);
 
 impl MonotonicClock {
+    #[must_use]
     pub fn new() -> Self {
         Self(Instant::now())
     }
@@ -46,6 +47,7 @@ impl HistoryClock for MonotonicClock {
 pub struct MockClock(Arc<AtomicU64>);
 
 impl MockClock {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -96,6 +98,7 @@ pub struct EditHistory {
 
 impl EditHistory {
     /// Create a history with the default monotonic clock.
+    #[must_use]
     pub fn new(
         max_checkpoints: usize,
         checkpoint_timer: Duration,
@@ -256,11 +259,13 @@ impl EditHistory {
     }
 
     /// The number of batches on the undo stack.
+    #[must_use]
     pub fn undo_stack_len(&self) -> usize {
         self.undo_stack.len()
     }
 
     /// The number of batches on the redo stack.
+    #[must_use]
     pub fn redo_stack_len(&self) -> usize {
         self.redo_stack.len()
     }

@@ -18,6 +18,7 @@ pub enum PointerShape {
 }
 
 impl PointerShape {
+    #[must_use]
     pub fn as_kitty_name(self) -> &'static str {
         match self {
             PointerShape::Default => "default",
@@ -112,24 +113,29 @@ impl TerminalDriver {
         })
     }
 
+    #[must_use]
     pub fn size(&self) -> Size {
         self.size
     }
 
+    #[must_use]
     pub fn started(&self) -> bool {
         self.started
     }
 
+    #[must_use]
     pub fn options(&self) -> DriverOptions {
         self.options
     }
 
     /// Terminal capability profile for the active platform driver.
+    #[must_use]
     pub fn capabilities(&self) -> CapabilityProfile {
         self.capabilities
     }
 
     /// Whether the Kitty keyboard enhancement protocol is currently active.
+    #[must_use]
     pub fn keyboard_enhanced(&self) -> bool {
         self.keyboard_enhanced
     }
@@ -137,6 +143,7 @@ impl TerminalDriver {
     /// Outcome of the startup mode negotiation (PR-15b): DECRQM answers for
     /// SYNC (2026) and in-band resize (2048), or defaults when skipped
     /// (piped, Apple Terminal for SYNC) or unanswered.
+    #[must_use]
     pub fn negotiated_modes(&self) -> negotiate::NegotiatedModes {
         self.negotiated
     }

@@ -34,21 +34,25 @@ impl Constrained {
         }
     }
 
+    #[must_use]
     pub fn min_width(mut self, value: usize) -> Self {
         self.constraints = self.constraints.min_width(value);
         self
     }
 
+    #[must_use]
     pub fn max_width(mut self, value: usize) -> Self {
         self.constraints = self.constraints.max_width(value);
         self
     }
 
+    #[must_use]
     pub fn min_height(mut self, value: usize) -> Self {
         self.constraints = self.constraints.min_height(value);
         self
     }
 
+    #[must_use]
     pub fn max_height(mut self, value: usize) -> Self {
         self.constraints = self.constraints.max_height(value);
         self

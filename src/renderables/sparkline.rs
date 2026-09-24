@@ -13,6 +13,7 @@ pub type SummaryFunction = fn(&[f64]) -> f64;
 
 /// Returns the maximum value in the slice (default summary function).
 /// Returns 0.0 for empty input or if all values are non-finite.
+#[must_use]
 pub fn summary_max(data: &[f64]) -> f64 {
     data.iter()
         .copied()
@@ -25,6 +26,7 @@ pub fn summary_max(data: &[f64]) -> f64 {
 
 /// Returns the minimum value in the slice.
 /// Returns 0.0 for empty input or if all values are non-finite.
+#[must_use]
 pub fn summary_min(data: &[f64]) -> f64 {
     data.iter()
         .copied()
@@ -37,6 +39,7 @@ pub fn summary_min(data: &[f64]) -> f64 {
 
 /// Returns the mean of the slice.
 /// Returns 0.0 for empty input; non-finite values are excluded.
+#[must_use]
 pub fn summary_mean(data: &[f64]) -> f64 {
     let finite: Vec<f64> = data.iter().copied().filter(|v| v.is_finite()).collect();
     if finite.is_empty() {
@@ -80,6 +83,7 @@ pub struct Sparkline {
 
 impl Sparkline {
     /// Create a new `Sparkline` with the given data.
+    #[must_use]
     pub fn new(data: Vec<f64>) -> Self {
         let mut seed = NodeSeed::default();
         seed.classes.push("sparkline".to_string());
@@ -99,12 +103,14 @@ impl Sparkline {
     }
 
     /// Override the minimum color (normally resolved from CSS `sparkline--min-color`).
+    #[must_use]
     pub fn min_color(mut self, color: Color) -> Self {
         self.min_color = Some(color);
         self
     }
 
     /// Override the maximum color (normally resolved from CSS `sparkline--max-color`).
+    #[must_use]
     pub fn max_color(mut self, color: Color) -> Self {
         self.max_color = Some(color);
         self
@@ -113,11 +119,13 @@ impl Sparkline {
     // ── Reactive getters ─────────────────────────────────────────────────
 
     /// Reactive getter for `data`.
+    #[must_use]
     pub fn get_data(&self) -> &[f64] {
         &self.data
     }
 
     /// Reactive getter for `summary_function`.
+    #[must_use]
     pub fn get_summary_function(&self) -> SummaryFunction {
         self.summary_function
     }
@@ -341,8 +349,8 @@ impl ReactiveWidget for Sparkline {}
 fn blend_rgb(a: Color, b: Color, t: f64) -> Color {
     let t = t.clamp(0.0, 1.0) as f32;
     let mix = |x: u8, y: u8| -> u8 {
-        let xf = x as f32;
-        let yf = y as f32;
+        let xf = f32::from(x);
+        let yf = f32::from(y);
         (xf + (yf - xf) * t).round().clamp(0.0, 255.0) as u8
     };
     Color::rgb(mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b))

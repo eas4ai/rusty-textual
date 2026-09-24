@@ -18,6 +18,7 @@ impl Vertical {
     crate::delegate_ident_methods!(container);
     crate::delegate_border_title_methods!(container);
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             container: Container::new(),

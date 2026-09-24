@@ -15,6 +15,7 @@ pub struct DebugLayout {
 }
 
 impl DebugLayout {
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             enabled: false,
@@ -23,6 +24,7 @@ impl DebugLayout {
         }
     }
 
+    #[must_use]
     pub fn enabled() -> Self {
         let mut layout = Self::disabled();
         layout.enabled = true;
@@ -30,6 +32,7 @@ impl DebugLayout {
         layout
     }
 
+    #[must_use]
     pub fn style_for(&self, index: usize) -> Style {
         let color = self.colors[index % self.colors.len()];
         Style::color(Color::from_ansi(color).into())
@@ -79,6 +82,7 @@ impl DebugChannel {
 
     /// Stable lowercase name used on the wire (`LOGS` records, `CHANNELS`
     /// listings, `DEBUG_CHANNEL` toggles).
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             DebugChannel::Input => "input",
@@ -93,6 +97,7 @@ impl DebugChannel {
     }
 
     /// Parse a wire name back into a channel (case-insensitive).
+    #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         let name = name.trim().to_ascii_lowercase();
         Self::ALL.into_iter().find(|channel| channel.name() == name)
@@ -185,6 +190,7 @@ pub(crate) fn activate_log_stream() {
 }
 
 /// Whether `channel` currently streams to the devtools log sink.
+#[must_use]
 pub fn channel_streaming(channel: DebugChannel) -> bool {
     log_hub().streaming[channel.index()].load(Ordering::Relaxed)
 }
@@ -197,6 +203,7 @@ pub fn set_channel_streaming(channel: DebugChannel, enabled: bool) {
 
 /// Introspection listing for every channel: `(name, file_path, streaming)`.
 /// Backs the devtools `CHANNELS` request.
+#[must_use]
 pub fn channel_states() -> Vec<(&'static str, Option<&'static str>, bool)> {
     DebugChannel::ALL
         .into_iter()

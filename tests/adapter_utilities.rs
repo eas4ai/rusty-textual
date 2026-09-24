@@ -43,7 +43,7 @@ fn overlay_screen_stack_models_push_pop_navigation_on_message_bus() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        stack.clear(sender, &mut __w)
+        stack.clear(sender, &mut __w);
     };
     assert!(stack.is_empty());
 }

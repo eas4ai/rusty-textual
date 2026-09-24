@@ -57,7 +57,7 @@ impl Widget for ClickProbe {
                 self.pressed = false;
                 self.sink
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push(self.id.to_string());
                 ctx.set_handled();
             }
@@ -93,7 +93,7 @@ impl Widget for LayoutClickProbe {
     fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
         self.layout_sink
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(
                 self.id.to_string(),
                 (options.max_width as u16, options.max_height as u16),
@@ -120,7 +120,7 @@ impl Widget for LayoutClickProbe {
                 self.pressed = false;
                 self.click_sink
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push(self.id.to_string());
                 ctx.set_handled();
             }
@@ -150,7 +150,7 @@ impl HoverProbe {
             self.hovered = hovered;
             self.sink
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(format!("{}:{hovered}", self.id));
         }
     }
@@ -201,7 +201,7 @@ impl FocusProbe {
             self.focused = focused;
             self.sink
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(format!("{}:{focused}", self.id));
         }
     }
@@ -354,11 +354,13 @@ fn find_click_for_sink(
 ) -> Option<(u16, u16)> {
     for y in 0..height {
         for x in 0..width {
-            sink.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            sink.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
             let _ = click_tree(tree, x, y);
             if sink
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .iter()
                 .any(|entry| entry == needle)
             {
@@ -446,7 +448,7 @@ impl Widget for DataTableNavProbe {
         if before != after {
             self.sink
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(format!("row:{before}->{after}"));
         }
     }
@@ -461,7 +463,10 @@ fn p1_gate_container_click_targets_correct_child_by_y() {
     let mut tree = build_tree(&mut root, 20, 5);
     let _ = click_tree(&mut tree, 0, 1);
 
-    let descriptions = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let descriptions = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert_eq!(
         descriptions,
         vec!["second".to_string()],
@@ -479,7 +484,10 @@ fn p1_gate_container_distinguishes_clicks_on_different_children() {
     let _ = click_tree(&mut tree, 0, 0);
     let _ = click_tree(&mut tree, 0, 1);
 
-    let descriptions = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let descriptions = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert_eq!(
         descriptions,
         vec!["first".to_string(), "second".to_string()],
@@ -509,7 +517,7 @@ fn p1_gate_row_click_targets_correct_child_by_x() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
     {
         let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
@@ -525,10 +533,13 @@ fn p1_gate_row_click_targets_correct_child_by_x() {
                 y: 0,
             }),
             &mut __w,
-        )
+        );
     };
 
-    let descriptions = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let descriptions = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert_eq!(
         descriptions,
         vec!["right".to_string()],
@@ -547,7 +558,10 @@ fn p1_gate_container_hover_targets_child_by_y() {
     assert!(move_hover_tree(&mut tree, &mut hovered, 0, 1));
     assert!(move_hover_tree(&mut tree, &mut hovered, 0, 0));
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"second:true".to_string()),
         "P1 gate: hovering row 1 should mark second child hovered; events={events:?}"
@@ -568,7 +582,10 @@ fn p1_gate_row_hover_targets_child_by_x() {
     assert!(root.on_mouse_move(9, 0));
     assert!(root.on_mouse_move(0, 0));
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"right:true".to_string()),
         "P1 gate: hovering right side should mark right child hovered; events={events:?}"
@@ -594,7 +611,10 @@ fn p1_gate_container_focus_next_prev_cycles_children() {
     assert!(focus_node(&mut tree, probes[1]));
     assert!(focus_node(&mut tree, probes[0]));
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"first:true".to_string()),
         "P1 gate: first FocusNext should focus first child; events={events:?}"
@@ -618,24 +638,27 @@ fn p1_gate_row_focus_next_prev_cycles_children() {
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        root.on_event(&Event::Action(Action::FocusNext), &mut __w)
+        root.on_event(&Event::Action(Action::FocusNext), &mut __w);
     };
     {
         let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        root.on_event(&Event::Action(Action::FocusNext), &mut __w)
+        root.on_event(&Event::Action(Action::FocusNext), &mut __w);
     };
     {
         let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
             rusty_textual::node_id::NodeId::default(),
             &mut ctx,
         );
-        root.on_event(&Event::Action(Action::FocusPrev), &mut __w)
+        root.on_event(&Event::Action(Action::FocusPrev), &mut __w);
     };
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"left:true".to_string()),
         "P1 gate: first FocusNext should focus left child; events={events:?}"
@@ -655,7 +678,10 @@ fn p1_gate_repeated_clicks_emit_repeated_events() {
         let _ = click_tree(&mut tree, 0, 0);
     }
 
-    let descriptions = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let descriptions = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert_eq!(
         descriptions,
         vec!["only".to_string(), "only".to_string()],
@@ -682,7 +708,10 @@ fn p1_gate_container_focus_routes_arrow_keys_to_datatable() {
         KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
     ));
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"row:0->1".to_string()),
         "P1 gate: focused DataTable in container should react to Down key; events={events:?}"
@@ -703,7 +732,7 @@ fn p1_gate_row_focus_routes_arrow_keys_to_datatable() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        root.on_event(&Event::Action(Action::FocusNext), &mut __w)
+        root.on_event(&Event::Action(Action::FocusNext), &mut __w);
     };
     {
         let mut __e = rusty_textual::event::EventCtx::default();
@@ -711,7 +740,7 @@ fn p1_gate_row_focus_routes_arrow_keys_to_datatable() {
             rusty_textual::node_id::NodeId::default(),
             &mut __e,
         );
-        root.on_event(&Event::Action(Action::FocusNext), &mut __w)
+        root.on_event(&Event::Action(Action::FocusNext), &mut __w);
     };
 
     let mut key_ctx = EventCtx::default();
@@ -726,10 +755,13 @@ fn p1_gate_row_focus_routes_arrow_keys_to_datatable() {
                 KeyModifiers::NONE,
             ))),
             &mut __w,
-        )
+        );
     };
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"row:0->1".to_string()),
         "P1 gate: focused DataTable in row should react to Down key; events={events:?}"
@@ -771,7 +803,10 @@ fn p1_gate_dock_scroll_focus_next_descends_to_nested_focusable() {
         .expect("expected nested focus probe");
     assert!(focus_node(&mut tree, probe));
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.iter().any(|entry| entry == "first:true"),
         "P1 gate: FocusNext through Dock->ScrollView should focus nested descendant"
@@ -786,7 +821,10 @@ fn p1_gate_dock_scroll_datatable_click_updates_row() {
     // Header is y=0, first data row is y=1, second data row is y=2.
     let _ = click_tree(&mut tree, 2, 2);
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"row:0->1".to_string()),
         "P1 gate: DataTable click under Dock->ScrollView should update selected row; events={events:?}"
@@ -803,7 +841,10 @@ fn p1_gate_vertical_scroll_click_routes_to_nested_child() {
     let mut tree = build_tree(&mut root, 40, 8);
     let _ = click_tree(&mut tree, 1, 2);
 
-    let descriptions = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let descriptions = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert_eq!(
         descriptions,
         vec!["row2".to_string()],
@@ -826,7 +867,10 @@ fn p1_gate_vertical_scroll_focus_next_descends_to_nested_focusable() {
         .expect("expected focus probe");
     assert!(focus_node(&mut tree, probe));
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.iter().any(|entry| entry == "button_like:true"),
         "P1 gate: VerticalScroll focus should descend into nested focusables"
@@ -934,7 +978,7 @@ fn p1_gate_buttons_advanced_like_fill_button_has_non_zero_layout_and_is_clickabl
 
     let layouts = layout_sink
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone();
     let fill_layout = layouts
         .get("fill_probe")
@@ -948,7 +992,10 @@ fn p1_gate_buttons_advanced_like_fill_button_has_non_zero_layout_and_is_clickabl
     // With a 3-row top dock and a 1-row section header inside the fill column,
     // y=4 lands on the first interactive probe in the fill region.
     let hit = find_click_for_sink(&mut tree, &click_sink, 80, 24, "fill_probe");
-    let clicks = click_sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let clicks = click_sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         hit.is_some() || clicks.contains(&"fill_probe".to_string()),
         "P1 gate: click in fill content band should reach fill probe; clicks={clicks:?}"
@@ -983,7 +1030,7 @@ fn p1_gate_dock_fill_band_remains_interactive_between_header_and_footer() {
 
     let layouts = layout_sink
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone();
     let fill_layout = layouts
         .get("fill_probe")
@@ -997,7 +1044,10 @@ fn p1_gate_dock_fill_band_remains_interactive_between_header_and_footer() {
     // Height=10 with top=2 and bottom=2 means fill starts at y=2.
     // Clicking y=2 targets the first row of the fill region.
     let hit = find_click_for_sink(&mut tree, &click_sink, 40, 10, "fill_probe");
-    let clicks = click_sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let clicks = click_sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         hit.is_some() || clicks.iter().any(|entry| entry == "fill_probe"),
         "P1 gate: fill band click should route to fill probe, not only top/bottom; clicks={clicks:?}"
@@ -1044,11 +1094,16 @@ fn p1_gate_buttons_wrapper_chain_click_clears_previous_focus() {
     let (right_x, right_y) =
         right.expect("P1 gate: expected a click point that focuses right probe");
 
-    sink.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    sink.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clear();
     let _ = click_tree(&mut tree, left_x, left_y);
     let _ = click_tree(&mut tree, right_x, right_y);
 
-    let events = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let events = sink
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     assert!(
         events.contains(&"left:true".to_string()),
         "P1 gate: left probe should receive focus on first click; events={events:?}"

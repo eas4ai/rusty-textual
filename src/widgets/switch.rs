@@ -5,7 +5,7 @@ use rich_rs::{Console, ConsoleOptions, Segments};
 use textual_macros::widget;
 
 use crate::event::{Action, AnimationLevel, AnimationRequest, Event};
-use crate::message::*;
+use crate::message::SwitchChanged;
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
 
 use super::scrollbar::ScrollBarRender;
@@ -53,6 +53,7 @@ pub struct Switch {
 impl Switch {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new(value: bool) -> Self {
         let pos = if value { 1.0 } else { 0.0 };
         Self {
@@ -68,6 +69,7 @@ impl Switch {
 
     // ── Reactive getters ─────────────────────────────────────────────────
 
+    #[must_use]
     pub fn value(&self) -> bool {
         self.value
     }
@@ -126,6 +128,7 @@ impl Switch {
 
     // ── Builder methods ──────────────────────────────────────────────────
 
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self.rebuild_classes()
@@ -313,11 +316,8 @@ impl Render for Switch {
             .and_then(|s| s.bg)
             .or_else(|| crate::style::parse_color_like("$surface"))
             .unwrap_or_else(|| crate::style::Color::rgb(0, 0, 0));
-        let back = slider
-            .bg
-            .map(|c| c.flatten_over(base_bg))
-            .unwrap_or(base_bg);
-        let thumb = slider.fg.map(|c| c.flatten_over(back)).unwrap_or(back);
+        let back = slider.bg.map_or(base_bg, |c| c.flatten_over(base_bg));
+        let thumb = slider.fg.map_or(back, |c| c.flatten_over(back));
 
         let renderer = ScrollBarRender {
             virtual_size: SWITCH_VIRTUAL_SIZE,

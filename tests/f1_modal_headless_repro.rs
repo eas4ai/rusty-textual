@@ -46,7 +46,7 @@ struct ModalScreen {
 }
 
 impl Screen for ModalScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "ModalScreen"
     }
     fn compose(&self) -> Box<dyn Widget> {

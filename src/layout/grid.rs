@@ -113,13 +113,16 @@ fn resolve_fixed_scalar(scalar: &Scalar, size: u16, viewport: u16) -> Rat {
     // is integral in practice but quantize to 1/1000 to be safe.
     let exact = |v: f32, base: u16| -> Rat {
         if v.fract() == 0.0 {
-            Rat::new(v as i64 * base as i64, 100)
+            Rat::new(v as i64 * i64::from(base), 100)
         } else {
-            Rat::new((v as f64 * 1000.0).round() as i64 * base as i64, 100_000)
+            Rat::new(
+                (f64::from(v) * 1000.0).round() as i64 * i64::from(base),
+                100_000,
+            )
         }
     };
     match scalar {
-        Scalar::Cells(n) => Rat::whole(*n as i64),
+        Scalar::Cells(n) => Rat::whole(i64::from(*n)),
         Scalar::Percent(p) => exact(*p, size),
         // `w`/`h` track units are rare; resolve against the track-axis size (the
         // grid track resolver only knows one axis here).
@@ -169,14 +172,14 @@ fn resolve_tracks(
         acc
     });
 
-    let total_gutter = (gutter as i64) * (n as i64 - 1);
+    let total_gutter = i64::from(gutter) * (n as i64 - 1);
 
     let resolved_fractions: Vec<Rat> = if total_fraction.is_positive() {
         let consumed: Rat = resolved
             .iter()
             .filter_map(|(_, f)| *f)
             .fold(Rat::zero(), |a, f| a.add(f));
-        let mut remaining = Rat::whole(total as i64 - total_gutter).sub(consumed);
+        let mut remaining = Rat::whole(i64::from(total) - total_gutter).sub(consumed);
         if !remaining.is_positive() {
             remaining = Rat::zero();
         }
@@ -203,7 +206,7 @@ fn resolve_tracks(
 
     // Interleave [frac, gutter, frac, gutter, ...] and accumulate, then floor,
     // matching Python's `accumulate` + `__floor__` per offset.
-    let fraction_gutter = Rat::whole(gutter as i64);
+    let fraction_gutter = Rat::whole(i64::from(gutter));
     let mut offsets: Vec<i64> = Vec::with_capacity(n * 2 + 1);
     offsets.push(0);
     let mut acc = Rat::zero();
@@ -233,7 +236,7 @@ fn frac_value(v: f32) -> Rat {
     if v.fract() == 0.0 {
         Rat::whole(v as i64)
     } else {
-        Rat::new((v as f64 * 1000.0).round() as i64, 1000)
+        Rat::new((f64::from(v) * 1000.0).round() as i64, 1000)
     }
 }
 
@@ -426,7 +429,7 @@ pub fn layout_grid(
     let mut next_row = 0usize;
     let mut next_col = 0usize;
 
-    for &child in children.iter() {
+    for &child in children {
         let style = get_node_style(tree, child);
         let col_span = (style.column_span.unwrap_or(1).max(1) as usize).min(num_cols);
         let row_span = (style.row_span.unwrap_or(1).max(1) as usize).min(num_rows);

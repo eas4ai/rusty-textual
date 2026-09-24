@@ -30,7 +30,7 @@ pub struct Row {
     focused_child: Option<usize>,
     /// Index of the currently hovered child (non-tree mode only).
     hovered_child: Option<usize>,
-    /// (index into `children`, css_id, classes) recorded by `with_compose` so
+    /// (index into `children`, `css_id`, classes) recorded by `with_compose` so
     /// `.with_id()`/`.with_classes()` metadata on declared children reaches the
     /// mounted node (mirrors `Container::with_compose`).
     child_decl_meta: Vec<crate::widgets::ChildDeclMeta>,
@@ -48,6 +48,7 @@ impl Default for Row {
 impl Row {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             children: Vec::new(),
@@ -72,6 +73,7 @@ impl Row {
     /// Preserves each `ChildDecl`'s `id`/`classes` (so CSS id/class selectors
     /// match the mounted nodes) and any `handle_sink` bound via `HandleSlot::bind`,
     /// mirroring `Container::with_compose`.
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         for decl in children {
             let crate::compose::ChildDecl {
@@ -98,12 +100,14 @@ impl Row {
         self.children.push(Box::new(child));
     }
 
+    #[must_use]
     pub fn align(mut self, align: RowAlign) -> Self {
         self.align = align;
         self
     }
 
     /// Read-only access to the row's children.
+    #[must_use]
     pub fn children(&self) -> &[Box<dyn Widget>] {
         &self.children
     }
@@ -159,7 +163,7 @@ impl Row {
         }
         let next_pos = match (action, current_pos) {
             (Action::FocusNext, Some(pos)) => (pos + 1) % focusable.len(),
-            (Action::FocusPrev, Some(0)) | (Action::FocusPrev, None) => focusable.len() - 1,
+            (Action::FocusPrev, Some(0) | None) => focusable.len() - 1,
             (Action::FocusPrev, Some(pos)) => pos - 1,
             (Action::FocusNext, None) => 0,
             _ => return false,
@@ -266,7 +270,7 @@ impl crate::widgets::Interactive for Row {
             return;
         }
         match event {
-            Event::Action(Action::FocusNext) | Event::Action(Action::FocusPrev) => {
+            Event::Action(Action::FocusNext | Action::FocusPrev) => {
                 if let Event::Action(action) = event {
                     if self.cycle_focus(*action) {
                         ctx.request_repaint();
@@ -340,7 +344,7 @@ impl crate::widgets::Interactive for Row {
         let hit = self.child_at_x(x);
         let new_hovered = hit.map(|(idx, _)| idx);
         let mut changed = false;
-        debug_input(&format!("[hover][row] x={} y={} hit={:?}", x, y, hit));
+        debug_input(&format!("[hover][row] x={x} y={y} hit={hit:?}"));
 
         // Dispatch Enter/Leave events when the hovered child changes.
         if new_hovered != self.hovered_child {
@@ -436,8 +440,7 @@ impl crate::widgets::Render for Row {
                 } else if matches!(resolved.width, Some(Scalar::Auto)) {
                     let pad = resolved
                         .padding
-                        .map(|s| s.left as usize)
-                        .unwrap_or(0)
+                        .map_or(0, |s| s.left as usize)
                         .saturating_mul(2);
                     let (_, _, border_left, border_right) =
                         super::helpers::border_spacing_from_style(&resolved);
@@ -496,7 +499,7 @@ impl crate::widgets::Render for Row {
                     let margin = margins[idx];
                     (fixed + margin.left as usize + margin.right as usize).max(1)
                 } else {
-                    let extra = if flex_seen < remainder { 1 } else { 0 };
+                    let extra = usize::from(flex_seen < remainder);
                     flex_seen += 1;
                     (base + extra).max(1)
                 }
@@ -656,8 +659,7 @@ impl crate::widgets::Render for Row {
                 } else if matches!(resolved.width, Some(Scalar::Auto)) {
                     let pad = resolved
                         .padding
-                        .map(|s| s.left as usize)
-                        .unwrap_or(0)
+                        .map_or(0, |s| s.left as usize)
                         .saturating_mul(2);
                     let (_, _, border_left, border_right) =
                         super::helpers::border_spacing_from_style(&resolved);
@@ -697,7 +699,7 @@ impl crate::widgets::Render for Row {
                     let margin = margins[idx];
                     (fixed + margin.left as usize + margin.right as usize).max(1)
                 } else {
-                    let extra = if flex_seen < remainder { 1 } else { 0 };
+                    let extra = usize::from(flex_seen < remainder);
                     flex_seen += 1;
                     (base + extra).max(1)
                 }
@@ -867,6 +869,7 @@ impl Default for Dock {
 }
 
 impl Dock {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -1078,7 +1081,7 @@ impl crate::widgets::Interactive for Dock {
             return;
         }
         match event {
-            Event::Action(Action::FocusNext) | Event::Action(Action::FocusPrev) => {
+            Event::Action(Action::FocusNext | Action::FocusPrev) => {
                 return;
             }
             Event::MouseDown(mouse) => {
@@ -1832,7 +1835,7 @@ pub struct Grid {
     row_sizes: Option<Vec<usize>>,
     col_sizes: Option<Vec<usize>>,
     seed: NodeSeed,
-    /// (index into the `compose()` extraction order, css_id,
+    /// (index into the `compose()` extraction order, `css_id`,
     /// classes) recorded by `with_compose` so `.with_id()`/`.with_classes()`
     /// metadata on declared children reaches the mounted node.
     child_decl_meta: Vec<crate::widgets::ChildDeclMeta>,
@@ -1842,6 +1845,7 @@ pub struct Grid {
 }
 
 impl Grid {
+    #[must_use]
     pub fn new(rows: usize, cols: usize) -> Self {
         let rows = rows.max(1);
         let cols = cols.max(1);
@@ -1878,6 +1882,7 @@ impl Grid {
         self
     }
 
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         for decl in children {
             let crate::compose::ChildDecl {
@@ -1934,16 +1939,19 @@ impl Grid {
         self
     }
 
+    #[must_use]
     pub fn row_gap(mut self, gap: usize) -> Self {
         self.row_gaps = gap;
         self
     }
 
+    #[must_use]
     pub fn col_gap(mut self, gap: usize) -> Self {
         self.col_gaps = gap;
         self
     }
 
+    #[must_use]
     pub fn row_sizes(mut self, sizes: Vec<usize>) -> Self {
         if sizes.len() == self.rows {
             self.row_sizes = Some(sizes);
@@ -1951,6 +1959,7 @@ impl Grid {
         self
     }
 
+    #[must_use]
     pub fn col_sizes(mut self, sizes: Vec<usize>) -> Self {
         if sizes.len() == self.cols {
             self.col_sizes = Some(sizes);
@@ -2064,7 +2073,7 @@ impl crate::widgets::Render for Grid {
             let base_w = inner_width / self.cols;
             let rem_w = inner_width % self.cols;
             (0..self.cols)
-                .map(|c| base_w + if c < rem_w { 1 } else { 0 })
+                .map(|c| base_w + usize::from(c < rem_w))
                 .collect()
         };
 
@@ -2074,7 +2083,7 @@ impl crate::widgets::Render for Grid {
             let base_h = inner_height / self.rows;
             let rem_h = inner_height % self.rows;
             (0..self.rows)
-                .map(|r| base_h + if r < rem_h { 1 } else { 0 })
+                .map(|r| base_h + usize::from(r < rem_h))
                 .collect()
         };
 
@@ -2198,7 +2207,7 @@ impl crate::widgets::Render for Grid {
             let base_w = inner_width / self.cols;
             let rem_w = inner_width % self.cols;
             (0..self.cols)
-                .map(|c| base_w + if c < rem_w { 1 } else { 0 })
+                .map(|c| base_w + usize::from(c < rem_w))
                 .collect()
         };
 
@@ -2208,7 +2217,7 @@ impl crate::widgets::Render for Grid {
             let base_h = inner_height / self.rows;
             let rem_h = inner_height % self.rows;
             (0..self.rows)
-                .map(|r| base_h + if r < rem_h { 1 } else { 0 })
+                .map(|r| base_h + usize::from(r < rem_h))
                 .collect()
         };
 

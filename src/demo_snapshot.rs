@@ -16,6 +16,7 @@ pub struct SnapshotArgs {
 }
 
 impl SnapshotArgs {
+    #[must_use]
     pub fn parse() -> Option<Self> {
         let mut args = std::env::args().skip(1);
         let mut snapshot: Option<PathBuf> = None;

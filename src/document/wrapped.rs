@@ -40,6 +40,7 @@ pub struct WrappedDocument {
 
 impl WrappedDocument {
     /// Construct and wrap immediately (width 0 = no wrapping).
+    #[must_use]
     pub fn new(document: &Document, width: usize, tab_width: usize) -> Self {
         let mut wrapped = Self {
             wrap_offsets: Vec::new(),
@@ -54,16 +55,19 @@ impl WrappedDocument {
     }
 
     /// The width the document is wrapped at (0 = no wrapping).
+    #[must_use]
     pub fn width(&self) -> usize {
         self.width
     }
 
     /// The tab stop width (degenerate model: informational only).
+    #[must_use]
     pub fn tab_width(&self) -> usize {
         self.tab_width
     }
 
     /// The height (visual line count) of the wrapped document.
+    #[must_use]
     pub fn height(&self) -> usize {
         self.wrap_offsets
             .iter()
@@ -110,6 +114,7 @@ impl WrappedDocument {
 
     /// The wrapped content: for each document line, its wrapped sections.
     /// Expensive; intended for tests and debugging (Python `lines`).
+    #[must_use]
     pub fn wrapped_lines(&self, document: &Document) -> Vec<Vec<String>> {
         (0..document.line_count())
             .map(|line_index| {
@@ -232,6 +237,7 @@ impl WrappedDocument {
     /// Given an offset within the wrapped/visual display of the document,
     /// return the corresponding document location. Out-of-range offsets are
     /// clamped to valid locations.
+    #[must_use]
     pub fn offset_to_location(&self, document: &Document, x: isize, y: isize) -> Location {
         let x = x.max(0) as usize;
         let y = y.max(0) as usize;
@@ -257,6 +263,7 @@ impl WrappedDocument {
 
     /// Convert a document location to an `(x, y)` offset within the wrapped
     /// visual display of the document.
+    #[must_use]
     pub fn location_to_offset(&self, document: &Document, location: Location) -> (usize, usize) {
         let (line_index, column_index) = location;
         let line_index = line_index.min(self.line_index_to_offsets.len().saturating_sub(1));
@@ -287,6 +294,7 @@ impl WrappedDocument {
     /// Given a line index and offsets within the wrapped version of that
     /// line, return the corresponding column index in the raw document.
     /// `y_offset` supports negative indexing (`-1` = the final section).
+    #[must_use]
     pub fn get_target_document_column(
         &self,
         document: &Document,
@@ -361,6 +369,7 @@ impl WrappedDocument {
     }
 
     /// The `(line_index, section_offset)` at a visual y-offset, if any.
+    #[must_use]
     pub fn offset_line_info(&self, y_offset: usize) -> Option<(usize, usize)> {
         self.offset_to_line_info.get(y_offset).copied()
     }

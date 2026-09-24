@@ -50,6 +50,7 @@ struct Subscription<T: Clone + Send + 'static> {
 
 impl<T: Clone + Send + 'static> Signal<T> {
     /// Create a new signal with no subscribers.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             subscribers: Vec::new(),
@@ -88,11 +89,13 @@ impl<T: Clone + Send + 'static> Signal<T> {
     }
 
     /// Check whether a node has any active subscription on this signal.
+    #[must_use]
     pub fn is_subscribed(&self, node: NodeId) -> bool {
         self.subscribers.iter().any(|s| s.node == node)
     }
 
     /// Number of active subscriptions.
+    #[must_use]
     pub fn subscriber_count(&self) -> usize {
         self.subscribers.len()
     }
@@ -110,7 +113,7 @@ mod tests {
     use slotmap::SlotMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    /// Helper: create a SlotMap and insert `n` nodes, returning (map, vec-of-ids).
+    /// Helper: create a `SlotMap` and insert `n` nodes, returning (map, vec-of-ids).
     fn make_nodes(n: usize) -> (SlotMap<NodeId, &'static str>, Vec<NodeId>) {
         let mut sm = SlotMap::new();
         let ids: Vec<NodeId> = (0..n)

@@ -5,7 +5,9 @@ use textual_macros::widget;
 
 use crate::event::{Action, BindingHint, Event};
 use crate::keys::format_key_display;
-use crate::message::*;
+use crate::message::{
+    KeyPanelBindingsUpdated, KeyPanelScrolled, MessageEvent, ScrollbarAxis, ScrollbarScrollTo,
+};
 use crate::style::parse_color_like;
 
 use super::footer::FooterBinding;
@@ -31,6 +33,7 @@ impl Default for BindingsTable {
 impl BindingsTable {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             bindings: Vec::new(),
@@ -43,6 +46,7 @@ impl BindingsTable {
         self
     }
 
+    #[must_use]
     pub fn with_bindings(mut self, bindings: Vec<FooterBinding>) -> Self {
         self.bindings = bindings;
         self
@@ -300,6 +304,7 @@ impl Default for KeyPanel {
 impl KeyPanel {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             title: "Key Bindings".to_string(),

@@ -17,8 +17,7 @@ use super::resolve_1d::Edge;
 pub(crate) fn wrapper_child_auto_axes(tree: &WidgetTree, wrapper: NodeId) -> (bool, bool) {
     let is_wrapper = tree
         .get(wrapper)
-        .map(|n| n.widget.is_transparent_wrapper())
-        .unwrap_or(false);
+        .is_some_and(|n| n.widget.is_transparent_wrapper());
     if !is_wrapper {
         return (false, false);
     }
@@ -49,14 +48,13 @@ pub(crate) fn wrapper_child_auto_axes(tree: &WidgetTree, wrapper: NodeId) -> (bo
 ///   of N siblings splitting one track via `1fr` (fixes docs/how-to/layout05),
 /// - `Some(Fraction(1.0))` for any explicit non-auto child height (e.g. a `1fr`
 ///   container): flex-fill, keeping a `Node`-wrapped `1fr` `Horizontal`/`Vertical`
-///   sharing the viewport with its siblings (docs_containers04),
+///   sharing the viewport with its siblings (`docs_containers04`),
 /// - `None` for a non-wrapper, leaving a genuine leaf's unset height to the
 ///   fill-the-container rule.
 pub(crate) fn wrapper_unset_height(tree: &WidgetTree, wrapper: NodeId) -> Option<Scalar> {
     let is_wrapper = tree
         .get(wrapper)
-        .map(|n| n.widget.is_transparent_wrapper())
-        .unwrap_or(false);
+        .is_some_and(|n| n.widget.is_transparent_wrapper());
     if !is_wrapper {
         return None;
     }
@@ -114,8 +112,7 @@ pub(crate) fn wrapper_child_fill_axes(tree: &WidgetTree, node: NodeId) -> (bool,
     };
     let parent_is_wrapper = tree
         .get(parent)
-        .map(|n| n.widget.is_transparent_wrapper())
-        .unwrap_or(false);
+        .is_some_and(|n| n.widget.is_transparent_wrapper());
     if !parent_is_wrapper {
         return (false, false);
     }
@@ -126,7 +123,7 @@ pub(crate) fn wrapper_child_fill_axes(tree: &WidgetTree, node: NodeId) -> (bool,
         .iter()
         .copied()
         .filter(|&c| {
-            tree.get(c).map(|n| n.display).unwrap_or(false)
+            tree.get(c).is_some_and(|n| n.display)
                 && get_node_style(tree, c).display != Some(crate::style::Display::None)
         })
         .collect();
@@ -159,8 +156,7 @@ pub(crate) fn seed_wrapper_subtree_widths(
 ) {
     let is_wrapper = tree
         .get(wrapper)
-        .map(|n| n.widget.is_transparent_wrapper())
-        .unwrap_or(false);
+        .is_some_and(|n| n.widget.is_transparent_wrapper());
     if !is_wrapper {
         return;
     }
@@ -238,7 +234,7 @@ pub(crate) struct ChildSpec {
     pub(crate) frac_width: Option<f64>,
 }
 
-/// Vertical chrome = margin.top + border_top + padding.top + padding.bottom + border_bottom + margin.bottom.
+/// Vertical chrome = margin.top + `border_top` + padding.top + padding.bottom + `border_bottom` + margin.bottom.
 fn vertical_chrome(
     margin: &Spacing,
     padding: &Spacing,
@@ -248,7 +244,7 @@ fn vertical_chrome(
     margin.top + border_top + padding.top + padding.bottom + border_bottom + margin.bottom
 }
 
-/// Horizontal chrome = margin.left + border_left + padding.left + padding.right + border_right + margin.right.
+/// Horizontal chrome = margin.left + `border_left` + padding.left + padding.right + `border_right` + margin.right.
 fn horizontal_chrome(
     margin: &Spacing,
     padding: &Spacing,
@@ -358,18 +354,12 @@ pub(crate) fn extract_child_spec(
     // Resolve min/max sizes to cells. Use the 2D form so `w`/`h` units resolve
     // against the correct parent axis (e.g. `min-height: 40w` = 40% of parent
     // WIDTH), while `%`/`cells` keep resolving against the property's own axis.
-    let min_h_cells = style
-        .min_height
-        .as_ref()
-        .map(|s| {
-            resolve_scalar_to_cells_2d(s, parent_height, parent_width, parent_height, viewport)
-        })
-        .unwrap_or(0);
-    let min_w_cells = style
-        .min_width
-        .as_ref()
-        .map(|s| resolve_scalar_to_cells_2d(s, parent_width, parent_width, parent_height, viewport))
-        .unwrap_or(0);
+    let min_h_cells = style.min_height.as_ref().map_or(0, |s| {
+        resolve_scalar_to_cells_2d(s, parent_height, parent_width, parent_height, viewport)
+    });
+    let min_w_cells = style.min_width.as_ref().map_or(0, |s| {
+        resolve_scalar_to_cells_2d(s, parent_width, parent_width, parent_height, viewport)
+    });
 
     let max_h_cells = style.max_height.as_ref().map(|s| {
         resolve_scalar_to_cells_2d(s, parent_height, parent_width, parent_height, viewport)
@@ -635,8 +625,7 @@ pub(crate) fn extract_child_spec(
         // only when no min/max clamp moved it.
         height_edge
             .size
-            .map(|sz| sz.saturating_sub(margin.top + margin.bottom) == exact.floor() as u16)
-            .unwrap_or(false)
+            .is_some_and(|sz| sz.saturating_sub(margin.top + margin.bottom) == exact.floor() as u16)
     });
     let frac_width = if box_sizing == BoxSizing::BorderBox && no_h_chrome {
         style.width.as_ref().and_then(|s| {
@@ -661,8 +650,7 @@ pub(crate) fn extract_child_spec(
     .filter(|exact| {
         width_edge
             .size
-            .map(|sz| sz.saturating_sub(margin.left + margin.right) == exact.floor() as u16)
-            .unwrap_or(false)
+            .is_some_and(|sz| sz.saturating_sub(margin.left + margin.right) == exact.floor() as u16)
     });
 
     ChildSpec {
@@ -738,8 +726,7 @@ fn measure_rendered_leaf(tree: &WidgetTree, node: NodeId, render_width: u16) -> 
     if height > 1
         && lines
             .last()
-            .map(|l| rich_rs::Segment::get_line_length(l) == 0)
-            .unwrap_or(false)
+            .is_some_and(|l| rich_rs::Segment::get_line_length(l) == 0)
     {
         height -= 1;
     }
@@ -815,9 +802,7 @@ pub(crate) fn measure_intrinsic_content_width(
         let outer = measure_child_outer_width(tree, child, &child_style, viewport);
         any = true;
         let margin = child_style.effective_margin();
-        let overlap = prev_margin_right
-            .map(|prev_right| prev_right.min(margin.left))
-            .unwrap_or(0);
+        let overlap = prev_margin_right.map_or(0, |prev_right| prev_right.min(margin.left));
         horizontal_sum = horizontal_sum.saturating_add(outer).saturating_sub(overlap);
         prev_margin_right = Some(margin.right);
         vertical_max = vertical_max.max(outer);
@@ -838,7 +823,7 @@ pub(crate) fn measure_intrinsic_content_width(
 fn is_dynamic_height(style: &Style) -> bool {
     matches!(
         style.height,
-        Some(Scalar::Auto) | Some(Scalar::Fraction(_)) | Some(Scalar::Percent(_))
+        Some(Scalar::Auto | Scalar::Fraction(_) | Scalar::Percent(_))
     )
 }
 
@@ -921,9 +906,7 @@ pub(crate) fn measure_intrinsic_content_height(
         // available height from the layout call sites.
         let outer = measure_child_outer_height(tree, *child, child_style, viewport);
         let margin = child_style.effective_margin();
-        let overlap = prev_margin_bottom
-            .map(|prev_bottom| prev_bottom.min(margin.top))
-            .unwrap_or(0);
+        let overlap = prev_margin_bottom.map_or(0, |prev_bottom| prev_bottom.min(margin.top));
         vertical_sum = vertical_sum.saturating_add(outer).saturating_sub(overlap);
         prev_margin_bottom = Some(margin.bottom);
         horizontal_max = horizontal_max.max(outer);
@@ -958,7 +941,7 @@ fn measure_child_outer_width(
             }
             *n
         }
-        None | Some(Scalar::Auto) | Some(Scalar::Fraction(_)) => {
+        None | Some(Scalar::Auto | Scalar::Fraction(_)) => {
             measure_intrinsic_content_width(tree, node, viewport).unwrap_or(0)
         }
         Some(other) => resolve_scalar_to_cells(other, 0, viewport),
@@ -1010,7 +993,7 @@ fn measure_child_outer_height(
             }
             (*n).saturating_add(v_chrome)
         }
-        None | Some(Scalar::Auto) | Some(Scalar::Fraction(_)) => {
+        None | Some(Scalar::Auto | Scalar::Fraction(_)) => {
             let content = measure_intrinsic_content_height(tree, node, viewport, 0).unwrap_or(0);
             content.saturating_add(v_chrome)
         }

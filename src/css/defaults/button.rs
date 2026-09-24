@@ -1,7 +1,7 @@
 // Button widget defaults
 // DC-13: aligned with Python Textual _button.py DEFAULT_CSS
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 Button {
     width: auto;
     min-width: 16;
@@ -193,4 +193,4 @@ Button {
         }
     }
 }
-"#;
+";

@@ -51,6 +51,7 @@ pub struct ControlMeta {
 impl ControlMeta {
     /// An empty meta (no id, no classes, no type). Matches only the empty
     /// (universal) selector.
+    #[must_use]
     pub fn empty() -> Self {
         Self::default()
     }
@@ -156,11 +157,13 @@ impl std::error::Error for SelectorParseError {}
 
 impl Selector {
     /// A universal selector that matches every control (the `@on(Message)` form).
+    #[must_use]
     pub fn any() -> Self {
         Self::default()
     }
 
     /// Whether this is the universal (matches-everything) selector.
+    #[must_use]
     pub fn is_universal(&self) -> bool {
         self.groups.is_empty()
     }
@@ -190,6 +193,7 @@ impl Selector {
     ///
     /// The universal selector matches everything. Otherwise the meta must match
     /// at least one comma-separated compound term.
+    #[must_use]
     pub fn matches(&self, meta: &ControlMeta) -> bool {
         if self.is_universal() {
             return true;
@@ -305,6 +309,7 @@ impl<S> Default for MessageRouter<S> {
 
 impl<S> MessageRouter<S> {
     /// Create an empty router.
+    #[must_use]
     pub fn new() -> Self {
         Self { routes: Vec::new() }
     }
@@ -391,11 +396,13 @@ impl<S> MessageRouter<S> {
     }
 
     /// Number of registered routes.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.routes.len()
     }
 
     /// Whether the router has no registered routes.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.routes.is_empty()
     }

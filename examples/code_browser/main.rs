@@ -24,7 +24,7 @@ use rusty_textual::prelude::*;
 // Embedded CSS (mirrors code_browser.tcss from the Python Textual repo)
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 #tree-view {
     display: none;
     scrollbar-gutter: stable;
@@ -50,7 +50,7 @@ Screen.-show-tree #tree-view {
     padding: 0 1;
     background: $surface;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // App definition
@@ -60,15 +60,15 @@ Screen.-show-tree #tree-view {
 struct CodeBrowserApp {
     /// Root directory shown in the tree on startup.
     start_path: String,
-    /// Python: show_tree = var(True); watch_show_tree -> set_class("-show-tree").
+    /// Python: `show_tree` = var(True); `watch_show_tree` -> set_class("-show-tree").
     #[var(watch_with_app)]
     show_tree: bool,
-    /// Python: path = reactive(None); watch_path loads + highlights the file.
+    /// Python: path = reactive(None); `watch_path` loads + highlights the file.
     #[reactive(watch_with_app)]
     path: Option<String>,
     /// Post-mount typed handle to the syntax-highlighted code widget.
     code: Option<Handle<Static>>,
-    /// Post-mount typed handle to the VerticalScroll wrapping the code widget.
+    /// Post-mount typed handle to the `VerticalScroll` wrapping the code widget.
     code_view: Option<Handle<VerticalScroll>>,
 }
 

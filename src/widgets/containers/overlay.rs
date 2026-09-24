@@ -3,7 +3,10 @@ use rich_rs::{Console, ConsoleOptions, Segments};
 use textual_macros::widget;
 
 use crate::event::Event;
-use crate::message::*;
+use crate::message::{
+    MessageEvent, OverlayDismissRequested, OverlaySetVisible, OverlayToggle,
+    OverlayVisibilityChanged,
+};
 use crate::render::{Cell, FrameBuffer};
 
 use crate::node_id::NodeId;
@@ -35,21 +38,25 @@ impl Overlay {
         }
     }
 
+    #[must_use]
     pub fn visible(mut self, visible: bool) -> Self {
         self.visible = visible;
         self
     }
 
+    #[must_use]
     pub fn trap_base_events(mut self, trap: bool) -> Self {
         self.trap_base_events = trap;
         self
     }
 
+    #[must_use]
     pub fn dismiss_on_escape(mut self, enabled: bool) -> Self {
         self.dismiss_on_escape = enabled;
         self
     }
 
+    #[must_use]
     pub fn is_visible(&self) -> bool {
         self.visible
     }
@@ -264,7 +271,7 @@ impl crate::widgets::Interactive for Overlay {
             }
         }
         if let Some(m) = message.downcast_ref::<OverlayDismissRequested>() {
-            let target_matches = m.overlay.map(|id| id == self.node_id()).unwrap_or(true);
+            let target_matches = m.overlay.is_none_or(|id| id == self.node_id());
             let sender_in_modal = self.modal_contains(message.sender);
             if target_matches && (sender_in_modal || m.overlay.is_some()) {
                 self.set_visible(false, ctx);

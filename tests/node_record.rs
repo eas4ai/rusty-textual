@@ -60,7 +60,7 @@ fn find_node_by_css_id(tree: &WidgetTree, css_id: &str) -> Option<NodeId> {
 /// event; the class must land on the tree node after the dispatch cycle.
 ///
 /// This verifies the end-to-end class-op plumbing introduced in Step 4:
-/// EventCtx → DispatchOutcome.class_ops → tree.add_class.
+/// `EventCtx` → `DispatchOutcome.class_ops` → `tree.add_class`.
 #[test]
 fn event_ctx_class_ops_apply_to_tree() {
     // Wrap in Container so the tree has a real root with children

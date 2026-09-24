@@ -86,14 +86,10 @@ pub(crate) struct DevtoolsRuntime {
 
 impl DevtoolsRuntime {
     pub(crate) fn from_env() -> io::Result<Option<Self>> {
-        let enabled = std::env::var(ENV_ENABLE)
-            .ok()
-            .map(|value| {
-                let value = value.trim().to_ascii_lowercase();
-                matches!(value.as_str(), "1" | "true" | "yes" | "on")
-            })
-            .unwrap_or(false)
-            || std::env::var(ENV_BIND).is_ok();
+        let enabled = std::env::var(ENV_ENABLE).ok().is_some_and(|value| {
+            let value = value.trim().to_ascii_lowercase();
+            matches!(value.as_str(), "1" | "true" | "yes" | "on")
+        }) || std::env::var(ENV_BIND).is_ok();
 
         if !enabled {
             return Ok(None);
@@ -182,9 +178,10 @@ impl Drop for DevtoolsRuntime {
 }
 
 fn devtools_root() -> PathBuf {
-    std::env::var_os(ENV_ROOT)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join("textual-rs-devtools"))
+    std::env::var_os(ENV_ROOT).map_or_else(
+        || std::env::temp_dir().join("textual-rs-devtools"),
+        PathBuf::from,
+    )
 }
 
 fn current_app_name() -> String {
@@ -654,7 +651,7 @@ mod tests {
             let mut fields = line.split('\t');
             assert_eq!(fields.next(), Some("channel"));
             assert_eq!(fields.next(), Some(channel.name()));
-            assert!(matches!(fields.next(), Some("0") | Some("1")));
+            assert!(matches!(fields.next(), Some("0" | "1")));
             assert!(fields.next().is_some(), "file field present");
         }
         assert_eq!(lines.next(), None);

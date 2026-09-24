@@ -2,7 +2,10 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use textual_macros::widget;
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    TreeNodeActivated, TreeNodeCollapsed, TreeNodeExpanded, TreeNodeHighlighted, TreeNodeSelected,
+    TreeNodeToggled,
+};
 
 use crate::action::ParsedAction;
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
@@ -52,6 +55,7 @@ pub struct Tree {
 impl Tree {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new(roots: Vec<TreeNode>) -> Self {
         let mut nodes = slotmap::SlotMap::with_key();
         let root_ids: Vec<TreeNodeId> = roots
@@ -131,6 +135,7 @@ impl Tree {
     }
 
     /// Whether the expand/collapse twisty is hidden.
+    #[must_use]
     pub fn twisty_hidden(&self) -> bool {
         self.hide_twisty
     }
@@ -169,25 +174,29 @@ impl Tree {
     /// This is a per-frame projection of the node-anchored cursor
     /// ([`Tree::cursor_node_id`]); it shifts when nodes above the cursor are
     /// inserted/removed/expanded, while the cursor keeps following its node.
+    #[must_use]
     pub fn selected(&self) -> usize {
         self.selected_line()
     }
 
+    #[must_use]
     pub fn showing_root(&self) -> bool {
         self.show_root
     }
 
+    #[must_use]
     pub fn showing_guides(&self) -> bool {
         self.show_guides
     }
 
+    #[must_use]
     pub fn guide_depth(&self) -> usize {
         self.guide_depth
     }
 
     // ── Reactive setters ─────────────────────────────────────────────────
 
-    /// Reactive setter for `selected` (always_update: fires even when value unchanged).
+    /// Reactive setter for `selected` (`always_update`: fires even when value unchanged).
     ///
     /// Matches Python's `cursor_line = var(-1, always_update=True)` — setting
     /// the cursor to the same position still triggers scroll-into-view and repaint.
@@ -272,16 +281,19 @@ impl Tree {
     ///
     /// Mirrors Python's `tree.root` property. Python's Tree always has exactly
     /// one root; Rust's multi-root Vec is an implementation detail.
+    #[must_use]
     pub fn root(&self) -> Option<NodeRef<'_>> {
         self.roots.first().map(|&id| NodeRef { tree: self, id })
     }
 
     /// Stable id of the root node (first root).
+    #[must_use]
     pub fn root_id(&self) -> Option<TreeNodeId> {
         self.roots.first().copied()
     }
 
     /// Stable ids of all roots, in order.
+    #[must_use]
     pub fn root_ids(&self) -> &[TreeNodeId] {
         &self.roots
     }
@@ -290,6 +302,7 @@ impl Tree {
 
     /// Read-only view of a node by id, or `None` for a stale/unknown id
     /// (non-erroring twin of [`Tree::get_node_by_id`]).
+    #[must_use]
     pub fn node(&self, id: TreeNodeId) -> Option<NodeRef<'_>> {
         self.nodes
             .contains_key(id)
@@ -303,11 +316,13 @@ impl Tree {
     }
 
     /// The parent of `id`, or `None` for a root or unknown id.
+    #[must_use]
     pub fn parent_of(&self, id: TreeNodeId) -> Option<TreeNodeId> {
         self.nodes.get(id).and_then(|n| n.parent)
     }
 
     /// The ordered children of `id` (empty for a leaf or unknown id).
+    #[must_use]
     pub fn children_of(&self, id: TreeNodeId) -> &[TreeNodeId] {
         self.nodes
             .get(id)
@@ -326,6 +341,7 @@ impl Tree {
     }
 
     /// The next sibling of `id`, if any (Python `next_sibling`).
+    #[must_use]
     pub fn next_sibling(&self, id: TreeNodeId) -> Option<TreeNodeId> {
         let siblings = self.sibling_list(id);
         let pos = siblings.iter().position(|&s| s == id)?;
@@ -333,6 +349,7 @@ impl Tree {
     }
 
     /// The previous sibling of `id`, if any (Python `previous_sibling`).
+    #[must_use]
     pub fn previous_sibling(&self, id: TreeNodeId) -> Option<TreeNodeId> {
         let siblings = self.sibling_list(id);
         let pos = siblings.iter().position(|&s| s == id)?;
@@ -340,11 +357,13 @@ impl Tree {
     }
 
     /// Whether `id` is a live root node (Python `is_root`).
+    #[must_use]
     pub fn is_root(&self, id: TreeNodeId) -> bool {
         self.nodes.get(id).is_some_and(|n| n.parent.is_none())
     }
 
     /// Whether `id` is the last of its siblings (Python `is_last`).
+    #[must_use]
     pub fn is_last(&self, id: TreeNodeId) -> bool {
         self.sibling_list(id).last() == Some(&id)
     }
@@ -352,6 +371,7 @@ impl Tree {
     // ── Per-node accessors (replace the retired `root_mut()` surgery) ──
 
     /// The label of `id`, if it resolves.
+    #[must_use]
     pub fn label_of(&self, id: TreeNodeId) -> Option<&str> {
         self.nodes.get(id).map(|n| n.label.as_str())
     }
@@ -368,6 +388,7 @@ impl Tree {
     }
 
     /// The user data of `id`, if it resolves and has data.
+    #[must_use]
     pub fn data_of(&self, id: TreeNodeId) -> Option<&str> {
         self.nodes.get(id).and_then(|n| n.data.as_deref())
     }
@@ -597,7 +618,7 @@ impl Tree {
     /// Non-reactive setter for `show_root`.
     ///
     /// For use in construction contexts where no `ReactiveCtx` is available
-    /// (e.g. building a Tree inside MarkdownTableOfContents).
+    /// (e.g. building a Tree inside `MarkdownTableOfContents`).
     pub fn set_show_root_plain(&mut self, value: bool) {
         self.show_root = value;
     }
@@ -620,6 +641,7 @@ impl Tree {
     // ── Node-anchored cursor (Python `_tree.py:962-1003`) ──────────────
 
     /// Stable id of the cursor node, if any.
+    #[must_use]
     pub fn cursor_node_id(&self) -> Option<TreeNodeId> {
         self.cursor.filter(|&id| self.nodes.contains_key(id))
     }
@@ -655,12 +677,14 @@ impl Tree {
 
     /// The node currently rendered at visible line `line`, if any (bridges
     /// the line-oriented and id-oriented APIs).
+    #[must_use]
     pub fn node_at_line(&self, line: usize) -> Option<TreeNodeId> {
         self.visible_nodes().get(line).map(|n| n.id)
     }
 
     /// The current visible line of `id`, or `None` when the node is unknown
     /// or hidden inside a collapsed ancestor.
+    #[must_use]
     pub fn line_of(&self, id: TreeNodeId) -> Option<usize> {
         self.visible_nodes().iter().position(|n| n.id == id)
     }
@@ -715,6 +739,7 @@ impl Tree {
     /// Get the label of the currently highlighted (cursor) node, if any.
     ///
     /// Mirrors Python's `Tree.cursor_node` property.
+    #[must_use]
     pub fn cursor_node(&self) -> Option<String> {
         let nodes = self.visible_nodes();
         let line = self.selected_line_in(&nodes);

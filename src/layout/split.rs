@@ -390,8 +390,10 @@ pub(crate) fn layout_absolute(
         // text instead of stretching across the screen.
         let mut layout_w = match style.width.as_ref() {
             Some(Scalar::Auto) => measure_intrinsic_content_width(tree, child, viewport)
-                .map(|w| w.saturating_add(chrome_w))
-                .unwrap_or_else(|| available.width.saturating_sub(margin.left + margin.right)),
+                .map_or_else(
+                    || available.width.saturating_sub(margin.left + margin.right),
+                    |w| w.saturating_add(chrome_w),
+                ),
             Some(s) => {
                 let content_w = resolve_scalar_to_cells(s, available.width, viewport);
                 if box_sizing == BoxSizing::BorderBox && width_is_explicit {
@@ -414,8 +416,10 @@ pub(crate) fn layout_absolute(
                     .saturating_sub(margin.top + margin.bottom)
                     .saturating_sub(chrome_h);
                 measure_intrinsic_content_height(tree, child, viewport, avail_content_h)
-                    .map(|h| h.saturating_add(chrome_h))
-                    .unwrap_or_else(|| available.height.saturating_sub(margin.top + margin.bottom))
+                    .map_or_else(
+                        || available.height.saturating_sub(margin.top + margin.bottom),
+                        |h| h.saturating_add(chrome_h),
+                    )
             }
             Some(s) => {
                 let content_h = resolve_scalar_to_cells(s, available.height, viewport);
@@ -484,15 +488,15 @@ pub(crate) fn layout_absolute(
         let base_y = available.y + i32::from(margin.top) + abs_y;
         let layout_x = {
             let dx = match offset.x {
-                OffsetValue::Cells(c) => c as i32,
-                OffsetValue::Percent(p) => (layout_w as f32 * p / 100.0).round() as i32,
+                OffsetValue::Cells(c) => i32::from(c),
+                OffsetValue::Percent(p) => (f32::from(layout_w) * p / 100.0).round() as i32,
             };
             base_x + dx
         };
         let layout_y = {
             let dy = match offset.y {
-                OffsetValue::Cells(c) => c as i32,
-                OffsetValue::Percent(p) => (layout_h as f32 * p / 100.0).round() as i32,
+                OffsetValue::Cells(c) => i32::from(c),
+                OffsetValue::Percent(p) => (f32::from(layout_h) * p / 100.0).round() as i32,
             };
             base_y + dy
         };

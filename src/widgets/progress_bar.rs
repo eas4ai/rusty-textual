@@ -24,7 +24,7 @@ struct Eta {
     estimation_period: f64,
     /// Maximum seconds of extrapolation after the last sample.
     max_extrapolate: f64,
-    /// (time_secs, progress_ratio) samples, sorted by time.
+    /// (`time_secs`, `progress_ratio`) samples, sorted by time.
     samples: Vec<(f64, f64)>,
     /// Counter for periodic pruning.
     add_count: u64,
@@ -63,7 +63,7 @@ impl Eta {
         if self.samples.len() <= 10 {
             return;
         }
-        let prune_time = self.samples.last().map(|s| s.0).unwrap_or(0.0) - self.estimation_period;
+        let prune_time = self.samples.last().map_or(0.0, |s| s.0) - self.estimation_period;
         // Binary search for the first sample at or after prune_time.
         let index = self.samples.partition_point(|&(t, _)| t < prune_time);
         if index > 0 {
@@ -149,9 +149,9 @@ fn format_eta(eta_secs: Option<u64>) -> String {
             if h > 999999 {
                 "+999999h".to_string()
             } else if h > 99 {
-                format!("{}h", h)
+                format!("{h}h")
             } else {
-                format!("{:02}:{:02}:{:02}", h, m, s)
+                format!("{h:02}:{m:02}:{s:02}")
             }
         }
     }
@@ -206,6 +206,7 @@ impl Bar {
     }
 
     /// The completed ratio in `0.0..=1.0`, or `None` for indeterminate.
+    #[must_use]
     pub fn percentage(&self) -> Option<f64> {
         self.percentage
     }
@@ -590,6 +591,7 @@ impl ProgressBar {
     /// Create a new `ProgressBar`.
     ///
     /// Pass `Some(total)` for a determinate bar, or `None` for indeterminate.
+    #[must_use]
     pub fn new(total: Option<f64>) -> Self {
         let mut seed = NodeSeed::default();
         seed.classes.push("progress-bar".to_string());
@@ -611,16 +613,19 @@ impl ProgressBar {
     // ── Public API ──────────────────────────────────────────────────
 
     /// Current progress value.
+    #[must_use]
     pub fn progress(&self) -> f64 {
         self.progress
     }
 
     /// Current total, or `None` if indeterminate.
+    #[must_use]
     pub fn total(&self) -> Option<f64> {
         self.total
     }
 
     /// The percentage of completion as a value in `0.0..=1.0`, or `None` if indeterminate.
+    #[must_use]
     pub fn percentage(&self) -> Option<f64> {
         match self.total {
             Some(total) if total > 0.0 => Some((self.progress / total).clamp(0.0, 1.0)),
@@ -639,6 +644,7 @@ impl ProgressBar {
     }
 
     /// Builder: set the initial progress (pre-mount configuration).
+    #[must_use]
     pub fn with_progress(mut self, progress: f64) -> Self {
         self.progress = progress;
         self
@@ -732,16 +738,19 @@ impl ProgressBar {
     // ── Reactive getters ─────────────────────────────────────────────
 
     /// Whether the bar portion is shown.
+    #[must_use]
     pub fn show_bar(&self) -> bool {
         self.show_bar
     }
 
     /// Whether the percentage label is shown.
+    #[must_use]
     pub fn show_percentage(&self) -> bool {
         self.show_percentage
     }
 
     /// Whether the ETA countdown is shown.
+    #[must_use]
     pub fn show_eta(&self) -> bool {
         self.show_eta
     }
@@ -783,6 +792,7 @@ impl ProgressBar {
     }
 
     /// Current animation level.
+    #[must_use]
     pub fn animation_level(&self) -> AnimationLevel {
         self.animation_level
     }
@@ -796,6 +806,7 @@ impl ProgressBar {
     }
 
     /// Current gradient, if set.
+    #[must_use]
     pub fn gradient(&self) -> Option<&LinearGradient> {
         self.gradient.as_ref()
     }
@@ -812,12 +823,14 @@ impl ProgressBar {
     /// Builder: attach a multi-stop gradient to this bar.
     ///
     /// Mirrors Python `ProgressBar(gradient=Gradient.from_colors(...))`.
+    #[must_use]
     pub fn with_gradient(mut self, gradient: LinearGradient) -> Self {
         self.gradient = Some(gradient);
         self
     }
 
     /// Estimated seconds until completion, or `None` if unknown.
+    #[must_use]
     pub fn eta_seconds(&self) -> Option<u64> {
         self.total?;
         let now = self.elapsed_secs();
@@ -1203,8 +1216,8 @@ mod tests {
         let mut eta = Eta::new();
         // Add many samples spanning a long period.
         for i in 0..250 {
-            let t = i as f64;
-            let p = (i as f64 / 250.0).min(1.0);
+            let t = f64::from(i);
+            let p = (f64::from(i) / 250.0).min(1.0);
             eta.add_sample(t, p);
         }
         // After pruning, samples older than (last_time - estimation_period) are removed.
@@ -1486,13 +1499,13 @@ mod tests {
     ///
     /// Python applies the gradient REVERSED, keyed off highlighted length:
     ///
-    ///   text_length = len(highlight_bar)
-    ///   for offset in range(text_length):
-    ///       bar_offset = text_length - offset   # DOWN: high left, low right
-    ///       t = bar_offset / (width - 1)
+    ///   `text_length` = `len(highlight_bar)`
+    ///   for offset in `range(text_length)`:
+    ///       `bar_offset` = `text_length` - offset   # DOWN: high left, low right
+    ///       t = `bar_offset` / (width - 1)
     ///
-    /// For a fully-filled bar of width=5 (max_width=4):
-    ///   - text_length = 5 (all 5 cells highlighted)
+    /// For a fully-filled bar of width=5 (`max_width=4)`:
+    ///   - `text_length` = 5 (all 5 cells highlighted)
     ///   - cell 0 (leftmost):  t = 5/4 = 1.25 → clamped to 1.0 → end color
     ///   - cell 4 (rightmost): t = 1/4 = 0.25 → low end → closer to start color
     ///

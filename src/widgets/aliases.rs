@@ -298,8 +298,7 @@ impl Static {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
 
         // Construct the render-time visual style: always has an explicit bg so
         // make_segment never falls back to black.
@@ -453,10 +452,10 @@ impl crate::widgets::StyleIdentity for Static {
 
     fn style_classes(&self) -> &[String] {
         // Pre-mount: seed has the classes. Post-mount: use the cache.
-        if !self.seed.classes.is_empty() {
-            &self.seed.classes
-        } else {
+        if self.seed.classes.is_empty() {
             &self.classes_cache
+        } else {
+            &self.seed.classes
         }
     }
 

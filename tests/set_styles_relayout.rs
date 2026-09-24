@@ -15,7 +15,7 @@ use rusty_textual::compose;
 use rusty_textual::prelude::*;
 use rusty_textual::style::{Offset, OffsetValue};
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layers: log ball;
 }
@@ -29,7 +29,7 @@ Screen {
     width: auto;
     height: 1;
 }
-"##;
+";
 
 struct OffsetApp;
 

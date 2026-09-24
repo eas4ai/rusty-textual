@@ -8,7 +8,7 @@
 //! Rules:
 //! - Goldens define parity. They are only ever regenerated from Python output;
 //!   there is deliberately no "bless from Rust" mechanism.
-//! - Known parity gaps are declared as `Status::XFail` with a reason. XFail is
+//! - Known parity gaps are declared as `Status::XFail` with a reason. `XFail` is
 //!   strict: if an xfail case starts matching, the test fails with XPASS until
 //!   the manifest entry is promoted to `Status::Pass`. Regressions in `Pass`
 //!   cases fail immediately.
@@ -1827,8 +1827,7 @@ fn profile_dir_name() -> String {
             }
         })
         .and_then(|p| p.file_name())
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "debug".to_string())
+        .map_or_else(|| "debug".to_string(), |s| s.to_string_lossy().into_owned())
 }
 
 fn example_binary(case: &Case) -> PathBuf {
@@ -1982,7 +1981,7 @@ fn load_golden(case: &Case) -> String {
     }
     golden
         .lines()
-        .map(|l| l.trim_end())
+        .map(str::trim_end)
         .collect::<Vec<_>>()
         .join("\n")
 }

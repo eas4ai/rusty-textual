@@ -31,16 +31,19 @@ fn index_of(sequence: &[usize], value: usize) -> Option<usize> {
 }
 
 impl DocumentNavigator {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// True when the location is at column 0.
+    #[must_use]
     pub fn is_start_of_document_line(&self, location: Location) -> bool {
         location.1 == 0
     }
 
     /// True when the location is at the start of a wrapped section.
+    #[must_use]
     pub fn is_start_of_wrapped_line(&self, wrapped: &WrappedDocument, location: Location) -> bool {
         if self.is_start_of_document_line(location) {
             return true;
@@ -51,12 +54,14 @@ impl DocumentNavigator {
 
     /// True if the location is at the end of a document line (the "end" is
     /// one past the final index; there is a space for the cursor to rest).
+    #[must_use]
     pub fn is_end_of_document_line(&self, document: &Document, location: Location) -> bool {
         let (row, column) = location;
         column == document.line(row).len()
     }
 
     /// True if the location is on the last cell of a wrapped section.
+    #[must_use]
     pub fn is_end_of_wrapped_line(
         &self,
         document: &Document,
@@ -74,12 +79,14 @@ impl DocumentNavigator {
     }
 
     /// True when the location is on the first line of the document.
+    #[must_use]
     pub fn is_first_document_line(&self, location: Location) -> bool {
         location.0 == 0
     }
 
     /// True when the location is on the first wrapped section of the first
     /// line.
+    #[must_use]
     pub fn is_first_wrapped_line(&self, wrapped: &WrappedDocument, location: Location) -> bool {
         if !self.is_first_document_line(location) {
             return false;
@@ -90,12 +97,14 @@ impl DocumentNavigator {
     }
 
     /// True when the location is on the last line of the document.
+    #[must_use]
     pub fn is_last_document_line(&self, document: &Document, location: Location) -> bool {
         location.0 == document.line_count() - 1
     }
 
     /// True when the location is on the last wrapped section of the last
     /// line (visually the last rendered row).
+    #[must_use]
     pub fn is_last_wrapped_line(
         &self,
         document: &Document,
@@ -111,11 +120,13 @@ impl DocumentNavigator {
     }
 
     /// True when the location is `(0, 0)`.
+    #[must_use]
     pub fn is_start_of_document(&self, location: Location) -> bool {
         location == (0, 0)
     }
 
     /// True when the location is at the very end of the document.
+    #[must_use]
     pub fn is_end_of_document(&self, document: &Document, location: Location) -> bool {
         self.is_last_document_line(document, location)
             && self.is_end_of_document_line(document, location)
@@ -123,6 +134,7 @@ impl DocumentNavigator {
 
     /// The location one grapheme to the left, crossing line boundaries
     /// (Python moves one codepoint; Rust deliberately moves one grapheme).
+    #[must_use]
     pub fn get_location_left(&self, document: &Document, location: Location) -> Location {
         if location == (0, 0) {
             return (0, 0);
@@ -136,6 +148,7 @@ impl DocumentNavigator {
     }
 
     /// The location one grapheme to the right, crossing line boundaries.
+    #[must_use]
     pub fn get_location_right(&self, document: &Document, location: Location) -> Location {
         if self.is_end_of_document(document, location) {
             return location;
@@ -155,6 +168,7 @@ impl DocumentNavigator {
     ///
     /// Python-parity boundary: moving up from the first wrapped line goes to
     /// `(0, 0)`.
+    #[must_use]
     pub fn get_location_above(
         &self,
         document: &Document,
@@ -208,6 +222,7 @@ impl DocumentNavigator {
     ///
     /// Python-parity boundary: moving down from the last wrapped line goes
     /// to the end of the last line.
+    #[must_use]
     pub fn get_location_below(
         &self,
         document: &Document,
@@ -252,6 +267,7 @@ impl DocumentNavigator {
 
     /// The location at the end of the current wrapped section (or document
     /// line when unwrapped).
+    #[must_use]
     pub fn get_location_end(
         &self,
         document: &Document,
@@ -260,7 +276,9 @@ impl DocumentNavigator {
     ) -> Location {
         let (line_index, column_offset) = location;
         let wrap_offsets = wrapped.get_offsets(line_index).unwrap_or(&[]);
-        if !wrap_offsets.is_empty() {
+        if wrap_offsets.is_empty() {
+            (line_index, document.line(line_index).len())
+        } else {
             let next_offset_right = wrap_offsets.partition_point(|&offset| offset <= column_offset);
             if next_offset_right == wrap_offsets.len() {
                 // No more wrapping to the right: go to the line end.
@@ -273,13 +291,12 @@ impl DocumentNavigator {
                 line_index,
                 prev_grapheme_boundary(line, wrap_offsets[next_offset_right]),
             )
-        } else {
-            (line_index, document.line(line_index).len())
         }
     }
 
     /// The "home" location for the given location: the previous wrap offset
     /// when wrapped, else column 0 (with optional smart-home behavior).
+    #[must_use]
     pub fn get_location_home(
         &self,
         document: &Document,
@@ -289,29 +306,29 @@ impl DocumentNavigator {
     ) -> Location {
         let (line_index, column_offset) = location;
         let wrap_offsets = wrapped.get_offsets(line_index).unwrap_or(&[]);
-        if !wrap_offsets.is_empty() {
-            let next_offset_left = wrap_offsets.partition_point(|&offset| offset <= column_offset);
-            if next_offset_left == 0 {
-                return (line_index, 0);
-            }
-            (line_index, wrap_offsets[next_offset_left - 1])
-        } else {
+        if wrap_offsets.is_empty() {
             if smart_home {
                 let line = document.line(line_index);
                 let target_column = line
                     .char_indices()
                     .find(|(_, ch)| !ch.is_whitespace())
-                    .map(|(index, _)| index)
-                    .unwrap_or(0);
+                    .map_or(0, |(index, _)| index);
                 if column_offset == 0 || column_offset > target_column {
                     return (line_index, target_column);
                 }
             }
             (line_index, 0)
+        } else {
+            let next_offset_left = wrap_offsets.partition_point(|&offset| offset <= column_offset);
+            if next_offset_left == 0 {
+                return (line_index, 0);
+            }
+            (line_index, wrap_offsets[next_offset_left - 1])
         }
     }
 
     /// Apply a visual vertical offset to a location (used for page up/down).
+    #[must_use]
     pub fn get_location_at_y_offset(
         &self,
         document: &Document,
@@ -328,6 +345,7 @@ impl DocumentNavigator {
     }
 
     /// The nearest reachable location in the document.
+    #[must_use]
     pub fn clamp_reachable(&self, document: &Document, location: Location) -> Location {
         let (row, column) = location;
         let clamped_row = row.min(document.line_count() - 1);

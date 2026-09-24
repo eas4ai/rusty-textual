@@ -1,4 +1,4 @@
-//! Deferred widget-command queue (WidgetCtx build, sub-step 1).
+//! Deferred widget-command queue (`WidgetCtx` build, sub-step 1).
 //!
 //! Handlers run while the runtime holds a live `&mut` borrow of the widget
 //! tree (see `routing.rs:169-182`), so a handler cannot mutate a *different*
@@ -205,7 +205,7 @@ pub(crate) enum WidgetCommand {
         repeat: Option<u64>,
         callback: WidgetTimerCallback,
     },
-    /// Bubble a message from its sender node during the shared flush (PostUp).
+    /// Bubble a message from its sender node during the shared flush (`PostUp`).
     /// Homes messages posted from a build-time `on_mount` (fired by
     /// `WidgetTree::fire_mount_callbacks`, where no `App` exists to absorb the
     /// synth `EventCtx`'s messages) — e.g. `Select`/`ListView` initial-selection
@@ -218,7 +218,7 @@ pub(crate) enum WidgetCommand {
     /// `App::absorb_outcome`, so worker requests, animation requests, recompose
     /// nodes, class ops, invalidation flags and stop requests all land exactly
     /// as if the handler had run under a live dispatch; messages keep their
-    /// PostUp semantics via `pending_widget_posts` (same routing as
+    /// `PostUp` semantics via `pending_widget_posts` (same routing as
     /// [`WidgetCommand::PostMessage`]).
     ///
     /// `node` is debug labeling only — the apply arm must NOT gate on node
@@ -327,6 +327,7 @@ pub(crate) fn command_queue_is_nonempty() -> bool {
 /// enqueues these commands instead of writing the dispatch `EventCtx`'s class-op
 /// list, so tests that formerly inspected `outcome.class_ops` drain here instead.
 #[doc(hidden)]
+#[must_use]
 pub fn drain_class_commands_for_test() -> Vec<(NodeId, crate::event::ClassOp)> {
     take_widget_commands()
         .into_iter()
@@ -351,6 +352,7 @@ pub fn drain_class_commands_for_test() -> Vec<(NodeId, crate::event::ClassOp)> {
 /// per-node `AbsorbOutcome` bundle (alongside `PostMessage`, which other
 /// enqueue sites still use), so both carriers are drained here.
 #[doc(hidden)]
+#[must_use]
 pub fn drain_mount_posts_for_test() -> Vec<crate::message::MessageEvent> {
     take_widget_commands()
         .into_iter()
@@ -367,6 +369,7 @@ pub fn drain_mount_posts_for_test() -> Vec<crate::message::MessageEvent> {
 /// `on_mount` staged via `WidgetTree::fire_mount_callbacks`), dropping any
 /// other commands.
 #[doc(hidden)]
+#[must_use]
 pub fn drain_absorb_outcomes_for_test() -> Vec<(NodeId, DispatchOutcome)> {
     take_widget_commands()
         .into_iter()
@@ -597,7 +600,7 @@ impl App {
     }
 
     /// Run a closure against the widget at `node` with a fresh `WidgetCtx`, then
-    /// drive that node's reactive fixpoint + absorb the synthesized EventCtx.
+    /// drive that node's reactive fixpoint + absorb the synthesized `EventCtx`.
     /// Shared by `UpdateWidget` and widget-timer fires. Returns `false` if the
     /// node is not present (caller handles the miss).
     ///
@@ -617,7 +620,7 @@ impl App {
     /// widget at `node` with a fresh `WidgetCtx`, returning its result (or `None`
     /// when the node is absent — the `Option<R>` contract `with_widget_mut`
     /// relies on). Drives the node's reactive fixpoint + absorbs the synthesized
-    /// EventCtx exactly as the bool wrapper does.
+    /// `EventCtx` exactly as the bool wrapper does.
     ///
     /// TRAP (b): the dispatch-ctx guard wraps the closure call, else
     /// `self.node_id()` returns `NodeId::default()` inside it. TRAP (a): no
@@ -635,14 +638,14 @@ impl App {
     /// Tree-scoped twin of [`run_on_node_widget_r`](Self::run_on_node_widget_r):
     /// `tree` is `None` for the active tree (today's behavior, byte-for-byte)
     /// or `Some(tree_id)` for an exact live tree, enabling cross-screen applies
-    /// (design note "mount_and_cross_screen", Phase B1/B2).
+    /// (design note "`mount_and_cross_screen`", Phase B1/B2).
     ///
     /// Cross-tree semantics when the scoped tree is NOT the active tree:
     /// - The closure runs against the widget in its OWNING tree; commands it
     ///   enqueues are stamped with that tree's id (the dispatch-tree guard), so
     ///   they resolve against the right tree at the next drain.
-    /// - Class ops recorded on the synth EventCtx are applied to the owning
-    ///   tree here (absorb_outcome would apply them to the active tree, which
+    /// - Class ops recorded on the synth `EventCtx` are applied to the owning
+    ///   tree here (`absorb_outcome` would apply them to the active tree, which
     ///   is the slotmap-key aliasing hazard).
     /// - The reactive entry is NOT enqueued: runtime reactive dispatch
     ///   (`dispatch_runtime_reactive_entries` / `with_node_widget_taken_dyn`)
@@ -651,7 +654,7 @@ impl App {
     ///   plus repaint; owning-tree watcher routing is a Phase B3 follow-up.
     /// - Messages posted from the closure are dropped with a loud debug log:
     ///   `pending_widget_posts` bubbles against the active tree, which would
-    ///   misroute or alias. Owning-tree PostUp bubbling is a B3 follow-up.
+    ///   misroute or alias. Owning-tree `PostUp` bubbling is a B3 follow-up.
     /// - A full relayout + repaint is requested so the compositor repaints
     ///   every visible layer (an update behind a translucent screen shows
     ///   immediately; behind an opaque screen it is state-only until reveal).
