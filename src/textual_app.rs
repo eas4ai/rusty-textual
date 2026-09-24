@@ -468,6 +468,114 @@ fn build_textual_app_runtime_root<T: TextualApp>(
 }
 
 impl<T: TextualApp> TextualAppAdapter<T> {
+    /// Command palette opened / closed / command selected. Returns true when
+    /// the app's hook handled the message.
+    fn on_command_palette_message(
+        &mut self,
+        message: &MessageEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> bool {
+        if message.is::<crate::message::CommandPaletteOpened>() {
+            self.initialize_command_palette_providers(ctx);
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_command_palette_opened(ctx);
+            if ctx.handled() {
+                return true;
+            }
+        } else if message.is::<crate::message::CommandPaletteClosed>() {
+            self.palette_screen_open = false;
+            self.shutdown_command_palette_providers(ctx);
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_command_palette_closed(ctx);
+            if ctx.handled() {
+                return true;
+            }
+        } else if let Some(m) =
+            message.downcast_ref::<crate::message::CommandPaletteCommandSelected>()
+        {
+            let id = m.id.clone();
+            let title = m.title.clone();
+            // System commands (theme/quit/keys/screenshot) run here now that the
+            // composed screen no longer executes them itself; user-provider
+            // commands route through the provider index.
+            self.run_system_command(&id, ctx);
+            self.handle_command_palette_selection(&id, ctx);
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_command_palette_command_selected(&id, &title, ctx);
+            if ctx.handled() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Built-in typed app hooks (`on_button_pressed`, `on_input_changed`, …).
+    fn dispatch_app_message_hooks(
+        &mut self,
+        message: &MessageEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
+        if let Some(m) = message.downcast_ref::<crate::message::ButtonPressed>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_button_pressed(&m.description, ctx);
+            return;
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::CheckboxChanged>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_checkbox_changed(m.checked, ctx);
+            return;
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::InputChanged>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_input_changed(&m.value, &m.validation, ctx);
+            return;
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::InputSubmitted>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_input_submitted(&m.value, ctx);
+            return;
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::TextAreaChanged>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_text_area_changed(&m.value, ctx);
+            return;
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::ListViewSelectionChanged>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_list_view_selection_changed(m.index, &m.item, ctx);
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::ListViewItemActivated>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_list_view_item_activated(m.index, &m.item, ctx);
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::TabActivated>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_tab_activated(m.index, &m.title, ctx);
+        }
+    }
+
     fn new(app: Arc<Mutex<T>>, child: impl Widget + 'static) -> Self {
         let mut message_handlers = crate::message_handlers::MessageHandlers::new();
         {
@@ -789,6 +897,151 @@ impl<T: TextualApp> TextualAppAdapter<T> {
     }
 }
 
+/// `action` takes exactly a selector and a class name.
+fn selector_and_class(action: &ParsedAction) -> Option<(&str, &str)> {
+    if action.arguments.len() != 2 {
+        return None;
+    }
+    Some((action.arguments[0].as_str()?, action.arguments[1].as_str()?))
+}
+
+/// `action` takes exactly one string argument.
+fn single_arg(action: &ParsedAction) -> Option<&str> {
+    if action.arguments.len() != 1 {
+        return None;
+    }
+    action.arguments[0].as_str()
+}
+
+/// `action` takes no arguments.
+fn no_args(action: &ParsedAction) -> bool {
+    action.arguments.is_empty()
+}
+
+/// Box an app message.
+fn boxed(message: impl crate::message::Message) -> Box<dyn crate::message::Message> {
+    Box::new(message)
+}
+
+/// `message` for an action that takes no arguments; `None` when it has some.
+fn unit_message(
+    action: &ParsedAction,
+    message: impl crate::message::Message,
+) -> Option<Box<dyn crate::message::Message>> {
+    no_args(action).then(|| boxed(message))
+}
+
+/// The app message a built-in app action posts (other than `quit`), or
+/// `None` for an unknown action or wrong arguments.
+fn app_action_message(action: &ParsedAction) -> Option<Box<dyn crate::message::Message>> {
+    use crate::message as m;
+    match action.name.as_str() {
+        "back" => unit_message(action, m::AppBack),
+        "bell" => unit_message(action, m::AppBell),
+        "change_theme" => unit_message(action, m::AppChangeTheme),
+        "cycle_theme" => unit_message(action, m::AppCycleTheme),
+        "command_palette" => unit_message(action, m::AppCommandPalette),
+        "focus_next" => unit_message(action, m::AppFocusNext),
+        "focus_previous" => unit_message(action, m::AppFocusPrevious),
+        "help_quit" => unit_message(action, m::AppHelpQuit),
+        "copy_selected_text" => unit_message(action, m::AppCopySelectedText),
+        "hide_help_panel" => unit_message(action, m::AppHideHelpPanel),
+        "pop_screen" => unit_message(action, m::AppPopScreen),
+        "show_help_panel" => unit_message(action, m::AppShowHelpPanel),
+        "suspend_process" => unit_message(action, m::AppSuspendProcess),
+        "toggle_dark" => unit_message(action, m::AppToggleDark),
+        "set_theme" => single_arg(action).map(|name| {
+            boxed(m::AppSetTheme {
+                name: name.to_string(),
+            })
+        }),
+        "focus" => single_arg(action).map(|widget_id| {
+            boxed(m::AppFocus {
+                widget_id: widget_id.to_string(),
+            })
+        }),
+        "push_screen" => single_arg(action).map(|screen| {
+            boxed(m::AppPushScreen {
+                screen: screen.to_string(),
+            })
+        }),
+        "simulate_key" => single_arg(action).map(|key| {
+            boxed(m::AppSimulateKey {
+                key: key.to_string(),
+            })
+        }),
+        "switch_mode" => single_arg(action).map(|mode| {
+            boxed(m::AppSwitchMode {
+                mode: mode.to_string(),
+            })
+        }),
+        "switch_screen" => single_arg(action).map(|screen| {
+            boxed(m::AppSwitchScreen {
+                screen: screen.to_string(),
+            })
+        }),
+        "add_class" => selector_and_class(action).map(|(selector, class_name)| {
+            boxed(m::AppAddClass {
+                selector: selector.to_string(),
+                class_name: class_name.to_string(),
+            })
+        }),
+        "remove_class" => selector_and_class(action).map(|(selector, class_name)| {
+            boxed(m::AppRemoveClass {
+                selector: selector.to_string(),
+                class_name: class_name.to_string(),
+            })
+        }),
+        "toggle_class" => selector_and_class(action).map(|(selector, class_name)| {
+            boxed(m::AppToggleClass {
+                selector: selector.to_string(),
+                class_name: class_name.to_string(),
+            })
+        }),
+        "notify" => notify_message(action),
+        "screenshot" => (action.arguments.len() <= 2).then(|| {
+            boxed(m::AppScreenshot {
+                filename: action
+                    .arguments
+                    .first()
+                    .and_then(|a| a.as_str())
+                    .map(str::to_string),
+                path: action
+                    .arguments
+                    .get(1)
+                    .and_then(|a| a.as_str())
+                    .map(str::to_string),
+            })
+        }),
+        _ => None,
+    }
+}
+
+/// `notify(message, title?, severity?)`.
+fn notify_message(action: &ParsedAction) -> Option<Box<dyn crate::message::Message>> {
+    if action.arguments.is_empty() || action.arguments.len() > 3 {
+        return None;
+    }
+    let message = action.arguments[0].as_str().map(str::to_string)?;
+    let title = action
+        .arguments
+        .get(1)
+        .and_then(|a| a.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let severity = action
+        .arguments
+        .get(2)
+        .and_then(|a| a.as_str())
+        .unwrap_or("information")
+        .to_string();
+    Some(boxed(crate::message::AppNotify {
+        message,
+        title,
+        severity,
+    }))
+}
+
 impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     /// CSS/debug type name of the app node: the concrete app type's short name
     /// (Python parity: the root DOM node is named after the App subclass, e.g.
@@ -844,284 +1097,21 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     }
 
     fn execute_action(&mut self, action: &ParsedAction, ctx: &mut crate::event::WidgetCtx) -> bool {
-        fn selector_and_class(action: &ParsedAction) -> Option<(&str, &str)> {
-            if action.arguments.len() != 2 {
-                return None;
+        if action.name == "quit" {
+            if !no_args(action) {
+                return false;
             }
-            Some((action.arguments[0].as_str()?, action.arguments[1].as_str()?))
+            ctx.request_stop();
+            ctx.set_handled();
+            return true;
         }
-        fn single_arg(action: &ParsedAction) -> Option<&str> {
-            if action.arguments.len() != 1 {
-                return None;
-            }
-            action.arguments[0].as_str()
-        }
-        fn no_args(action: &ParsedAction) -> bool {
-            action.arguments.is_empty()
-        }
-
-        match action.name.as_str() {
-            "quit" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.request_stop();
-                ctx.set_handled();
-                true
-            }
-            "back" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppBack);
-                ctx.set_handled();
-                true
-            }
-            "bell" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppBell);
-                ctx.set_handled();
-                true
-            }
-            "change_theme" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppChangeTheme);
-                ctx.set_handled();
-                true
-            }
-            "cycle_theme" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppCycleTheme);
-                ctx.set_handled();
-                true
-            }
-            "set_theme" => {
-                let Some(name) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppSetTheme {
-                    name: name.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "command_palette" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppCommandPalette);
-                ctx.set_handled();
-                true
-            }
-            "focus" => {
-                let Some(widget_id) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppFocus {
-                    widget_id: widget_id.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "focus_next" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppFocusNext);
-                ctx.set_handled();
-                true
-            }
-            "focus_previous" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppFocusPrevious);
-                ctx.set_handled();
-                true
-            }
-            "help_quit" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppHelpQuit);
-                ctx.set_handled();
-                true
-            }
-            "copy_selected_text" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppCopySelectedText);
-                ctx.set_handled();
-                true
-            }
-            "hide_help_panel" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppHideHelpPanel);
-                ctx.set_handled();
-                true
-            }
-            "add_class" => {
-                let Some((selector, class_name)) = selector_and_class(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppAddClass {
-                    selector: selector.to_string(),
-                    class_name: class_name.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "remove_class" => {
-                let Some((selector, class_name)) = selector_and_class(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppRemoveClass {
-                    selector: selector.to_string(),
-                    class_name: class_name.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "toggle_class" => {
-                let Some((selector, class_name)) = selector_and_class(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppToggleClass {
-                    selector: selector.to_string(),
-                    class_name: class_name.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "notify" => {
-                if action.arguments.is_empty() || action.arguments.len() > 3 {
-                    return false;
-                }
-                let Some(message) = action.arguments[0].as_str().map(str::to_string) else {
-                    return false;
-                };
-                let title = action
-                    .arguments
-                    .get(1)
-                    .and_then(|a| a.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-                let severity = action
-                    .arguments
-                    .get(2)
-                    .and_then(|a| a.as_str())
-                    .unwrap_or("information")
-                    .to_string();
-                ctx.post_message(crate::message::AppNotify {
-                    message,
-                    title,
-                    severity,
-                });
-                ctx.set_handled();
-                true
-            }
-            "pop_screen" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppPopScreen);
-                ctx.set_handled();
-                true
-            }
-            "push_screen" => {
-                let Some(screen) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppPushScreen {
-                    screen: screen.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "screenshot" => {
-                if action.arguments.len() > 2 {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppScreenshot {
-                    filename: action
-                        .arguments
-                        .first()
-                        .and_then(|a| a.as_str())
-                        .map(str::to_string),
-                    path: action
-                        .arguments
-                        .get(1)
-                        .and_then(|a| a.as_str())
-                        .map(str::to_string),
-                });
-                ctx.set_handled();
-                true
-            }
-            "show_help_panel" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppShowHelpPanel);
-                ctx.set_handled();
-                true
-            }
-            "simulate_key" => {
-                let Some(key) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppSimulateKey {
-                    key: key.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "suspend_process" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppSuspendProcess);
-                ctx.set_handled();
-                true
-            }
-            "switch_mode" => {
-                let Some(mode) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppSwitchMode {
-                    mode: mode.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "switch_screen" => {
-                let Some(screen) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppSwitchScreen {
-                    screen: screen.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "toggle_dark" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppToggleDark);
-                ctx.set_handled();
-                true
-            }
-            _ => false,
-        }
+        // Every other built-in app action posts one app message.
+        let Some(message) = app_action_message(action) else {
+            return false;
+        };
+        ctx.post_message_boxed(message);
+        ctx.set_handled();
+        true
     }
 
     fn compose(&mut self) -> crate::compose::ComposeResult {
@@ -1329,42 +1319,8 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         if ctx.handled() {
             return;
         }
-        if message.is::<crate::message::CommandPaletteOpened>() {
-            self.initialize_command_palette_providers(ctx);
-            self.app
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .on_command_palette_opened(ctx);
-            if ctx.handled() {
-                return;
-            }
-        } else if message.is::<crate::message::CommandPaletteClosed>() {
-            self.palette_screen_open = false;
-            self.shutdown_command_palette_providers(ctx);
-            self.app
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .on_command_palette_closed(ctx);
-            if ctx.handled() {
-                return;
-            }
-        } else if let Some(m) =
-            message.downcast_ref::<crate::message::CommandPaletteCommandSelected>()
-        {
-            let id = m.id.clone();
-            let title = m.title.clone();
-            // System commands (theme/quit/keys/screenshot) run here now that the
-            // composed screen no longer executes them itself; user-provider
-            // commands route through the provider index.
-            self.run_system_command(&id, ctx);
-            self.handle_command_palette_selection(&id, ctx);
-            self.app
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .on_command_palette_command_selected(&id, &title, ctx);
-            if ctx.handled() {
-                return;
-            }
+        if self.on_command_palette_message(message, ctx) {
+            return;
         }
         if message.is::<crate::message::AppShowHelpPanel>() {
             self.help_panel_visible = true;
@@ -1386,60 +1342,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         if ctx.handled() {
             return;
         }
-        if let Some(m) = message.downcast_ref::<crate::message::ButtonPressed>() {
-            self.app
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .on_button_pressed(&m.description, ctx);
-            return;
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::CheckboxChanged>() {
-            self.app
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .on_checkbox_changed(m.checked, ctx);
-            return;
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::InputChanged>() {
-            self.app
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .on_input_changed(&m.value, &m.validation, ctx);
-            return;
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::InputSubmitted>() {
-            self.app
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .on_input_submitted(&m.value, ctx);
-            return;
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::TextAreaChanged>() {
-            self.app
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .on_text_area_changed(&m.value, ctx);
-            return;
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::ListViewSelectionChanged>() {
-            self.app
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .on_list_view_selection_changed(m.index, &m.item, ctx);
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::ListViewItemActivated>() {
-            self.app
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .on_list_view_item_activated(m.index, &m.item, ctx);
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::TabActivated>() {
-            self.app
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .on_tab_activated(m.index, &m.title, ctx);
-        }
-        if ctx.handled() {}
+        self.dispatch_app_message_hooks(message, ctx);
     }
 }
 
