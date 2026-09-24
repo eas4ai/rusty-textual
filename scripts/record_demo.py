@@ -18,6 +18,7 @@ import json
 import os
 import pty
 import select
+import signal
 import subprocess
 import sys
 import termios
@@ -77,10 +78,12 @@ def run_segment(example, script, settle):
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", HEIGHT, WIDTH, 0, 0))
     env = dict(os.environ, TERM="xterm-256color",
                COLUMNS=str(WIDTH), LINES=str(HEIGHT))
+    # Own process group, so the example that cargo starts can be ended with
+    # it (see the killpg below).
     proc = subprocess.Popen(
         ["cargo", "run", "-q", "--example", example],
         stdin=slave, stdout=slave, stderr=slave,
-        env=env, close_fds=True,
+        env=env, close_fds=True, process_group=0,
     )
     os.close(slave)
     os.set_blocking(master, False)
@@ -101,7 +104,15 @@ def run_segment(example, script, settle):
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        pass
+    # Killing cargo alone leaves the example running, and closing the pty
+    # sends it no SIGHUP (it has no controlling terminal), so it would keep
+    # running at full CPU. End the whole group.
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    proc.wait()
     os.close(master)
     print(f"{example}: exit={proc.returncode} events={len(events)}", flush=True)
 
