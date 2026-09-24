@@ -435,20 +435,7 @@ fn dispatch_action_string(
             let mut ctx = EventCtx::default();
             let handled =
                 execute_action_with_dispatch_target(&mut *node.widget, &parsed, &mut ctx, ra.node);
-            let mut outcome = DispatchOutcome {
-                handled: handled || ctx.handled(),
-                repaint_requested: ctx.repaint_requested(),
-                invalidation: ctx.invalidation(),
-                stop_requested: ctx.stop_requested(),
-                messages: ctx.take_messages(),
-                animation_requests: ctx.take_animation_requests(),
-                style_animation_requests: ctx.take_style_animation_requests(),
-                worker_requests: ctx.take_worker_requests(),
-                recompose_nodes: ctx.take_recompose_nodes(),
-                default_prevented: false,
-                prevented: Vec::new(),
-                class_ops: ctx.take_class_ops(),
-            };
+            let mut outcome = outcome_from_action(handled, &mut ctx);
             let handled = outcome.handled;
             merge_outcome_into_runtime_pass(pass, &mut outcome);
             if handled {
@@ -462,20 +449,7 @@ fn dispatch_action_string(
         let mut ctx = EventCtx::default();
         let handled =
             execute_action_with_dispatch_target(root, &parsed, &mut ctx, NodeId::default());
-        let mut outcome = DispatchOutcome {
-            handled: handled || ctx.handled(),
-            repaint_requested: ctx.repaint_requested(),
-            invalidation: ctx.invalidation(),
-            stop_requested: ctx.stop_requested(),
-            messages: ctx.take_messages(),
-            animation_requests: ctx.take_animation_requests(),
-            style_animation_requests: ctx.take_style_animation_requests(),
-            worker_requests: ctx.take_worker_requests(),
-            recompose_nodes: ctx.take_recompose_nodes(),
-            default_prevented: false,
-            prevented: Vec::new(),
-            class_ops: ctx.take_class_ops(),
-        };
+        let mut outcome = outcome_from_action(handled, &mut ctx);
         let handled = outcome.handled;
         merge_outcome_into_runtime_pass(pass, &mut outcome);
         if handled {
@@ -492,20 +466,7 @@ fn dispatch_action_string(
             __wctx.__enqueue_reactive_if_dirty();
         }
         if ctx.handled() {
-            let mut outcome = DispatchOutcome {
-                handled: true,
-                repaint_requested: ctx.repaint_requested(),
-                invalidation: ctx.invalidation(),
-                stop_requested: ctx.stop_requested(),
-                messages: ctx.take_messages(),
-                animation_requests: ctx.take_animation_requests(),
-                style_animation_requests: ctx.take_style_animation_requests(),
-                worker_requests: ctx.take_worker_requests(),
-                recompose_nodes: ctx.take_recompose_nodes(),
-                default_prevented: false,
-                prevented: Vec::new(),
-                class_ops: ctx.take_class_ops(),
-            };
+            let mut outcome = outcome_from_action(true, &mut ctx);
             merge_outcome_into_runtime_pass(pass, &mut outcome);
             return true;
         }
@@ -530,19 +491,8 @@ fn dispatch_simulated_key_like_input(
         root.on_app_key(app, key, &mut __wctx);
         __wctx.__enqueue_reactive_if_dirty();
     }
-    pass.repaint_requested |= app_key_ctx.repaint_requested();
-    pass.invalidation.merge(app_key_ctx.invalidation());
-    pass.stop_requested |= app_key_ctx.stop_requested();
-    pass.animation_requests
-        .extend(app_key_ctx.take_animation_requests());
-    pass.style_animation_requests
-        .extend(app_key_ctx.take_style_animation_requests());
-    pass.worker_requests
-        .extend(app_key_ctx.take_worker_requests());
-    pass.recompose_nodes
-        .extend(app_key_ctx.take_recompose_nodes());
     pass.class_ops.extend(app_key_ctx.take_class_ops());
-    pass.generated.extend(app_key_ctx.take_messages());
+    merge_ctx_into_runtime_pass(pass, &mut app_key_ctx);
     if pass.stop_requested || app_key_ctx.handled() {
         return;
     }
@@ -567,112 +517,8 @@ fn dispatch_simulated_key_like_input(
     }
 
     // Declarative bindings before raw key dispatch.
-    let mut binding_clashes = Vec::new();
-    let binding_match = app.active_widget_tree().and_then(|tree| {
-        match_binding_chain(
-            tree,
-            app.app_root_tree_when_screen_active(),
-            key,
-            app.check_action_fn.as_deref(),
-            &app.keymap,
-            Some(&mut binding_clashes),
-        )
-    });
-    // Deliver keymap clash reports after the tree borrow ends (Python calls
-    // handle_bindings_clash per chain build, i.e. per clashing keypress).
-    app.deliver_binding_clashes(&binding_clashes);
-    if let Some((binding_node_id, action_str, binding_source)) = binding_match
-        && let Ok(parsed) = crate::action::parse_action(&action_str)
-    {
-        // CLUSTER 7: a binding declared on a node whose action is served only
-        // by `execute_action` (no `action_registry()` entry) must still run on
-        // that source node — the binding source IS the target. Only applies
-        // when the binding came from the active tree (the source node lives
-        // there); app-root bindings are dispatched on the `root` adapter below.
-        if binding_source == BindingSource::Active
-            && let Some(tree_mut) = app.active_widget_tree_mut()
-        {
-            let focused = focused_node_id_tree(tree_mut);
-            let resolved = {
-                let tree_ref = &*tree_mut;
-                focused.and_then(|fid| {
-                    crate::action::resolve_action(&parsed, tree_ref, fid, |nid| {
-                        tree_ref
-                            .get(nid)
-                            .map(|n| (n.widget.action_namespace(), n.widget.action_registry()))
-                    })
-                })
-            };
-            // Prefer the registry-resolved owner; otherwise fall back to the
-            // binding's own source node.
-            let target = resolved.map_or(binding_node_id, |ra| ra.node);
-            if let Some(node) = tree_mut.get_mut(target) {
-                let mut ctx = EventCtx::default();
-                if execute_action_with_dispatch_target(&mut *node.widget, &parsed, &mut ctx, target)
-                    || ctx.handled()
-                {
-                    pass.repaint_requested |= ctx.repaint_requested();
-                    pass.invalidation.merge(ctx.invalidation());
-                    pass.stop_requested |= ctx.stop_requested();
-                    pass.animation_requests
-                        .extend(ctx.take_animation_requests());
-                    pass.style_animation_requests
-                        .extend(ctx.take_style_animation_requests());
-                    pass.worker_requests.extend(ctx.take_worker_requests());
-                    pass.recompose_nodes.extend(ctx.take_recompose_nodes());
-                    pass.generated.extend(ctx.take_messages());
-                    return;
-                }
-            }
-        }
-
-        let mut root_ctx = EventCtx::default();
-        if execute_action_with_dispatch_target(root, &parsed, &mut root_ctx, NodeId::default())
-            || root_ctx.handled()
-        {
-            pass.repaint_requested |= root_ctx.repaint_requested();
-            pass.invalidation.merge(root_ctx.invalidation());
-            pass.stop_requested |= root_ctx.stop_requested();
-            pass.animation_requests
-                .extend(root_ctx.take_animation_requests());
-            pass.style_animation_requests
-                .extend(root_ctx.take_style_animation_requests());
-            pass.worker_requests.extend(root_ctx.take_worker_requests());
-            pass.recompose_nodes.extend(root_ctx.take_recompose_nodes());
-            pass.generated.extend(root_ctx.take_messages());
-            return;
-        }
-
-        // Fallback: app-defined custom action (e.g. "add", "clear").
-        // Called when no action_registry handler exists and execute_action declined.
-        {
-            let mut fallback_ctx = EventCtx::default();
-            {
-                let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut fallback_ctx);
-                root.on_app_unhandled_action(app, &action_str, &mut __wctx);
-                __wctx.__enqueue_reactive_if_dirty();
-            }
-            if fallback_ctx.handled() {
-                pass.repaint_requested |= fallback_ctx.repaint_requested();
-                pass.invalidation.merge(fallback_ctx.invalidation());
-                pass.stop_requested |= fallback_ctx.stop_requested();
-                pass.animation_requests
-                    .extend(fallback_ctx.take_animation_requests());
-                pass.style_animation_requests
-                    .extend(fallback_ctx.take_style_animation_requests());
-                pass.worker_requests
-                    .extend(fallback_ctx.take_worker_requests());
-                pass.recompose_nodes
-                    .extend(fallback_ctx.take_recompose_nodes());
-                pass.generated.extend(fallback_ctx.take_messages());
-                return;
-            }
-        }
-
-        // The binding matched but no layer handled its action: report the
-        // silent no-op (debug channel + test-observable buffer) before the key
-        // falls through to raw dispatch.
-        report_unhandled_binding_action(binding_node_id, &action_str);
+    if dispatch_simulated_key_binding(app, root, key, pass) {
+        return;
     }
 
     // P-F: `key_<name>` hook on the focused widget (no binding consumed it).
@@ -690,46 +536,161 @@ fn dispatch_simulated_key_like_input(
 
     // Fallback action-map behavior.
     if let Some(action) = mapped_action.filter(|a| !is_priority_action(*a)) {
-        if action == Action::CopySelectedText {
-            if let Some(text) = app.action_copy_selected_text() {
-                let sender = App::runtime_message_sender();
-                pass.generated.push(
-                    MessageEvent::new(
-                        sender,
-                        crate::message::TextEditClipboardCopyRequested { text, cut: false },
-                    )
-                    .with_control(sender),
-                );
-            } else {
-                app.notify_help_quit();
-                pass.repaint_requested = true;
+        dispatch_simulated_action_map(app, root, pass, action);
+    }
+}
+
+/// Merge what a hook or action staged on `ctx` into the runtime pass. Class
+/// ops are left on `ctx`: callers that apply them take them first.
+fn merge_ctx_into_runtime_pass(pass: &mut RuntimeMessagePass, ctx: &mut EventCtx) {
+    pass.repaint_requested |= ctx.repaint_requested();
+    pass.invalidation.merge(ctx.invalidation());
+    pass.stop_requested |= ctx.stop_requested();
+    pass.animation_requests
+        .extend(ctx.take_animation_requests());
+    pass.style_animation_requests
+        .extend(ctx.take_style_animation_requests());
+    pass.worker_requests.extend(ctx.take_worker_requests());
+    pass.recompose_nodes.extend(ctx.take_recompose_nodes());
+    pass.generated.extend(ctx.take_messages());
+}
+
+/// Run the declarative binding that matches `key`, if any. Returns true when
+/// a layer handled the binding's action.
+fn dispatch_simulated_key_binding(
+    app: &mut App,
+    root: &mut dyn Widget,
+    key: &KeyEventData,
+    pass: &mut RuntimeMessagePass,
+) -> bool {
+    let mut binding_clashes = Vec::new();
+    let binding_match = app.active_widget_tree().and_then(|tree| {
+        match_binding_chain(
+            tree,
+            app.app_root_tree_when_screen_active(),
+            key,
+            app.check_action_fn.as_deref(),
+            &app.keymap,
+            Some(&mut binding_clashes),
+        )
+    });
+    // Deliver keymap clash reports after the tree borrow ends (Python calls
+    // handle_bindings_clash per chain build, i.e. per clashing keypress).
+    app.deliver_binding_clashes(&binding_clashes);
+    let Some((binding_node_id, action_str, binding_source)) = binding_match else {
+        return false;
+    };
+    let Ok(parsed) = crate::action::parse_action(&action_str) else {
+        return false;
+    };
+
+    // CLUSTER 7: a binding declared on a node whose action is served only
+    // by `execute_action` (no `action_registry()` entry) must still run on
+    // that source node — the binding source IS the target. Only applies
+    // when the binding came from the active tree (the source node lives
+    // there); app-root bindings are dispatched on the `root` adapter below.
+    if binding_source == BindingSource::Active
+        && let Some(tree_mut) = app.active_widget_tree_mut()
+    {
+        let focused = focused_node_id_tree(tree_mut);
+        let resolved = {
+            let tree_ref = &*tree_mut;
+            focused.and_then(|fid| {
+                crate::action::resolve_action(&parsed, tree_ref, fid, |nid| {
+                    tree_ref
+                        .get(nid)
+                        .map(|n| (n.widget.action_namespace(), n.widget.action_registry()))
+                })
+            })
+        };
+        // Prefer the registry-resolved owner; otherwise fall back to the
+        // binding's own source node.
+        let target = resolved.map_or(binding_node_id, |ra| ra.node);
+        if let Some(node) = tree_mut.get_mut(target) {
+            let mut ctx = EventCtx::default();
+            if execute_action_with_dispatch_target(&mut *node.widget, &parsed, &mut ctx, target)
+                || ctx.handled()
+            {
+                merge_ctx_into_runtime_pass(pass, &mut ctx);
+                return true;
             }
+        }
+    }
+
+    let mut root_ctx = EventCtx::default();
+    if execute_action_with_dispatch_target(root, &parsed, &mut root_ctx, NodeId::default())
+        || root_ctx.handled()
+    {
+        merge_ctx_into_runtime_pass(pass, &mut root_ctx);
+        return true;
+    }
+
+    // Fallback: app-defined custom action (e.g. "add", "clear").
+    // Called when no action_registry handler exists and execute_action declined.
+    let mut fallback_ctx = EventCtx::default();
+    {
+        let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut fallback_ctx);
+        root.on_app_unhandled_action(app, &action_str, &mut __wctx);
+        __wctx.__enqueue_reactive_if_dirty();
+    }
+    if fallback_ctx.handled() {
+        merge_ctx_into_runtime_pass(pass, &mut fallback_ctx);
+        return true;
+    }
+
+    // The binding matched but no layer handled its action: report the
+    // silent no-op (debug channel + test-observable buffer) before the key
+    // falls through to raw dispatch.
+    report_unhandled_binding_action(binding_node_id, &action_str);
+    false
+}
+
+/// Run the action-map action of a key nothing else handled.
+fn dispatch_simulated_action_map(
+    app: &mut App,
+    root: &mut dyn Widget,
+    pass: &mut RuntimeMessagePass,
+    action: Action,
+) {
+    if action == Action::CopySelectedText {
+        if let Some(text) = app.action_copy_selected_text() {
+            let sender = App::runtime_message_sender();
+            pass.generated.push(
+                MessageEvent::new(
+                    sender,
+                    crate::message::TextEditClipboardCopyRequested { text, cut: false },
+                )
+                .with_control(sender),
+            );
+        } else {
+            app.notify_help_quit();
+            pass.repaint_requested = true;
+        }
+        return;
+    }
+    if action == Action::HelpQuit {
+        app.notify_help_quit();
+        pass.repaint_requested = true;
+        return;
+    }
+    if matches!(action, Action::FocusNext | Action::FocusPrev) {
+        let mut focus_outcome = app.dispatch_event_auto(root, &Event::Action(action));
+        let focus_handled = focus_outcome.handled;
+        merge_outcome_into_runtime_pass(pass, &mut focus_outcome);
+        if focus_handled {
             return;
         }
-        if action == Action::HelpQuit {
-            app.notify_help_quit();
+        if app.move_focus_auto(action) {
             pass.repaint_requested = true;
             return;
         }
-        if matches!(action, Action::FocusNext | Action::FocusPrev) {
-            let mut focus_outcome = app.dispatch_event_auto(root, &Event::Action(action));
-            let focus_handled = focus_outcome.handled;
-            merge_outcome_into_runtime_pass(pass, &mut focus_outcome);
-            if focus_handled {
-                return;
-            }
-            if app.move_focus_auto(action) {
-                pass.repaint_requested = true;
-                return;
-            }
-        }
-        let mut outcome = if is_scroll_action(action) {
-            app.dispatch_scroll_action_auto(root, action, app.hovered)
-        } else {
-            app.dispatch_event_auto(root, &Event::Action(action))
-        };
-        merge_outcome_into_runtime_pass(pass, &mut outcome);
     }
+    let mut outcome = if is_scroll_action(action) {
+        app.dispatch_scroll_action_auto(root, action, app.hovered)
+    } else {
+        app.dispatch_event_auto(root, &Event::Action(action))
+    };
+    merge_outcome_into_runtime_pass(pass, &mut outcome);
 }
 
 fn worker_state_runtime_messages(
@@ -1029,338 +990,401 @@ fn split_runtime_control_messages(
 ) -> RuntimeMessagePass {
     let mut pass = RuntimeMessagePass::default();
     for event in queue {
-        if let Some(m) = event.downcast_ref::<crate::message::AsyncTaskSpawn>() {
-            let m = m.clone();
-            if let Some(cancelled) = app.async_tasks.spawn(m.task_id, m.target, m.request) {
-                pass.generated.push(cancelled);
-            }
-            continue;
-        }
-        if let Some(m) = event.downcast_ref::<crate::message::AsyncTaskCancel>() {
-            let task_id = m.task_id;
-            if let Some(cancelled) = app.async_tasks.cancel(task_id) {
-                pass.generated.push(cancelled);
-            }
-            continue;
-        }
-        if let Some(m) = event.downcast_ref::<crate::message::AsyncTaskCancelTarget>() {
-            let target = m.target;
-            pass.generated
-                .extend(app.async_tasks.cancel_for_target(target));
-            continue;
-        }
-        if let Some(m) = event.downcast_ref::<crate::message::TimerSchedule>() {
-            let m = m.clone();
-            if let Some(cancelled) = app.timers.schedule(m.timer_id, m.target, m.delay) {
-                pass.generated.push(cancelled);
-            }
-            continue;
-        }
-        if let Some(m) = event.downcast_ref::<crate::message::TimerCancel>() {
-            let timer_id = m.timer_id;
-            if let Some(cancelled) = app.timers.cancel(timer_id) {
-                pass.generated.push(cancelled);
-            }
-            continue;
-        }
-        if let Some(m) = event.downcast_ref::<crate::message::OverlayVisibilityChanged>() {
-            let overlay = m.overlay;
-            let visible = m.visible;
-            if let Some(tree) = app.active_widget_tree_mut()
-                && set_overlay_modal_display_tree(tree, overlay, visible)
-            {
-                pass.repaint_requested = true;
-                pass.invalidation
-                    .merge(crate::event::InvalidationFlags::layout());
-            }
-            pass.deliver.push(event);
-            continue;
-        }
-        if let Some(m) = event.downcast_ref::<crate::message::NotificationExpired>() {
-            // An auto-dismiss timer elapsed (or a toast was clicked): drop the
-            // notification from the store. The event loop re-syncs the rack on the
-            // next iteration, unmounting the toast node. Consumed here (not
-            // delivered onward).
-            app.remove_notification(m.id);
-            pass.repaint_requested = true;
-            continue;
-        }
-        if let Some(m) = event.downcast_ref::<crate::message::AppAddClass>() {
-            let selector = m.selector.clone();
-            let class_name = m.class_name.clone();
-            match app.action_add_class(&selector, &class_name) {
-                Ok(matched) if matched > 0 => {
-                    pass.repaint_requested = true;
-                    pass.invalidation
-                        .merge(crate::event::InvalidationFlags::layout());
-                }
-                Ok(_) => {}
-                Err(err) => {
-                    debug_input(&format!(
-                        "[runtime] app.add_class ignored selector={selector:?} class={class_name:?} err={err:?}"
-                    ));
-                }
-            }
-        } else if let Some(m) = event.downcast_ref::<crate::message::AppRemoveClass>() {
-            let selector = m.selector.clone();
-            let class_name = m.class_name.clone();
-            match app.action_remove_class(&selector, &class_name) {
-                Ok(matched) if matched > 0 => {
-                    pass.repaint_requested = true;
-                    pass.invalidation
-                        .merge(crate::event::InvalidationFlags::layout());
-                }
-                Ok(_) => {}
-                Err(err) => {
-                    debug_input(&format!(
-                        "[runtime] app.remove_class ignored selector={selector:?} class={class_name:?} err={err:?}"
-                    ));
-                }
-            }
-        } else if let Some(m) = event.downcast_ref::<crate::message::AppToggleClass>() {
-            let selector = m.selector.clone();
-            let class_name = m.class_name.clone();
-            match app.action_toggle_class(&selector, &class_name) {
-                Ok(matched) if matched > 0 => {
-                    pass.repaint_requested = true;
-                    pass.invalidation
-                        .merge(crate::event::InvalidationFlags::layout());
-                }
-                Ok(_) => {}
-                Err(err) => {
-                    debug_input(&format!(
-                        "[runtime] app.toggle_class ignored selector={selector:?} class={class_name:?} err={err:?}"
-                    ));
-                }
-            }
-        } else if let Some(m) = event.downcast_ref::<crate::message::AppSetDisabled>() {
-            let selector = m.selector.clone();
-            let disabled = m.disabled;
-            match app.query_mut(&selector) {
-                Ok(query) => {
-                    let matched = query.len();
-                    query.set(None, None, Some(disabled), None);
-                    if matched > 0 {
-                        pass.repaint_requested = true;
-                        pass.invalidation
-                            .merge(crate::event::InvalidationFlags::layout());
-                    }
-                }
-                Err(err) => {
-                    debug_input(&format!(
-                        "[runtime] app.set_disabled ignored selector={selector:?} disabled={disabled:?} err={err:?}"
-                    ));
-                }
-            }
-        } else if event.is::<crate::message::AppBack>() {
-            if app.action_back() {
-                pass.repaint_requested = true;
-                pass.invalidation
-                    .merge(crate::event::InvalidationFlags::layout());
-            }
-        } else if event.is::<crate::message::AppBell>() {
-            let _ = app.action_bell();
-        } else if event.is::<crate::message::AppChangeTheme>() {
-            if app.action_change_theme() {
-                pass.repaint_requested = true;
-            }
-        } else if event.is::<crate::message::AppCycleTheme>() {
-            if app.action_cycle_theme() {
-                pass.repaint_requested = true;
-                pass.invalidation
-                    .merge(crate::event::InvalidationFlags::layout());
-            }
-        } else if let Some(m) = event.downcast_ref::<crate::message::AppSetTheme>() {
-            let name = m.name.clone();
-            if app.set_theme_by_name(&name) {
-                pass.repaint_requested = true;
-                pass.invalidation
-                    .merge(crate::event::InvalidationFlags::layout());
-            } else {
-                debug_input(&format!("[runtime] app.set_theme unknown theme={name:?}"));
-            }
-        } else if event.is::<crate::message::AppCommandPalette>() {
-            // Wave 1: deliver `AppCommandPalette` to the adapter's `on_app_message`
-            // (which owns the providers + `&mut App`) so it can push the composed
-            // `CommandPaletteScreen`. This SEAM gates the legacy always-mounted
-            // `CommandPalette` host: it no longer receives `Action::CommandPalette`,
-            // so it stays inert. Wave 2 deletes the old host + this delivery hop.
-            pass.deliver.push(event);
-        } else if let Some(m) = event.downcast_ref::<crate::message::AppFocus>() {
-            let widget_id = m.widget_id.clone();
-            match app.action_focus(&widget_id) {
-                Ok(true) => {
-                    // A focus landed — that is the newest intent, so drop any
-                    // earlier deferred request (last-writer wins).
-                    app.pending_focus = None;
-                    pass.repaint_requested = true;
-                }
-                Ok(false) => {
-                    // Not focused. If the target EXISTS (it just isn't displayed
-                    // yet — a sibling handler flipped its `display` via a deferred
-                    // class op the post-dispatch flush + layout applies AFTER this
-                    // message routes), defer the request so it lands once the
-                    // same-frame display resolution runs (`retry_pending_focus`).
-                    // A genuine no-match is dropped (never displays → never
-                    // deferred), so a target that can never show cannot spin.
-                    if app.query_one(&format!("#{widget_id}")).is_ok() {
-                        app.pending_focus = Some(widget_id);
-                    }
-                }
-                Err(err) => {
-                    debug_input(&format!(
-                        "[runtime] app.focus ignored widget_id={widget_id:?} err={err:?}"
-                    ));
-                }
-            }
-        } else if event.is::<crate::message::AppFocusNext>() {
-            // An explicit tab is a newer focus intent — drop any deferred request.
-            app.pending_focus = None;
-            if app.action_focus_next() {
-                pass.repaint_requested = true;
-            }
-        } else if event.is::<crate::message::AppFocusPrevious>() {
-            app.pending_focus = None;
-            if app.action_focus_previous() {
-                pass.repaint_requested = true;
-            }
-        } else if event.is::<crate::message::AppHelpQuit>() {
-            app.action_help_quit();
-            pass.repaint_requested = true;
-        } else if event.is::<crate::message::AppCopySelectedText>() {
-            if let Some(text) = app.action_copy_selected_text() {
-                let sender = App::runtime_message_sender();
-                pass.generated.push(
-                    MessageEvent::new(
-                        sender,
-                        crate::message::TextEditClipboardCopyRequested { text, cut: false },
-                    )
-                    .with_control(sender),
-                );
-            } else {
-                app.notify_help_quit();
-                pass.repaint_requested = true;
-            }
-        } else if event.is::<crate::message::AppHideHelpPanel>() {
-            match app.action_hide_help_panel() {
-                Ok(changed) => {
-                    if changed {
-                        pass.repaint_requested = true;
-                        pass.invalidation
-                            .merge(crate::event::InvalidationFlags::layout());
-                    }
-                }
-                Err(err) => {
-                    debug_input(&format!(
-                        "[runtime] app.hide_help_panel ignored err={err:?}"
-                    ));
-                }
-            }
-            // Keep lifecycle/control visibility messages observable by
-            // widgets (e.g. CommandPalette/TextualAppAdapter) after runtime
-            // applies the state change.
-            pass.deliver.push(event);
-        } else if let Some(m) = event.downcast_ref::<crate::message::AppNotify>() {
-            let message = m.message.clone();
-            let title = m.title.clone();
-            let severity = m.severity.clone();
-            app.action_notify(&message, &title, &severity);
-            pass.repaint_requested = true;
-        } else if event.is::<crate::message::AppPopScreen>() {
-            if app.action_pop_screen() {
-                pass.repaint_requested = true;
-                pass.invalidation
-                    .merge(crate::event::InvalidationFlags::layout());
-            }
-        } else if let Some(m) = event.downcast_ref::<crate::message::AppPushScreen>() {
-            let screen = m.screen.clone();
-            if app.action_push_screen(&screen) {
-                pass.repaint_requested = true;
-                pass.invalidation
-                    .merge(crate::event::InvalidationFlags::layout());
-            } else {
-                debug_input(&format!(
-                    "[runtime] app.push_screen ignored missing screen={screen:?}"
-                ));
-            }
-        } else if let Some(m) = event.downcast_ref::<crate::message::AppScreenshot>() {
-            let filename = m.filename.clone();
-            let path = m.path.clone();
-            pass.repaint_requested |= app.action_screenshot(filename.as_deref(), path.as_deref());
-        } else if event.is::<crate::message::AppShowHelpPanel>() {
-            match app.action_show_help_panel() {
-                Ok(changed) => {
-                    if changed {
-                        pass.repaint_requested = true;
-                        pass.invalidation
-                            .merge(crate::event::InvalidationFlags::layout());
-                    }
-                }
-                Err(err) => {
-                    debug_input(&format!(
-                        "[runtime] app.show_help_panel ignored err={err:?}"
-                    ));
-                }
-            }
-            // Keep lifecycle/control visibility messages observable by
-            // widgets (e.g. CommandPalette/TextualAppAdapter) after runtime
-            // applies the state change.
-            pass.deliver.push(event);
-        } else if let Some(m) = event.downcast_ref::<crate::message::AppSimulateKey>() {
-            let key = m.key.clone();
-            if let Some(synthetic) = parse_simulated_key(&key) {
-                dispatch_simulated_key_like_input(app, root, &synthetic, &mut pass);
-            } else {
-                debug_input(&format!(
-                    "[runtime] app.simulate_key ignored invalid key spec {key:?}"
-                ));
-            }
-        } else if event.is::<crate::message::AppSuspendProcess>() {
-            pass.repaint_requested |= app.action_suspend_process();
-        } else if let Some(m) = event.downcast_ref::<crate::message::AppSwitchMode>() {
-            let mode = m.mode.clone();
-            if app.switch_mode(&mode) {
-                pass.repaint_requested = true;
-                pass.invalidation
-                    .merge(crate::event::InvalidationFlags::layout());
-            } else {
-                debug_input(&format!("[runtime] app.switch_mode ignored mode={mode:?}"));
-            }
-        } else if let Some(m) = event.downcast_ref::<crate::message::AppSwitchScreen>() {
-            let screen = m.screen.clone();
-            if app.action_switch_screen(&screen) {
-                pass.repaint_requested = true;
-                pass.invalidation
-                    .merge(crate::event::InvalidationFlags::layout());
-            } else {
-                debug_input(&format!(
-                    "[runtime] app.switch_screen ignored screen={screen:?}"
-                ));
-            }
-        } else if event.is::<crate::message::AppToggleDark>() {
-            if app.action_toggle_dark() {
-                // Toggling dark switches the active *registered* theme, which
-                // swaps the design-token map. Token-styled surfaces (Header /
-                // Footer / Screen) bake their blank surface from a seed style
-                // resolved at build/layout time, so a bare repaint keeps the
-                // stale colours. Request the same style/layout invalidation as
-                // `AppSetTheme`/`AppCycleTheme` so every widget re-seeds against
-                // the new tokens and the frame actually recolours (Python's
-                // `_watch_theme` -> `_invalidate_css` + `refresh_css`).
-                pass.repaint_requested = true;
-                pass.invalidation
-                    .merge(crate::event::InvalidationFlags::layout());
-            }
-        } else if let Some(m) = event.downcast_ref::<crate::message::ActionDispatchRequested>() {
-            let action = m.action.clone();
-            dispatch_action_string(app, root, &action, event.sender, &mut pass);
-        } else {
+        if apply_runtime_control(app, root, &event, &mut pass) != ControlRoute::Consumed {
             pass.deliver.push(event);
         }
     }
     pass.generated.extend(app.drain_ready_timers());
     pass.generated.extend(app.async_tasks.drain_completed());
     pass
+}
+
+/// What the runtime does with one queued message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlRoute {
+    /// Not a runtime control message: deliver it to widgets.
+    NotControl,
+    /// Applied by the runtime and consumed.
+    Consumed,
+    /// Applied by the runtime and still delivered to widgets.
+    Deliver,
+}
+
+impl RuntimeMessagePass {
+    /// Repaint and re-run layout (the change can move or resize widgets).
+    fn request_relayout(&mut self) {
+        self.repaint_requested = true;
+        self.invalidation
+            .merge(crate::event::InvalidationFlags::layout());
+    }
+}
+
+/// Apply `event` if it is a runtime control message.
+fn apply_runtime_control(
+    app: &mut App,
+    root: &mut dyn Widget,
+    event: &MessageEvent,
+    pass: &mut RuntimeMessagePass,
+) -> ControlRoute {
+    let groups: [fn(&mut App, &MessageEvent, &mut RuntimeMessagePass) -> ControlRoute; 5] = [
+        apply_task_control,
+        apply_class_control,
+        apply_theme_control,
+        apply_focus_control,
+        apply_screen_control,
+    ];
+    for apply in groups {
+        let route = apply(app, event, pass);
+        if route != ControlRoute::NotControl {
+            return route;
+        }
+    }
+    apply_app_control(app, root, event, pass)
+}
+
+/// Async task and timer scheduling.
+fn apply_task_control(
+    app: &mut App,
+    event: &MessageEvent,
+    pass: &mut RuntimeMessagePass,
+) -> ControlRoute {
+    if let Some(m) = event.downcast_ref::<crate::message::AsyncTaskSpawn>() {
+        let m = m.clone();
+        if let Some(cancelled) = app.async_tasks.spawn(m.task_id, m.target, m.request) {
+            pass.generated.push(cancelled);
+        }
+    } else if let Some(m) = event.downcast_ref::<crate::message::AsyncTaskCancel>() {
+        let task_id = m.task_id;
+        if let Some(cancelled) = app.async_tasks.cancel(task_id) {
+            pass.generated.push(cancelled);
+        }
+    } else if let Some(m) = event.downcast_ref::<crate::message::AsyncTaskCancelTarget>() {
+        let target = m.target;
+        pass.generated
+            .extend(app.async_tasks.cancel_for_target(target));
+    } else if let Some(m) = event.downcast_ref::<crate::message::TimerSchedule>() {
+        let m = m.clone();
+        if let Some(cancelled) = app.timers.schedule(m.timer_id, m.target, m.delay) {
+            pass.generated.push(cancelled);
+        }
+    } else if let Some(m) = event.downcast_ref::<crate::message::TimerCancel>() {
+        let timer_id = m.timer_id;
+        if let Some(cancelled) = app.timers.cancel(timer_id) {
+            pass.generated.push(cancelled);
+        }
+    } else {
+        return ControlRoute::NotControl;
+    }
+    ControlRoute::Consumed
+}
+
+/// Record the result of an app-level class change (`add_class` and friends).
+fn note_class_change<E: std::fmt::Debug>(
+    pass: &mut RuntimeMessagePass,
+    result: Result<usize, E>,
+    what: &str,
+    selector: &str,
+    class_name: &str,
+) {
+    match result {
+        Ok(matched) if matched > 0 => pass.request_relayout(),
+        Ok(_) => {}
+        Err(err) => {
+            debug_input(&format!(
+                "[runtime] app.{what} ignored selector={selector:?} class={class_name:?} err={err:?}"
+            ));
+        }
+    }
+}
+
+/// App-level class and disabled-state changes by selector.
+fn apply_class_control(
+    app: &mut App,
+    event: &MessageEvent,
+    pass: &mut RuntimeMessagePass,
+) -> ControlRoute {
+    if let Some(m) = event.downcast_ref::<crate::message::AppAddClass>() {
+        let selector = m.selector.clone();
+        let class_name = m.class_name.clone();
+        let result = app.action_add_class(&selector, &class_name);
+        note_class_change(pass, result, "add_class", &selector, &class_name);
+    } else if let Some(m) = event.downcast_ref::<crate::message::AppRemoveClass>() {
+        let selector = m.selector.clone();
+        let class_name = m.class_name.clone();
+        let result = app.action_remove_class(&selector, &class_name);
+        note_class_change(pass, result, "remove_class", &selector, &class_name);
+    } else if let Some(m) = event.downcast_ref::<crate::message::AppToggleClass>() {
+        let selector = m.selector.clone();
+        let class_name = m.class_name.clone();
+        let result = app.action_toggle_class(&selector, &class_name);
+        note_class_change(pass, result, "toggle_class", &selector, &class_name);
+    } else if let Some(m) = event.downcast_ref::<crate::message::AppSetDisabled>() {
+        let selector = m.selector.clone();
+        let disabled = m.disabled;
+        match app.query_mut(&selector) {
+            Ok(query) => {
+                let matched = query.len();
+                query.set(None, None, Some(disabled), None);
+                if matched > 0 {
+                    pass.request_relayout();
+                }
+            }
+            Err(err) => {
+                debug_input(&format!(
+                    "[runtime] app.set_disabled ignored selector={selector:?} disabled={disabled:?} err={err:?}"
+                ));
+            }
+        }
+    } else {
+        return ControlRoute::NotControl;
+    }
+    ControlRoute::Consumed
+}
+
+/// Theme changes.
+fn apply_theme_control(
+    app: &mut App,
+    event: &MessageEvent,
+    pass: &mut RuntimeMessagePass,
+) -> ControlRoute {
+    if event.is::<crate::message::AppChangeTheme>() {
+        if app.action_change_theme() {
+            pass.repaint_requested = true;
+        }
+    } else if event.is::<crate::message::AppCycleTheme>() {
+        if app.action_cycle_theme() {
+            pass.request_relayout();
+        }
+    } else if let Some(m) = event.downcast_ref::<crate::message::AppSetTheme>() {
+        let name = m.name.clone();
+        if app.set_theme_by_name(&name) {
+            pass.request_relayout();
+        } else {
+            debug_input(&format!("[runtime] app.set_theme unknown theme={name:?}"));
+        }
+    } else if event.is::<crate::message::AppToggleDark>() {
+        if app.action_toggle_dark() {
+            // Toggling dark switches the active *registered* theme, which
+            // swaps the design-token map. Token-styled surfaces (Header /
+            // Footer / Screen) bake their blank surface from a seed style
+            // resolved at build/layout time, so a bare repaint keeps the
+            // stale colours. Request the same style/layout invalidation as
+            // `AppSetTheme`/`AppCycleTheme` so every widget re-seeds against
+            // the new tokens and the frame actually recolours (Python's
+            // `_watch_theme` -> `_invalidate_css` + `refresh_css`).
+            pass.request_relayout();
+        }
+    } else {
+        return ControlRoute::NotControl;
+    }
+    ControlRoute::Consumed
+}
+
+/// Focus requests.
+fn apply_focus_control(
+    app: &mut App,
+    event: &MessageEvent,
+    pass: &mut RuntimeMessagePass,
+) -> ControlRoute {
+    if let Some(m) = event.downcast_ref::<crate::message::AppFocus>() {
+        let widget_id = m.widget_id.clone();
+        match app.action_focus(&widget_id) {
+            Ok(true) => {
+                // A focus landed — that is the newest intent, so drop any
+                // earlier deferred request (last-writer wins).
+                app.pending_focus = None;
+                pass.repaint_requested = true;
+            }
+            Ok(false) => {
+                // Not focused. If the target EXISTS (it just isn't displayed
+                // yet — a sibling handler flipped its `display` via a deferred
+                // class op the post-dispatch flush + layout applies AFTER this
+                // message routes), defer the request so it lands once the
+                // same-frame display resolution runs (`retry_pending_focus`).
+                // A genuine no-match is dropped (never displays → never
+                // deferred), so a target that can never show cannot spin.
+                if app.query_one(&format!("#{widget_id}")).is_ok() {
+                    app.pending_focus = Some(widget_id);
+                }
+            }
+            Err(err) => {
+                debug_input(&format!(
+                    "[runtime] app.focus ignored widget_id={widget_id:?} err={err:?}"
+                ));
+            }
+        }
+    } else if event.is::<crate::message::AppFocusNext>() {
+        // An explicit tab is a newer focus intent — drop any deferred request.
+        app.pending_focus = None;
+        if app.action_focus_next() {
+            pass.repaint_requested = true;
+        }
+    } else if event.is::<crate::message::AppFocusPrevious>() {
+        app.pending_focus = None;
+        if app.action_focus_previous() {
+            pass.repaint_requested = true;
+        }
+    } else {
+        return ControlRoute::NotControl;
+    }
+    ControlRoute::Consumed
+}
+
+/// Record the result of showing or hiding the help panel.
+fn note_help_panel_change<E: std::fmt::Debug>(
+    pass: &mut RuntimeMessagePass,
+    result: Result<bool, E>,
+    what: &str,
+) {
+    match result {
+        Ok(changed) => {
+            if changed {
+                pass.request_relayout();
+            }
+        }
+        Err(err) => {
+            debug_input(&format!("[runtime] app.{what} ignored err={err:?}"));
+        }
+    }
+}
+
+/// Screen stack, mode and help-panel changes.
+fn apply_screen_control(
+    app: &mut App,
+    event: &MessageEvent,
+    pass: &mut RuntimeMessagePass,
+) -> ControlRoute {
+    if event.is::<crate::message::AppBack>() {
+        if app.action_back() {
+            pass.request_relayout();
+        }
+    } else if event.is::<crate::message::AppPopScreen>() {
+        if app.action_pop_screen() {
+            pass.request_relayout();
+        }
+    } else if let Some(m) = event.downcast_ref::<crate::message::AppPushScreen>() {
+        let screen = m.screen.clone();
+        if app.action_push_screen(&screen) {
+            pass.request_relayout();
+        } else {
+            debug_input(&format!(
+                "[runtime] app.push_screen ignored missing screen={screen:?}"
+            ));
+        }
+    } else if let Some(m) = event.downcast_ref::<crate::message::AppSwitchMode>() {
+        let mode = m.mode.clone();
+        if app.switch_mode(&mode) {
+            pass.request_relayout();
+        } else {
+            debug_input(&format!("[runtime] app.switch_mode ignored mode={mode:?}"));
+        }
+    } else if let Some(m) = event.downcast_ref::<crate::message::AppSwitchScreen>() {
+        let screen = m.screen.clone();
+        if app.action_switch_screen(&screen) {
+            pass.request_relayout();
+        } else {
+            debug_input(&format!(
+                "[runtime] app.switch_screen ignored screen={screen:?}"
+            ));
+        }
+    } else if event.is::<crate::message::AppHideHelpPanel>() {
+        let result = app.action_hide_help_panel();
+        note_help_panel_change(pass, result, "hide_help_panel");
+        // Keep lifecycle/control visibility messages observable by
+        // widgets (e.g. CommandPalette/TextualAppAdapter) after runtime
+        // applies the state change.
+        return ControlRoute::Deliver;
+    } else if event.is::<crate::message::AppShowHelpPanel>() {
+        let result = app.action_show_help_panel();
+        note_help_panel_change(pass, result, "show_help_panel");
+        // Keep lifecycle/control visibility messages observable by
+        // widgets (e.g. CommandPalette/TextualAppAdapter) after runtime
+        // applies the state change.
+        return ControlRoute::Deliver;
+    } else {
+        return ControlRoute::NotControl;
+    }
+    ControlRoute::Consumed
+}
+
+/// Overlays, notifications, clipboard, screenshots, simulated keys,
+/// suspend, and action strings.
+fn apply_app_control(
+    app: &mut App,
+    root: &mut dyn Widget,
+    event: &MessageEvent,
+    pass: &mut RuntimeMessagePass,
+) -> ControlRoute {
+    if let Some(m) = event.downcast_ref::<crate::message::OverlayVisibilityChanged>() {
+        let overlay = m.overlay;
+        let visible = m.visible;
+        if let Some(tree) = app.active_widget_tree_mut()
+            && set_overlay_modal_display_tree(tree, overlay, visible)
+        {
+            pass.request_relayout();
+        }
+        return ControlRoute::Deliver;
+    } else if let Some(m) = event.downcast_ref::<crate::message::NotificationExpired>() {
+        // An auto-dismiss timer elapsed (or a toast was clicked): drop the
+        // notification from the store. The event loop re-syncs the rack on the
+        // next iteration, unmounting the toast node. Consumed here (not
+        // delivered onward).
+        app.remove_notification(m.id);
+        pass.repaint_requested = true;
+    } else if event.is::<crate::message::AppBell>() {
+        let _ = app.action_bell();
+    } else if event.is::<crate::message::AppCommandPalette>() {
+        // Wave 1: deliver `AppCommandPalette` to the adapter's `on_app_message`
+        // (which owns the providers + `&mut App`) so it can push the composed
+        // `CommandPaletteScreen`. This SEAM gates the legacy always-mounted
+        // `CommandPalette` host: it no longer receives `Action::CommandPalette`,
+        // so it stays inert. Wave 2 deletes the old host + this delivery hop.
+        return ControlRoute::Deliver;
+    } else if event.is::<crate::message::AppHelpQuit>() {
+        app.action_help_quit();
+        pass.repaint_requested = true;
+    } else if event.is::<crate::message::AppCopySelectedText>() {
+        if let Some(text) = app.action_copy_selected_text() {
+            let sender = App::runtime_message_sender();
+            pass.generated.push(
+                MessageEvent::new(
+                    sender,
+                    crate::message::TextEditClipboardCopyRequested { text, cut: false },
+                )
+                .with_control(sender),
+            );
+        } else {
+            app.notify_help_quit();
+            pass.repaint_requested = true;
+        }
+    } else if let Some(m) = event.downcast_ref::<crate::message::AppNotify>() {
+        let message = m.message.clone();
+        let title = m.title.clone();
+        let severity = m.severity.clone();
+        app.action_notify(&message, &title, &severity);
+        pass.repaint_requested = true;
+    } else if let Some(m) = event.downcast_ref::<crate::message::AppScreenshot>() {
+        let filename = m.filename.clone();
+        let path = m.path.clone();
+        pass.repaint_requested |= app.action_screenshot(filename.as_deref(), path.as_deref());
+    } else if let Some(m) = event.downcast_ref::<crate::message::AppSimulateKey>() {
+        let key = m.key.clone();
+        if let Some(synthetic) = parse_simulated_key(&key) {
+            dispatch_simulated_key_like_input(app, root, &synthetic, pass);
+        } else {
+            debug_input(&format!(
+                "[runtime] app.simulate_key ignored invalid key spec {key:?}"
+            ));
+        }
+    } else if event.is::<crate::message::AppSuspendProcess>() {
+        pass.repaint_requested |= app.action_suspend_process();
+    } else if let Some(m) = event.downcast_ref::<crate::message::ActionDispatchRequested>() {
+        let action = m.action.clone();
+        dispatch_action_string(app, root, &action, event.sender, pass);
+    } else {
+        return ControlRoute::NotControl;
+    }
+    ControlRoute::Consumed
 }
 
 #[derive(Clone)]
@@ -2188,8 +2212,9 @@ fn mount_live_root(root: &mut dyn Widget) -> DispatchOutcome {
     DispatchOutcome::from_event_ctx(&mut synth)
 }
 
-/// Build the outcome of a key-binding action that ran against `ctx`.
-fn binding_outcome(handled: bool, ctx: &mut EventCtx) -> DispatchOutcome {
+/// Build the outcome of an action (or the unhandled-action hook) that ran
+/// against `ctx`.
+fn outcome_from_action(handled: bool, ctx: &mut EventCtx) -> DispatchOutcome {
     DispatchOutcome {
         handled: handled || ctx.handled(),
         repaint_requested: ctx.repaint_requested(),
@@ -2204,6 +2229,61 @@ fn binding_outcome(handled: bool, ctx: &mut EventCtx) -> DispatchOutcome {
         prevented: Vec::new(),
         class_ops: ctx.take_class_ops(),
     }
+}
+
+/// Merge the side effects staged on `ctx` ahead of the outcome's own (root
+/// key capture runs before tree dispatch). Style animation requests stay on
+/// `ctx`.
+fn prepend_ctx_effects(outcome: &mut DispatchOutcome, ctx: &mut EventCtx) {
+    outcome.handled |= ctx.handled();
+    outcome.repaint_requested |= ctx.repaint_requested();
+    outcome.invalidation.merge(ctx.invalidation());
+    outcome.stop_requested |= ctx.stop_requested();
+
+    let mut root_messages = ctx.take_messages();
+    if !root_messages.is_empty() {
+        root_messages.extend(std::mem::take(&mut outcome.messages));
+        outcome.messages = root_messages;
+    }
+
+    let mut root_animation_requests = ctx.take_animation_requests();
+    if !root_animation_requests.is_empty() {
+        root_animation_requests.extend(std::mem::take(&mut outcome.animation_requests));
+        outcome.animation_requests = root_animation_requests;
+    }
+
+    let mut root_worker_requests = ctx.take_worker_requests();
+    if !root_worker_requests.is_empty() {
+        root_worker_requests.extend(std::mem::take(&mut outcome.worker_requests));
+        outcome.worker_requests = root_worker_requests;
+    }
+
+    let mut root_recompose_nodes = ctx.take_recompose_nodes();
+    if !root_recompose_nodes.is_empty() {
+        root_recompose_nodes.extend(std::mem::take(&mut outcome.recompose_nodes));
+        outcome.recompose_nodes = root_recompose_nodes;
+    }
+    let mut root_class_ops = ctx.take_class_ops();
+    if !root_class_ops.is_empty() {
+        root_class_ops.extend(std::mem::take(&mut outcome.class_ops));
+        outcome.class_ops = root_class_ops;
+    }
+}
+
+/// Merge the side effects staged on `ctx` after the outcome's own. Style
+/// animation requests stay on `ctx`.
+fn append_ctx_effects(outcome: &mut DispatchOutcome, ctx: &mut EventCtx) {
+    outcome.handled |= ctx.handled();
+    outcome.repaint_requested |= ctx.repaint_requested();
+    outcome.invalidation.merge(ctx.invalidation());
+    outcome.stop_requested |= ctx.stop_requested();
+    outcome.messages.extend(ctx.take_messages());
+    outcome
+        .animation_requests
+        .extend(ctx.take_animation_requests());
+    outcome.worker_requests.extend(ctx.take_worker_requests());
+    outcome.recompose_nodes.extend(ctx.take_recompose_nodes());
+    outcome.class_ops.extend(ctx.take_class_ops());
 }
 
 impl App {
@@ -2341,8 +2421,6 @@ impl App {
     }
 
     fn publish_devtools_snapshot(&mut self, root: &mut dyn Widget) {
-        use std::fmt::Write as _;
-
         let Some(devtools) = &self.devtools else {
             return;
         };
@@ -2355,82 +2433,9 @@ impl App {
             if let Some(root_id) = tree.root() {
                 let walk = tree.walk_depth_first(root_id);
                 for node_id in walk {
-                    let Some(node) = tree.get(node_id) else {
+                    let Some((line, is_focused)) = self.devtools_widget_line(tree, node_id) else {
                         continue;
                     };
-                    let depth = tree.ancestors(node_id).len();
-                    let widget = node.widget.as_ref();
-                    // Step 6: read focus, id, classes, disabled from node record only.
-                    let is_focused = node.state.focused && self.app_active;
-
-                    // Layout rect from hit-test map.
-                    let layout_rect = self.hit_test.rect(node_id);
-                    let layout_rect_field = if let Some(r) = layout_rect {
-                        format!("{},{},{},{}", r.x0, r.y0, r.x1, r.y1)
-                    } else {
-                        "-".to_string()
-                    };
-                    // Content rect from tree node.
-                    let cr = &node.content_rect;
-                    let content_rect_field = if cr.x0 == 0 && cr.y0 == 0 && cr.x1 == 0 && cr.y1 == 0
-                    {
-                        "-".to_string()
-                    } else {
-                        format!("{},{},{},{}", cr.x0, cr.y0, cr.x1, cr.y1)
-                    };
-
-                    let style_id = node
-                        .css_id
-                        .as_deref()
-                        .map_or_else(|| "-".to_string(), sanitize_snapshot_field);
-
-                    let classes_field = node
-                        .classes
-                        .iter()
-                        .map(|c| sanitize_snapshot_field(c))
-                        .collect::<Vec<_>>()
-                        .join(",");
-
-                    // Parent / children IDs.
-                    let parent_field = node
-                        .parent
-                        .map_or_else(|| "-".to_string(), |p| node_id_to_ffi(p).to_string());
-                    let children_field = if node.children.is_empty() {
-                        "-".to_string()
-                    } else {
-                        node.children
-                            .iter()
-                            .map(|c| node_id_to_ffi(*c).to_string())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    };
-
-                    // Visibility.
-                    let visibility_field = match node.visibility {
-                        crate::style::Visibility::Visible => "visible",
-                        crate::style::Visibility::Hidden => "hidden",
-                    };
-
-                    let line = format!(
-                        "widget\t{depth}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                        node_id_to_ffi(node_id),
-                        sanitize_snapshot_field(widget.style_type()),
-                        style_id,
-                        classes_field,
-                        bool_flag(is_focused),
-                        bool_flag(self.hovered == Some(node_id)),
-                        bool_flag(widget.is_active()),
-                        bool_flag(node.state.disabled),
-                        layout_rect_field,
-                        content_rect_field,
-                        bool_flag(node.display),
-                        visibility_field,
-                        bool_flag(node.css_display),
-                        bool_flag(node.runtime_display),
-                        bool_flag(node.mounted),
-                        parent_field,
-                        children_field,
-                    );
                     widget_lines.push(line);
                     if is_focused {
                         focused = Some(node_id);
@@ -2438,33 +2443,126 @@ impl App {
                 }
             }
         } else {
-            // Root-only fallback: just the root widget (limited info).
-            let widget = root as &dyn Widget;
-            // Step 6: no node record for off-tree root; identity/state defaults to empty/false.
-            let is_focused = false;
-            let rect = self.hit_test.rect(NodeId::default());
-            let rect_field = if let Some(r) = rect {
-                format!("{},{},{},{}", r.x0, r.y0, r.x1, r.y1)
-            } else {
-                "-".to_string()
-            };
-            let line = format!(
-                "widget\t0\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t-\t1\tvisible\t1\t1\t1\t-\t-",
-                node_id_to_ffi(NodeId::default()),
-                sanitize_snapshot_field(widget.style_type()),
-                "-",
-                "",
-                bool_flag(is_focused),
-                bool_flag(self.hovered == Some(NodeId::default())),
-                bool_flag(widget.is_active()),
-                bool_flag(false),
-                rect_field,
-            );
-            widget_lines.push(line);
-            if is_focused {
-                focused = Some(NodeId::default());
-            }
+            // Root-only fallback: just the root widget (limited info). It has
+            // no node record, so it is never reported as focused.
+            widget_lines.push(self.devtools_root_line(root));
         }
+
+        let snapshot = self.devtools_snapshot_text(widget_lines, focused);
+        devtools.publish_snapshot(&snapshot);
+    }
+
+    /// One devtools `widget` line for a tree node, and whether it is focused.
+    fn devtools_widget_line(
+        &self,
+        tree: &crate::widget_tree::WidgetTree,
+        node_id: NodeId,
+    ) -> Option<(String, bool)> {
+        let node = tree.get(node_id)?;
+        let depth = tree.ancestors(node_id).len();
+        let widget = node.widget.as_ref();
+        // Step 6: read focus, id, classes, disabled from node record only.
+        let is_focused = node.state.focused && self.app_active;
+
+        // Layout rect from hit-test map.
+        let layout_rect = self.hit_test.rect(node_id);
+        let layout_rect_field = if let Some(r) = layout_rect {
+            format!("{},{},{},{}", r.x0, r.y0, r.x1, r.y1)
+        } else {
+            "-".to_string()
+        };
+        // Content rect from tree node.
+        let cr = &node.content_rect;
+        let content_rect_field = if cr.x0 == 0 && cr.y0 == 0 && cr.x1 == 0 && cr.y1 == 0 {
+            "-".to_string()
+        } else {
+            format!("{},{},{},{}", cr.x0, cr.y0, cr.x1, cr.y1)
+        };
+
+        let style_id = node
+            .css_id
+            .as_deref()
+            .map_or_else(|| "-".to_string(), sanitize_snapshot_field);
+
+        let classes_field = node
+            .classes
+            .iter()
+            .map(|c| sanitize_snapshot_field(c))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        // Parent / children IDs.
+        let parent_field = node
+            .parent
+            .map_or_else(|| "-".to_string(), |p| node_id_to_ffi(p).to_string());
+        let children_field = if node.children.is_empty() {
+            "-".to_string()
+        } else {
+            node.children
+                .iter()
+                .map(|c| node_id_to_ffi(*c).to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+
+        // Visibility.
+        let visibility_field = match node.visibility {
+            crate::style::Visibility::Visible => "visible",
+            crate::style::Visibility::Hidden => "hidden",
+        };
+
+        let line = format!(
+            "widget\t{depth}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            node_id_to_ffi(node_id),
+            sanitize_snapshot_field(widget.style_type()),
+            style_id,
+            classes_field,
+            bool_flag(is_focused),
+            bool_flag(self.hovered == Some(node_id)),
+            bool_flag(widget.is_active()),
+            bool_flag(node.state.disabled),
+            layout_rect_field,
+            content_rect_field,
+            bool_flag(node.display),
+            visibility_field,
+            bool_flag(node.css_display),
+            bool_flag(node.runtime_display),
+            bool_flag(node.mounted),
+            parent_field,
+            children_field,
+        );
+        Some((line, is_focused))
+    }
+
+    /// The devtools `widget` line for a root that is not in an arena tree.
+    fn devtools_root_line(&self, root: &dyn Widget) -> String {
+        let widget = root;
+        // Step 6: no node record for off-tree root; identity/state defaults to empty/false.
+        let is_focused = false;
+        let rect = self.hit_test.rect(NodeId::default());
+        let rect_field = if let Some(r) = rect {
+            format!("{},{},{},{}", r.x0, r.y0, r.x1, r.y1)
+        } else {
+            "-".to_string()
+        };
+        format!(
+            "widget\t0\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t-\t1\tvisible\t1\t1\t1\t-\t-",
+            node_id_to_ffi(NodeId::default()),
+            sanitize_snapshot_field(widget.style_type()),
+            "-",
+            "",
+            bool_flag(is_focused),
+            bool_flag(self.hovered == Some(NodeId::default())),
+            bool_flag(widget.is_active()),
+            bool_flag(false),
+            rect_field,
+        )
+    }
+
+    /// The devtools snapshot text: header, binding hints, widget lines and
+    /// resolved style lines.
+    fn devtools_snapshot_text(&self, widget_lines: Vec<String>, focused: Option<NodeId>) -> String {
+        use std::fmt::Write as _;
 
         let mut snapshot = String::new();
         snapshot.push_str("version\t2\n");
@@ -2516,7 +2614,7 @@ impl App {
                 );
             }
         }
-        devtools.publish_snapshot(&snapshot);
+        snapshot
     }
 
     fn dispatch_message_queue_with_runtime(
@@ -3404,8 +3502,8 @@ impl App {
         if !(handled || ctx.handled()) {
             return LoopStep::Proceed;
         }
-        let outcome = binding_outcome(handled, &mut ctx);
-        if self.live_absorb_binding_outcome(root, pending_invalidation, outcome) {
+        let outcome = outcome_from_action(handled, &mut ctx);
+        if self.absorb_action_outcome(root, pending_invalidation, outcome) {
             return LoopStep::Stop;
         }
         t.end_input_early(pending_invalidation, "binding_widget_action")
@@ -3429,8 +3527,8 @@ impl App {
         if !(handled || root_ctx.handled()) {
             return LoopStep::Proceed;
         }
-        let outcome = binding_outcome(handled, &mut root_ctx);
-        if self.live_absorb_binding_outcome(root, pending_invalidation, outcome) {
+        let outcome = outcome_from_action(handled, &mut root_ctx);
+        if self.absorb_action_outcome(root, pending_invalidation, outcome) {
             return LoopStep::Stop;
         }
         t.end_input_early(pending_invalidation, "binding_root_action")
@@ -3453,16 +3551,16 @@ impl App {
         if !fallback_ctx.handled() {
             return LoopStep::Proceed;
         }
-        let outcome = binding_outcome(true, &mut fallback_ctx);
-        if self.live_absorb_binding_outcome(root, pending_invalidation, outcome) {
+        let outcome = outcome_from_action(true, &mut fallback_ctx);
+        if self.absorb_action_outcome(root, pending_invalidation, outcome) {
             return LoopStep::Stop;
         }
         LoopStep::NextPass
     }
 
-    /// Absorb a binding action's outcome and dispatch its messages. Returns
-    /// true when the app should stop.
-    fn live_absorb_binding_outcome(
+    /// Absorb an action's outcome and dispatch its messages. Returns true
+    /// when the app should stop.
+    fn absorb_action_outcome(
         &mut self,
         root: &mut dyn Widget,
         pending_invalidation: &mut PendingInvalidation,
@@ -4960,213 +5058,8 @@ impl App {
         const MAX_ITERATIONS: usize = 10_000;
         let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
         for _ in 0..MAX_ITERATIONS {
-            let mut progressed = false;
-
-            // `call_from_thread` jobs posted by worker threads. Run each with
-            // `&mut App` so the worker (blocked on its result channel) unblocks,
-            // exactly as the live loop does once per tick. Only when THIS app
-            // registered the (process-global) UI thread — i.e. it actually
-            // spawned a worker — so a worker-free `run_test` does not drain jobs
-            // belonging to a concurrent test sharing the singleton bridge.
-            if self.headless_ui_thread_registered {
-                for job in crate::runtime::tasks::drain_call_from_thread_jobs() {
-                    progressed = true;
-                    job(self);
-                    pending.request_full_content();
-                }
-            }
-
-            // Queued capture/release notices first (single-node event
-            // dispatch), then app-level / broadcast messages.
-            if self.has_pending_app_events() {
-                progressed = true;
-                let mut pending_events_outcome = self.dispatch_pending_app_events(root);
-                self.absorb_outcome(
-                    &mut pending_events_outcome,
-                    pending,
-                    InvalidationScope::Global,
-                );
-            }
-
-            // App-level / broadcast messages (set_title etc.).
-            let app_messages = self.drain_pending_app_messages();
-            if !app_messages.is_empty() {
-                progressed = true;
-                let mut outcome = self.dispatch_message_queue_with_runtime(root, app_messages);
-                self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-            }
-
-            // Ready timers (deadlines that have already elapsed). App-level timer
-            // callbacks are run via run_due_timer_callbacks.
-            let timer_messages = self.drain_ready_timers();
-            if !timer_messages.is_empty() {
-                progressed = true;
-                let mut outcome = self.dispatch_message_queue_with_runtime(root, timer_messages);
-                self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-            }
-            if self.has_pending_timer_fires() {
-                progressed = true;
-                let mut ctx = EventCtx::default();
-                // Route through the root's `on_app_timer` hook (NOT a bare
-                // `run_due_timer_callbacks`) so app-struct reactive mutations made
-                // inside timer callbacks (e.g. `app.reactive_ctx()` setters in a
-                // `set_interval` closure) flush their watchers via
-                // `dispatch_app_reactive`, exactly as the live event loop does
-                // (see the `root.on_app_timer(...)` call in `run_with`). Without
-                // this, headless/Pilot timer ticks fire the callback but never the
-                // app-level `watch_*`, so time-driven clock demos looked dead.
-                {
-                    let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
-                    root.on_app_timer(self, &mut __wctx);
-                    __wctx.__enqueue_reactive_if_dirty();
-                }
-                let mut outcome = DispatchOutcome::from_event_ctx(&mut ctx);
-                self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-                let mut msg_outcome =
-                    self.dispatch_message_queue_with_runtime(root, outcome.messages);
-                self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
-            }
-
-            // Widget-owned interval callbacks (WidgetCtx::set_interval). Same
-            // TimerRuntime as app timers; the drain above stashed due ids. Under
-            // the manual clock, Pilot::advance_clock drives these deterministically.
-            if self.has_pending_widget_timer_fires() {
-                progressed = true;
-                self.run_due_widget_timer_callbacks(pending);
-            }
-
-            // Async task completions.
-            let task_messages = self.async_tasks.drain_completed();
-            if !task_messages.is_empty() {
-                progressed = true;
-                let mut outcome = self.dispatch_message_queue_with_runtime(root, task_messages);
-                self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-            }
-
-            // Worker requests + completions. The live loop owns a function-local
-            // `WorkerRegistry` and runs this phase each pass (see `run_with`);
-            // headless has no such loop-local state, so it keeps its registry on
-            // the `App` and processes it here. We spawn newly-requested workers
-            // and, while any worker is still active, block briefly for its
-            // completion — so a "type a city → background fetch → update Static"
-            // demo reaches a settled, deterministic result by the time the pump
-            // returns to idle, instead of leaving the request un-run.
-            if self.headless_process_workers(root, pending) {
-                progressed = true;
-            }
-
-            // Animation frame (advances active animations toward completion).
-            //
-            // Only count it as progress when the frame actually produced an
-            // update. Under the manual clock (run_test) time does not advance
-            // within a single pump, so a still-active animation that yields no
-            // new value this instant must NOT keep the pump spinning — otherwise
-            // the loop would burn MAX_ITERATIONS until `advance_clock` moves time
-            // forward. (On the wall clock, `clock_now()` always advances, so an
-            // active animation keeps producing frames and progress, as before.)
-            if self.animator.has_animations() {
-                let mut anim_outcome = self.dispatch_animation_frame(root);
-                if anim_outcome.repaint_requested
-                    || anim_outcome.invalidation.layout
-                    || anim_outcome.invalidation.style
-                    || anim_outcome.invalidation.content
-                    || !anim_outcome.messages.is_empty()
-                {
-                    progressed = true;
-                }
-                self.absorb_outcome(&mut anim_outcome, pending, InvalidationScope::Global);
-            }
-
-            // Binding-hints changed (footer/help refresh).
-            let mut binding_outcome = self.dispatch_binding_hints_changed(root);
-            if binding_outcome.invalidation.layout
-                || binding_outcome.invalidation.style
-                || binding_outcome.repaint_requested
-                || !binding_outcome.messages.is_empty()
-            {
-                progressed = true;
-            }
-            self.absorb_outcome(&mut binding_outcome, pending, InvalidationScope::Global);
-
-            // Reactive phase — drain widget-level runtime reactive entries
-            // (those enqueued via `enqueue_runtime_reactive_entry`, e.g. a custom
-            // widget bumping its own reactive in `on_message`/`on_button_pressed`),
-            // running each node's watchers/recompose. The live event loop runs
-            // this every pass (see `run_event_loop_reactive_phase` in `run_with`);
-            // without it here, headless/Pilot dispatch enqueues the entry but
-            // never fires the widget's `watch_*`, so widget-reactive demos looked
-            // dead.
-            if crate::reactive::runtime_reactive_queue_is_nonempty()
-                || crate::runtime::commands::command_queue_is_nonempty()
-            {
-                progressed = true;
-                self.run_event_loop_reactive_phase(root, pending);
-            }
-
-            // Re-sync the docked ToastRack when the notification store changed —
-            // a `notify`, or a `NotificationExpired` removal (from an elapsed
-            // rack-owned auto-dismiss timer or a toast click) just dispatched in
-            // the reactive phase above. Mirrors the live loop's sweep so headless/
-            // Pilot runs converge identically. `refresh_toast_rack` only reports
-            // progress when a rack exists and it consumed the store, so this
-            // cannot spin when no rack is mounted.
-            if self.notifications_dirty && self.refresh_toast_rack() {
-                progressed = true;
-                pending.request_full_content();
-            }
-
-            // Style transitions + display-tree sync + recompositions.
-            if pending.flags.style || pending.flags.layout || self.style_snapshot_cache.is_empty() {
-                self.dispatch_style_transition_requests(root);
-            }
-            if let Some(tree) = self.active_widget_tree_mut()
-                && sync_widget_controlled_child_display_tree(tree, root)
-            {
-                progressed = true;
-                pending.request_flags(crate::event::InvalidationFlags::layout());
-                pending.request_full_content();
-            }
-            self.absorb_pending_recompositions(pending);
-
-            // Drain tree lifecycle events produced by the recompose above (and
-            // any mount commands): dispatch Mount/Unmount and fire the
-            // widget-owned `on_mount_ctx` hook, via the SAME shared drain the
-            // live loop runs each tick. Without this, a widget mounted through a
-            // DYNAMIC RECOMPOSE never gets `on_mount_ctx` headlessly, so its
-            // `set_interval` timers never register (the last live-vs-headless
-            // mount divergence). A fresh mount counts as progress so the pump
-            // iterates again, letting the just-registered timer fire on the next
-            // `advance_clock`. `absorb_outcome` records the sticky headless stop
-            // flag internally, so an exit-on-mount handler is still observed.
-            // Cancel workers owned by unmounted nodes against the headless
-            // registry (PR-04; the live loop passes its own registry above).
-            // Take/restore mirrors `headless_process_workers`: keep the
-            // registry only while it still tracks active workers.
-            let mut headless_registry = self.headless_worker_registry.take();
-            if self
-                .drain_tree_lifecycle_events(root, pending, headless_registry.as_mut())
-                .progressed
-            {
-                progressed = true;
-            }
-            if let Some(registry) = headless_registry {
-                if !registry.active_workers().is_empty() {
-                    self.headless_worker_registry = Some(registry);
-                }
-            }
-
-            self.absorb_pending_query_refreshes(pending);
-            if self.take_pending_force_relayout() {
-                pending.request_flags(crate::event::InvalidationFlags::layout());
-                pending.request_full_content();
-            }
-
-            // Python parity: focus must leave a widget this pass just hid (see
-            // `reset_focus_on_hidden`). The live loop gets this at the end of
-            // its per-iteration reactive phase; the pump only runs that phase
-            // when queues are non-empty (a class op is applied inline by
-            // `absorb_outcome`), so sweep explicitly.
-            self.reset_focus_on_hidden(pending);
+            let mut progressed = self.headless_pump_messages(root, pending);
+            progressed |= self.headless_pump_frame_work(root, pending);
 
             // Render if dirty.
             if pending.is_dirty() || self.resized_since_last_render {
@@ -5186,6 +5079,245 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    /// Pump step: `call_from_thread` jobs, queued app events and messages,
+    /// timers, async task completions and workers. Returns true on progress.
+    fn headless_pump_messages(
+        &mut self,
+        root: &mut dyn Widget,
+        pending: &mut PendingInvalidation,
+    ) -> bool {
+        let mut progressed = false;
+
+        // `call_from_thread` jobs posted by worker threads. Run each with
+        // `&mut App` so the worker (blocked on its result channel) unblocks,
+        // exactly as the live loop does once per tick. Only when THIS app
+        // registered the (process-global) UI thread — i.e. it actually
+        // spawned a worker — so a worker-free `run_test` does not drain jobs
+        // belonging to a concurrent test sharing the singleton bridge.
+        if self.headless_ui_thread_registered {
+            for job in crate::runtime::tasks::drain_call_from_thread_jobs() {
+                progressed = true;
+                job(self);
+                pending.request_full_content();
+            }
+        }
+
+        // Queued capture/release notices first (single-node event
+        // dispatch), then app-level / broadcast messages.
+        if self.has_pending_app_events() {
+            progressed = true;
+            let mut pending_events_outcome = self.dispatch_pending_app_events(root);
+            self.absorb_outcome(
+                &mut pending_events_outcome,
+                pending,
+                InvalidationScope::Global,
+            );
+        }
+
+        // App-level / broadcast messages (set_title etc.).
+        let app_messages = self.drain_pending_app_messages();
+        if !app_messages.is_empty() {
+            progressed = true;
+            let mut outcome = self.dispatch_message_queue_with_runtime(root, app_messages);
+            self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
+        }
+
+        progressed |= self.headless_pump_timers(root, pending);
+
+        // Async task completions.
+        let task_messages = self.async_tasks.drain_completed();
+        if !task_messages.is_empty() {
+            progressed = true;
+            let mut outcome = self.dispatch_message_queue_with_runtime(root, task_messages);
+            self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
+        }
+
+        // Worker requests + completions. The live loop owns a function-local
+        // `WorkerRegistry` and runs this phase each pass (see `run_with`);
+        // headless has no such loop-local state, so it keeps its registry on
+        // the `App` and processes it here. We spawn newly-requested workers
+        // and, while any worker is still active, block briefly for its
+        // completion — so a "type a city → background fetch → update Static"
+        // demo reaches a settled, deterministic result by the time the pump
+        // returns to idle, instead of leaving the request un-run.
+        if self.headless_process_workers(root, pending) {
+            progressed = true;
+        }
+        progressed
+    }
+
+    /// Pump step: ready timers, app timer callbacks and widget interval
+    /// callbacks. Returns true on progress.
+    fn headless_pump_timers(
+        &mut self,
+        root: &mut dyn Widget,
+        pending: &mut PendingInvalidation,
+    ) -> bool {
+        let mut progressed = false;
+        // Ready timers (deadlines that have already elapsed). App-level timer
+        // callbacks are run via run_due_timer_callbacks.
+        let timer_messages = self.drain_ready_timers();
+        if !timer_messages.is_empty() {
+            progressed = true;
+            let mut outcome = self.dispatch_message_queue_with_runtime(root, timer_messages);
+            self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
+        }
+        if self.has_pending_timer_fires() {
+            progressed = true;
+            let mut ctx = EventCtx::default();
+            // Route through the root's `on_app_timer` hook (NOT a bare
+            // `run_due_timer_callbacks`) so app-struct reactive mutations made
+            // inside timer callbacks (e.g. `app.reactive_ctx()` setters in a
+            // `set_interval` closure) flush their watchers via
+            // `dispatch_app_reactive`, exactly as the live event loop does
+            // (see the `root.on_app_timer(...)` call in `run_with`). Without
+            // this, headless/Pilot timer ticks fire the callback but never the
+            // app-level `watch_*`, so time-driven clock demos looked dead.
+            {
+                let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+                root.on_app_timer(self, &mut __wctx);
+                __wctx.__enqueue_reactive_if_dirty();
+            }
+            let mut outcome = DispatchOutcome::from_event_ctx(&mut ctx);
+            self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
+            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+            self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
+        }
+
+        // Widget-owned interval callbacks (WidgetCtx::set_interval). Same
+        // TimerRuntime as app timers; the drain above stashed due ids. Under
+        // the manual clock, Pilot::advance_clock drives these deterministically.
+        if self.has_pending_widget_timer_fires() {
+            progressed = true;
+            self.run_due_widget_timer_callbacks(pending);
+        }
+        progressed
+    }
+
+    /// Pump step: animation frame, binding hints, reactive phase, toasts,
+    /// style transitions, recompositions, lifecycle events and focus
+    /// reset. Returns true on progress.
+    fn headless_pump_frame_work(
+        &mut self,
+        root: &mut dyn Widget,
+        pending: &mut PendingInvalidation,
+    ) -> bool {
+        let mut progressed = false;
+        // Animation frame (advances active animations toward completion).
+        //
+        // Only count it as progress when the frame actually produced an
+        // update. Under the manual clock (run_test) time does not advance
+        // within a single pump, so a still-active animation that yields no
+        // new value this instant must NOT keep the pump spinning — otherwise
+        // the loop would burn MAX_ITERATIONS until `advance_clock` moves time
+        // forward. (On the wall clock, `clock_now()` always advances, so an
+        // active animation keeps producing frames and progress, as before.)
+        if self.animator.has_animations() {
+            let mut anim_outcome = self.dispatch_animation_frame(root);
+            if anim_outcome.repaint_requested
+                || anim_outcome.invalidation.layout
+                || anim_outcome.invalidation.style
+                || anim_outcome.invalidation.content
+                || !anim_outcome.messages.is_empty()
+            {
+                progressed = true;
+            }
+            self.absorb_outcome(&mut anim_outcome, pending, InvalidationScope::Global);
+        }
+
+        // Binding-hints changed (footer/help refresh).
+        let mut binding_outcome = self.dispatch_binding_hints_changed(root);
+        if binding_outcome.invalidation.layout
+            || binding_outcome.invalidation.style
+            || binding_outcome.repaint_requested
+            || !binding_outcome.messages.is_empty()
+        {
+            progressed = true;
+        }
+        self.absorb_outcome(&mut binding_outcome, pending, InvalidationScope::Global);
+
+        // Reactive phase — drain widget-level runtime reactive entries
+        // (those enqueued via `enqueue_runtime_reactive_entry`, e.g. a custom
+        // widget bumping its own reactive in `on_message`/`on_button_pressed`),
+        // running each node's watchers/recompose. The live event loop runs
+        // this every pass (see `run_event_loop_reactive_phase` in `run_with`);
+        // without it here, headless/Pilot dispatch enqueues the entry but
+        // never fires the widget's `watch_*`, so widget-reactive demos looked
+        // dead.
+        if crate::reactive::runtime_reactive_queue_is_nonempty()
+            || crate::runtime::commands::command_queue_is_nonempty()
+        {
+            progressed = true;
+            self.run_event_loop_reactive_phase(root, pending);
+        }
+
+        // Re-sync the docked ToastRack when the notification store changed —
+        // a `notify`, or a `NotificationExpired` removal (from an elapsed
+        // rack-owned auto-dismiss timer or a toast click) just dispatched in
+        // the reactive phase above. Mirrors the live loop's sweep so headless/
+        // Pilot runs converge identically. `refresh_toast_rack` only reports
+        // progress when a rack exists and it consumed the store, so this
+        // cannot spin when no rack is mounted.
+        if self.notifications_dirty && self.refresh_toast_rack() {
+            progressed = true;
+            pending.request_full_content();
+        }
+
+        // Style transitions + display-tree sync + recompositions.
+        if pending.flags.style || pending.flags.layout || self.style_snapshot_cache.is_empty() {
+            self.dispatch_style_transition_requests(root);
+        }
+        if let Some(tree) = self.active_widget_tree_mut()
+            && sync_widget_controlled_child_display_tree(tree, root)
+        {
+            progressed = true;
+            pending.request_flags(crate::event::InvalidationFlags::layout());
+            pending.request_full_content();
+        }
+        self.absorb_pending_recompositions(pending);
+
+        // Drain tree lifecycle events produced by the recompose above (and
+        // any mount commands): dispatch Mount/Unmount and fire the
+        // widget-owned `on_mount_ctx` hook, via the SAME shared drain the
+        // live loop runs each tick. Without this, a widget mounted through a
+        // DYNAMIC RECOMPOSE never gets `on_mount_ctx` headlessly, so its
+        // `set_interval` timers never register (the last live-vs-headless
+        // mount divergence). A fresh mount counts as progress so the pump
+        // iterates again, letting the just-registered timer fire on the next
+        // `advance_clock`. `absorb_outcome` records the sticky headless stop
+        // flag internally, so an exit-on-mount handler is still observed.
+        // Cancel workers owned by unmounted nodes against the headless
+        // registry (PR-04; the live loop passes its own registry above).
+        // Take/restore mirrors `headless_process_workers`: keep the
+        // registry only while it still tracks active workers.
+        let mut headless_registry = self.headless_worker_registry.take();
+        if self
+            .drain_tree_lifecycle_events(root, pending, headless_registry.as_mut())
+            .progressed
+        {
+            progressed = true;
+        }
+        if let Some(registry) = headless_registry {
+            if !registry.active_workers().is_empty() {
+                self.headless_worker_registry = Some(registry);
+            }
+        }
+
+        self.absorb_pending_query_refreshes(pending);
+        if self.take_pending_force_relayout() {
+            pending.request_flags(crate::event::InvalidationFlags::layout());
+            pending.request_full_content();
+        }
+
+        // Python parity: focus must leave a widget this pass just hid (see
+        // `reset_focus_on_hidden`). The live loop gets this at the end of
+        // its per-iteration reactive phase; the pump only runs that phase
+        // when queues are non-empty (a class op is applied inline by
+        // `absorb_outcome`), so sweep explicitly.
+        self.reset_focus_on_hidden(pending);
+        progressed
     }
 
     /// Headless worker phase: spawn newly-requested workers into the App-owned
@@ -5439,12 +5571,65 @@ impl App {
         pending: &mut PendingInvalidation,
     ) {
         let key = KeyEventData::from_crossterm(key);
+        if self.headless_app_key_hook(root, &key, pending) {
+            return;
+        }
 
-        // App-level key hook.
+        let bind = crate::event::KeyBind::from_event(&key);
+        let mapped_action = self.action_map.lookup(&bind);
+
+        // Priority actions (command palette) before raw key dispatch.
+        if let Some(action) = mapped_action.filter(|a| is_priority_action(*a)) {
+            // Wave 1: ctrl+p opens the composed CommandPaletteScreen via the
+            // adapter, NOT via Action::CommandPalette to the legacy host.
+            let mut outcome = if matches!(action, Action::CommandPalette) {
+                self.dispatch_command_palette_open(root)
+            } else {
+                self.dispatch_event_auto(root, &Event::Action(action))
+            };
+            self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
+            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+            self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
+            if outcome.handled || matches!(action, Action::CommandPalette) {
+                return;
+            }
+        }
+
+        if self.headless_key_binding(root, &key, pending) {
+            return;
+        }
+
+        // P-F: `key_<name>` hook on the focused widget (no binding consumed it).
+        let mut key_name_outcome = dispatch_key_name_to_focused(self, &key);
+        let key_name_handled = key_name_outcome.handled;
+        self.absorb_outcome(&mut key_name_outcome, pending, InvalidationScope::Global);
+
+        // Raw key dispatch so focused widgets (Input etc.) can consume it.
+        let mut key_outcome = self.dispatch_event_auto(root, &Event::Key(key.clone()));
+        self.absorb_outcome(&mut key_outcome, pending, InvalidationScope::Global);
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, key_outcome.messages);
+        self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
+        if key_outcome.handled || key_name_handled {
+            return;
+        }
+
+        // Action-map fallback (non-priority).
+        if let Some(action) = mapped_action.filter(|a| !is_priority_action(*a)) {
+            self.headless_action_map(root, action, pending);
+        }
+    }
+
+    /// App-level key hook. Returns true when the hook handled the key.
+    fn headless_app_key_hook(
+        &mut self,
+        root: &mut dyn Widget,
+        key: &KeyEventData,
+        pending: &mut PendingInvalidation,
+    ) -> bool {
         let mut app_key_ctx = EventCtx::default();
         {
             let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut app_key_ctx);
-            root.on_app_key(self, &key, &mut __wctx);
+            root.on_app_key(self, key, &mut __wctx);
             __wctx.__enqueue_reactive_if_dirty();
         }
         if app_key_ctx.repaint_requested() {
@@ -5471,39 +5656,25 @@ impl App {
             // the affected subtree re-resolves CSS.
             pending.request_flags(crate::event::InvalidationFlags::layout());
         }
-        if app_key_handled {
-            return;
-        }
+        app_key_handled
+    }
 
-        let bind = crate::event::KeyBind::from_event(&key);
-        let mapped_action = self.action_map.lookup(&bind);
-
-        // Priority actions (command palette) before raw key dispatch.
-        if let Some(action) = mapped_action.filter(|a| is_priority_action(*a)) {
-            // Wave 1: ctrl+p opens the composed CommandPaletteScreen via the
-            // adapter, NOT via Action::CommandPalette to the legacy host.
-            let mut outcome = if matches!(action, Action::CommandPalette) {
-                self.dispatch_command_palette_open(root)
-            } else {
-                self.dispatch_event_auto(root, &Event::Action(action))
-            };
-            self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
-            self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
-            if outcome.handled || matches!(action, Action::CommandPalette) {
-                return;
-            }
-        }
-
-        // Declarative BINDINGS: active chain (focused→root, or screen-body root
-        // when unfocused) plus App::BINDINGS beneath an active screen.
+    /// Declarative BINDINGS: active chain (focused→root, or screen-body root
+    /// when unfocused) plus `App::BINDINGS` beneath an active screen. Returns
+    /// true when a layer handled the binding's action.
+    fn headless_key_binding(
+        &mut self,
+        root: &mut dyn Widget,
+        key: &KeyEventData,
+        pending: &mut PendingInvalidation,
+    ) -> bool {
         let mut binding_clashes = Vec::new();
         let binding_match = self.active_widget_tree().and_then(|tree| {
             let root_target = tree.root().unwrap_or_default();
             match_binding_chain(
                 tree,
                 self.app_root_tree_when_screen_active(),
-                &key,
+                key,
                 self.check_action_fn.as_deref(),
                 &self.keymap,
                 Some(&mut binding_clashes),
@@ -5513,176 +5684,105 @@ impl App {
         // Deliver keymap clash reports after the tree borrow ends (per
         // clashing keypress, Python cadence).
         self.deliver_binding_clashes(&binding_clashes);
-        if let Some((binding_node_id, action_str, binding_source, root_target)) = binding_match
-            && let Ok(parsed) = crate::action::parse_action(&action_str)
+        let Some((binding_node_id, action_str, binding_source, root_target)) = binding_match else {
+            return false;
+        };
+        let Ok(parsed) = crate::action::parse_action(&action_str) else {
+            return false;
+        };
+
+        // CLUSTER 7: execute the binding on its source node when no registry
+        // owner resolves (binding source IS target).
+        if binding_source == BindingSource::Active
+            && let Some(tree_mut) = self.active_widget_tree_mut()
         {
-            // CLUSTER 7: execute the binding on its source node when no registry
-            // owner resolves (binding source IS target).
-            if binding_source == BindingSource::Active
-                && let Some(tree_mut) = self.active_widget_tree_mut()
-            {
-                let focused = focused_node_id_tree(tree_mut);
-                let resolved = {
-                    let tree_ref = &*tree_mut;
-                    focused.and_then(|fid| {
-                        crate::action::resolve_action(&parsed, tree_ref, fid, |nid| {
-                            tree_ref
-                                .get(nid)
-                                .map(|n| (n.widget.action_namespace(), n.widget.action_registry()))
-                        })
+            let focused = focused_node_id_tree(tree_mut);
+            let resolved = {
+                let tree_ref = &*tree_mut;
+                focused.and_then(|fid| {
+                    crate::action::resolve_action(&parsed, tree_ref, fid, |nid| {
+                        tree_ref
+                            .get(nid)
+                            .map(|n| (n.widget.action_namespace(), n.widget.action_registry()))
                     })
-                };
-                let target = resolved.map_or(binding_node_id, |ra| ra.node);
-                if let Some(node) = tree_mut.get_mut(target) {
-                    let mut ctx = EventCtx::default();
-                    let handled = execute_action_with_dispatch_target(
-                        &mut *node.widget,
-                        &parsed,
-                        &mut ctx,
-                        target,
-                    );
-                    if handled || ctx.handled() {
-                        let mut binding_outcome = DispatchOutcome {
-                            handled: handled || ctx.handled(),
-                            repaint_requested: ctx.repaint_requested(),
-                            invalidation: ctx.invalidation(),
-                            stop_requested: ctx.stop_requested(),
-                            messages: ctx.take_messages(),
-                            animation_requests: ctx.take_animation_requests(),
-                            style_animation_requests: ctx.take_style_animation_requests(),
-                            worker_requests: ctx.take_worker_requests(),
-                            recompose_nodes: ctx.take_recompose_nodes(),
-                            default_prevented: false,
-                            prevented: Vec::new(),
-                            class_ops: ctx.take_class_ops(),
-                        };
-                        self.absorb_outcome(
-                            &mut binding_outcome,
-                            pending,
-                            InvalidationScope::Global,
-                        );
-                        let messages = binding_outcome.messages;
-                        if !messages.is_empty() {
-                            let mut msg_outcome =
-                                self.dispatch_message_queue_with_runtime(root, messages);
-                            self.absorb_outcome(
-                                &mut msg_outcome,
-                                pending,
-                                InvalidationScope::Global,
-                            );
-                        }
-                        return;
-                    }
-                }
-            }
-
-            let mut root_ctx = EventCtx::default();
-            let handled =
-                execute_action_with_dispatch_target(root, &parsed, &mut root_ctx, root_target);
-            if handled || root_ctx.handled() {
-                let mut root_binding_outcome = DispatchOutcome {
-                    handled: handled || root_ctx.handled(),
-                    repaint_requested: root_ctx.repaint_requested(),
-                    invalidation: root_ctx.invalidation(),
-                    stop_requested: root_ctx.stop_requested(),
-                    messages: root_ctx.take_messages(),
-                    animation_requests: root_ctx.take_animation_requests(),
-                    style_animation_requests: root_ctx.take_style_animation_requests(),
-                    worker_requests: root_ctx.take_worker_requests(),
-                    recompose_nodes: root_ctx.take_recompose_nodes(),
-                    default_prevented: false,
-                    prevented: Vec::new(),
-                    class_ops: root_ctx.take_class_ops(),
-                };
-                self.absorb_outcome(
-                    &mut root_binding_outcome,
-                    pending,
-                    InvalidationScope::Global,
-                );
-                let messages = root_binding_outcome.messages;
-                if !messages.is_empty() {
-                    let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, messages);
-                    self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
-                }
-                return;
-            }
-
-            // App-defined custom action fallback.
-            let mut fallback_ctx = EventCtx::default();
-            {
-                let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut fallback_ctx);
-                root.on_app_unhandled_action(self, &action_str, &mut __wctx);
-                __wctx.__enqueue_reactive_if_dirty();
-            }
-            if fallback_ctx.handled() {
-                let mut fallback_outcome = DispatchOutcome {
-                    handled: true,
-                    repaint_requested: fallback_ctx.repaint_requested(),
-                    invalidation: fallback_ctx.invalidation(),
-                    stop_requested: fallback_ctx.stop_requested(),
-                    messages: fallback_ctx.take_messages(),
-                    animation_requests: fallback_ctx.take_animation_requests(),
-                    style_animation_requests: fallback_ctx.take_style_animation_requests(),
-                    worker_requests: fallback_ctx.take_worker_requests(),
-                    recompose_nodes: fallback_ctx.take_recompose_nodes(),
-                    default_prevented: false,
-                    prevented: Vec::new(),
-                    class_ops: fallback_ctx.take_class_ops(),
-                };
-                self.absorb_outcome(&mut fallback_outcome, pending, InvalidationScope::Global);
-                let messages = fallback_outcome.messages;
-                if !messages.is_empty() {
-                    let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, messages);
-                    self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
-                }
-                return;
-            }
-
-            // The binding matched but no layer handled its action: report the
-            // silent no-op (debug channel + test-observable buffer) before the
-            // key falls through to raw dispatch.
-            report_unhandled_binding_action(binding_node_id, &action_str);
-        }
-
-        // P-F: `key_<name>` hook on the focused widget (no binding consumed it).
-        let mut key_name_outcome = dispatch_key_name_to_focused(self, &key);
-        let key_name_handled = key_name_outcome.handled;
-        self.absorb_outcome(&mut key_name_outcome, pending, InvalidationScope::Global);
-
-        // Raw key dispatch so focused widgets (Input etc.) can consume it.
-        let mut key_outcome = self.dispatch_event_auto(root, &Event::Key(key.clone()));
-        self.absorb_outcome(&mut key_outcome, pending, InvalidationScope::Global);
-        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, key_outcome.messages);
-        self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
-        if key_outcome.handled || key_name_handled {
-            return;
-        }
-
-        // Action-map fallback (non-priority).
-        if let Some(action) = mapped_action.filter(|a| !is_priority_action(*a)) {
-            if matches!(action, Action::FocusNext | Action::FocusPrev) {
-                let mut focus_outcome = self.dispatch_event_auto(root, &Event::Action(action));
-                self.absorb_outcome(&mut focus_outcome, pending, InvalidationScope::Global);
-                let mut focus_msg_outcome =
-                    self.dispatch_message_queue_with_runtime(root, focus_outcome.messages);
-                self.absorb_outcome(&mut focus_msg_outcome, pending, InvalidationScope::Global);
-                if focus_outcome.handled {
-                    return;
-                }
-                if self.move_focus_auto(action) {
-                    pending.request_full_content();
-                    return;
-                }
-            }
-            let mut outcome = if is_scroll_action(action) {
-                self.dispatch_scroll_action_auto(root, action, self.hovered)
-            } else {
-                self.dispatch_event_auto(root, &Event::Action(action))
+                })
             };
-            self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
-            let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
-            self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
+            let target = resolved.map_or(binding_node_id, |ra| ra.node);
+            if let Some(node) = tree_mut.get_mut(target) {
+                let mut ctx = EventCtx::default();
+                let handled = execute_action_with_dispatch_target(
+                    &mut *node.widget,
+                    &parsed,
+                    &mut ctx,
+                    target,
+                );
+                if handled || ctx.handled() {
+                    let outcome = outcome_from_action(handled, &mut ctx);
+                    // Headless records a stop in `absorb_outcome`; nothing to return.
+                    let _ = self.absorb_action_outcome(root, pending, outcome);
+                    return true;
+                }
+            }
         }
+
+        let mut root_ctx = EventCtx::default();
+        let handled =
+            execute_action_with_dispatch_target(root, &parsed, &mut root_ctx, root_target);
+        if handled || root_ctx.handled() {
+            let outcome = outcome_from_action(handled, &mut root_ctx);
+            let _ = self.absorb_action_outcome(root, pending, outcome);
+            return true;
+        }
+
+        // App-defined custom action fallback.
+        let mut fallback_ctx = EventCtx::default();
+        {
+            let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut fallback_ctx);
+            root.on_app_unhandled_action(self, &action_str, &mut __wctx);
+            __wctx.__enqueue_reactive_if_dirty();
+        }
+        if fallback_ctx.handled() {
+            let outcome = outcome_from_action(true, &mut fallback_ctx);
+            let _ = self.absorb_action_outcome(root, pending, outcome);
+            return true;
+        }
+
+        // The binding matched but no layer handled its action: report the
+        // silent no-op (debug channel + test-observable buffer) before the
+        // key falls through to raw dispatch.
+        report_unhandled_binding_action(binding_node_id, &action_str);
+        false
+    }
+
+    /// Run the action-map action of a key nothing else handled.
+    fn headless_action_map(
+        &mut self,
+        root: &mut dyn Widget,
+        action: Action,
+        pending: &mut PendingInvalidation,
+    ) {
+        if matches!(action, Action::FocusNext | Action::FocusPrev) {
+            let mut focus_outcome = self.dispatch_event_auto(root, &Event::Action(action));
+            self.absorb_outcome(&mut focus_outcome, pending, InvalidationScope::Global);
+            let mut focus_msg_outcome =
+                self.dispatch_message_queue_with_runtime(root, focus_outcome.messages);
+            self.absorb_outcome(&mut focus_msg_outcome, pending, InvalidationScope::Global);
+            if focus_outcome.handled {
+                return;
+            }
+            if self.move_focus_auto(action) {
+                pending.request_full_content();
+                return;
+            }
+        }
+        let mut outcome = if is_scroll_action(action) {
+            self.dispatch_scroll_action_auto(root, action, self.hovered)
+        } else {
+            self.dispatch_event_auto(root, &Event::Action(action))
+        };
+        self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
+        let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
+        self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
     }
 
     /// Inject a mouse click (down + up at a screen coordinate) through the same
@@ -7131,20 +7231,7 @@ impl App {
                 __wctx.__enqueue_reactive_if_dirty();
             }
             if root_capture_ctx.handled() {
-                return DispatchOutcome {
-                    handled: root_capture_ctx.handled(),
-                    repaint_requested: root_capture_ctx.repaint_requested(),
-                    invalidation: root_capture_ctx.invalidation(),
-                    stop_requested: root_capture_ctx.stop_requested(),
-                    messages: root_capture_ctx.take_messages(),
-                    animation_requests: root_capture_ctx.take_animation_requests(),
-                    style_animation_requests: root_capture_ctx.take_style_animation_requests(),
-                    worker_requests: root_capture_ctx.take_worker_requests(),
-                    recompose_nodes: root_capture_ctx.take_recompose_nodes(),
-                    default_prevented: false,
-                    prevented: Vec::new(),
-                    class_ops: root_capture_ctx.take_class_ops(),
-                };
+                return outcome_from_action(true, &mut root_capture_ctx);
             }
         }
 
@@ -7157,39 +7244,7 @@ impl App {
         // Merge root key-capture side effects (if any) while preserving
         // ordering: root-capture emissions happen before tree dispatch.
         if matches!(&event, Event::Key(..)) {
-            outcome.handled |= root_capture_ctx.handled();
-            outcome.repaint_requested |= root_capture_ctx.repaint_requested();
-            outcome.invalidation.merge(root_capture_ctx.invalidation());
-            outcome.stop_requested |= root_capture_ctx.stop_requested();
-
-            let mut root_messages = root_capture_ctx.take_messages();
-            if !root_messages.is_empty() {
-                root_messages.extend(outcome.messages);
-                outcome.messages = root_messages;
-            }
-
-            let mut root_animation_requests = root_capture_ctx.take_animation_requests();
-            if !root_animation_requests.is_empty() {
-                root_animation_requests.extend(outcome.animation_requests);
-                outcome.animation_requests = root_animation_requests;
-            }
-
-            let mut root_worker_requests = root_capture_ctx.take_worker_requests();
-            if !root_worker_requests.is_empty() {
-                root_worker_requests.extend(outcome.worker_requests);
-                outcome.worker_requests = root_worker_requests;
-            }
-
-            let mut root_recompose_nodes = root_capture_ctx.take_recompose_nodes();
-            if !root_recompose_nodes.is_empty() {
-                root_recompose_nodes.extend(outcome.recompose_nodes);
-                outcome.recompose_nodes = root_recompose_nodes;
-            }
-            let mut root_class_ops = root_capture_ctx.take_class_ops();
-            if !root_class_ops.is_empty() {
-                root_class_ops.extend(outcome.class_ops);
-                outcome.class_ops = root_class_ops;
-            }
+            prepend_ctx_effects(&mut outcome, &mut root_capture_ctx);
         }
 
         // Root bridge for app-level behavior not mounted in the arena tree.
@@ -7210,21 +7265,7 @@ impl App {
                 root.on_event(event, &mut __wctx);
                 __wctx.__enqueue_reactive_if_dirty();
             }
-            outcome.handled |= root_event_ctx.handled();
-            outcome.repaint_requested |= root_event_ctx.repaint_requested();
-            outcome.invalidation.merge(root_event_ctx.invalidation());
-            outcome.stop_requested |= root_event_ctx.stop_requested();
-            outcome.messages.extend(root_event_ctx.take_messages());
-            outcome
-                .animation_requests
-                .extend(root_event_ctx.take_animation_requests());
-            outcome
-                .worker_requests
-                .extend(root_event_ctx.take_worker_requests());
-            outcome
-                .recompose_nodes
-                .extend(root_event_ctx.take_recompose_nodes());
-            outcome.class_ops.extend(root_event_ctx.take_class_ops());
+            append_ctx_effects(&mut outcome, &mut root_event_ctx);
         }
 
         if !outcome.handled
@@ -7236,21 +7277,7 @@ impl App {
                 root.on_app_action(self, *action, &mut __wctx);
                 __wctx.__enqueue_reactive_if_dirty();
             }
-            outcome.handled |= app_action_ctx.handled();
-            outcome.repaint_requested |= app_action_ctx.repaint_requested();
-            outcome.invalidation.merge(app_action_ctx.invalidation());
-            outcome.stop_requested |= app_action_ctx.stop_requested();
-            outcome.messages.extend(app_action_ctx.take_messages());
-            outcome
-                .animation_requests
-                .extend(app_action_ctx.take_animation_requests());
-            outcome
-                .worker_requests
-                .extend(app_action_ctx.take_worker_requests());
-            outcome
-                .recompose_nodes
-                .extend(app_action_ctx.take_recompose_nodes());
-            outcome.class_ops.extend(app_action_ctx.take_class_ops());
+            append_ctx_effects(&mut outcome, &mut app_action_ctx);
         }
         if dismissed_tooltip {
             outcome.repaint_requested = true;
