@@ -1,0 +1,953 @@
+//! In-process headless test harness (`App::run_test` + [`Pilot`]).
+//!
+//! This is the Rust analogue of Python Textual's `Pilot` (see
+//! `textual/src/textual/pilot.py`) and headless driver. It runs the real app
+//! event-dispatch engine in-process, fed from injected input events instead of
+//! a terminal, and rendering into the in-memory [`FrameBuffer`] instead of a
+//! TTY (see [`App::headless`] seam in `runtime/mod.rs`).
+//!
+//! Each driver call (`press`, `click`, `pause`, …) injects the event(s) and
+//! advances the loop until idle (no pending invalidation, no active animations,
+//! no elapsed timers), so the test body can read app/widget state and rendered
+//! output between calls — mirroring `await pilot.press(...)`.
+//!
+//! ```no_run
+//! use rusty_textual::prelude::*;
+//!
+//! struct MyApp;
+//! impl TextualApp for MyApp {
+//!     fn compose(&mut self) -> AppRoot { AppRoot::new() }
+//! }
+//!
+//! MyApp.run_test(|pilot| {
+//!     pilot.press(&["tab"])?;
+//!     assert!(pilot.app().query_one("Button").is_ok());
+//!     Ok(())
+//! }).unwrap();
+//! ```
+
+use std::time::Duration;
+
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+use crate::Result;
+use crate::runtime::App;
+use crate::widgets::Widget;
+
+/// Drives a headless app in tests. Mirrors Python Textual's `Pilot`.
+///
+/// Borrows the running [`App`] and its root widget; created and passed to the
+/// closure given to [`App::run_test`] / the `TextualApp::run_test` extension.
+pub struct Pilot<'a> {
+    app: &'a mut App,
+    root: &'a mut dyn Widget,
+}
+
+impl<'a> Pilot<'a> {
+    pub(crate) fn new(app: &'a mut App, root: &'a mut dyn Widget) -> Self {
+        // Install a deterministic manual clock for the duration of the test so
+        // time-driven behavior is reproducible and explicitly driven by
+        // `advance_clock`, rather than racing the wall clock. Timers scheduled
+        // during `headless_startup` (e.g. from `on_mount`) are preserved
+        // (re-anchored) by the in-place switch.
+        app.enable_manual_timer_clock();
+        Self { app, root }
+    }
+
+    /// Immutable access to the running app, for assertions (`query_one`, state).
+    pub fn app(&self) -> &App {
+        self.app
+    }
+
+    /// Mutable access to the running app (advanced cases).
+    pub fn app_mut(&mut self) -> &mut App {
+        self.app
+    }
+
+    /// Simulate key-presses, then advance to idle.
+    ///
+    /// Each key is a Textual key name: a single character (`"r"`), a named key
+    /// (`"enter"`, `"tab"`, `"escape"`, `"up"`, `"f5"`), or a modified key
+    /// (`"ctrl+a"`, `"shift+tab"`). Mirrors `pilot.press(*keys)`.
+    pub fn press(&mut self, keys: &[&str]) -> Result<()> {
+        for key in keys {
+            let event = parse_key(key)
+                .ok_or_else(|| crate::Error::Message(format!("unknown key spec: {key}")))?;
+            self.app.headless_inject_key(self.root, event)?;
+        }
+        Ok(())
+    }
+
+    /// Convenience: press a single key.
+    pub fn press_key(&mut self, key: &str) -> Result<()> {
+        self.press(&[key])
+    }
+
+    /// Simulate a bracketed-paste of `text`, then advance to idle.
+    ///
+    /// Mirrors a terminal delivering DECSET-2004 paste bytes (enabled at
+    /// driver start): the payload dispatches as one [`Event::Paste`] to
+    /// focus, not as raw keystrokes. Mirrors `pilot.press` for paste.
+    pub fn paste(&mut self, text: &str) -> Result<()> {
+        self.app.headless_inject_paste(self.root, text.to_string())
+    }
+
+    /// Simulate a left-click on the widget matched by `selector`, at the centre
+    /// of its rendered region. Mirrors `pilot.click(selector)`.
+    pub fn click(&mut self, selector: &str) -> Result<()> {
+        let node = self
+            .app
+            .query_one(selector)
+            .map_err(|e| crate::Error::Message(format!("click selector {selector}: {e:?}")))?;
+        let rect = self
+            .app
+            .node_screen_rect(node)
+            .ok_or_else(|| crate::Error::Message(format!("no rendered region for {selector}")))?;
+        let cx = rect.0 + (rect.2.saturating_sub(rect.0)) / 2;
+        let cy = rect.1 + (rect.3.saturating_sub(rect.1)) / 2;
+        self.app.headless_inject_click(self.root, cx, cy)
+    }
+
+    /// Click at an absolute screen coordinate.
+    pub fn click_at(&mut self, x: u16, y: u16) -> Result<()> {
+        self.app.headless_inject_click(self.root, x, y)
+    }
+
+    /// Centre of the widget matched by `selector`, for mouse targeting.
+    fn target_center(&self, selector: &str) -> Result<(u16, u16)> {
+        let node = self
+            .app
+            .query_one(selector)
+            .map_err(|e| crate::Error::Message(format!("mouse selector {selector}: {e:?}")))?;
+        let rect = self
+            .app
+            .node_screen_rect(node)
+            .ok_or_else(|| crate::Error::Message(format!("no rendered region for {selector}")))?;
+        Ok((
+            rect.0 + (rect.2.saturating_sub(rect.0)) / 2,
+            rect.1 + (rect.3.saturating_sub(rect.1)) / 2,
+        ))
+    }
+
+    /// Press the left mouse button on the widget matched by `selector` (no
+    /// release). Mirrors `pilot.mouse_down(selector)`.
+    pub fn mouse_down(&mut self, selector: &str) -> Result<()> {
+        let (cx, cy) = self.target_center(selector)?;
+        self.app.headless_inject_mouse_down(self.root, cx, cy)
+    }
+
+    /// Press the left mouse button at an absolute screen coordinate (no
+    /// release). Mirrors `pilot.mouse_down` with a screen offset.
+    pub fn mouse_down_at(&mut self, x: u16, y: u16) -> Result<()> {
+        self.app.headless_inject_mouse_down(self.root, x, y)
+    }
+
+    /// Release the mouse button over the widget matched by `selector`.
+    /// Mirrors `pilot.mouse_up(selector)`. Pairs with [`Pilot::mouse_down`]
+    /// to produce a `Click` when the targets match.
+    pub fn mouse_up(&mut self, selector: &str) -> Result<()> {
+        let (cx, cy) = self.target_center(selector)?;
+        self.app.headless_inject_mouse_up(self.root, cx, cy)
+    }
+
+    /// Release the mouse button at an absolute screen coordinate. Mirrors
+    /// `pilot.mouse_up` with a screen offset.
+    pub fn mouse_up_at(&mut self, x: u16, y: u16) -> Result<()> {
+        self.app.headless_inject_mouse_up(self.root, x, y)
+    }
+
+    /// Double-click the widget matched by `selector`: two press/release
+    /// cycles. Mirrors `pilot.double_click(selector)`.
+    ///
+    /// Minimal behavior: the harness emits two plain `Click` events, one per
+    /// cycle. Chained double-click events (a single `Click` carrying a click
+    /// count) do not exist yet — see the dispatch-model RFC follow-up.
+    pub fn double_click(&mut self, selector: &str) -> Result<()> {
+        let (cx, cy) = self.target_center(selector)?;
+        self.double_click_at(cx, cy)
+    }
+
+    /// Double-click at an absolute screen coordinate.
+    pub fn double_click_at(&mut self, x: u16, y: u16) -> Result<()> {
+        self.click_at(x, y)?;
+        self.click_at(x, y)
+    }
+
+    /// Triple-click the widget matched by `selector`: three press/release
+    /// cycles. Mirrors `pilot.triple_click(selector)`. Same minimal-event
+    /// note as [`Pilot::double_click`].
+    pub fn triple_click(&mut self, selector: &str) -> Result<()> {
+        let (cx, cy) = self.target_center(selector)?;
+        self.triple_click_at(cx, cy)
+    }
+
+    /// Triple-click at an absolute screen coordinate.
+    pub fn triple_click_at(&mut self, x: u16, y: u16) -> Result<()> {
+        self.click_at(x, y)?;
+        self.click_at(x, y)?;
+        self.click_at(x, y)
+    }
+
+    /// Move the mouse to the centre of the widget matched by `selector`,
+    /// updating hover state (`:hover`, Enter/Leave, the system tooltip) and
+    /// dispatching a `MouseMove` to it, then advance to idle. Mirrors
+    /// `pilot.hover(selector)`.
+    pub fn hover(&mut self, selector: &str) -> Result<()> {
+        let node = self
+            .app
+            .query_one(selector)
+            .map_err(|e| crate::Error::Message(format!("hover selector {selector}: {e:?}")))?;
+        let rect = self
+            .app
+            .node_screen_rect(node)
+            .ok_or_else(|| crate::Error::Message(format!("no rendered region for {selector}")))?;
+        let cx = rect.0 + (rect.2.saturating_sub(rect.0)) / 2;
+        let cy = rect.1 + (rect.3.saturating_sub(rect.1)) / 2;
+        self.app.headless_inject_mouse_move(self.root, cx, cy)
+    }
+
+    /// Move the mouse to an absolute screen coordinate (hover + `MouseMove`),
+    /// then advance to idle. Mirrors `pilot.hover((x, y))` / `pilot.move`.
+    pub fn move_to(&mut self, x: u16, y: u16) -> Result<()> {
+        self.app.headless_inject_mouse_move(self.root, x, y)
+    }
+
+    /// Advance the app to idle (process queued messages/timers/animations and
+    /// render). Mirrors `pilot.pause()`.
+    pub fn pause(&mut self) -> Result<()> {
+        self.app.headless_pause(self.root)
+    }
+
+    /// Alias for [`Pilot::pause`] — wait until the app is idle.
+    pub fn wait_for_idle(&mut self) -> Result<()> {
+        self.pause()
+    }
+
+    /// Pause for `delay` of deterministic test-clock time, firing timers
+    /// along the way, then settle to idle. Mirrors
+    /// `await pilot.pause(delay)`: Python sleeps real time so wall-clock
+    /// timers fire; here the manual clock advances with the same
+    /// deadline-by-deadline semantics as [`Pilot::advance_clock`].
+    pub fn pause_for(&mut self, delay: Duration) -> Result<()> {
+        self.advance_clock(delay)?;
+        self.pause()
+    }
+
+    /// Wait until no animation is running, then settle to idle. Mirrors
+    /// `await pilot.wait_for_animation()`.
+    ///
+    /// The manual clock advances in frame-sized steps (bounded: at most
+    /// ~32 simulated seconds) so animations complete instantly in real
+    /// time. Returns after the bound with the app settled even if an
+    /// animation never finishes (e.g. an infinite repeat).
+    pub fn wait_for_animation(&mut self) -> Result<()> {
+        const MAX_STEPS: usize = 2_000;
+        const STEP: Duration = Duration::from_millis(16);
+        for _ in 0..MAX_STEPS {
+            if self.app.animator_is_idle() {
+                break;
+            }
+            self.advance_clock(STEP)?;
+        }
+        self.pause()
+    }
+
+    /// Wait for current and scheduled animations to complete, then settle.
+    /// Mirrors `await pilot.wait_for_scheduled_animations()`: pump once so
+    /// newly scheduled animations enqueue, drain them, and settle.
+    pub fn wait_for_scheduled_animations(&mut self) -> Result<()> {
+        self.pause()?;
+        self.wait_for_animation()?;
+        self.pause()
+    }
+
+    /// Exit the app with `result`. Mirrors `await pilot.exit(result)`:
+    /// records the result on the app (see [`App::exit`](crate::runtime::App::exit))
+    /// with return code 0 and settles to idle.
+    pub fn exit(&mut self, result: Option<String>) -> Result<()> {
+        self.app.exit(result, 0, None);
+        self.pause()
+    }
+
+    /// Advance the deterministic test clock by `delta`, firing every timer whose
+    /// deadline elapses along the way, pumping the headless loop to idle and
+    /// re-rendering after each fire.
+    ///
+    /// This is the deterministic analogue of Python's `await pilot.pause(delay)`
+    /// (which sleeps real time so wall-clock timers fire). Inside `run_test` the
+    /// timer subsystem runs on a manual clock (installed in [`Pilot::new`]), so
+    /// time-driven demos — clocks, stopwatches, progress timers — become fully
+    /// deterministic with no sleeping and no flakiness.
+    ///
+    /// Crucially, the clock is advanced **deadline-by-deadline**, exactly as the
+    /// real event loop wakes once per timer timeout: a `advance_clock(3s)` over a
+    /// 1s interval fires three discrete ticks (1s, 2s, 3s), not a single
+    /// backlog-collapsed fire. The remaining sub-deadline time is then consumed
+    /// so the clock ends exactly `delta` ahead.
+    pub fn advance_clock(&mut self, delta: Duration) -> Result<()> {
+        let mut remaining = delta;
+        // Bound iterations defensively (a fast interval over a long delta still
+        // terminates; this only guards against a pathological zero-interval).
+        const MAX_STEPS: usize = 1_000_000;
+        // Walk to each timer deadline that falls within `remaining`, advancing
+        // and pumping (which drains ready timers, runs app-level timer
+        // callbacks, processes messages/recompositions, and re-renders — exactly
+        // the housekeeping a live frame performs at each wake).
+        for _ in 0..MAX_STEPS {
+            if remaining.is_zero() {
+                break;
+            }
+            match self.app.next_timer_timeout() {
+                // Advance at least 1ns past a same-instant deadline so a
+                // repeating timer cannot wedge the loop on a zero timeout.
+                Some(step) if step <= remaining => {
+                    let advanced = step.max(Duration::from_nanos(1)).min(remaining);
+                    self.app.advance_timers(advanced);
+                    remaining -= advanced;
+                    // Deliver one frame tick per wake and pump. The live loop
+                    // ticks once per frame as time elapses; mirroring that here
+                    // lets `on_tick`-driven motion (LoadingIndicator, button
+                    // flash) progress while time advances, alongside the timer
+                    // and animator (both now anchored to this manual clock).
+                    self.app.headless_advance_ticks(self.root, 1)?;
+                }
+                _ => break,
+            }
+        }
+        // Consume any sub-deadline remainder so the clock ends exactly `delta`
+        // ahead, then deliver a final tick + pump to settle.
+        if !remaining.is_zero() {
+            self.app.advance_timers(remaining);
+            self.app.headless_advance_ticks(self.root, 1)?;
+        }
+        Ok(())
+    }
+
+    /// Deliver `count` frame ticks to the widget tree, then advance to idle.
+    ///
+    /// Mirrors the live loop's per-frame `on_tick` / `on_app_tick`, which the
+    /// headless pump does not otherwise fire. Each tick carries a
+    /// strictly-increasing counter, so on-tick-driven animations
+    /// (`LoadingIndicator`'s spinner phase, button flash, the progress-bar
+    /// pulse, …) advance frame-by-frame deterministically — the analogue of
+    /// Python's animation frames firing while the loop runs. Use this (instead
+    /// of [`Pilot::advance_clock`]) for demos whose motion is driven purely by
+    /// `on_tick` rather than by elapsed time.
+    pub fn advance_ticks(&mut self, count: u64) -> Result<()> {
+        self.app.headless_advance_ticks(self.root, count)
+    }
+
+    /// True while the harness is running on the deterministic manual clock
+    /// (always the case inside `run_test`). Lets tests assert the foundation is
+    /// active before relying on [`Pilot::advance_clock`] determinism.
+    pub fn clock_is_manual(&self) -> bool {
+        self.app.timer_clock_is_manual()
+    }
+
+    /// Resize the virtual terminal and advance to idle.
+    pub fn resize(&mut self, width: u16, height: u16) -> Result<()> {
+        self.app.headless_resize(self.root, width, height)
+    }
+}
+
+/// Parse a Textual key name (e.g. `"r"`, `"enter"`, `"ctrl+a"`, `"shift+tab"`)
+/// into a crossterm [`KeyEvent`].
+///
+/// Returns `None` for unrecognised specs.
+pub fn parse_key(spec: &str) -> Option<KeyEvent> {
+    let mut modifiers = KeyModifiers::NONE;
+    let parts: Vec<&str> = spec.split('+').collect();
+    let (mod_parts, key_part) = parts.split_at(parts.len() - 1);
+    for m in mod_parts {
+        match m.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => modifiers |= KeyModifiers::CONTROL,
+            "shift" => modifiers |= KeyModifiers::SHIFT,
+            "alt" | "meta" | "option" => modifiers |= KeyModifiers::ALT,
+            "super" | "cmd" | "command" => modifiers |= KeyModifiers::SUPER,
+            _ => return None,
+        }
+    }
+    let key = key_part[0];
+    let code = match key.to_ascii_lowercase().as_str() {
+        "enter" | "return" => KeyCode::Enter,
+        "tab" => KeyCode::Tab,
+        "backtab" => KeyCode::BackTab,
+        "escape" | "esc" => KeyCode::Esc,
+        "space" => KeyCode::Char(' '),
+        "backspace" => KeyCode::Backspace,
+        "delete" | "del" => KeyCode::Delete,
+        "insert" => KeyCode::Insert,
+        "up" => KeyCode::Up,
+        "down" => KeyCode::Down,
+        "left" => KeyCode::Left,
+        "right" => KeyCode::Right,
+        "home" => KeyCode::Home,
+        "end" => KeyCode::End,
+        "pageup" | "page_up" => KeyCode::PageUp,
+        "pagedown" | "page_down" => KeyCode::PageDown,
+        other => {
+            if let Some(stripped) = other.strip_prefix('f') {
+                if let Ok(n) = stripped.parse::<u8>() {
+                    KeyCode::F(n)
+                } else {
+                    return single_char(key);
+                }
+            } else {
+                return single_char_with_mods(key, modifiers);
+            }
+        }
+    };
+    Some(KeyEvent::new(code, modifiers))
+}
+
+fn single_char(key: &str) -> Option<KeyEvent> {
+    single_char_with_mods(key, KeyModifiers::NONE)
+}
+
+fn single_char_with_mods(key: &str, modifiers: KeyModifiers) -> Option<KeyEvent> {
+    let mut chars = key.chars();
+    let ch = chars.next()?;
+    if chars.next().is_some() {
+        return None; // multi-char unknown name
+    }
+    Some(KeyEvent::new(KeyCode::Char(ch), modifiers))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::message::ButtonPressed;
+    use crate::style::{Color, parse_color_like};
+    use crate::widgets::{AppRoot, BindingDecl, Button, Horizontal};
+    use crate::{App, TextualApp};
+
+    const CSS: &str = r#"
+Screen { align: center middle; }
+Horizontal { width: auto; height: auto; }
+"#;
+
+    /// Port of Python `docs/examples/guide/testing/rgb.py` + `test_rgb.py`,
+    /// driven through the real Pilot harness.
+    struct RgbApp;
+
+    impl TextualApp for RgbApp {
+        fn bindings(&self) -> Vec<BindingDecl> {
+            vec![
+                BindingDecl::new("r", "switch_color('red')", "Go Red"),
+                BindingDecl::new("g", "switch_color('green')", "Go Green"),
+                BindingDecl::new("b", "switch_color('blue')", "Go Blue"),
+            ]
+        }
+
+        fn compose(&mut self) -> AppRoot {
+            AppRoot::new().with_child(Horizontal::new().with_compose(crate::compose![
+                Button::new("Red").id("red"),
+                Button::new("Green").id("green"),
+                Button::new("Blue").id("blue"),
+            ]))
+        }
+
+        fn configure(&mut self, app: &mut App) -> crate::Result<()> {
+            app.load_stylesheet(CSS);
+            Ok(())
+        }
+
+        fn on_app_action_str(
+            &mut self,
+            app: &mut App,
+            action: &str,
+            ctx: &mut crate::event::WidgetCtx,
+        ) {
+            if let Ok(parsed) = crate::action::parse_action(action) {
+                if parsed.name == "switch_color" {
+                    if let Some(name) = parsed.arguments.first().and_then(|a| a.as_str()) {
+                        if let Some(color) = parse_color_like(name) {
+                            let _ = app
+                                .query_mut("Screen")
+                                .map(|q| q.set_styles(|s| s.set_bg(color)));
+                            ctx.set_handled();
+                            ctx.request_repaint();
+                        }
+                    }
+                }
+            }
+        }
+
+        fn on_message_with_app(
+            &mut self,
+            app: &mut App,
+            message: &crate::message::MessageEvent,
+            ctx: &mut crate::event::WidgetCtx,
+        ) {
+            if let Some(bp) = message.downcast_ref::<ButtonPressed>() {
+                if let Some(name) = &bp.button_id {
+                    if let Some(color) = parse_color_like(name) {
+                        let _ = app
+                            .query_mut("Screen")
+                            .map(|q| q.set_styles(|s| s.set_bg(color)));
+                        ctx.set_handled();
+                        ctx.request_repaint();
+                    }
+                }
+            }
+        }
+    }
+
+    /// Read the explicit screen background, mirroring Python's
+    /// `app.screen.styles.background`. `AppRoot::style_type()` is `"Screen"`.
+    fn screen_bg(app: &App) -> Option<Color> {
+        let node = app.query_one("Screen").ok()?;
+        app.node_explicit_bg(node)
+    }
+
+    #[test]
+    fn pilot_press_changes_rendered_state() {
+        crate::run_test(RgbApp, |pilot| {
+            let initial = screen_bg(pilot.app());
+
+            pilot.press(&["r"])?;
+            let red = screen_bg(pilot.app());
+            assert_eq!(
+                red,
+                parse_color_like("red"),
+                "pressing 'r' must set the screen background to red"
+            );
+            assert_ne!(red, initial, "pressing 'r' must change the rendered state");
+
+            pilot.press(&["g"])?;
+            assert_eq!(
+                screen_bg(pilot.app()),
+                parse_color_like("green"),
+                "pressing 'g' must set the screen background to green"
+            );
+
+            pilot.press(&["b"])?;
+            assert_eq!(
+                screen_bg(pilot.app()),
+                parse_color_like("blue"),
+                "pressing 'b' must set the screen background to blue"
+            );
+
+            // Unmapped key must not change anything.
+            let before_x = screen_bg(pilot.app());
+            pilot.press(&["x"])?;
+            assert_eq!(
+                screen_bg(pilot.app()),
+                before_x,
+                "pressing an unmapped key must not change state"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn pilot_click_changes_rendered_state() {
+        crate::run_test(RgbApp, |pilot| {
+            pilot.click("#red")?;
+            assert_eq!(
+                screen_bg(pilot.app()),
+                parse_color_like("red"),
+                "clicking #red must set the screen background to red"
+            );
+
+            pilot.click("#green")?;
+            assert_eq!(
+                screen_bg(pilot.app()),
+                parse_color_like("green"),
+                "clicking #green must set the screen background to green"
+            );
+
+            pilot.click("#blue")?;
+            assert_eq!(
+                screen_bg(pilot.app()),
+                parse_color_like("blue"),
+                "clicking #blue must set the screen background to blue"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn pilot_press_changes_rendered_output() {
+        // Tab cycles focus between the three buttons; the focused button renders
+        // a distinct (focused) appearance, so the rendered frame must change.
+        crate::run_test(RgbApp, |pilot| {
+            let before = pilot.app().frame_fingerprint();
+            pilot.press(&["tab"])?;
+            let after = pilot.app().frame_fingerprint();
+            assert_ne!(
+                before, after,
+                "pressing Tab must change the rendered frame (focus moved)"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    // -----------------------------------------------------------------------
+    // W0.1: Screen::auto_focus() honored at push
+    // -----------------------------------------------------------------------
+
+    /// A pushed screen whose tree has two focusable buttons (`#first`, then
+    /// `#second`). `selector` drives the screen's `auto_focus()`.
+    struct AutoFocusScreen {
+        selector: Option<&'static str>,
+    }
+
+    impl crate::screen::Screen for AutoFocusScreen {
+        fn name(&self) -> &str {
+            "AutoFocusScreen"
+        }
+
+        fn compose(&self) -> Box<dyn crate::widgets::Widget> {
+            Box::new(
+                crate::widgets::Vertical::new().with_compose(crate::compose![
+                    Button::new("First").id("first"),
+                    Button::new("Second").id("second"),
+                ]),
+            )
+        }
+
+        fn auto_focus(&self) -> Option<&str> {
+            self.selector
+        }
+    }
+
+    fn active_focused(app: &App) -> Option<crate::node_id::NodeId> {
+        let tree = app.active_widget_tree().expect("active screen tree");
+        crate::runtime::focused_node_id_tree(tree)
+    }
+
+    #[test]
+    fn pushed_screen_auto_focus_targets_selector_not_first() {
+        crate::run_test(RgbApp, |pilot| {
+            pilot
+                .app_mut()
+                .push_screen(Box::new(AutoFocusScreen {
+                    selector: Some("#second"),
+                }))
+                .expect("test screen push succeeds");
+            pilot.pause()?;
+
+            let second = pilot.app().query_one("#second").expect("#second exists");
+            let first = pilot.app().query_one("#first").expect("#first exists");
+            assert_eq!(
+                active_focused(pilot.app()),
+                Some(second),
+                "auto_focus('#second') must focus #second, not the first focusable node"
+            );
+            assert_ne!(
+                active_focused(pilot.app()),
+                Some(first),
+                "auto_focus target must override the default first-focus"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn pushed_screen_without_auto_focus_focuses_first() {
+        // Behavior-preserving fallback: a screen that does not override
+        // auto_focus() focuses the first focusable node (the pre-W0.1 behavior
+        // every screen consumer relied on).
+        crate::run_test(RgbApp, |pilot| {
+            pilot
+                .app_mut()
+                .push_screen(Box::new(AutoFocusScreen { selector: None }))
+                .expect("test screen push succeeds");
+            pilot.pause()?;
+
+            let first = pilot.app().query_one("#first").expect("#first exists");
+            assert_eq!(
+                active_focused(pilot.app()),
+                Some(first),
+                "no auto_focus() must focus the first focusable node"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn pushed_screen_auto_focus_unmatched_falls_back_to_first() {
+        // A selector that matches nothing falls back to first-focus rather than
+        // leaving the screen with no focus.
+        crate::run_test(RgbApp, |pilot| {
+            pilot
+                .app_mut()
+                .push_screen(Box::new(AutoFocusScreen {
+                    selector: Some("#does-not-exist"),
+                }))
+                .expect("test screen push succeeds");
+            pilot.pause()?;
+
+            let first = pilot.app().query_one("#first").expect("#first exists");
+            assert_eq!(
+                active_focused(pilot.app()),
+                Some(first),
+                "an unmatched auto_focus selector must fall back to first-focus"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    // -----------------------------------------------------------------------
+    // W0.2: push a system modal screen from the runtime hook + re-entrancy guard
+    // -----------------------------------------------------------------------
+
+    /// A minimal system modal screen: a distinct `name()` (the re-entrancy key)
+    /// and a body with a unique id so a test can confirm which screen is active.
+    struct SystemModalTestScreen {
+        screen_name: &'static str,
+        body_id: &'static str,
+    }
+
+    impl crate::screen::Screen for SystemModalTestScreen {
+        fn name(&self) -> &str {
+            self.screen_name
+        }
+
+        fn compose(&self) -> Box<dyn crate::widgets::Widget> {
+            Box::new(
+                crate::widgets::Vertical::new()
+                    .with_compose(crate::compose![Button::new("x").id(self.body_id)]),
+            )
+        }
+    }
+
+    impl crate::widgets::SystemModalScreen for SystemModalTestScreen {}
+
+    #[test]
+    fn push_system_modal_screen_pushes_boxed_screen_and_guards_reentrancy() {
+        crate::run_test(RgbApp, |pilot| {
+            // A system-initiated push mounts the boxed screen as the active tree.
+            assert!(
+                pilot
+                    .app_mut()
+                    .push_system_modal_screen(Box::new(SystemModalTestScreen {
+                        screen_name: "Palette",
+                        body_id: "palette-body",
+                    })),
+                "first push of a system modal must succeed"
+            );
+            pilot.pause()?;
+            assert!(
+                pilot.app().query_one("#palette-body").is_ok(),
+                "the pushed system modal must become the active tree"
+            );
+
+            // A second push of the SAME system modal (same name()) is a no-op,
+            // so a repeated ctrl+p cannot stack duplicate palettes.
+            assert!(
+                !pilot
+                    .app_mut()
+                    .push_system_modal_screen(Box::new(SystemModalTestScreen {
+                        screen_name: "Palette",
+                        body_id: "palette-body-2",
+                    })),
+                "a second push of the same system modal must be suppressed"
+            );
+            pilot.pause()?;
+            assert!(
+                pilot.app().query_one("#palette-body-2").is_err(),
+                "the suppressed push must not have mounted a second palette"
+            );
+
+            // A DIFFERENT system modal (e.g. a dialog opened from within a
+            // screen) must still stack normally — the guard keys on identity,
+            // not "is a modal".
+            assert!(
+                pilot
+                    .app_mut()
+                    .push_system_modal_screen(Box::new(SystemModalTestScreen {
+                        screen_name: "Dialog",
+                        body_id: "dialog-body",
+                    })),
+                "a different-named system modal must still stack"
+            );
+            pilot.pause()?;
+            assert!(
+                pilot.app().query_one("#dialog-body").is_ok(),
+                "the nested different system modal must become the active tree"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    // -----------------------------------------------------------------------
+    // W0.3: a pushed screen receives a provider-commands snapshot at construction
+    // -----------------------------------------------------------------------
+
+    /// A minimal screen handed a command snapshot at construction. It records
+    /// the command ids on mount so a test can confirm the handoff reached the
+    /// screen (the consumer half of the provider-snapshot bridge; the producer
+    /// half — `TextualAppAdapter::gather_command_palette_commands` — is tested in
+    /// `textual_app.rs`).
+    struct SnapshotScreen {
+        snapshot: Vec<crate::message::CommandPaletteCommand>,
+        observed: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl crate::screen::Screen for SnapshotScreen {
+        fn name(&self) -> &str {
+            "SnapshotScreen"
+        }
+
+        fn compose(&self) -> Box<dyn crate::widgets::Widget> {
+            Box::new(crate::widgets::Vertical::new())
+        }
+
+        fn on_mount(&mut self) {
+            *self.observed.lock().unwrap() = self.snapshot.iter().map(|c| c.id.clone()).collect();
+        }
+    }
+
+    #[test]
+    fn pushed_screen_receives_command_snapshot_at_construction() {
+        crate::run_test(RgbApp, |pilot| {
+            let observed = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let snapshot = vec![
+                crate::message::CommandPaletteCommand {
+                    id: "theme".into(),
+                    title: "Theme".into(),
+                    help: String::new(),
+                },
+                crate::message::CommandPaletteCommand {
+                    id: "deploy".into(),
+                    title: "Deploy".into(),
+                    help: String::new(),
+                },
+            ];
+            pilot
+                .app_mut()
+                .push_screen(Box::new(SnapshotScreen {
+                    snapshot,
+                    observed: observed.clone(),
+                }))
+                .expect("test screen push succeeds");
+            pilot.pause()?;
+            assert_eq!(
+                *observed.lock().unwrap(),
+                vec!["theme".to_string(), "deploy".to_string()],
+                "the pushed screen must receive the command snapshot at construction \
+                 and read it on mount"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    // -----------------------------------------------------------------------
+    // W0.4: a translucent modal's dimmed background resolves to the SCREEN ROOT
+    //       (not a surviving app-tree node from the composited layer below).
+    //
+    // Guard test for the cross-layer hit-test question (§2 gap 6 of the
+    // CommandPalette investigation): `render_screen_tree_layer` stamps the
+    // screen-root owner meta over the screen's full layout rect AFTER the
+    // underlay is painted (back-to-front), so every dimmed-background cell owns
+    // the screen root. This is what click-outside-to-dismiss depends on for any
+    // translucent modal. Verified correct in current code; this test locks it in.
+    // -----------------------------------------------------------------------
+
+    /// App whose whole viewport is owned by a deep app-tree node (`#appbg`), so
+    /// the underlay stamps a real, non-root owner at every cell.
+    struct FullBgApp;
+
+    impl TextualApp for FullBgApp {
+        fn compose(&mut self) -> AppRoot {
+            AppRoot::new().with_child(crate::widgets::Static::new("bg").id("appbg"))
+        }
+
+        fn configure(&mut self, app: &mut App) -> crate::Result<()> {
+            app.load_stylesheet("#appbg { width: 100%; height: 100%; background: red; }");
+            Ok(())
+        }
+    }
+
+    /// A translucent modal (ModalScreen default `background: $background 60%`)
+    /// with a small top-left dialog, leaving the far corner dimmed.
+    struct DimModalScreen;
+
+    impl crate::screen::Screen for DimModalScreen {
+        fn name(&self) -> &str {
+            "DimModalScreen"
+        }
+
+        fn compose(&self) -> Box<dyn crate::widgets::Widget> {
+            Box::new(crate::widgets::Static::new("dialog").id("dialog"))
+        }
+
+        fn css(&self) -> Option<&str> {
+            Some("#dialog { width: 10; height: 3; }")
+        }
+    }
+
+    #[test]
+    fn translucent_modal_dimmed_background_resolves_to_screen_root_not_app_tree() {
+        crate::run_test(FullBgApp, |pilot| {
+            pilot.resize(40, 12)?;
+            // Far corner, well clear of the small top-left dialog: dimmed bg.
+            let (cx, cy) = (38u16, 10u16);
+
+            // Underlay owner before the modal: a real app-tree node (#appbg).
+            let app_owner = pilot.app().widget_at(cx, cy);
+            assert!(
+                app_owner.is_some(),
+                "the app underlay must own the corner cell before the modal is pushed"
+            );
+
+            pilot
+                .app_mut()
+                .push_screen(Box::new(DimModalScreen))
+                .expect("test screen push succeeds");
+            pilot.pause()?;
+
+            let active = pilot
+                .app()
+                .active_widget_tree()
+                .expect("active screen tree");
+            let screen_root = active.root().expect("active screen tree root");
+            assert!(
+                active.contains(screen_root),
+                "the screen root must live in the active screen arena"
+            );
+
+            let dim_owner = pilot.app().widget_at(cx, cy);
+
+            // Positive: the dimmed-background cell owns the SCREEN ROOT (the
+            // full-rect owner stamp), so a click there resolves to the screen —
+            // the precondition for click-outside-to-dismiss.
+            assert_eq!(
+                dim_owner,
+                Some(screen_root),
+                "dimmed modal background must resolve to the screen root"
+            );
+
+            // Negative: the underlay's app-tree owner did NOT survive into the
+            // composited frame — no cross-layer meta leak into the active tree.
+            assert_ne!(
+                dim_owner, app_owner,
+                "the app-tree owner below must not survive under the translucent modal"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn parse_key_handles_names_and_modifiers() {
+        assert!(parse_key("r").is_some());
+        assert!(parse_key("enter").is_some());
+        assert!(parse_key("ctrl+a").is_some());
+        assert!(parse_key("shift+tab").is_some());
+        assert!(parse_key("f5").is_some());
+        assert!(parse_key("boguskey").is_none());
+        assert!(parse_key("ctrl+r").is_some());
+    }
+}

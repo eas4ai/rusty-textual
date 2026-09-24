@@ -1,0 +1,80 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Real-PTY parity harness (tests/pty_parity.rs): runs example binaries in a
+  # genuine pseudo-terminal and compares screens against Python-generated
+  # goldens (tests/pty_parity/golden/, regenerated only via
+  # tools/parity/gen-python-goldens.sh). BLOCKING by design — failures mean a
+  # parity regression in a Pass case or an unpromoted fix (strict XPASS).
+  # Unlike the unit suite, this job is headless-safe: the harness allocates its
+  # own PTY instead of needing the runner to have a controlling terminal.
+  pty-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-parity-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build examples
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: cargo build --examples
+      - name: PTY parity tests (blocking)
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: cargo test --test pty_parity -- --nocapture
+
+  # Full unit + headless-integration suite (BLOCKING). Runs under a PTY wrapper
+  # (`script`) because many runtime tests initialize a real terminal driver and
+  # need a controlling TTY. Runs the lib suite plus every integration bin EXCEPT
+  # the six that need the Python reference repo or spawn a real PTY (env-sensitive)
+  # (pty_parity is its own blocking job above; visual_parity / pty_interactive /
+  # interactive_parity / visual_parity_interactive need ../textual, absent on CI).
+  # Single-threaded to avoid the process-global-state flakiness of parallel runs.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The 103 integration binaries plus the lib suite fill the default runner
+      # disk (~14 GB). Reclaim the preinstalled toolchains we do not use.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo docker image prune -a -f || true
+          df -h /
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Tests (lib + headless integration)
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: |
+          script -qefc 'set -e
+            cargo test --lib -- --test-threads=1
+            for f in tests/*.rs; do
+              name=$(basename "$f" .rs)
+              case "$name" in
+                pty_parity|pty_interactive|visual_parity|visual_parity_interactive|interactive_parity|click_actions_pty) continue ;;
+              esac
+              echo "::group::integration $name"
+              cargo test --test "$name" -- --test-threads=1
+              echo "::endgroup::"
+            done' /dev/null

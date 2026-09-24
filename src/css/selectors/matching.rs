@@ -1,0 +1,589 @@
+use super::ast::{Combinator, SelectorMeta, StyleRule, StyleSelector};
+use super::context::SELECTOR_STACK;
+
+/// CSS specificity as an `(ids, classes + pseudos, types)` triple, compared
+/// lexicographically — Python's `_total_specificity` (`parse.py`,
+/// `model.py`). Never flattened to a scalar: flattening misorders (e.g. ten
+/// classes outrank one id) and any fixed width clamps or overflows on long
+/// chains (PR-09).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct Specificity(pub u32, pub u32, pub u32);
+
+impl std::fmt::Display for Specificity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({},{},{})", self.0, self.1, self.2)
+    }
+}
+
+impl StyleSelector {
+    pub(crate) fn matches(&self, meta: &SelectorMeta) -> bool {
+        // Unknown pseudo-class in source: never match (PR-09), instead of
+        // widening to the bare selector.
+        if self.impossible {
+            return false;
+        }
+        if let Some(type_name) = &self.type_name {
+            // Component-class phantoms are Python's typeless virtual DOMNodes:
+            // NO type selector matches them — not the widget's own type, and
+            // not the `Widget` universal below (Python's virtual node is a bare
+            // `DOMNode`, which `Widget { ... }` rules do not match).
+            if meta.component_phantom {
+                return false;
+            }
+            // "Widget" is the universal base type in Python Textual: every widget's
+            // MRO includes `Widget`, so `Widget { ... }` CSS rules apply to all
+            // widgets.  Rust widgets have concrete type names (never "Widget"),
+            // so we special-case the literal selector "Widget" to match any widget,
+            // preserving Python's `_css_type_names` semantics.
+            if type_name != "Widget"
+                && meta.type_name != *type_name
+                && !meta.type_aliases.iter().any(|alias| alias == type_name)
+            {
+                return false;
+            }
+        }
+        if let Some(id) = &self.id {
+            if meta.id.as_deref() != Some(id.as_str()) {
+                return false;
+            }
+        }
+        if !self.classes.is_empty()
+            && !self
+                .classes
+                .iter()
+                .all(|class| meta.classes.iter().any(|value| value == class))
+        {
+            return false;
+        }
+        if !self.pseudos.is_empty() {
+            for pseudo in &self.pseudos {
+                let ok = match pseudo {
+                    super::ast::PseudoClass::Disabled => meta.states.disabled,
+                    super::ast::PseudoClass::Focus => meta.states.focused,
+                    super::ast::PseudoClass::Blur => !meta.states.focused,
+                    super::ast::PseudoClass::FocusWithin => meta.states.focus_within,
+                    super::ast::PseudoClass::Hover => meta.states.hovered,
+                    super::ast::PseudoClass::Active => meta.states.active,
+                    super::ast::PseudoClass::Dark => meta.states.dark,
+                    super::ast::PseudoClass::Light => !meta.states.dark,
+                    super::ast::PseudoClass::Inline => meta.states.inline,
+                    super::ast::PseudoClass::Ansi => meta.states.ansi,
+                    super::ast::PseudoClass::NoColor => meta.states.nocolor,
+                    super::ast::PseudoClass::CanFocus => meta.states.can_focus,
+                    // Python parity (`widget.is_odd`: 0-based `index % 2 == 0`
+                    // is ODD; `is_even` is its negation). The old arms were
+                    // swapped (PR-09).
+                    super::ast::PseudoClass::Even => {
+                        meta.states.child_index.is_some_and(|i| i % 2 == 1)
+                    }
+                    super::ast::PseudoClass::Odd => {
+                        meta.states.child_index.is_some_and(|i| i % 2 == 0)
+                    }
+                    super::ast::PseudoClass::FirstChild => meta.states.child_index == Some(0),
+                    super::ast::PseudoClass::LastChild => {
+                        match (meta.states.child_index, meta.states.sibling_count) {
+                            (Some(idx), Some(count)) if count > 0 => idx == count - 1,
+                            _ => false,
+                        }
+                    }
+                };
+                if !ok {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    pub(super) fn specificity(&self) -> Specificity {
+        Specificity(
+            u32::from(self.id.is_some()),
+            self.classes.len() as u32 + self.pseudos.len() as u32,
+            u32::from(self.type_name.is_some()),
+        )
+    }
+}
+
+pub(super) fn rule_specificity(rule: &StyleRule, meta: &SelectorMeta) -> Option<Specificity> {
+    if rule.selector_chain.parts.is_empty() {
+        return None;
+    }
+    let last = rule.selector_chain.parts.last().unwrap();
+    if !last.matches(meta) {
+        return None;
+    }
+    if rule.selector_chain.parts.len() == 1 {
+        return Some(last.specificity());
+    }
+
+    let stack_snapshot = SELECTOR_STACK.with(|stack| stack.borrow().clone());
+    // Selector stack contains ancestors only (the current widget meta is not pushed until after
+    // style resolution). For child combinators we need to start matching from the immediate parent.
+    let mut idx = stack_snapshot.len() as isize - 1;
+    if idx < 0 {
+        return None;
+    }
+    let combinators = &rule.selector_chain.combinators;
+    let parts = &rule.selector_chain.parts;
+    for (part_index, selector) in parts[..parts.len() - 1].iter().rev().enumerate() {
+        let comb = combinators[combinators.len() - 1 - part_index];
+        match comb {
+            Combinator::Child => {
+                let meta = &stack_snapshot[idx as usize];
+                if !selector.matches(meta) {
+                    return None;
+                }
+                idx -= 1;
+            }
+            Combinator::Descendant => {
+                let mut found = false;
+                let mut current = idx;
+                while current >= 0 {
+                    let meta = &stack_snapshot[current as usize];
+                    if selector.matches(meta) {
+                        found = true;
+                        idx = current - 1;
+                        break;
+                    }
+                    current -= 1;
+                }
+                if !found {
+                    return None;
+                }
+            }
+        }
+    }
+
+    // Component-wise sum (Python `_add_specificity`); the triple comparison
+    // stays lexicographic no matter how long the chain gets.
+    let mut total = Specificity::default();
+    for part in parts {
+        let Specificity(a, b, c) = part.specificity();
+        total.0 += a;
+        total.1 += b;
+        total.2 += c;
+    }
+    Some(total)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::ast::{PseudoClass, SelectorMeta, SelectorStates, StyleSelector};
+    use super::Specificity;
+
+    fn meta_with_states(states: SelectorStates) -> SelectorMeta {
+        SelectorMeta {
+            type_name: "Widget".to_string(),
+            type_aliases: Vec::new(),
+            id: None,
+            classes: Vec::new(),
+            states,
+            component_phantom: false,
+        }
+    }
+
+    #[test]
+    fn dark_matches_when_dark_true() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Dark);
+        let meta = meta_with_states(SelectorStates {
+            dark: true,
+            ..Default::default()
+        });
+        assert!(selector.matches(&meta));
+    }
+
+    #[test]
+    fn dark_does_not_match_when_dark_false() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Dark);
+        let meta = meta_with_states(SelectorStates::default());
+        assert!(!selector.matches(&meta));
+    }
+
+    #[test]
+    fn light_matches_when_dark_false() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Light);
+        let meta = meta_with_states(SelectorStates::default());
+        assert!(selector.matches(&meta));
+    }
+
+    #[test]
+    fn light_does_not_match_when_dark_true() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Light);
+        let meta = meta_with_states(SelectorStates {
+            dark: true,
+            ..Default::default()
+        });
+        assert!(!selector.matches(&meta));
+    }
+
+    #[test]
+    fn blur_matches_when_not_focused() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Blur);
+        assert!(selector.matches(&meta_with_states(SelectorStates::default())));
+        assert!(!selector.matches(&meta_with_states(SelectorStates {
+            focused: true,
+            ..Default::default()
+        })));
+    }
+
+    #[test]
+    fn inline_matches_only_when_inline_state_true() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Inline);
+        assert!(!selector.matches(&meta_with_states(SelectorStates {
+            inline: false,
+            ..Default::default()
+        })));
+        assert!(selector.matches(&meta_with_states(SelectorStates {
+            inline: true,
+            ..Default::default()
+        })));
+    }
+
+    // -- Widget universal base selector ------------------------------------
+
+    #[test]
+    fn widget_selector_matches_any_concrete_type() {
+        // Python: "Widget" is in every widget's _css_type_names (MRO includes Widget).
+        // In Rust, concrete widgets never have type_name=="Widget"; the selector
+        // "Widget" must match ALL widgets regardless of their type name.
+        let selector = StyleSelector::new("Widget");
+        for type_name in [
+            "Button",
+            "Input",
+            "Screen",
+            "Label",
+            "DataTable",
+            "MyCustomWidget",
+        ] {
+            let meta = SelectorMeta {
+                type_name: type_name.to_string(),
+                type_aliases: Vec::new(),
+                id: None,
+                classes: Vec::new(),
+                states: SelectorStates::default(),
+                component_phantom: false,
+            };
+            assert!(
+                selector.matches(&meta),
+                "Widget selector should match type_name='{type_name}'"
+            );
+        }
+    }
+
+    #[test]
+    fn widget_selector_with_pseudo_still_filters_by_pseudo() {
+        // The "Widget" universal match only bypasses the type check; other checks
+        // (id, class, pseudo) still apply.
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Focus);
+        let unfocused = meta_with_states(SelectorStates::default());
+        let focused = meta_with_states(SelectorStates {
+            focused: true,
+            ..Default::default()
+        });
+        assert!(!selector.matches(&unfocused));
+        assert!(selector.matches(&focused));
+    }
+
+    #[test]
+    fn type_selector_matches_type_aliases_for_subclass_semantics() {
+        let selector = StyleSelector::new("Input");
+        let meta = SelectorMeta {
+            type_name: "CommandInput".to_string(),
+            type_aliases: vec!["Input".to_string()],
+            id: None,
+            classes: Vec::new(),
+            states: SelectorStates::default(),
+            component_phantom: false,
+        };
+        assert!(selector.matches(&meta));
+    }
+
+    #[test]
+    fn ansi_matches_only_when_ansi_state_true() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Ansi);
+        assert!(!selector.matches(&meta_with_states(SelectorStates {
+            ansi: false,
+            ..Default::default()
+        })));
+        assert!(selector.matches(&meta_with_states(SelectorStates {
+            ansi: true,
+            ..Default::default()
+        })));
+    }
+
+    #[test]
+    fn nocolor_matches_only_when_nocolor_state_true() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::NoColor);
+        assert!(!selector.matches(&meta_with_states(SelectorStates {
+            nocolor: false,
+            ..Default::default()
+        })));
+        assert!(selector.matches(&meta_with_states(SelectorStates {
+            nocolor: true,
+            ..Default::default()
+        })));
+    }
+
+    #[test]
+    fn even_matches_indices_1_3_5() {
+        // Python parity (`widget.is_even` = NOT 0-based `index % 2 == 0`).
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Even);
+        for idx in [1, 3, 5] {
+            let meta = meta_with_states(SelectorStates {
+                child_index: Some(idx),
+                sibling_count: Some(5),
+                ..Default::default()
+            });
+            assert!(selector.matches(&meta), "should match child_index={idx}");
+        }
+    }
+
+    #[test]
+    fn even_does_not_match_odd_indices() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Even);
+        for idx in [0, 2, 4] {
+            let meta = meta_with_states(SelectorStates {
+                child_index: Some(idx),
+                sibling_count: Some(6),
+                ..Default::default()
+            });
+            assert!(
+                !selector.matches(&meta),
+                "should not match child_index={idx}"
+            );
+        }
+    }
+
+    #[test]
+    fn even_does_not_match_without_index() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Even);
+        let meta = meta_with_states(SelectorStates::default());
+        assert!(!selector.matches(&meta));
+    }
+
+    #[test]
+    fn odd_matches_indices_0_2_4() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Odd);
+        for idx in [0, 2, 4] {
+            let meta = meta_with_states(SelectorStates {
+                child_index: Some(idx),
+                sibling_count: Some(6),
+                ..Default::default()
+            });
+            assert!(selector.matches(&meta), "should match child_index={idx}");
+        }
+    }
+
+    #[test]
+    fn odd_does_not_match_even_indices() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::Odd);
+        for idx in [1, 3, 5] {
+            let meta = meta_with_states(SelectorStates {
+                child_index: Some(idx),
+                sibling_count: Some(5),
+                ..Default::default()
+            });
+            assert!(
+                !selector.matches(&meta),
+                "should not match child_index={idx}"
+            );
+        }
+    }
+
+    #[test]
+    fn first_child_matches_index_0_only() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::FirstChild);
+        let meta_first = meta_with_states(SelectorStates {
+            child_index: Some(0),
+            sibling_count: Some(3),
+            ..Default::default()
+        });
+        assert!(selector.matches(&meta_first));
+
+        let meta_second = meta_with_states(SelectorStates {
+            child_index: Some(1),
+            sibling_count: Some(3),
+            ..Default::default()
+        });
+        assert!(!selector.matches(&meta_second));
+    }
+
+    #[test]
+    fn first_child_does_not_match_without_index() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::FirstChild);
+        let meta = meta_with_states(SelectorStates::default());
+        assert!(!selector.matches(&meta));
+    }
+
+    #[test]
+    fn last_child_matches_last_index() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::LastChild);
+        let meta = meta_with_states(SelectorStates {
+            child_index: Some(4),
+            sibling_count: Some(5),
+            ..Default::default()
+        });
+        assert!(selector.matches(&meta));
+    }
+
+    #[test]
+    fn last_child_does_not_match_non_last() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::LastChild);
+        let meta = meta_with_states(SelectorStates {
+            child_index: Some(2),
+            sibling_count: Some(5),
+            ..Default::default()
+        });
+        assert!(!selector.matches(&meta));
+    }
+
+    #[test]
+    fn last_child_does_not_match_without_count() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::LastChild);
+        let meta = meta_with_states(SelectorStates {
+            child_index: Some(0),
+            ..Default::default()
+        });
+        assert!(!selector.matches(&meta));
+    }
+
+    #[test]
+    fn combined_hover_dark() {
+        let selector = StyleSelector::new("Widget")
+            .pseudo(PseudoClass::Hover)
+            .pseudo(PseudoClass::Dark);
+        let both = meta_with_states(SelectorStates {
+            hovered: true,
+            dark: true,
+            ..Default::default()
+        });
+        assert!(selector.matches(&both));
+
+        let hover_only = meta_with_states(SelectorStates {
+            hovered: true,
+            ..Default::default()
+        });
+        assert!(!selector.matches(&hover_only));
+
+        let dark_only = meta_with_states(SelectorStates {
+            dark: true,
+            ..Default::default()
+        });
+        assert!(!selector.matches(&dark_only));
+    }
+
+    #[test]
+    fn specificity_new_pseudos_same_weight_as_existing() {
+        let existing = StyleSelector::new("Widget").pseudo(PseudoClass::Hover);
+        let dark = StyleSelector::new("Widget").pseudo(PseudoClass::Dark);
+        let even = StyleSelector::new("Widget").pseudo(PseudoClass::Even);
+        let first = StyleSelector::new("Widget").pseudo(PseudoClass::FirstChild);
+        let last = StyleSelector::new("Widget").pseudo(PseudoClass::LastChild);
+        let blur = StyleSelector::new("Widget").pseudo(PseudoClass::Blur);
+        let inline = StyleSelector::new("Widget").pseudo(PseudoClass::Inline);
+        let ansi = StyleSelector::new("Widget").pseudo(PseudoClass::Ansi);
+        let nocolor = StyleSelector::new("Widget").pseudo(PseudoClass::NoColor);
+
+        // Widget + one pseudo = (0 ids, 1 class/pseudo, 1 type).
+        let base = existing.specificity();
+        assert_eq!(base, Specificity(0, 1, 1));
+        assert_eq!(dark.specificity(), base);
+        assert_eq!(even.specificity(), base);
+        assert_eq!(first.specificity(), base);
+        assert_eq!(last.specificity(), base);
+        assert_eq!(blur.specificity(), base);
+        assert_eq!(inline.specificity(), base);
+        assert_eq!(ansi.specificity(), base);
+        assert_eq!(nocolor.specificity(), base);
+
+        // Two pseudos add two class-column units.
+        let two = StyleSelector::new("Widget")
+            .pseudo(PseudoClass::Dark)
+            .pseudo(PseudoClass::Even);
+        assert_eq!(two.specificity(), Specificity(0, 2, 1));
+    }
+
+    #[test]
+    fn specificity_compares_lexicographically_not_flat() {
+        // PR-09: flattening misordered these. Ten classes must NOT outrank
+        // one id; ids always dominate regardless of the other columns.
+        let ten_classes = StyleSelector {
+            type_name: None,
+            id: None,
+            classes: vec!["c".to_string(); 10],
+            pseudos: Vec::new(),
+            impossible: false,
+        };
+        let one_id = StyleSelector::new("Widget").id("x");
+        assert!(ten_classes.specificity() < one_id.specificity());
+
+        // Long id chains never clamp or overflow: (#a #b #c) = (3,0,0).
+        let triple_id = Specificity(3, 0, 0);
+        assert!(triple_id > Specificity(0, u32::MAX, u32::MAX));
+        assert!(triple_id > one_id.specificity());
+    }
+
+    #[test]
+    fn single_child_is_both_first_and_last() {
+        let first = StyleSelector::new("Widget").pseudo(PseudoClass::FirstChild);
+        let last = StyleSelector::new("Widget").pseudo(PseudoClass::LastChild);
+        let meta = meta_with_states(SelectorStates {
+            child_index: Some(0),
+            sibling_count: Some(1),
+            ..Default::default()
+        });
+        assert!(first.matches(&meta));
+        assert!(last.matches(&meta));
+    }
+
+    // -- :focus-within -------------------------------------------------------
+
+    #[test]
+    fn focus_within_matches_when_element_itself_has_focus() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::FocusWithin);
+        let meta = meta_with_states(SelectorStates {
+            focused: true,
+            focus_within: true,
+            ..Default::default()
+        });
+        assert!(selector.matches(&meta));
+    }
+
+    #[test]
+    fn focus_within_matches_when_descendant_has_focus() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::FocusWithin);
+        // The element itself doesn't have focus, but a descendant does.
+        let meta = meta_with_states(SelectorStates {
+            focused: false,
+            focus_within: true,
+            ..Default::default()
+        });
+        assert!(selector.matches(&meta));
+    }
+
+    #[test]
+    fn focus_within_does_not_match_when_nothing_focused() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::FocusWithin);
+        let meta = meta_with_states(SelectorStates::default());
+        assert!(!selector.matches(&meta));
+    }
+
+    #[test]
+    fn focus_within_does_not_match_unrelated_focus() {
+        let selector = StyleSelector::new("Widget").pseudo(PseudoClass::FocusWithin);
+        // Neither focused nor focus_within — unrelated node has focus.
+        let meta = meta_with_states(SelectorStates {
+            focused: false,
+            focus_within: false,
+            ..Default::default()
+        });
+        assert!(!selector.matches(&meta));
+    }
+
+    #[test]
+    fn focus_within_specificity_same_as_other_pseudos() {
+        let focus_within = StyleSelector::new("Widget").pseudo(PseudoClass::FocusWithin);
+        let hover = StyleSelector::new("Widget").pseudo(PseudoClass::Hover);
+        assert_eq!(focus_within.specificity(), hover.specificity());
+    }
+}

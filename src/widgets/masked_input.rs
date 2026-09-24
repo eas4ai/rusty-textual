@@ -1,0 +1,1837 @@
+use rich_rs::{Console, ConsoleOptions, Segments};
+use std::collections::HashSet;
+use std::time::Instant;
+use textual_macros::widget;
+
+use crate::action::ParsedAction;
+use crate::event::Event;
+use crate::message::*;
+use crate::validation::{Failure, ValidationResult, ValidatorRef};
+
+use super::{
+    BindingDecl, NodeSeed, NodeState, Widget,
+    helpers::adjust_line_length_no_bg,
+    input_chrome::InputChrome,
+    text_edit::{
+        EditCommand, MoveUnit, byte_index_from_cell_x, edit_command_from_key, first_clipboard_line,
+    },
+};
+
+// ---------------------------------------------------------------------------
+// CharFlags — simple bitmask (no external crate needed)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CharFlags(u8);
+
+impl CharFlags {
+    const NONE: Self = Self(0);
+    const REQUIRED: Self = Self(1 << 0);
+    const SEPARATOR: Self = Self(1 << 1);
+    const UPPERCASE: Self = Self(1 << 2);
+    const LOWERCASE: Self = Self(1 << 3);
+
+    fn contains(self, flag: Self) -> bool {
+        (self.0 & flag.0) == flag.0
+    }
+
+    fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pattern matching (no regex crate — hand-rolled matchers)
+// ---------------------------------------------------------------------------
+
+/// A simple character class matcher, replacing regex patterns.
+#[derive(Debug, Clone, Copy)]
+enum CharPattern {
+    Alpha,        // [A-Za-z]
+    AlphaNum,     // [A-Za-z0-9]
+    NonSpace,     // [^ ]
+    Digit,        // [0-9]
+    NonZeroDigit, // [1-9]
+    DigitOrSign,  // [0-9+\-]
+    HexDigit,     // [A-Fa-f0-9]
+    BinaryDigit,  // [0-1]
+    Literal(char),
+}
+
+impl CharPattern {
+    fn matches(self, ch: char) -> bool {
+        match self {
+            CharPattern::Alpha => ch.is_ascii_alphabetic(),
+            CharPattern::AlphaNum => ch.is_ascii_alphanumeric(),
+            CharPattern::NonSpace => ch != ' ',
+            CharPattern::Digit => ch.is_ascii_digit(),
+            CharPattern::NonZeroDigit => ch.is_ascii_digit() && ch != '0',
+            CharPattern::DigitOrSign => ch.is_ascii_digit() || ch == '+' || ch == '-',
+            CharPattern::HexDigit => ch.is_ascii_hexdigit(),
+            CharPattern::BinaryDigit => ch == '0' || ch == '1',
+            CharPattern::Literal(expected) => ch == expected,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CharDefinition
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+struct CharDefinition {
+    pattern: CharPattern,
+    flags: CharFlags,
+    /// For separators: the literal char. For non-separators: the placeholder char.
+    char: char,
+}
+
+impl CharDefinition {
+    fn is_separator(self) -> bool {
+        self.flags.contains(CharFlags::SEPARATOR)
+    }
+
+    fn is_required(self) -> bool {
+        self.flags.contains(CharFlags::REQUIRED)
+    }
+
+    fn matches(self, ch: char) -> bool {
+        self.pattern.matches(ch)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Template character definitions
+// ---------------------------------------------------------------------------
+
+fn template_char_def(ch: char) -> Option<(CharPattern, bool)> {
+    match ch {
+        'A' => Some((CharPattern::Alpha, true)),
+        'a' => Some((CharPattern::Alpha, false)),
+        'N' => Some((CharPattern::AlphaNum, true)),
+        'n' => Some((CharPattern::AlphaNum, false)),
+        'X' => Some((CharPattern::NonSpace, true)),
+        'x' => Some((CharPattern::NonSpace, false)),
+        '9' => Some((CharPattern::Digit, true)),
+        '0' => Some((CharPattern::Digit, false)),
+        'D' => Some((CharPattern::NonZeroDigit, true)),
+        'd' => Some((CharPattern::NonZeroDigit, false)),
+        '#' => Some((CharPattern::DigitOrSign, false)),
+        'H' => Some((CharPattern::HexDigit, true)),
+        'h' => Some((CharPattern::HexDigit, false)),
+        'B' => Some((CharPattern::BinaryDigit, true)),
+        'b' => Some((CharPattern::BinaryDigit, false)),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Template
+// ---------------------------------------------------------------------------
+
+/// Parsed template mask that enforces character-level rules.
+#[derive(Debug, Clone)]
+struct Template {
+    defs: Vec<CharDefinition>,
+    blank: char,
+}
+
+impl Template {
+    fn parse(template_str: &str) -> Self {
+        let mut defs = Vec::new();
+        let mut blank = ' ';
+        let mut escaped = false;
+        let mut case_flags = CharFlags::NONE;
+        let mut chars = template_str.chars();
+
+        while let Some(ch) = chars.next() {
+            if escaped {
+                let mut flags = CharFlags::SEPARATOR;
+                flags = flags.union(case_flags);
+                defs.push(CharDefinition {
+                    pattern: CharPattern::Literal(ch),
+                    flags,
+                    char: ch,
+                });
+                escaped = false;
+                continue;
+            }
+
+            match ch {
+                '\\' => {
+                    escaped = true;
+                    continue;
+                }
+                ';' => {
+                    if let Some(b) = chars.next() {
+                        blank = b;
+                    }
+                    break;
+                }
+                '>' => {
+                    case_flags = CharFlags::UPPERCASE;
+                    continue;
+                }
+                '<' => {
+                    case_flags = CharFlags::LOWERCASE;
+                    continue;
+                }
+                '!' => {
+                    case_flags = CharFlags::NONE;
+                    continue;
+                }
+                _ => {}
+            }
+
+            if let Some((pattern, required)) = template_char_def(ch) {
+                let mut flags = if required {
+                    CharFlags::REQUIRED
+                } else {
+                    CharFlags::NONE
+                };
+                flags = flags.union(case_flags);
+                defs.push(CharDefinition {
+                    pattern,
+                    flags,
+                    char: blank,
+                });
+            } else {
+                // Unknown character → treated as separator.
+                let mut flags = CharFlags::SEPARATOR;
+                flags = flags.union(case_flags);
+                defs.push(CharDefinition {
+                    pattern: CharPattern::Literal(ch),
+                    flags,
+                    char: ch,
+                });
+            }
+        }
+
+        assert!(
+            defs.iter().any(|d| !d.is_separator()),
+            "Template must contain at least one non-separator character"
+        );
+
+        // Update non-separator placeholder chars to the resolved blank (which
+        // may have been set by a trailing `;X` clause after the defs were
+        // already created with the initial default blank).
+        for def in &mut defs {
+            if !def.is_separator() {
+                def.char = blank;
+            }
+        }
+
+        Template { defs, blank }
+    }
+
+    fn len(&self) -> usize {
+        self.defs.len()
+    }
+
+    // --- validation --------------------------------------------------------
+
+    fn check(&self, value: &[char], allow_space: bool) -> bool {
+        for (i, def) in self.defs.iter().enumerate() {
+            let ch = if i < value.len() { value[i] } else { '\0' };
+            if def.is_required() && !def.matches(ch) && (!allow_space || ch != ' ') {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn validate(&self, value: &str) -> ValidationResult {
+        let mut padded: Vec<char> = value.chars().collect();
+        while padded.len() < self.defs.len() {
+            padded.push('\0');
+        }
+        if self.check(&padded, false) {
+            ValidationResult::success()
+        } else {
+            // Python parity: `_Template` sets this description inside
+            // `validate()` (top rung of the description-priority ladder).
+            ValidationResult::failure(vec![
+                Failure::new()
+                    .with_value(value)
+                    .with_description("Value does not match template!"),
+            ])
+        }
+    }
+
+    // --- separator helpers -------------------------------------------------
+
+    fn at_separator(&self, position: usize) -> bool {
+        position < self.defs.len() && self.defs[position].is_separator()
+    }
+
+    fn prev_separator_position(&self, position: usize) -> Option<usize> {
+        if position == 0 {
+            return None;
+        }
+        (0..position).rev().find(|&i| self.defs[i].is_separator())
+    }
+
+    fn next_separator_position(&self, position: usize) -> Option<usize> {
+        ((position + 1)..self.defs.len()).find(|&i| self.defs[i].is_separator())
+    }
+
+    fn next_separator_char(&self, position: usize) -> Option<char> {
+        self.next_separator_position(position)
+            .map(|i| self.defs[i].char)
+    }
+
+    // --- insert_separators -------------------------------------------------
+
+    fn insert_separators(&self, value: &[char], cursor: usize) -> (Vec<char>, usize) {
+        let mut chars = value.to_vec();
+        let mut pos = cursor;
+        while pos < self.defs.len() && self.defs[pos].is_separator() {
+            let sep_ch = self.defs[pos].char;
+            if pos < chars.len() {
+                chars[pos] = sep_ch;
+            } else {
+                chars.push(sep_ch);
+            }
+            pos += 1;
+        }
+        (chars, pos)
+    }
+
+    // --- insert text -------------------------------------------------------
+
+    fn insert_text_at(
+        &self,
+        value: &[char],
+        cursor: usize,
+        text: &str,
+    ) -> Option<(Vec<char>, usize)> {
+        let mut chars = value.to_vec();
+        let mut pos = cursor;
+
+        let separators: HashSet<char> = self
+            .defs
+            .iter()
+            .filter(|d| d.is_separator())
+            .map(|d| d.char)
+            .collect();
+
+        for ch in text.chars() {
+            if separators.contains(&ch) {
+                if Some(ch) == self.next_separator_char(pos) {
+                    let prev_pos = self.prev_separator_position(pos);
+                    let prev_is_adjacent = prev_pos.is_none_or(|p| p == pos.wrapping_sub(1));
+                    if pos > 0 && !prev_is_adjacent {
+                        let next_pos = self.next_separator_position(pos).unwrap_or(self.defs.len());
+                        while pos < next_pos + 1 {
+                            let fill = if pos < self.defs.len() && self.defs[pos].is_separator() {
+                                self.defs[pos].char
+                            } else {
+                                ' '
+                            };
+                            if pos < chars.len() {
+                                chars[pos] = fill;
+                            } else {
+                                chars.push(fill);
+                            }
+                            pos += 1;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            if pos >= self.defs.len() {
+                break;
+            }
+
+            let def = &self.defs[pos];
+            debug_assert!(!def.is_separator());
+
+            if !def.matches(ch) {
+                return None;
+            }
+
+            let ch = if def.flags.contains(CharFlags::LOWERCASE) {
+                ch.to_lowercase().next().unwrap_or(ch)
+            } else if def.flags.contains(CharFlags::UPPERCASE) {
+                ch.to_uppercase().next().unwrap_or(ch)
+            } else {
+                ch
+            };
+
+            if pos < chars.len() {
+                chars[pos] = ch;
+            } else {
+                chars.push(ch);
+            }
+            pos += 1;
+
+            let (new_chars, new_pos) = self.insert_separators(&chars, pos);
+            chars = new_chars;
+            pos = new_pos;
+        }
+
+        Some((chars, pos))
+    }
+
+    // --- move cursor -------------------------------------------------------
+
+    fn move_cursor(&self, cursor: usize, delta: i32) -> usize {
+        if delta < 0 {
+            let all_seps = (0..cursor).all(|i| self.defs[i].is_separator());
+            if all_seps {
+                return cursor;
+            }
+        }
+
+        let mut pos = cursor as i32 + delta;
+        while pos >= 0 && (pos as usize) < self.defs.len() && self.defs[pos as usize].is_separator()
+        {
+            pos += delta;
+        }
+        (pos.max(0) as usize).min(self.defs.len())
+    }
+
+    // --- delete at position ------------------------------------------------
+
+    fn delete_at(&self, value: &[char], position: usize) -> (Vec<char>, usize) {
+        let mut chars = value.to_vec();
+        let pos = position;
+
+        if pos < self.defs.len() {
+            debug_assert!(!self.defs[pos].is_separator());
+            if pos == chars.len().saturating_sub(1) {
+                chars.truncate(pos);
+            } else if pos < chars.len() {
+                chars[pos] = ' ';
+            }
+        }
+
+        // Trim trailing spaces and separators.
+        let mut trim_pos = chars.len();
+        while trim_pos > 0 {
+            let def = &self.defs[trim_pos - 1];
+            if !def.is_separator() && chars[trim_pos - 1] != ' ' {
+                break;
+            }
+            trim_pos -= 1;
+        }
+        chars.truncate(trim_pos);
+
+        let new_pos = if pos > chars.len() { chars.len() } else { pos };
+        self.insert_separators(&chars, new_pos)
+    }
+
+    // --- display -----------------------------------------------------------
+
+    fn display(&self, value: &[char]) -> Vec<char> {
+        let mut result = Vec::with_capacity(value.len());
+        for (i, &ch) in value.iter().enumerate() {
+            if ch == ' ' && i < self.defs.len() {
+                result.push(self.defs[i].char);
+            } else {
+                result.push(ch);
+            }
+        }
+        result
+    }
+
+    fn mask(&self) -> Vec<char> {
+        self.defs.iter().map(|d| d.char).collect()
+    }
+
+    fn empty_mask(&self) -> Vec<char> {
+        self.defs
+            .iter()
+            .map(|d| if d.is_separator() { d.char } else { ' ' })
+            .collect()
+    }
+
+    fn update_mask(&mut self, placeholder: &str) {
+        let ph_chars: Vec<char> = placeholder.chars().collect();
+        for (i, def) in self.defs.iter_mut().enumerate() {
+            if !def.is_separator() {
+                def.char = if i < ph_chars.len() {
+                    ph_chars[i]
+                } else {
+                    self.blank
+                };
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MaskedInput
+// ---------------------------------------------------------------------------
+
+#[widget(Focus, Interactive, Layout, Selectable, Components)]
+pub struct MaskedInput {
+    template: Template,
+    /// Current value as a char vec (positions correspond 1:1 with template defs).
+    value: Vec<char>,
+    cursor: usize,
+    placeholder: String,
+    validators: Vec<ValidatorRef>,
+    validation_result: ValidationResult,
+    chrome: InputChrome,
+    seed: NodeSeed,
+}
+
+impl MaskedInput {
+    pub fn new(template_str: impl Into<String>) -> Self {
+        let template_str = template_str.into();
+        let mut template = Template::parse(&template_str);
+        template.update_mask("");
+        let (value, cursor) = template.insert_separators(&[], 0);
+        let mut out = Self {
+            template,
+            value,
+            cursor,
+            placeholder: String::new(),
+            validators: Vec::new(),
+            validation_result: ValidationResult::success(),
+            chrome: InputChrome::new(),
+            seed: {
+                let mut s = NodeSeed::default();
+                s.classes.push("masked-input".to_string());
+                s
+            },
+        };
+        out.revalidate();
+        out
+    }
+
+    pub fn with_value(mut self, value: impl Into<String>) -> Self {
+        let v: Vec<char> = value.into().chars().collect();
+        if !v.is_empty() {
+            let (v, _) = self.template.insert_separators(&v, 0);
+            self.value = v;
+        }
+        self.revalidate();
+        self
+    }
+
+    pub fn with_placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = placeholder.into();
+        self.template.update_mask(&self.placeholder);
+        self
+    }
+
+    pub fn with_validators(mut self, validators: Vec<ValidatorRef>) -> Self {
+        self.validators = validators;
+        self.revalidate();
+        self
+    }
+
+    pub fn class(mut self, class: impl Into<String>) -> Self {
+        self.seed.classes.push(class.into());
+        self
+    }
+
+    pub fn set_class(&mut self, class: &str, enabled: bool) {
+        if enabled {
+            if !self.seed.classes.iter().any(|c| c == class) {
+                self.seed.classes.push(class.to_string());
+            }
+        } else {
+            self.seed.classes.retain(|c| c != class);
+        }
+    }
+
+    /// Returns the current value as a string.
+    pub fn text(&self) -> String {
+        self.value.iter().collect()
+    }
+
+    pub fn validation_result(&self) -> &ValidationResult {
+        &self.validation_result
+    }
+
+    pub fn set_text(&mut self, value: impl Into<String>) {
+        let v: Vec<char> = value.into().chars().collect();
+        if self.template.check(&v, true) {
+            self.value = v;
+            if self.cursor > self.value.len() {
+                self.cursor = self.value.len();
+            }
+            self.revalidate();
+        }
+    }
+
+    pub fn clear(&mut self) {
+        let (value, cursor) = self.template.insert_separators(&[], 0);
+        self.value = value;
+        self.cursor = cursor;
+        self.revalidate();
+    }
+
+    /// Replace the template at runtime, re-parsing and resetting content/cursor state.
+    ///
+    /// Returns `Err` if the template string contains no non-separator characters.
+    pub fn set_template(&mut self, template_str: &str) -> Result<(), String> {
+        // Validate before modifying state: template must have at least one editable slot.
+        let has_editable = {
+            let mut escaped = false;
+            let mut found = false;
+            for ch in template_str.chars() {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                match ch {
+                    '\\' => {
+                        escaped = true;
+                        continue;
+                    }
+                    ';' => break,
+                    '>' | '<' | '!' => continue,
+                    _ => {
+                        if template_char_def(ch).is_some() {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            found
+        };
+        if !has_editable {
+            return Err("Template must contain at least one non-separator character".to_string());
+        }
+
+        let mut template = Template::parse(template_str);
+        let placeholder = self.placeholder.clone();
+        template.update_mask(&placeholder);
+        let (value, cursor) = template.insert_separators(&[], 0);
+        self.template = template;
+        self.value = value;
+        self.cursor = cursor;
+        self.revalidate();
+        Ok(())
+    }
+
+    // --- internal helpers --------------------------------------------------
+
+    fn value_str(&self) -> String {
+        self.value.iter().collect()
+    }
+
+    fn post_changed(&mut self, ctx: &mut crate::event::WidgetCtx) {
+        self.sync_validation_classes(ctx);
+        ctx.post_message(InputChanged {
+            value: self.value_str(),
+            validation: self.validation_result.clone(),
+        });
+    }
+
+    /// Mirror the `-valid`/`-invalid` classes computed by [`Self::revalidate`]
+    /// onto the mounted arena node (Python `MaskedInput.validate` →
+    /// `set_class`). `revalidate()` writes to `self.seed.classes`, which is
+    /// only consulted pre-mount / off-tree; after mount the node record is the
+    /// single source of truth, so the state must ride `ctx.set_class` class
+    /// ops (this is what makes `&.-invalid:focus { border: tall $error }`
+    /// match while typing a partial value).
+    fn sync_validation_classes(&self, ctx: &mut crate::event::WidgetCtx) {
+        let has = |class: &str| self.seed.classes.iter().any(|c| c == class);
+        ctx.set_class(has("-valid"), "-valid");
+        ctx.set_class(has("-invalid"), "-invalid");
+    }
+
+    fn copy_text(&self) -> Option<String> {
+        let text = self.value_str();
+        if text.trim().is_empty() {
+            None
+        } else {
+            Some(text)
+        }
+    }
+
+    fn revalidate(&mut self) {
+        let value_str = self.value_str();
+
+        let template_result = self.template.validate(&value_str);
+
+        self.validation_result = ValidationResult::merge(
+            std::iter::once(template_result).chain(
+                self.validators
+                    .iter()
+                    .map(|validator| validator.validate(&value_str)),
+            ),
+        );
+
+        let trimmed = value_str.trim().is_empty();
+        if trimmed {
+            self.set_class("-valid", false);
+            self.set_class("-invalid", false);
+        } else if self.validation_result.is_valid() {
+            self.set_class("-valid", true);
+            self.set_class("-invalid", false);
+        } else {
+            self.set_class("-valid", false);
+            self.set_class("-invalid", true);
+        }
+    }
+
+    fn cursor_from_x(&self, x: u16) -> usize {
+        let slots = self.display_slots();
+        let display: String = slots.iter().collect();
+        let byte_idx = byte_index_from_cell_x(&display, x as usize);
+        display[..byte_idx].chars().count().min(self.template.len())
+    }
+
+    fn display_slots(&self) -> Vec<char> {
+        let mut slots = self.template.mask();
+        let display_chars = self.template.display(&self.value);
+        for (idx, ch) in display_chars.into_iter().enumerate() {
+            if idx < slots.len() {
+                slots[idx] = ch;
+            } else {
+                slots.push(ch);
+            }
+        }
+        slots
+    }
+
+    // --- masked actions (ported from Python _masked_input.py) ---------------
+
+    fn action_insert_text(&mut self, text: &str) -> bool {
+        if let Some((new_val, new_cursor)) =
+            self.template.insert_text_at(&self.value, self.cursor, text)
+        {
+            self.value = new_val;
+            self.cursor = new_cursor;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn action_cursor_left(&mut self) {
+        self.cursor = self.template.move_cursor(self.cursor, -1);
+    }
+
+    fn action_cursor_right(&mut self) {
+        self.cursor = self.template.move_cursor(self.cursor, 1);
+    }
+
+    fn action_home(&mut self) {
+        self.cursor = self
+            .template
+            .move_cursor(self.cursor, -(self.template.len() as i32));
+        // If position 0 is a separator, skip forward to first editable slot.
+        if self.cursor < self.template.len() && self.template.at_separator(self.cursor) {
+            self.cursor = self.template.move_cursor(self.cursor, 1);
+        }
+    }
+
+    fn action_end(&mut self) {
+        self.cursor = self.template.mask().len();
+    }
+
+    fn action_cursor_left_word(&mut self) {
+        let pos = if self.cursor > 0 && self.template.at_separator(self.cursor - 1) {
+            self.template.prev_separator_position(self.cursor - 1)
+        } else {
+            self.template.prev_separator_position(self.cursor)
+        };
+        self.cursor = pos.map(|p| p + 1).unwrap_or(0);
+    }
+
+    fn action_cursor_right_word(&mut self) {
+        let pos = self.template.next_separator_position(self.cursor);
+        self.cursor = pos
+            .map(|p| p + 1)
+            .unwrap_or_else(|| self.template.mask().len());
+    }
+
+    fn action_delete_right(&mut self) {
+        if self.cursor < self.template.len() && !self.template.at_separator(self.cursor) {
+            let (new_val, new_cursor) = self.template.delete_at(&self.value, self.cursor);
+            self.value = new_val;
+            self.cursor = new_cursor;
+        }
+    }
+
+    fn action_delete_left(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        self.cursor = self.template.move_cursor(self.cursor, -1);
+        let (new_val, new_cursor) = self.template.delete_at(&self.value, self.cursor);
+        self.value = new_val;
+        self.cursor = new_cursor;
+    }
+
+    fn action_delete_right_word(&mut self) {
+        let end = self
+            .template
+            .next_separator_position(self.cursor)
+            .map(|p| p + 1)
+            .unwrap_or(self.value.len());
+        let start = self.cursor;
+        // Delete non-separator chars from start..end. Since delete shifts values,
+        // we repeatedly delete at `start` for each non-separator position.
+        for i in start..end {
+            if !self.template.at_separator(i) {
+                let (new_val, _) = self.template.delete_at(&self.value, start);
+                self.value = new_val;
+            }
+        }
+        let (new_val, new_cursor) = self.template.insert_separators(&self.value, self.cursor);
+        self.value = new_val;
+        self.cursor = new_cursor;
+    }
+
+    fn action_delete_left_word(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let target = if self.cursor > 0 && self.template.at_separator(self.cursor - 1) {
+            self.template
+                .prev_separator_position(self.cursor - 1)
+                .map(|p| p + 1)
+                .unwrap_or(0)
+        } else {
+            self.template
+                .prev_separator_position(self.cursor)
+                .map(|p| p + 1)
+                .unwrap_or(0)
+        };
+
+        let original_cursor = self.cursor;
+        for i in target..original_cursor {
+            if !self.template.at_separator(i) {
+                let (new_val, _) = self.template.delete_at(&self.value, target);
+                self.value = new_val;
+            }
+        }
+        self.cursor = target;
+    }
+
+    /// Python parity: `MaskedInput` inherits `Input.action_delete_right_all`
+    /// (no template override), deleting the cursor and everything right of
+    /// it. Separator slots are restored from the empty mask.
+    fn action_delete_right_all(&mut self) {
+        if self.cursor < self.value.len() {
+            let empty_mask = self.template.empty_mask();
+            for i in self.cursor..self.value.len() {
+                if i < empty_mask.len() {
+                    self.value[i] = empty_mask[i];
+                } else {
+                    self.value[i] = ' ';
+                }
+            }
+        }
+    }
+
+    fn action_delete_left_all(&mut self) {
+        if self.cursor > 0 {
+            let cursor_pos = self.cursor;
+            if cursor_pos >= self.value.len() {
+                self.value.clear();
+            } else {
+                let empty_mask = self.template.empty_mask();
+                for i in 0..cursor_pos.min(self.value.len()) {
+                    if i < empty_mask.len() {
+                        self.value[i] = empty_mask[i];
+                    } else {
+                        self.value[i] = ' ';
+                    }
+                }
+            }
+            self.cursor = 0;
+        }
+    }
+}
+
+impl crate::widgets::Focus for MaskedInput {
+    fn focusable(&self) -> bool {
+        true
+    }
+
+    fn is_active(&self) -> bool {
+        self.chrome.is_active()
+    }
+
+    fn action_namespace(&self) -> &str {
+        "masked-input"
+    }
+
+    fn bindings(&self) -> Vec<BindingDecl> {
+        // Python `MaskedInput` subclasses `Input` and inherits
+        // `Input.BINDINGS` unchanged.
+        super::input::input_bindings()
+    }
+
+    fn execute_action(&mut self, action: &ParsedAction, ctx: &mut crate::event::WidgetCtx) -> bool {
+        // Template-aware dispatch mirroring the `on_event` key path above:
+        // movement/deletion skip separators, and the `(True)` select
+        // argument is ignored exactly as in direct key handling (which
+        // drops it in the `MoveLeft { unit, .. }` arms).
+        match action.name.as_str() {
+            "submit" => {
+                ctx.post_message(InputSubmitted {
+                    value: self.value_str(),
+                });
+            }
+            "cursor_left" => self.action_cursor_left(),
+            "cursor_left_word" => self.action_cursor_left_word(),
+            "cursor_right" => self.action_cursor_right(),
+            "cursor_right_word" => self.action_cursor_right_word(),
+            "home" => self.action_home(),
+            "end" => self.action_end(),
+            "delete_left" => {
+                self.action_delete_left();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "delete_left_word" => {
+                self.action_delete_left_word();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "delete_left_all" => {
+                self.action_delete_left_all();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "delete_right" => {
+                self.action_delete_right();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "delete_right_word" => {
+                self.action_delete_right_word();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "delete_right_all" => {
+                self.action_delete_right_all();
+                self.revalidate();
+                self.post_changed(ctx);
+            }
+            "cut" => {
+                if let Some(text) = self.copy_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
+                    self.clear();
+                    self.revalidate();
+                    self.post_changed(ctx);
+                }
+            }
+            "copy" => {
+                if let Some(text) = self.copy_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
+                }
+            }
+            "paste" => {
+                ctx.post_message(TextEditClipboardPasteRequested {
+                    target: self.node_id(),
+                });
+            }
+            // No selection model: `select_all` has no selection state to
+            // set (copy already yields the full value, cut clears it).
+            _ => return false,
+        }
+        self.chrome.reset_blink();
+        ctx.request_repaint();
+        ctx.set_handled();
+        true
+    }
+}
+
+impl crate::widgets::Interactive for MaskedInput {
+    fn on_node_state_changed(&mut self, old: NodeState, new: NodeState) {
+        if old.focused != new.focused {
+            self.chrome.set_focus(new.focused);
+        }
+    }
+
+    fn on_mouse_move(&mut self, x: u16, _y: u16) -> bool {
+        if !self.chrome.is_mouse_down() {
+            return false;
+        }
+        let mut next = self.cursor_from_x(x);
+        if next < self.template.len() && self.template.at_separator(next) {
+            next = self.template.move_cursor(next, 1);
+        }
+        if next == self.cursor {
+            return false;
+        }
+        self.cursor = next;
+        true
+    }
+
+    fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
+        match event {
+            Event::AppFocus(active) => {
+                self.chrome.handle_app_focus(*active);
+                ctx.request_repaint();
+            }
+            Event::MouseDown(mouse) if mouse.target == self.node_id() => {
+                let pos = self.cursor_from_x(mouse.x);
+                self.cursor = pos;
+                if self.template.at_separator(self.cursor) {
+                    self.cursor = self.template.move_cursor(self.cursor, 1);
+                }
+                self.chrome.set_mouse_down(true);
+                self.chrome.reset_blink();
+                ctx.request_repaint();
+                ctx.set_handled();
+            }
+            Event::MouseUp(_) if self.chrome.is_mouse_down() => {
+                self.chrome.set_mouse_down(false);
+                ctx.request_repaint();
+            }
+            Event::Tick(_) if self.chrome.handle_tick(Instant::now()) => {
+                ctx.request_repaint();
+            }
+            Event::Key(key) if self.node_state().focused => {
+                let Some(cmd) = edit_command_from_key(key, false) else {
+                    return;
+                };
+                let mut changed = false;
+                let mut value_changed = false;
+                match cmd {
+                    EditCommand::DeleteToStart => {
+                        self.action_delete_left_all();
+                        changed = true;
+                        value_changed = true;
+                    }
+                    EditCommand::InsertChar(ch) => {
+                        if self.action_insert_text(&ch.to_string()) {
+                            changed = true;
+                            value_changed = true;
+                        }
+                    }
+                    EditCommand::Submit => {
+                        ctx.post_message(InputSubmitted {
+                            value: self.value_str(),
+                        });
+                    }
+                    EditCommand::Copy => {
+                        if let Some(text) = self.copy_text() {
+                            ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
+                        }
+                    }
+                    EditCommand::Cut => {
+                        if let Some(text) = self.copy_text() {
+                            ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
+                            self.clear();
+                            changed = true;
+                            value_changed = true;
+                        }
+                    }
+                    EditCommand::Paste => {
+                        ctx.post_message(TextEditClipboardPasteRequested {
+                            target: self.node_id(),
+                        });
+                    }
+                    EditCommand::Backspace { unit } => {
+                        match unit {
+                            MoveUnit::Grapheme => self.action_delete_left(),
+                            MoveUnit::Word => self.action_delete_left_word(),
+                        }
+                        changed = true;
+                        value_changed = true;
+                    }
+                    EditCommand::Delete { unit } => {
+                        match unit {
+                            MoveUnit::Grapheme => self.action_delete_right(),
+                            MoveUnit::Word => self.action_delete_right_word(),
+                        }
+                        changed = true;
+                        value_changed = true;
+                    }
+                    EditCommand::MoveLeft { unit, .. } => {
+                        match unit {
+                            MoveUnit::Grapheme => self.action_cursor_left(),
+                            MoveUnit::Word => self.action_cursor_left_word(),
+                        }
+                        changed = true;
+                    }
+                    EditCommand::MoveRight { unit, .. } => {
+                        match unit {
+                            MoveUnit::Grapheme => self.action_cursor_right(),
+                            MoveUnit::Word => self.action_cursor_right_word(),
+                        }
+                        changed = true;
+                    }
+                    EditCommand::MoveHome { .. } => {
+                        self.action_home();
+                        changed = true;
+                    }
+                    EditCommand::MoveEnd { .. } => {
+                        self.action_end();
+                        changed = true;
+                    }
+                    EditCommand::DeleteToEnd => {
+                        self.action_delete_right_all();
+                        changed = true;
+                        value_changed = true;
+                    }
+                    // `SelectAll` (ctrl+shift+a) is intentionally not wired:
+                    // `MaskedInput` has no selection model — copy already
+                    // yields the full value and cut already clears it — so
+                    // there is no selection state for select-all to set.
+                    // (Python inherits `Input.action_select_all`, but its
+                    // cursor-action overrides drop the `select` parameter, so
+                    // shift-selection is broken there too.)
+                    EditCommand::InsertNewline
+                    | EditCommand::MoveUp { .. }
+                    | EditCommand::MoveDown { .. }
+                    | EditCommand::DeleteLine
+                    | EditCommand::SelectAll
+                    | EditCommand::SelectLine => {}
+                }
+
+                if value_changed {
+                    self.revalidate();
+                    self.post_changed(ctx);
+                }
+                if changed || value_changed {
+                    self.chrome.reset_blink();
+                    ctx.request_repaint();
+                }
+                ctx.set_handled();
+            }
+            _ => {}
+        }
+    }
+
+    fn on_message(&mut self, message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+        if let Some(m) = message.downcast_ref::<TextEditClipboardPaste>() {
+            if m.target != self.node_id() {
+                return;
+            }
+            if let Some(line) = first_clipboard_line(&m.text) {
+                if self.action_insert_text(line) {
+                    self.revalidate();
+                    self.post_changed(ctx);
+                    self.chrome.reset_blink();
+                    ctx.request_repaint();
+                    ctx.set_handled();
+                }
+            }
+        }
+    }
+}
+
+impl crate::widgets::Layout for MaskedInput {
+    fn layout_height(&self) -> Option<usize> {
+        // PURE content height (1 row). The flow layout adds the CSS-resolved
+        // vertical chrome (MaskedInput's default border) with ancestor context.
+        Some(1)
+    }
+}
+
+impl crate::widgets::Selectable for MaskedInput {
+    fn get_selection(&self) -> Option<String> {
+        self.copy_text()
+    }
+}
+
+impl crate::widgets::Render for MaskedInput {
+    fn style_type(&self) -> &'static str {
+        "MaskedInput"
+    }
+
+    fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
+        let width = options.size.0.max(1);
+
+        // Painted surface + component-colour resolution shared with `Input`
+        // (`input_chrome`): state-aware composited background (incl. the
+        // `:focus` `background-tint`) and the `auto <pct>%` contrast path that
+        // `input--placeholder`'s `color: $text-disabled` resolves to. The old
+        // hand-rolled resolver here missed both, so the unfilled template
+        // suffix painted with the plain foreground instead of Python's faded
+        // placeholder colour.
+        let base_bg = super::input_chrome::composited_surface_bg(self);
+
+        let resolve_component_rich = |class: &str| -> rich_rs::Style {
+            super::input_chrome::resolve_input_component_rich(self, class, base_bg)
+        };
+
+        let cursor_style = resolve_component_rich("input--cursor");
+        let placeholder_style = resolve_component_rich("input--placeholder");
+
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum SlotVisual {
+            Normal,
+            Placeholder,
+            Cursor,
+        }
+
+        let mut runs: Vec<(SlotVisual, String)> = Vec::new();
+        let mut push_char = |visual: SlotVisual, ch: char| {
+            if let Some((last_visual, text)) = runs.last_mut()
+                && *last_visual == visual
+            {
+                text.push(ch);
+                return;
+            }
+            runs.push((visual, ch.to_string()));
+        };
+
+        for (idx, ch) in self.display_slots().into_iter().enumerate() {
+            let is_cursor =
+                self.node_state().focused && self.chrome.cursor_visible() && idx == self.cursor;
+            let original_is_space = idx < self.value.len() && self.value[idx] == ' ';
+            let visual = if is_cursor {
+                SlotVisual::Cursor
+            } else if original_is_space || idx >= self.value.len() {
+                SlotVisual::Placeholder
+            } else {
+                SlotVisual::Normal
+            };
+            push_char(visual, ch);
+        }
+
+        if self.node_state().focused
+            && self.chrome.cursor_visible()
+            && self.cursor >= self.template.len()
+        {
+            push_char(SlotVisual::Cursor, ' ');
+        }
+
+        let mut out: Vec<rich_rs::Segment> = Vec::new();
+        for (visual, text) in runs {
+            let style = match visual {
+                SlotVisual::Normal => rich_rs::Style::new(),
+                SlotVisual::Placeholder => placeholder_style,
+                SlotVisual::Cursor => cursor_style,
+            };
+            out.push(rich_rs::Segment::styled(text, style));
+        }
+        adjust_line_length_no_bg(&out, width).into()
+    }
+}
+
+impl crate::widgets::Components for MaskedInput {
+    fn component_classes(&self) -> &[&'static str] {
+        &[
+            "input--cursor",
+            "input--placeholder",
+            "input--selection",
+            "input--suggestion",
+        ]
+    }
+}
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::event::EventCtx;
+    use crate::keys::KeyEventData;
+    use crate::node_id::NodeId;
+    use crate::runtime::dispatch_ctx::set_dispatch_recipient;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use rich_rs::Console;
+
+    fn make_node_id() -> NodeId {
+        use slotmap::SlotMap;
+        let mut sm: SlotMap<NodeId, ()> = SlotMap::new();
+        sm.insert(())
+    }
+
+    fn focused_state() -> NodeState {
+        NodeState {
+            focused: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn template_parse_phone() {
+        let t = Template::parse(r"\(999\) 999\-9999");
+        assert_eq!(t.len(), 14);
+        assert!(t.defs[0].is_separator()); // (
+        assert!(!t.defs[1].is_separator()); // first digit
+    }
+
+    #[test]
+    fn template_insert_separators() {
+        let t = Template::parse(r"\(999\) 999\-9999");
+        let (val, cursor) = t.insert_separators(&[], 0);
+        assert_eq!(val, vec!['(']);
+        assert_eq!(cursor, 1);
+    }
+
+    #[test]
+    fn template_insert_text() {
+        let t = Template::parse(r"\(999\) 999\-9999");
+        let (val, cursor) = t.insert_separators(&[], 0);
+        let result = t.insert_text_at(&val, cursor, "555");
+        assert!(result.is_some());
+        let (val, cursor) = result.unwrap();
+        let s: String = val.iter().collect();
+        assert_eq!(&s, "(555) ");
+        assert_eq!(cursor, 6);
+    }
+
+    #[test]
+    fn template_insert_full_phone() {
+        let t = Template::parse(r"\(999\) 999\-9999");
+        let (val, cursor) = t.insert_separators(&[], 0);
+        let result = t.insert_text_at(&val, cursor, "5551234567");
+        assert!(result.is_some());
+        let (val, _cursor) = result.unwrap();
+        let s: String = val.iter().collect();
+        assert_eq!(&s, "(555) 123-4567");
+    }
+
+    #[test]
+    fn template_rejects_invalid_char() {
+        let t = Template::parse("999");
+        let result = t.insert_text_at(&[], 0, "a");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn template_case_forcing_upper() {
+        let t = Template::parse(">AAAA");
+        let result = t.insert_text_at(&[], 0, "abcd");
+        assert!(result.is_some());
+        let (val, _) = result.unwrap();
+        let s: String = val.iter().collect();
+        assert_eq!(&s, "ABCD");
+    }
+
+    #[test]
+    fn template_case_forcing_lower() {
+        let t = Template::parse("<AAAA");
+        let result = t.insert_text_at(&[], 0, "ABCD");
+        assert!(result.is_some());
+        let (val, _) = result.unwrap();
+        let s: String = val.iter().collect();
+        assert_eq!(&s, "abcd");
+    }
+
+    #[test]
+    fn template_validation_pass() {
+        let t = Template::parse("999");
+        assert!(t.validate("123").is_valid());
+    }
+
+    #[test]
+    fn template_validation_fail_incomplete() {
+        let t = Template::parse("999");
+        assert!(!t.validate("12").is_valid());
+    }
+
+    #[test]
+    fn template_validation_fail_wrong_char() {
+        let t = Template::parse("999");
+        assert!(!t.validate("abc").is_valid());
+    }
+
+    #[test]
+    fn template_optional_not_required() {
+        let t = Template::parse("990");
+        // First two digits required, third optional.
+        assert!(t.validate("12").is_valid());
+        assert!(!t.validate("1").is_valid());
+    }
+
+    #[test]
+    fn template_display() {
+        let mut t = Template::parse(r"\(999\) 999\-9999");
+        t.update_mask("______________");
+        let val: Vec<char> = "(555) ".chars().collect();
+        let display: String = t.display(&val).into_iter().collect();
+        assert_eq!(display, "(555) ");
+    }
+
+    #[test]
+    fn template_mask_chars() {
+        let mut t = Template::parse(r"\(999\) 999\-9999");
+        t.update_mask("______________");
+        let mask: String = t.mask().into_iter().collect();
+        assert_eq!(mask.len(), 14);
+        assert_eq!(&mask[0..1], "(");
+    }
+
+    #[test]
+    fn template_move_cursor_skips_separator() {
+        let t = Template::parse(r"\(999\) 999\-9999");
+        // Position 3 → next position 4 is ')' sep, 5 is ' ' sep → skip to 6.
+        let pos = t.move_cursor(3, 1);
+        assert_eq!(pos, 6);
+    }
+
+    #[test]
+    fn template_delete_at() {
+        let t = Template::parse("999");
+        let val: Vec<char> = "123".chars().collect();
+        let (new_val, cursor) = t.delete_at(&val, 1);
+        let s: String = new_val.into_iter().collect();
+        assert_eq!(s, "1 3");
+        assert_eq!(cursor, 1);
+    }
+
+    #[test]
+    fn masked_input_new_starts_with_separator() {
+        let mi = MaskedInput::new(r"\(999\) 999\-9999");
+        assert_eq!(mi.text(), "(");
+    }
+
+    #[test]
+    fn template_blank_placeholder() {
+        let t = Template::parse("999;_");
+        assert_eq!(t.blank, '_');
+        let mask: String = t.mask().into_iter().collect();
+        assert_eq!(mask, "___");
+    }
+
+    #[test]
+    fn template_hex_valid() {
+        let t = Template::parse("HHHH");
+        let result = t.insert_text_at(&[], 0, "A1f0");
+        assert!(result.is_some());
+        let (val, _) = result.unwrap();
+        let s: String = val.iter().collect();
+        assert_eq!(&s, "A1f0");
+    }
+
+    #[test]
+    fn template_hex_invalid() {
+        let t = Template::parse("HHHH");
+        assert!(t.insert_text_at(&[], 0, "GHIJ").is_none());
+    }
+
+    #[test]
+    fn template_binary_valid() {
+        let t = Template::parse("BBBB");
+        let result = t.insert_text_at(&[], 0, "1010");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn template_binary_invalid() {
+        let t = Template::parse("BBBB");
+        assert!(t.insert_text_at(&[], 0, "1234").is_none());
+    }
+
+    #[test]
+    fn template_mixed_case_modes() {
+        // >AA forces upper, ! resets, AA normal, <AA forces lower
+        let t = Template::parse(">AA!AA<AA");
+        let result = t.insert_text_at(&[], 0, "abCDef");
+        assert!(result.is_some());
+        let (val, _) = result.unwrap();
+        let s: String = val.iter().collect();
+        assert_eq!(&s, "ABCDef");
+    }
+
+    #[test]
+    fn masked_input_style_type() {
+        let mi = MaskedInput::new("999");
+        assert_eq!(mi.style_type(), "MaskedInput");
+    }
+
+    /// PR-18: Python `MaskedInput` subclasses `Input`, so it inherits
+    /// `Input.BINDINGS` unchanged (23 entries, all `show=False`).
+    #[test]
+    fn masked_bindings_inherit_input_bindings() {
+        let bindings = MaskedInput::new("999").bindings();
+        assert_eq!(bindings.len(), 23);
+        assert!(bindings.iter().all(|b| !b.show));
+        let actions: Vec<&str> = bindings.iter().map(|b| b.action.as_str()).collect();
+        for expected in [
+            "submit",
+            "select_all",
+            "home",
+            "end",
+            "cursor_left_word",
+            "cursor_right_word",
+            "delete_left_word",
+            "delete_right_word",
+            "delete_left_all",
+            "delete_right_all",
+            "cut",
+            "copy",
+            "paste",
+        ] {
+            assert!(actions.contains(&expected), "missing {expected}");
+        }
+    }
+
+    fn dispatch_masked_action(input: &mut MaskedInput, ctx: &mut EventCtx, name: &str) -> bool {
+        let action = crate::action::ParsedAction {
+            namespace: None,
+            name: name.to_string(),
+            arguments: vec![],
+        };
+        let mut __w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), ctx);
+        input.execute_action(&action, &mut __w)
+    }
+
+    fn type_char(input: &mut MaskedInput, ctx: &mut EventCtx, ch: char) {
+        let mut __w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), ctx);
+        input.on_event(
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                KeyCode::Char(ch),
+                KeyModifiers::NONE,
+            ))),
+            &mut __w,
+        );
+    }
+
+    /// PR-18: `delete_right_all` (ctrl+k) clears the cursor and everything
+    /// right of it — Python `MaskedInput` inherits
+    /// `Input.action_delete_right_all` with no template override.
+    /// `select_all` stays unhandled: there is no selection model.
+    #[test]
+    fn masked_execute_action_delete_right_all() {
+        let mut input = MaskedInput::new("999");
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        let mut ctx = EventCtx::default();
+        type_char(&mut input, &mut ctx, '1');
+        type_char(&mut input, &mut ctx, '2');
+        type_char(&mut input, &mut ctx, '3');
+        assert_eq!(input.value_str(), "123");
+        assert!(dispatch_masked_action(&mut input, &mut ctx, "cursor_left"));
+        assert!(dispatch_masked_action(
+            &mut input,
+            &mut ctx,
+            "delete_right_all"
+        ));
+        assert_eq!(input.value_str(), "12 ");
+        assert!(!dispatch_masked_action(&mut input, &mut ctx, "select_all"));
+        assert!(!dispatch_masked_action(
+            &mut input,
+            &mut ctx,
+            "no_such_action"
+        ));
+    }
+
+    #[test]
+    fn masked_input_typing_emits_input_changed_message() {
+        let mut input = MaskedInput::new("999");
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        let mut ctx = EventCtx::default();
+
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            input.on_event(
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Char('1'),
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
+        }
+
+        let messages = ctx.take_messages();
+        assert!(messages.iter().any(|m| {
+            m.downcast_ref::<InputChanged>()
+                .is_some_and(|c| c.value.starts_with('1'))
+        }));
+    }
+
+    #[test]
+    fn ctrl_u_clears_to_start_via_shared_command_map() {
+        let mut input = MaskedInput::new("9999");
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        input.set_text("1234");
+        input.cursor = 4;
+        let mut ctx = EventCtx::default();
+
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            input.on_event(
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Char('u'),
+                    KeyModifiers::CONTROL,
+                ))),
+                &mut __w,
+            );
+        }
+
+        assert_eq!(input.text(), "");
+        assert!(ctx.handled());
+    }
+
+    #[test]
+    fn masked_input_copy_cut_and_paste_hooks() {
+        let mut input = MaskedInput::new("9999");
+        let id = make_node_id();
+        let _guard = set_dispatch_recipient(id, focused_state());
+        input.set_text("1234");
+
+        let mut ctx = EventCtx::default();
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            input.on_event(
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Char('c'),
+                    KeyModifiers::CONTROL,
+                ))),
+                &mut __w,
+            );
+        }
+        let copy_messages = ctx.take_messages();
+        assert!(copy_messages.iter().any(|m| {
+            m.downcast_ref::<TextEditClipboardCopyRequested>()
+                .is_some_and(|r| r.text == "1234" && !r.cut)
+        }));
+
+        let mut ctx = EventCtx::default();
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            input.on_event(
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Char('x'),
+                    KeyModifiers::CONTROL,
+                ))),
+                &mut __w,
+            );
+        }
+        let cut_messages = ctx.take_messages();
+        assert!(cut_messages.iter().any(|m| {
+            m.downcast_ref::<TextEditClipboardCopyRequested>()
+                .is_some_and(|r| r.text == "1234" && r.cut)
+        }));
+        assert_eq!(input.text(), "");
+
+        let mut ctx = EventCtx::default();
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            input.on_message(
+                &MessageEvent::new(
+                    NodeId::default(),
+                    TextEditClipboardPaste {
+                        target: id,
+                        text: "9876".to_string(),
+                    },
+                ),
+                &mut __w,
+            );
+        }
+        assert_eq!(input.text(), "9876");
+        assert!(ctx.handled());
+    }
+
+    #[test]
+    fn masked_input_paste_uses_first_clipboard_line_only() {
+        let mut input = MaskedInput::new("9999");
+        let id = make_node_id();
+        let _guard = set_dispatch_recipient(id, focused_state());
+
+        let mut ctx = EventCtx::default();
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            input.on_message(
+                &MessageEvent::new(
+                    NodeId::default(),
+                    TextEditClipboardPaste {
+                        target: id,
+                        text: "9876\n1234".to_string(),
+                    },
+                ),
+                &mut __w,
+            );
+        }
+
+        assert_eq!(input.text(), "9876");
+        assert!(ctx.handled());
+    }
+
+    #[test]
+    fn cursor_from_x_handles_zwj_and_combining_clusters() {
+        let zwj_input = MaskedInput::new("👩‍🚀9");
+        assert_eq!(zwj_input.cursor_from_x(0), 0);
+        assert_eq!(zwj_input.cursor_from_x(1), 0);
+        assert_eq!(zwj_input.cursor_from_x(2), 3);
+
+        let combining_input = MaskedInput::new("e\u{0301}9");
+        assert_eq!(combining_input.cursor_from_x(0), 0);
+        assert_eq!(combining_input.cursor_from_x(1), 2);
+    }
+
+    #[test]
+    fn render_clamps_wide_cells_to_viewport_width() {
+        let input = MaskedInput::new("中9");
+        let console = Console::new();
+        let mut options = console.options().clone();
+        options.size = (1, 1);
+        options.max_width = 1;
+        options.max_height = 1;
+
+        let rendered = Widget::render(&input, &console, &options);
+        assert_eq!(rendered.cell_len(), 1);
+    }
+
+    // ── P1-14 dispatch-context regression tests ─────────────────────────
+
+    #[test]
+    fn mouse_click_with_dispatch_context_is_handled() {
+        let mut input = MaskedInput::new("9999");
+
+        let id = make_node_id();
+        let _guard = set_dispatch_recipient(id, NodeState::default());
+
+        let mut ctx = EventCtx::default();
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            input.on_event(
+                &Event::MouseDown(crate::event::MouseDownEvent {
+                    target: id,
+                    screen_x: 0,
+                    screen_y: 0,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
+        }
+        assert!(ctx.handled());
+    }
+
+    #[test]
+    fn mouse_click_with_wrong_target_is_ignored() {
+        use slotmap::SlotMap;
+
+        let mut input = MaskedInput::new("9999");
+
+        let mut sm: SlotMap<NodeId, ()> = SlotMap::new();
+        let my_id = sm.insert(());
+        let other_id = sm.insert(());
+        let _guard = set_dispatch_recipient(my_id, NodeState::default());
+
+        let mut ctx = EventCtx::default();
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            input.on_event(
+                &Event::MouseDown(crate::event::MouseDownEvent {
+                    target: other_id,
+                    screen_x: 0,
+                    screen_y: 0,
+                    x: 0,
+                    y: 0,
+                }),
+                &mut __w,
+            );
+        }
+        assert!(!ctx.handled());
+    }
+
+    #[test]
+    fn paste_message_with_wrong_target_is_ignored() {
+        use slotmap::SlotMap;
+
+        let mut input = MaskedInput::new("9999");
+
+        let mut sm: SlotMap<NodeId, ()> = SlotMap::new();
+        let my_id = sm.insert(());
+        let other_id = sm.insert(());
+        let _guard = set_dispatch_recipient(my_id, NodeState::default());
+
+        let mut ctx = EventCtx::default();
+        {
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            input.on_message(
+                &MessageEvent::new(
+                    NodeId::default(),
+                    TextEditClipboardPaste {
+                        target: other_id,
+                        text: "1234".to_string(),
+                    },
+                ),
+                &mut __w,
+            );
+        }
+        assert!(!ctx.handled());
+        assert_eq!(input.text(), "");
+    }
+
+    /// Regression (masked_input parity): after mount the arena node record is
+    /// the single source of truth for CSS classes, so `revalidate()`'s
+    /// seed-class update alone never reaches `MaskedInput.-invalid` /
+    /// `&.-invalid:focus` selectors (Python paints `border: tall $error` for a
+    /// partial card number; Rust kept the plain `:focus` border). Typing must
+    /// queue the `-valid` / `-invalid` state as deferred class commands.
+    #[test]
+    fn typing_partial_value_queues_invalid_class_for_node() {
+        use crate::event::ClassOp;
+
+        let mut input = MaskedInput::new("999");
+        let _guard = set_dispatch_recipient(make_node_id(), focused_state());
+        let _ = crate::runtime::drain_class_commands_for_test();
+
+        let press = |input: &mut MaskedInput, ch: char| {
+            let mut ctx = EventCtx::default();
+            let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            input.on_event(
+                &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                    KeyCode::Char(ch),
+                    KeyModifiers::NONE,
+                ))),
+                &mut __w,
+            );
+        };
+
+        // A single digit of a 3-digit required template is template-invalid.
+        press(&mut input, '1');
+        let ops = crate::runtime::drain_class_commands_for_test();
+        assert!(
+            ops.iter()
+                .any(|(_, op)| matches!(op, ClassOp::Add(c) if c == "-invalid")),
+            "typing a partial value must queue an -invalid class add, got {ops:?}"
+        );
+        assert!(
+            ops.iter()
+                .any(|(_, op)| matches!(op, ClassOp::Remove(c) if c == "-valid")),
+            "typing a partial value must queue a -valid class remove, got {ops:?}"
+        );
+
+        // Completing the template flips the state to -valid.
+        press(&mut input, '2');
+        let _ = crate::runtime::drain_class_commands_for_test();
+        press(&mut input, '3');
+        let ops = crate::runtime::drain_class_commands_for_test();
+        assert!(
+            ops.iter()
+                .any(|(_, op)| matches!(op, ClassOp::Add(c) if c == "-valid")),
+            "completing the template must queue a -valid class add, got {ops:?}"
+        );
+        assert!(
+            ops.iter()
+                .any(|(_, op)| matches!(op, ClassOp::Remove(c) if c == "-invalid")),
+            "completing the template must queue an -invalid class remove, got {ops:?}"
+        );
+    }
+}

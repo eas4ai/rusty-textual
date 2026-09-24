@@ -1,0 +1,60 @@
+[package]
+name = "rusty-textual"
+version = "1.1.0"
+edition = "2024"
+rust-version = "1.85.0"
+license = "MIT"
+description = "A reactive TUI framework inspired by the Python Textual library"
+repository = "https://github.com/eas4ai/rusty-textual"
+documentation = "https://docs.rs/rusty-textual"
+readme = "README.md"
+keywords = ["terminal", "tui", "textual", "ui", "widgets"]
+categories = ["command-line-interface"]
+exclude = [
+    ".idea/",
+    ".claude/",
+    "docs/devel/",
+    "tools/",
+    "imgs/",
+    "examples/readme_screens/",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+rich-rs = "1.2.2"
+crossterm = "0.28"
+tokio = { version = "1.43", features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
+thiserror = "2.0"
+unicode-width = "0.2"
+unicode-segmentation = "1.12"
+tree-sitter = "0.23"
+tree-sitter-python = "0.23"
+tree-sitter-java = "0.23"
+slotmap = "1.1"
+regex = "1.12"
+# Code-fence lexing for `src/highlight.rs` (Python `textual/highlight.py` uses
+# pygments; syntect is the Rust analogue and is already in the dependency tree
+# via rich-rs with a superset feature set, so this adds no new build cost).
+syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "regex-onig", "parsing"] }
+open = "5.3"
+textual-macros = { version = "1.1.0", path = "textual-macros" }
+pulldown-cmark = "0.13"
+tracing = { version = "0.1", optional = true }
+
+[dev-dependencies]
+insta = { version = "1.41", features = ["glob"] }
+similar = "2"
+portable-pty = "0.9"
+serde_json = "1"
+vt100 = "0.15"
+
+[features]
+default = []
+# Optional terminal-driver tracing hooks (used by src/driver/platform/*).
+trace = ["dep:tracing"]
+
+[lints.rust]
+unsafe_code = "forbid"

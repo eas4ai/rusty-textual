@@ -1,0 +1,1306 @@
+use crate::css::{node_selector_meta, resolve_node_style, with_style_stack};
+use crate::driver::PointerShape;
+use crate::event::{
+    Action, ActionMap, ClickEvent, Event, KeyBind, MouseEnterEvent, MouseLeaveEvent,
+};
+use crate::node_id::NodeId;
+use crate::widget_tree::WidgetTree;
+use crate::widgets::{
+    APP_ROOT_HSCROLLBAR_ID, APP_ROOT_SCROLLBAR_CORNER_ID, APP_ROOT_VSCROLLBAR_ID,
+    DATA_TABLE_HSCROLLBAR_ID, KEY_PANEL_VSCROLLBAR_ID, LOG_HSCROLLBAR_ID, LOG_SCROLLBAR_CORNER_ID,
+    LOG_VSCROLLBAR_ID, RICH_LOG_VSCROLLBAR_ID, SCROLL_VIEW_HSCROLLBAR_ID,
+    SCROLL_VIEW_SCROLLBAR_CORNER_ID, SCROLL_VIEW_VSCROLLBAR_ID, SYSTEM_TOOLTIP_STYLE_ID,
+};
+use crossterm::event::{KeyCode, KeyModifiers, MouseEventKind};
+use rich_rs::ConsoleOptions;
+
+use crate::driver::Size;
+
+pub(crate) fn apply_size(options: &mut ConsoleOptions, size: Size) {
+    let width = size.width as usize;
+    let height = size.height as usize;
+    options.size = (width, height);
+    options.max_width = width;
+    options.max_height = height;
+}
+
+pub(crate) fn mouse_scroll_deltas(kind: MouseEventKind, modifiers: KeyModifiers) -> (i32, i32) {
+    let (mut delta_x, mut delta_y) = match kind {
+        MouseEventKind::ScrollUp => (0, -1),
+        MouseEventKind::ScrollDown => (0, 1),
+        MouseEventKind::ScrollLeft => (-1, 0),
+        MouseEventKind::ScrollRight => (1, 0),
+        _ => (0, 0),
+    };
+
+    // Common TUI convention: Shift + vertical wheel scrolls horizontally.
+    if modifiers.contains(KeyModifiers::SHIFT) && delta_x == 0 && delta_y != 0 {
+        delta_x = delta_y;
+        delta_y = 0;
+    }
+
+    (delta_x, delta_y)
+}
+
+pub(crate) fn should_quit_key(key: &crossterm::event::KeyEvent, quit_keys: &[KeyBind]) -> bool {
+    let bind = KeyBind::new(key.code, key.modifiers);
+    quit_keys.contains(&bind)
+}
+
+pub(crate) fn default_action_map() -> ActionMap {
+    let mut map = ActionMap::new();
+    map.bind(
+        KeyBind::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+        Action::CopySelectedText,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Tab, KeyModifiers::empty()),
+        Action::FocusNext,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::BackTab, KeyModifiers::SHIFT),
+        Action::FocusPrev,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Home, KeyModifiers::empty()),
+        Action::ScrollHome,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::End, KeyModifiers::empty()),
+        Action::ScrollEnd,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Up, KeyModifiers::empty()),
+        Action::ScrollUp,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Down, KeyModifiers::empty()),
+        Action::ScrollDown,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::PageUp, KeyModifiers::empty()),
+        Action::ScrollPageUp,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::PageDown, KeyModifiers::empty()),
+        Action::ScrollPageDown,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Char('k'), KeyModifiers::empty()),
+        Action::ScrollUp,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Char('j'), KeyModifiers::empty()),
+        Action::ScrollDown,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Left, KeyModifiers::empty()),
+        Action::ScrollLeft,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Right, KeyModifiers::empty()),
+        Action::ScrollRight,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Char('h'), KeyModifiers::empty()),
+        Action::ScrollLeft,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Char('l'), KeyModifiers::empty()),
+        Action::ScrollRight,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::PageUp, KeyModifiers::CONTROL),
+        Action::ScrollPageLeft,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::PageDown, KeyModifiers::CONTROL),
+        Action::ScrollPageRight,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Char(' '), KeyModifiers::empty()),
+        Action::Toggle,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Enter, KeyModifiers::empty()),
+        Action::Toggle,
+    );
+    map.bind(
+        KeyBind::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+        Action::CommandPalette,
+    );
+    map
+}
+
+// ---------------------------------------------------------------------------
+// Arena-tree-based focus/hover/binding helpers
+// ---------------------------------------------------------------------------
+
+/// Collect the focus chain: all focusable, visible nodes in depth-first order.
+pub(crate) fn collect_focus_chain_tree(tree: &WidgetTree) -> Vec<NodeId> {
+    collect_focus_chain_tree_sorted(tree, None, &|_| None)
+}
+
+/// Focus chain with Python `Screen.focus_chain` ordering (P-C).
+///
+/// Siblings are visited in `(y, x)` screen order (Python `_focus_sort_key`),
+/// disabled nodes are skipped, and traversal is scoped to the nearest
+/// `traps_focus` ancestor of `focused` (Python `_trap_focus`), when focus is
+/// inside one. `origin` maps a node to its `(y, x)` screen origin; the
+/// position sort applies per sibling group only when every sibling has a
+/// known position, otherwise document order is kept.
+pub(crate) fn collect_focus_chain_tree_sorted(
+    tree: &WidgetTree,
+    focused: Option<NodeId>,
+    origin: &dyn Fn(NodeId) -> Option<(u16, u16)>,
+) -> Vec<NodeId> {
+    // Trap scope: nearest trapping ancestor of the focused widget (or the
+    // focused widget itself), mirroring `ancestors_with_self` in Python.
+    let mut root = match tree.root() {
+        Some(r) => r,
+        None => return Vec::new(),
+    };
+    if let Some(mut id) = focused {
+        while let Some(node) = tree.get(id) {
+            if node.widget.traps_focus() {
+                root = id;
+                break;
+            }
+            match tree.parent(id) {
+                Some(parent) => id = parent,
+                None => break,
+            }
+        }
+    }
+    let mut focus_chain = Vec::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        let Some(node) = tree.get(id) else {
+            continue;
+        };
+        if !node.display || node.visibility != crate::style::Visibility::Visible {
+            continue;
+        }
+        // Python skips disabled widgets when building the focus chain.
+        if node.state.disabled {
+            continue;
+        }
+
+        if node.widget.focusable() {
+            focus_chain.push(id);
+        }
+
+        if node.widget.can_focus_children() {
+            let mut children: Vec<NodeId> = tree.children(id).to_vec();
+            // Stable (y, x) sort, applied only when every sibling has a
+            // known position: mixing positioned and unpositioned siblings
+            // would order the unknowns arbitrarily (`None` sorts first),
+            // so partial geometry keeps document order instead.
+            if children.iter().all(|&child| origin(child).is_some()) {
+                children.sort_by_key(|&child| origin(child));
+            }
+            for &child in children.iter().rev() {
+                stack.push(child);
+            }
+        }
+    }
+    focus_chain
+}
+
+/// Find the node carrying raw focus state, IGNORING display/visibility.
+///
+/// [`focused_node_id_tree`] deliberately filters out hidden nodes (a hidden
+/// widget must not receive input or match `:focus`), so once the focused
+/// widget goes `display: none` its stale `state.focused` flag is invisible to
+/// that finder — but it is exactly the node the hide-reset must blur (else it
+/// silently steals focus back when re-shown).
+pub(crate) fn raw_focused_node_id(tree: &WidgetTree) -> Option<NodeId> {
+    let root = tree.root()?;
+    tree.walk_depth_first(root)
+        .into_iter()
+        .find(|&node_id| tree.get(node_id).is_some_and(|node| node.state.focused))
+}
+
+/// Whether a node's OWN flags allow it to be shown: effective `display`
+/// (css && runtime, as merged by `WidgetTree::recompute_display`) and
+/// `visibility: visible`.
+fn node_self_shown(tree: &WidgetTree, node_id: NodeId) -> bool {
+    tree.get(node_id)
+        .map(|node| node.display && node.visibility == crate::style::Visibility::Visible)
+        .unwrap_or(false)
+}
+
+/// Python `Screen.get_focusable_widget_at` (`screen.py`): the widget under
+/// the pointer, or its nearest focusable ancestor. System widgets
+/// (`-textual-system` — scrollbars, tooltips, toasts) never take focus from a
+/// click; Rust's dedicated scrollbar lanes are checked explicitly as well
+/// (Python's `ScrollBar.DEFAULT_CLASSES` carries `-textual-system`).
+pub(crate) fn focusable_node_for_click(tree: &WidgetTree, target: NodeId) -> Option<NodeId> {
+    if tree.has_class(target, "-textual-system") || node_is_dedicated_scrollbar(tree, target) {
+        return None;
+    }
+    std::iter::once(target)
+        .chain(tree.ancestors(target))
+        .find(|&id| {
+            tree.get(id).is_some_and(|node| {
+                node.widget.focusable() && !node.state.disabled && node_self_shown(tree, id)
+            })
+        })
+}
+
+/// Reset focus when the focused widget is no longer shown.
+///
+/// Python parity: when a widget stops being displayed the compositor sends it
+/// `events.Hide`; `Widget._on_hide` calls `self.blur()` which runs
+/// `Screen._reset_focus` (`screen.py`). The hidden widget is no longer in the
+/// focus chain, so `_reset_focus` falls to its sibling branch: focus the first
+/// focusable widget in `visible_siblings`, else clear focus entirely.
+/// (Tutorial stopwatch: clicking `#start` sets it `display: none` and reveals
+/// `#stop` — Python moves focus to `#stop` so it renders with `Button:focus`
+/// styling.)
+///
+/// Call after CSS display/visibility has been re-resolved onto the tree
+/// (`apply_display_visibility_to_tree`). Returns `true` when the focus state
+/// changed (transferred or cleared).
+pub(crate) fn reset_focus_for_hidden_node(tree: &mut WidgetTree) -> bool {
+    let Some(focused) = raw_focused_node_id(tree) else {
+        return false;
+    };
+    let ancestors_shown = tree
+        .ancestors(focused)
+        .iter()
+        .all(|&ancestor| node_self_shown(tree, ancestor));
+    if ancestors_shown && node_self_shown(tree, focused) {
+        return false;
+    }
+
+    tree.set_focus_state(focused, false);
+
+    // Python `Screen._reset_focus`: "Move to a sibling if possible" — the
+    // first sibling (DOM order) that is shown and focusable. Siblings share
+    // the focused node's ancestors, so this can only succeed when those are
+    // still shown.
+    if ancestors_shown && let Some(parent) = tree.parent(focused) {
+        let siblings = tree.children(parent).to_vec();
+        for sibling in siblings {
+            if sibling == focused {
+                continue;
+            }
+            let focusable = tree
+                .get(sibling)
+                .map(|node| node.widget.focusable() && !node.state.disabled)
+                .unwrap_or(false);
+            if focusable && node_self_shown(tree, sibling) {
+                tree.set_focus_state(sibling, true);
+                return true;
+            }
+        }
+    }
+
+    // No candidate: focus stays cleared (Python `set_focus(None)`).
+    true
+}
+
+/// Forward `on_mouse_move` through the target bubble path (target → root).
+///
+/// Coordinates are provided in screen space and translated per node to
+/// content-local coordinates before invoking `on_mouse_move`.
+///
+/// Returns `true` when any widget on the path reports a change.
+pub fn call_on_mouse_move_tree(
+    tree: &mut WidgetTree,
+    target: NodeId,
+    screen_x: u16,
+    screen_y: u16,
+) -> bool {
+    let mut changed = false;
+    let path = build_path_to_node_local(tree, target);
+    for &node_id in path.iter().rev() {
+        let (x, y) = tree_content_local_coords(tree, node_id, screen_x, screen_y);
+        if let Some(node) = tree.get_mut(node_id) {
+            changed |= node.widget.on_mouse_move(x, y);
+        }
+    }
+    changed
+}
+
+fn build_path_to_node_local(tree: &WidgetTree, target: NodeId) -> Vec<NodeId> {
+    let mut path = Vec::new();
+    let mut cur = Some(target);
+    while let Some(id) = cur {
+        path.push(id);
+        cur = tree.parent(id);
+    }
+    path.reverse();
+    path
+}
+
+/// Find the deepest visible node at a screen coordinate using tree layout
+/// geometry, independent of rendered segment metadata.
+pub fn widget_at_tree_layout(tree: &WidgetTree, x: u16, y: u16) -> Option<NodeId> {
+    let root = tree.root()?;
+    let mut hit_any: Option<NodeId> = None;
+    let mut hit_interactive: Option<NodeId> = None;
+    for node_id in tree.walk_depth_first(root) {
+        let Some(node) = tree.get(node_id) else {
+            continue;
+        };
+        if !node.display || node.visibility != crate::style::Visibility::Visible {
+            continue;
+        }
+        let node_css_id = node.css_id.as_deref();
+        if node_css_id == Some(SYSTEM_TOOLTIP_STYLE_ID) {
+            continue;
+        }
+        let mut render_shift_x: i32 = 0;
+        let mut render_shift_y: i32 = 0;
+        let apply_root_scroll = root_scroll_applies_to_subtree(tree, node_id);
+        for ancestor_id in tree.ancestors(node_id) {
+            let Some(ancestor) = tree.get(ancestor_id) else {
+                continue;
+            };
+            if ancestor_id == root && !apply_root_scroll {
+                continue;
+            }
+            if !descendant_uses_ancestor_scroll(tree, ancestor_id, node_id) {
+                continue;
+            }
+            let (ox, oy) = ancestor.widget.scroll_offset();
+            render_shift_x -= ox as i32;
+            render_shift_y -= oy as i32;
+        }
+        let rect = node.layout_rect;
+        let x0 = rect.x0 + render_shift_x;
+        let x1 = rect.x1 + render_shift_x;
+        let y0 = rect.y0 + render_shift_y;
+        let y1 = rect.y1 + render_shift_y;
+        let inside =
+            i32::from(x) >= x0 && i32::from(x) < x1 && i32::from(y) >= y0 && i32::from(y) < y1;
+        if !inside {
+            continue;
+        }
+        hit_any = Some(node_id);
+        if node.widget.mouse_interactive() {
+            hit_interactive = Some(node_id);
+        }
+    }
+    hit_interactive.or(hit_any).or(Some(root))
+}
+
+/// Translate screen coordinates to content-local coordinates using tree node
+/// geometry (prefers `content_rect`, falls back to `layout_rect`).
+pub fn tree_content_local_coords(
+    tree: &WidgetTree,
+    target: NodeId,
+    screen_x: u16,
+    screen_y: u16,
+) -> (u16, u16) {
+    let Some(node) = tree.get(target) else {
+        return (0, 0);
+    };
+    let content = node.content_rect;
+    let rect = if content.x1 > content.x0 && content.y1 > content.y0 {
+        content
+    } else {
+        node.layout_rect
+    };
+    // Tree rendering may shift descendants via scroll containers. Mirror that
+    // translation here so pointer coordinates map to rendered positions.
+    let mut render_shift_x: i32 = 0;
+    let mut render_shift_y: i32 = 0;
+    let root = tree.root();
+    let apply_root_scroll = root_scroll_applies_to_subtree(tree, target);
+    for ancestor_id in tree.ancestors(target) {
+        let Some(ancestor) = tree.get(ancestor_id) else {
+            continue;
+        };
+        if Some(ancestor_id) == root && !apply_root_scroll {
+            continue;
+        }
+        if !descendant_uses_ancestor_scroll(tree, ancestor_id, target) {
+            continue;
+        }
+        let (ox, oy) = ancestor.widget.scroll_offset();
+        render_shift_x -= ox as i32;
+        render_shift_y -= oy as i32;
+    }
+
+    let origin_x = rect.x0 + render_shift_x;
+    let origin_y = rect.y0 + render_shift_y;
+    let local_x = i32::from(screen_x).saturating_sub(origin_x).max(0) as u16;
+    let local_y = i32::from(screen_y).saturating_sub(origin_y).max(0) as u16;
+    (local_x, local_y)
+}
+
+fn root_scroll_applies_to_subtree(tree: &WidgetTree, node_id: NodeId) -> bool {
+    let Some(root_id) = tree.root() else {
+        return true;
+    };
+    if node_id == root_id {
+        return false;
+    }
+    let mut cursor = node_id;
+    let mut direct_child = None;
+    while let Some(parent) = tree.parent(cursor) {
+        if parent == root_id {
+            direct_child = Some(cursor);
+            break;
+        }
+        cursor = parent;
+    }
+    let Some(child_id) = direct_child else {
+        return true;
+    };
+    descendant_uses_ancestor_scroll(tree, root_id, child_id)
+}
+
+fn descendant_uses_ancestor_scroll(
+    tree: &WidgetTree,
+    ancestor_id: NodeId,
+    descendant_id: NodeId,
+) -> bool {
+    let mut cursor = descendant_id;
+    let mut child_on_path = None;
+    while let Some(parent) = tree.parent(cursor) {
+        if parent == ancestor_id {
+            child_on_path = Some(cursor);
+            break;
+        }
+        cursor = parent;
+    }
+    let Some(child_id) = child_on_path else {
+        return true;
+    };
+    !node_is_docked(tree, child_id) && !node_is_dedicated_scrollbar(tree, child_id)
+}
+
+fn node_is_docked(tree: &WidgetTree, node_id: NodeId) -> bool {
+    resolve_style_in_tree(tree, node_id).is_some_and(|style| style.dock.is_some())
+}
+
+pub(crate) fn node_is_dedicated_scrollbar(tree: &WidgetTree, node_id: NodeId) -> bool {
+    let Some(node) = tree.get(node_id) else {
+        return false;
+    };
+    let css_id = node.css_id.as_deref();
+    matches!(
+        css_id,
+        Some(
+            APP_ROOT_VSCROLLBAR_ID
+                | APP_ROOT_HSCROLLBAR_ID
+                | APP_ROOT_SCROLLBAR_CORNER_ID
+                | SCROLL_VIEW_VSCROLLBAR_ID
+                | SCROLL_VIEW_HSCROLLBAR_ID
+                | SCROLL_VIEW_SCROLLBAR_CORNER_ID
+                | LOG_VSCROLLBAR_ID
+                | LOG_HSCROLLBAR_ID
+                | LOG_SCROLLBAR_CORNER_ID
+                | RICH_LOG_VSCROLLBAR_ID
+                | KEY_PANEL_VSCROLLBAR_ID
+                | DATA_TABLE_HSCROLLBAR_ID
+        )
+    )
+}
+
+pub(crate) fn resolve_style_in_tree(
+    tree: &WidgetTree,
+    node_id: NodeId,
+) -> Option<crate::style::Style> {
+    let mut path = Vec::new();
+    let mut cursor = Some(node_id);
+    while let Some(id) = cursor {
+        path.push(id);
+        cursor = tree.parent(id);
+    }
+    if path.is_empty() {
+        return None;
+    }
+    path.reverse(); // root -> target
+    resolve_style_along_path(tree, &path, 0)
+}
+
+fn resolve_style_along_path(
+    tree: &WidgetTree,
+    path: &[NodeId],
+    index: usize,
+) -> Option<crate::style::Style> {
+    let id = *path.get(index)?;
+    let meta = node_selector_meta(tree, id);
+    let resolved = resolve_node_style(tree, id, &meta);
+    if index + 1 == path.len() {
+        Some(resolved)
+    } else {
+        with_style_stack(meta, resolved, || {
+            resolve_style_along_path(tree, path, index + 1)
+        })
+    }
+}
+
+/// Check whether any widget in the tree reports `is_active() == true`.
+pub(crate) fn any_widget_active_tree(tree: &WidgetTree) -> bool {
+    let root = match tree.root() {
+        Some(r) => r,
+        None => return false,
+    };
+    for node_id in tree.walk_depth_first(root) {
+        if let Some(node) = tree.get(node_id) {
+            if node.widget.is_active() {
+                return true;
+            }
+            // A cover widget (the `loading` overlay's LoadingIndicator)
+            // animates on the frame tick even though the covered node's own
+            // widget is idle — keep the active tick cadence while covered.
+            if node.cover_widget.as_ref().is_some_and(|c| c.is_active()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Determine the pointer shape for a hovered node.
+///
+/// Reads the widget's CSS `pointer` property first. Falls back to
+/// `PointerShape::Pointer` for interactive widgets (or `NotAllowed` if disabled).
+pub(crate) fn pointer_shape_for_hover_tree(
+    tree: &WidgetTree,
+    hovered: Option<NodeId>,
+) -> PointerShape {
+    let Some(id) = hovered else {
+        return PointerShape::Default;
+    };
+
+    let Some(node) = tree.get(id) else {
+        return PointerShape::Default;
+    };
+
+    let mouse_interactive = node.widget.mouse_interactive();
+    let disabled = node.state.disabled;
+
+    if !mouse_interactive {
+        return PointerShape::Default;
+    }
+
+    // Disabled widgets always show not-allowed, regardless of CSS pointer.
+    if disabled {
+        return PointerShape::NotAllowed;
+    }
+
+    // Read the node's resolved CSS `pointer` property via node record path.
+    let meta = node_selector_meta(tree, id);
+    let resolved = resolve_node_style(tree, id, &meta);
+    if let Some(ptr) = resolved.pointer {
+        return match ptr {
+            crate::style::Pointer::Default => PointerShape::Default,
+            crate::style::Pointer::Pointer => PointerShape::Pointer,
+            crate::style::Pointer::Text => PointerShape::Text,
+            crate::style::Pointer::NotAllowed => PointerShape::NotAllowed,
+        };
+    }
+
+    // Default for interactive widgets with no explicit CSS pointer.
+    PointerShape::Pointer
+}
+
+// ---------------------------------------------------------------------------
+// Mouse enter/leave event generation
+// ---------------------------------------------------------------------------
+
+/// Generate Enter/Leave events when the hovered widget changes.
+///
+/// Returns a list of `(NodeId, Event)` pairs to dispatch. At most one Leave
+/// (for `old_hover`) and one Enter (for `new_hover`) are emitted.
+pub(crate) fn generate_enter_leave_events(
+    old_hover: Option<NodeId>,
+    new_hover: Option<NodeId>,
+    x: u16,
+    y: u16,
+    screen_x: u16,
+    screen_y: u16,
+) -> Vec<(NodeId, Event)> {
+    if old_hover == new_hover {
+        return Vec::new();
+    }
+    let mut events = Vec::with_capacity(2);
+    if let Some(old) = old_hover {
+        events.push((
+            old,
+            Event::Leave(MouseLeaveEvent {
+                x,
+                y,
+                screen_x,
+                screen_y,
+            }),
+        ));
+    }
+    if let Some(new) = new_hover {
+        events.push((
+            new,
+            Event::Enter(MouseEnterEvent {
+                x,
+                y,
+                screen_x,
+                screen_y,
+            }),
+        ));
+    }
+    events
+}
+
+// ---------------------------------------------------------------------------
+// Click detection
+// ---------------------------------------------------------------------------
+
+/// Tracks mousedown target to detect click (down+up on same widget).
+#[derive(Debug, Default)]
+pub(crate) struct ClickTracker {
+    /// The widget that received the most recent mousedown, plus coordinates.
+    down: Option<ClickDownState>,
+    /// Explicit mouse capture (`App::capture_mouse`): mouse down/up target
+    /// this widget regardless of pointer position. Routing only — no
+    /// synthetic capture/release messages (Python posts `MouseCapture` /
+    /// `MouseRelease`; that half is a follow-up).
+    captured: Option<NodeId>,
+    /// Last emitted click, for chain counting (Python `Click.chain`).
+    last_click: Option<LastClick>,
+}
+
+/// A previously emitted click, used to extend the click chain.
+#[derive(Debug, Clone, Copy)]
+struct LastClick {
+    target: NodeId,
+    at: std::time::Instant,
+    screen_x: u16,
+    screen_y: u16,
+    chain: u16,
+}
+
+/// Maximum gap between two clicks on the same spot to extend the chain.
+/// Python `App.CLICK_CHAIN_TIME_THRESHOLD` (0.5s).
+const CLICK_CHAIN_THRESHOLD: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Coordinates are stored for future drag-distance thresholds / long-press detection.
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+struct ClickDownState {
+    target: NodeId,
+    screen_x: u16,
+    screen_y: u16,
+    x: u16,
+    y: u16,
+    button: u8,
+}
+
+impl ClickTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record a mousedown. `button`: 0=left, 1=middle, 2=right.
+    pub fn on_mouse_down(
+        &mut self,
+        target: NodeId,
+        x: u16,
+        y: u16,
+        screen_x: u16,
+        screen_y: u16,
+        button: u8,
+    ) {
+        self.down = Some(ClickDownState {
+            target,
+            screen_x,
+            screen_y,
+            x,
+            y,
+            button,
+        });
+    }
+
+    /// Current mousedown target, used as drag-capture owner while a button is held.
+    pub fn down_target(&self) -> Option<NodeId> {
+        self.down.map(|down| down.target)
+    }
+
+    /// Set or release explicit mouse capture (Python `App.capture_mouse`).
+    /// While set, mouse down/up target this widget regardless of pointer
+    /// position. `None` releases.
+    pub fn set_capture(&mut self, target: Option<NodeId>) {
+        self.captured = target;
+    }
+
+    /// Explicit capture target, if any.
+    pub fn capture_target(&self) -> Option<NodeId> {
+        self.captured
+    }
+
+    /// Record a mouseup. If the target matches the previous mousedown target,
+    /// returns a `(NodeId, Event::Click)` pair.
+    ///
+    /// `now` timestamps the release for click-chain counting (Python
+    /// `Click.chain`): a click on the same target at the same screen offset
+    /// within [`CLICK_CHAIN_THRESHOLD`] of the previous click extends the
+    /// chain, otherwise the chain restarts at 1.
+    pub fn on_mouse_up(
+        &mut self,
+        target: Option<NodeId>,
+        x: u16,
+        y: u16,
+        screen_x: u16,
+        screen_y: u16,
+        now: std::time::Instant,
+    ) -> Option<(NodeId, Event)> {
+        let down = self.down.take()?;
+        let up_target = target?;
+        if up_target == down.target {
+            let chain = match self.last_click {
+                Some(last)
+                    if last.target == up_target
+                        && last.screen_x == screen_x
+                        && last.screen_y == screen_y
+                        && now.duration_since(last.at) <= CLICK_CHAIN_THRESHOLD =>
+                {
+                    last.chain.saturating_add(1)
+                }
+                _ => 1,
+            };
+            self.last_click = Some(LastClick {
+                target: up_target,
+                at: now,
+                screen_x,
+                screen_y,
+                chain,
+            });
+            Some((
+                up_target,
+                Event::Click(ClickEvent {
+                    x,
+                    y,
+                    screen_x,
+                    screen_y,
+                    button: down.button,
+                    chain,
+                }),
+            ))
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::any::Any;
+    use std::time::{Duration, Instant};
+
+    use super::*;
+    use crate::css::{default_widget_stylesheet, set_style_context};
+    use crate::event::EventCtx;
+    use crate::message::{MessageEvent, ScrollbarAxis, ScrollbarScrollTo};
+    use crate::node_id::node_id_from_ffi;
+    use crate::widget_tree::Rect;
+    use crate::widget_tree::WidgetTree;
+    use crate::widgets::{AppRoot, Footer, Label, Widget};
+    use crossterm::event::KeyEvent;
+
+    #[test]
+    fn shift_wheel_maps_vertical_to_horizontal() {
+        assert_eq!(
+            mouse_scroll_deltas(MouseEventKind::ScrollUp, KeyModifiers::SHIFT),
+            (-1, 0)
+        );
+        assert_eq!(
+            mouse_scroll_deltas(MouseEventKind::ScrollDown, KeyModifiers::SHIFT),
+            (1, 0)
+        );
+        assert_eq!(
+            mouse_scroll_deltas(MouseEventKind::ScrollLeft, KeyModifiers::SHIFT),
+            (-1, 0)
+        );
+        assert_eq!(
+            mouse_scroll_deltas(MouseEventKind::ScrollRight, KeyModifiers::SHIFT),
+            (1, 0)
+        );
+        assert_eq!(
+            mouse_scroll_deltas(MouseEventKind::ScrollDown, KeyModifiers::empty()),
+            (0, 1)
+        );
+    }
+
+    #[test]
+    fn quit_key_matches_defaults() {
+        let quit_keys = vec![KeyBind::new(KeyCode::Char('q'), KeyModifiers::CONTROL)];
+        let ctrl_q = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+        let q = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty());
+        let x = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::empty());
+
+        assert!(should_quit_key(&ctrl_q, &quit_keys));
+        assert!(!should_quit_key(&q, &quit_keys));
+        assert!(!should_quit_key(&x, &quit_keys));
+    }
+
+    #[test]
+    fn quit_key_can_require_modifiers() {
+        let quit_keys = vec![KeyBind::new(KeyCode::Char('q'), KeyModifiers::CONTROL)];
+        let ctrl_q = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+        let plain_q = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty());
+
+        assert!(should_quit_key(&ctrl_q, &quit_keys));
+        assert!(!should_quit_key(&plain_q, &quit_keys));
+    }
+
+    #[test]
+    fn default_action_map_binds_ctrl_c_to_copy_selected_text() {
+        let map = default_action_map();
+        let ctrl_c = KeyBind::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert_eq!(map.lookup(&ctrl_c), Some(Action::CopySelectedText));
+    }
+
+    #[test]
+    fn app_root_scrollbar_child_does_not_inherit_root_scroll_transform() {
+        let mut root = AppRoot::new();
+        let extracted = root.compose();
+
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(root));
+        for child in extracted {
+            tree.mount(root_id, child.into_widget());
+        }
+
+        let vbar_id = tree
+            .children(root_id)
+            .iter()
+            .copied()
+            .find(|id| tree.css_id(*id) == Some(crate::widgets::APP_ROOT_VSCROLLBAR_ID))
+            .expect("app root vertical scrollbar child should exist");
+
+        assert!(
+            !descendant_uses_ancestor_scroll(&tree, root_id, vbar_id),
+            "app root scrollbar lane must stay in unscrolled screen space"
+        );
+    }
+
+    #[test]
+    fn app_root_scrollbar_local_coords_stay_stable_when_root_is_scrolled() {
+        let mut root = AppRoot::new();
+        let extracted = root.compose();
+
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(root));
+        for child in extracted {
+            tree.mount(root_id, child.into_widget());
+        }
+
+        let vbar_id = tree
+            .children(root_id)
+            .iter()
+            .copied()
+            .find(|id| tree.css_id(*id) == Some(crate::widgets::APP_ROOT_VSCROLLBAR_ID))
+            .expect("app root vertical scrollbar child should exist");
+
+        if let Some(root_node) = tree.get_mut(root_id) {
+            root_node.layout_rect = Rect {
+                x0: 0,
+                y0: 0,
+                x1: 114,
+                y1: 34,
+            };
+            root_node.content_rect = root_node.layout_rect;
+            let any = root_node.widget.as_mut() as &mut dyn Any;
+            let app_root = any
+                .downcast_mut::<AppRoot>()
+                .expect("root widget should be AppRoot");
+            app_root.on_layout(114, 34);
+            app_root.set_virtual_content_size(114, 50);
+            let mut ctx = EventCtx::default();
+            {
+                let mut __w = crate::event::WidgetCtx::__from_dispatch(
+                    crate::node_id::NodeId::default(),
+                    &mut ctx,
+                );
+                app_root.on_message(
+                    &MessageEvent::new(
+                        node_id_from_ffi(0),
+                        ScrollbarScrollTo {
+                            axis: ScrollbarAxis::Vertical,
+                            offset: 16.0,
+                            animate: false,
+                            scroll_duration: None,
+                        },
+                    ),
+                    &mut __w,
+                );
+            }
+        }
+
+        if let Some(vbar) = tree.get_mut(vbar_id) {
+            vbar.layout_rect = Rect {
+                x0: 112,
+                y0: 0,
+                x1: 114,
+                y1: 34,
+            };
+            vbar.content_rect = vbar.layout_rect;
+        }
+
+        let (lx, ly) = tree_content_local_coords(&tree, vbar_id, 113, 8);
+        assert_eq!(
+            (lx, ly),
+            (1, 8),
+            "root scroll offset must not shift app-root scrollbar local pointer mapping"
+        );
+    }
+
+    // ── Enter/Leave generation tests ─────────────────────────────────
+
+    #[test]
+    fn enter_leave_same_hover_emits_nothing() {
+        let id = node_id_from_ffi(1);
+        let events = generate_enter_leave_events(Some(id), Some(id), 0, 0, 0, 0);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn enter_leave_none_to_none_emits_nothing() {
+        let events = generate_enter_leave_events(None, None, 0, 0, 0, 0);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn enter_leave_none_to_widget_emits_enter() {
+        let new_id = node_id_from_ffi(5);
+        let events = generate_enter_leave_events(None, Some(new_id), 10, 20, 30, 40);
+        assert_eq!(events.len(), 1);
+        let (target, ref ev) = events[0];
+        assert_eq!(target, new_id);
+        assert!(matches!(
+            ev,
+            Event::Enter(MouseEnterEvent {
+                x: 10,
+                y: 20,
+                screen_x: 30,
+                screen_y: 40
+            })
+        ));
+    }
+
+    #[test]
+    fn enter_leave_widget_to_none_emits_leave() {
+        let old_id = node_id_from_ffi(3);
+        let events = generate_enter_leave_events(Some(old_id), None, 1, 2, 3, 4);
+        assert_eq!(events.len(), 1);
+        let (target, ref ev) = events[0];
+        assert_eq!(target, old_id);
+        assert!(matches!(
+            ev,
+            Event::Leave(MouseLeaveEvent { x: 1, y: 2, .. })
+        ));
+    }
+
+    #[test]
+    fn enter_leave_widget_to_widget_emits_both() {
+        let old_id = node_id_from_ffi(1);
+        let new_id = node_id_from_ffi(2);
+        let events = generate_enter_leave_events(Some(old_id), Some(new_id), 5, 6, 7, 8);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].0, old_id);
+        assert!(matches!(events[0].1, Event::Leave(_)));
+        assert_eq!(events[1].0, new_id);
+        assert!(matches!(events[1].1, Event::Enter(_)));
+    }
+
+    // ── ClickTracker tests ───────────────────────────────────────────
+
+    #[test]
+    fn click_tracker_emits_click_on_same_target() {
+        let mut tracker = ClickTracker::new();
+        let id = node_id_from_ffi(10);
+        tracker.on_mouse_down(id, 5, 5, 50, 50, 0);
+        let result = tracker.on_mouse_up(Some(id), 5, 5, 50, 50, Instant::now());
+        assert!(result.is_some());
+        let (target, ev) = result.unwrap();
+        assert_eq!(target, id);
+        assert!(matches!(
+            ev,
+            Event::Click(ClickEvent {
+                button: 0,
+                x: 5,
+                y: 5,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn click_tracker_no_click_on_different_target() {
+        let mut tracker = ClickTracker::new();
+        let a = node_id_from_ffi(1);
+        let b = node_id_from_ffi(2);
+        tracker.on_mouse_down(a, 0, 0, 0, 0, 0);
+        let result = tracker.on_mouse_up(Some(b), 0, 0, 0, 0, Instant::now());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn click_tracker_no_click_without_mousedown() {
+        let mut tracker = ClickTracker::new();
+        let id = node_id_from_ffi(1);
+        let result = tracker.on_mouse_up(Some(id), 0, 0, 0, 0, Instant::now());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn click_tracker_no_click_on_none_target() {
+        let mut tracker = ClickTracker::new();
+        let id = node_id_from_ffi(1);
+        tracker.on_mouse_down(id, 0, 0, 0, 0, 0);
+        let result = tracker.on_mouse_up(None, 0, 0, 0, 0, Instant::now());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn click_tracker_preserves_button() {
+        let mut tracker = ClickTracker::new();
+        let id = node_id_from_ffi(1);
+        tracker.on_mouse_down(id, 0, 0, 0, 0, 2); // right click
+        let result = tracker.on_mouse_up(Some(id), 0, 0, 0, 0, Instant::now());
+        assert!(result.is_some());
+        let (_, ev) = result.unwrap();
+        assert!(matches!(ev, Event::Click(ClickEvent { button: 2, .. })));
+    }
+
+    #[test]
+    fn click_tracker_resets_after_mouseup() {
+        let mut tracker = ClickTracker::new();
+        let id = node_id_from_ffi(1);
+        tracker.on_mouse_down(id, 0, 0, 0, 0, 0);
+        let _ = tracker.on_mouse_up(Some(id), 0, 0, 0, 0, Instant::now());
+        // Second mouseup without new mousedown → no click
+        let result = tracker.on_mouse_up(Some(id), 0, 0, 0, 0, Instant::now());
+        assert!(result.is_none());
+    }
+
+    fn click_at(
+        tracker: &mut ClickTracker,
+        id: crate::node_id::NodeId,
+        x: u16,
+        y: u16,
+        at: Instant,
+    ) -> u16 {
+        tracker.on_mouse_down(id, x, y, x, y, 0);
+        let (_, ev) = tracker
+            .on_mouse_up(Some(id), x, y, x, y, at)
+            .expect("down+up on same target clicks");
+        match ev {
+            Event::Click(click) => click.chain,
+            _ => panic!("expected Click"),
+        }
+    }
+
+    /// P-E: rapid clicks on the same spot extend `Click.chain` (Python
+    /// `CLICK_CHAIN_TIME_THRESHOLD` = 500ms).
+    #[test]
+    fn click_tracker_extends_chain_on_rapid_same_spot_clicks() {
+        let mut tracker = ClickTracker::new();
+        let id = node_id_from_ffi(1);
+        let t0 = Instant::now();
+        assert_eq!(click_at(&mut tracker, id, 5, 5, t0), 1);
+        assert_eq!(
+            click_at(&mut tracker, id, 5, 5, t0 + Duration::from_millis(100)),
+            2
+        );
+        assert_eq!(
+            click_at(&mut tracker, id, 5, 5, t0 + Duration::from_millis(200)),
+            3
+        );
+    }
+
+    /// P-E: moving the pointer or waiting out the threshold restarts the
+    /// chain at 1 (Python: same screen offset + within time, else reset).
+    #[test]
+    fn click_tracker_resets_chain_on_move_or_timeout() {
+        let mut tracker = ClickTracker::new();
+        let id = node_id_from_ffi(1);
+        let t0 = Instant::now();
+        assert_eq!(click_at(&mut tracker, id, 5, 5, t0), 1);
+        assert_eq!(
+            click_at(&mut tracker, id, 5, 5, t0 + Duration::from_millis(10)),
+            2
+        );
+        // Different screen offset → back to 1.
+        assert_eq!(
+            click_at(&mut tracker, id, 9, 9, t0 + Duration::from_millis(20)),
+            1
+        );
+        // Same spot but past the 500ms threshold → back to 1.
+        assert_eq!(
+            click_at(&mut tracker, id, 9, 9, t0 + Duration::from_millis(700)),
+            1
+        );
+        // Different target → back to 1.
+        let other = node_id_from_ffi(2);
+        assert_eq!(
+            click_at(&mut tracker, other, 9, 9, t0 + Duration::from_millis(710)),
+            1
+        );
+    }
+
+    /// P-E: explicit capture retargets; release restores hit-testing.
+    #[test]
+    fn click_tracker_capture_roundtrip() {
+        let mut tracker = ClickTracker::new();
+        assert_eq!(tracker.capture_target(), None);
+        let id = node_id_from_ffi(3);
+        tracker.set_capture(Some(id));
+        assert_eq!(tracker.capture_target(), Some(id));
+        tracker.set_capture(None);
+        assert_eq!(tracker.capture_target(), None);
+    }
+
+    #[test]
+    fn root_scroll_skips_docked_root_child_subtrees() {
+        let _guard = set_style_context(default_widget_stylesheet());
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(AppRoot::new()));
+        let label = tree.mount(root, Box::new(Label::new("content")));
+        let footer = tree.mount(root, Box::new(Footer::new()));
+
+        // Emulate a docked layout result: root content excludes a bottom footer band.
+        if let Some(root_node) = tree.get_mut(root) {
+            root_node.content_rect = crate::widget_tree::Rect {
+                x0: 0,
+                y0: 0,
+                x1: 80,
+                y1: 23,
+            };
+        }
+        if let Some(label_node) = tree.get_mut(label) {
+            label_node.layout_rect = crate::widget_tree::Rect {
+                x0: 0,
+                y0: 0,
+                x1: 80,
+                y1: 23,
+            };
+        }
+        if let Some(footer_node) = tree.get_mut(footer) {
+            footer_node.layout_rect = crate::widget_tree::Rect {
+                x0: 0,
+                y0: 23,
+                x1: 80,
+                y1: 24,
+            };
+        }
+
+        assert!(
+            root_scroll_applies_to_subtree(&tree, label),
+            "non-docked root children should move with root scroll"
+        );
+        assert!(
+            !root_scroll_applies_to_subtree(&tree, footer),
+            "docked root children should ignore root scroll translation"
+        );
+    }
+
+    // P-C: a container that traps focus traversal in its subtree
+    // (Python `trap_focus`). Plain `core::Widget` impl: only `render` plus
+    // the trap flag; everything else takes the trait defaults.
+    struct TrapZone;
+    impl Widget for TrapZone {
+        fn render(
+            &self,
+            _console: &rich_rs::Console,
+            _options: &ConsoleOptions,
+        ) -> rich_rs::Segments {
+            rich_rs::Segments::new()
+        }
+
+        fn traps_focus(&self) -> bool {
+            true
+        }
+    }
+
+    use std::collections::HashMap;
+
+    use crate::widgets::Button;
+
+    /// Two focusable buttons mounted in document order b-then-a, with
+    /// positions putting a left of b. Returns the tree and ids (a, b).
+    fn two_button_tree(
+        positions: &mut HashMap<crate::node_id::NodeId, (u16, u16)>,
+    ) -> (WidgetTree, crate::node_id::NodeId, crate::node_id::NodeId) {
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Label::new("root")));
+        let b_id = tree.mount(root_id, Box::new(Button::new("b")));
+        let a_id = tree.mount(root_id, Box::new(Button::new("a")));
+        positions.insert(a_id, (0, 0));
+        positions.insert(b_id, (0, 10));
+        (tree, a_id, b_id)
+    }
+
+    #[test]
+    fn focus_chain_sorts_siblings_by_position() {
+        // P-C: Python `_focus_sort_key` — visual (y, x) order beats document
+        // order, so `a` (left) comes before `b` though mounted second.
+        let mut positions = HashMap::new();
+        let (tree, a_id, b_id) = two_button_tree(&mut positions);
+        let chain = collect_focus_chain_tree_sorted(&tree, None, &|id| positions.get(&id).copied());
+        assert_eq!(chain, vec![a_id, b_id]);
+    }
+
+    #[test]
+    fn focus_chain_without_positions_keeps_document_order() {
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Label::new("root")));
+        let b_id = tree.mount(root_id, Box::new(Button::new("b")));
+        let a_id = tree.mount(root_id, Box::new(Button::new("a")));
+        let chain = collect_focus_chain_tree_sorted(&tree, None, &|_| None);
+        assert_eq!(chain, vec![b_id, a_id]);
+    }
+
+    #[test]
+    fn focus_chain_skips_disabled_nodes() {
+        // P-C: Python skips disabled widgets when building the focus chain.
+        let mut positions = HashMap::new();
+        let (mut tree, a_id, b_id) = two_button_tree(&mut positions);
+        tree.set_disabled(b_id, true);
+        let chain = collect_focus_chain_tree_sorted(&tree, None, &|id| positions.get(&id).copied());
+        assert_eq!(chain, vec![a_id]);
+        // The legacy unsorted collector skips disabled too.
+        assert_eq!(collect_focus_chain_tree(&tree), vec![a_id]);
+    }
+
+    #[test]
+    fn focus_chain_traps_in_subtree() {
+        // P-C: Python `_trap_focus` — with focus inside the trap zone, the
+        // chain never leaves it; unfocused, the whole tree is visible.
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Label::new("root")));
+        let zone_id = tree.mount(root_id, Box::new(TrapZone));
+        let inner_id = tree.mount(zone_id, Box::new(Button::new("inner")));
+        let outer_id = tree.mount(root_id, Box::new(Button::new("outer")));
+        let no_pos = &|_: crate::node_id::NodeId| None;
+        let trapped = collect_focus_chain_tree_sorted(&tree, Some(inner_id), no_pos);
+        assert_eq!(trapped, vec![inner_id]);
+        let free = collect_focus_chain_tree_sorted(&tree, None, no_pos);
+        assert_eq!(free, vec![inner_id, outer_id]);
+    }
+
+    #[test]
+    fn markdown_viewer_toc_docked_child_ignores_parent_scroll_transform() {
+        let _guard = set_style_context(default_widget_stylesheet());
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(crate::widgets::MarkdownViewer::new(
+            "# One\n## Two",
+        )));
+        let toc = tree.mount(
+            root,
+            Box::new(crate::widgets::MarkdownTableOfContents::new(vec![
+                (1, "One".to_string(), "one".to_string()),
+                (2, "Two".to_string(), "two".to_string()),
+            ])),
+        );
+        assert!(
+            !descendant_uses_ancestor_scroll(&tree, root, toc),
+            "MarkdownViewer > MarkdownTableOfContents should resolve as docked and stay unscrolled"
+        );
+    }
+}
