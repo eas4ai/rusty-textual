@@ -130,6 +130,12 @@ impl BindingsMap {
     /// Returns [`InvalidBinding`] on an empty comma-list alternative; Python
     /// raises this at class-definition time, and `from_decls` is the earliest
     /// structured place in Rust.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidBinding`] when a declaration's `key` has an empty
+    /// alternative after trimming, for example `"a,,b"`, `"a, "`, or `""`.
+    /// The first invalid alternative stops the build.
     pub fn from_decls(
         decls: impl IntoIterator<Item = BindingDecl>,
     ) -> Result<Self, InvalidBinding> {
@@ -188,6 +194,11 @@ impl BindingsMap {
 
     /// Get the bindings for a key, or a typed [`NoBinding`] error on a miss
     /// (Python `get_bindings_for_key`, which raises).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NoBinding`] when the map has no entry for `key`. The error
+    /// carries the missing key.
     pub fn get_bindings_for_key(&self, key: &str) -> Result<&[BindingDecl], NoBinding> {
         self.get(key).map(Vec::as_slice).ok_or_else(|| NoBinding {
             key: key.to_string(),

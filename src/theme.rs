@@ -483,6 +483,12 @@ fn registry() -> &'static Mutex<Registry> {
 }
 
 /// Register (or replace) a named theme.
+///
+/// # Panics
+///
+/// Does not panic. The `unwrap` looks up the theme that this call inserted
+/// under the same name, while it still holds the registry lock. A poisoned
+/// registry lock is recovered instead of causing a panic.
 pub fn register_theme(theme: NamedTheme) {
     let mut reg = registry()
         .lock()

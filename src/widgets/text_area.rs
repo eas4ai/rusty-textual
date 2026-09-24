@@ -397,6 +397,14 @@ impl TextArea {
         self
     }
 
+    /// Register a tree-sitter `language` under `name`, with the syntax
+    /// highlight query `highlight_query`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TextAreaLanguage`] when `highlight_query` does not
+    /// compile as a tree-sitter query for `language`. The error holds the
+    /// query error message. No language is registered in that case.
     pub fn register_language(
         &mut self,
         name: impl Into<String>,

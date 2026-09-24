@@ -133,6 +133,15 @@ impl WrappedDocument {
     /// - `start`: the start location of the edit (document-space).
     /// - `old_end`: the old end location of the edit.
     /// - `new_end`: the new end location of the edit.
+    ///
+    /// # Panics
+    ///
+    /// Does not panic in practice. The line indices are clamped to the bounds
+    /// of both the cached lines and `document`. The caches always hold at
+    /// least one line, because [`WrappedDocument::new`] wraps at once and a
+    /// [`Document`] always has at least one line. Each cached line has at
+    /// least one y-offset, so the `[0]` index and the `expect` on the last
+    /// y-offset succeed.
     pub fn wrap_range(
         &mut self,
         document: &Document,

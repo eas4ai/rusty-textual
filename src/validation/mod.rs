@@ -552,6 +552,12 @@ impl Regex {
     }
 
     /// Create from a pattern string. Panics if the pattern is invalid.
+    ///
+    /// # Panics
+    ///
+    /// Panics when [`regex::Regex::new`] rejects `pattern`: the syntax is
+    /// invalid, or the compiled regex exceeds the `regex` crate's size limit.
+    /// Use [`Regex::try_compile`] to get `None` instead.
     #[must_use]
     pub fn compile(pattern: &str) -> Self {
         Self::new(regex::Regex::new(pattern).expect("invalid regex pattern"))

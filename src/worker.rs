@@ -435,6 +435,15 @@ impl WorkerRequestPayload {
     }
 
     /// Execute the requested worker payload.
+    ///
+    /// # Errors
+    ///
+    /// For [`ComputeDigest`](Self::ComputeDigest), returns the `fail_with`
+    /// message as `Err` when `fail_with` is set and `token` was not cancelled
+    /// before the rounds finished. A cancelled run returns `Ok(())`. For
+    /// [`Task`](Self::Task), returns the error from
+    /// [`SharedWorkerTask::execute`]: the closure's own error, or an error
+    /// when the task was already consumed.
     pub fn execute(self, token: CancellationToken) -> Result<(), String> {
         match self {
             Self::ComputeDigest {
@@ -518,6 +527,13 @@ impl SharedWorkerTask {
         }
     }
 
+    /// Run the wrapped closure once with `token` and return its result.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err("worker task payload already consumed")` when this task
+    /// or a clone of it has already run, or when the inner lock is poisoned.
+    /// Otherwise it returns the closure's own `Err` value unchanged.
     pub fn execute(self, token: CancellationToken) -> Result<(), String> {
         let Some(job) = self.inner.lock().ok().and_then(|mut guard| guard.take()) else {
             return Err("worker task payload already consumed".to_string());

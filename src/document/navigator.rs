@@ -104,6 +104,11 @@ impl DocumentNavigator {
 
     /// True when the location is on the last wrapped section of the last
     /// line (visually the last rendered row).
+    ///
+    /// # Panics
+    ///
+    /// Does not panic. The `expect` on the last wrap offset runs only after
+    /// the `is_empty` check has failed, so the offsets list is non-empty.
     #[must_use]
     pub fn is_last_wrapped_line(
         &self,

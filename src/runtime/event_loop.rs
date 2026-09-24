@@ -2429,6 +2429,16 @@ impl App {
         aggregate
     }
 
+    /// Run a simple loop that draws the renderable returned by
+    /// `render(self, tick)` about every 100 ms, until a quit key is pressed.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::RuntimeStopped`](crate::Error::RuntimeStopped) when the app
+    ///   was already stopped by [`App::stop`] or [`App::exit`].
+    /// - [`Error::Terminal`](crate::Error::Terminal) when a terminal operation
+    ///   fails: starting or restoring the terminal, polling or reading input,
+    ///   reading the terminal size, or writing a frame.
     pub async fn run_with<F, R>(&mut self, mut render: F) -> crate::Result<()>
     where
         F: FnMut(&mut App, u64) -> R,
@@ -2479,6 +2489,15 @@ impl App {
         Ok(())
     }
 
+    /// Mount `root` and run the live event loop until the app exits.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::RuntimeStopped`](crate::Error::RuntimeStopped) when the app
+    ///   was already stopped by [`App::stop`] or [`App::exit`].
+    /// - [`Error::Terminal`](crate::Error::Terminal) when a terminal operation
+    ///   fails: starting or restoring the terminal, polling or reading input,
+    ///   reading the terminal size, or writing a frame.
     pub async fn run_widget_tree(&mut self, root: &mut dyn Widget) -> crate::Result<()> {
         if !self.running {
             return Err(crate::Error::RuntimeStopped);
@@ -5833,6 +5852,12 @@ impl App {
     /// `App.save_screenshot` / `take_svg_screenshot` doc-screenshot path.
     ///
     /// [`frame_fingerprint`]: Self::frame_fingerprint
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`](crate::Error::Terminal) when the recording
+    /// console fails to write the frame to stdout, or when writing the SVG
+    /// file to `path` fails.
     pub fn save_frame_svg(&self, path: &str, title: &str) -> crate::Result<()> {
         let mut console = self.frame_record_console()?;
         console.save_svg(path, title, None, true, 0.61, None)?;
@@ -5841,6 +5866,11 @@ impl App {
 
     /// Export the current frame as an SVG screenshot string. Python
     /// `App.export_screenshot(title=...)`. `title` defaults to the app title.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`](crate::Error::Terminal) when the recording
+    /// console fails to write the frame to stdout.
     pub fn export_screenshot(&self, title: Option<&str>) -> crate::Result<String> {
         let mut console = self.frame_record_console()?;
         let title = title.map_or_else(|| self.app_title.clone(), str::to_string);
@@ -5851,6 +5881,12 @@ impl App {
     /// `App.save_screenshot(filename=None, ...)`: with no filename one is
     /// generated from the app title and current epoch time. Returns the path
     /// written.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`](crate::Error::Terminal) when the recording
+    /// console fails to write the frame to stdout, or when writing the SVG
+    /// file fails.
     pub fn save_screenshot(
         &self,
         filename: Option<&str>,

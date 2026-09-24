@@ -70,6 +70,13 @@ impl<'a> Pilot<'a> {
     /// Each key is a Textual key name: a single character (`"r"`), a named key
     /// (`"enter"`, `"tab"`, `"escape"`, `"up"`, `"f5"`), or a modified key
     /// (`"ctrl+a"`, `"shift+tab"`). Mirrors `pilot.press(*keys)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when [`parse_key`]
+    /// does not recognize a key spec. Keys before it in `keys` are already
+    /// delivered. Also forwards any error from the headless pump, which does
+    /// not fail in headless mode.
     pub fn press(&mut self, keys: &[&str]) -> Result<()> {
         for key in keys {
             let event = parse_key(key)
@@ -80,6 +87,12 @@ impl<'a> Pilot<'a> {
     }
 
     /// Convenience: press a single key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when [`parse_key`]
+    /// does not recognize `key`. Also forwards any error from the headless
+    /// pump, which does not fail in headless mode.
     pub fn press_key(&mut self, key: &str) -> Result<()> {
         self.press(&[key])
     }
@@ -89,12 +102,25 @@ impl<'a> Pilot<'a> {
     /// Mirrors a terminal delivering DECSET-2004 paste bytes (enabled at
     /// driver start): the payload dispatches as one [`Event::Paste`] to
     /// focus, not as raw keystrokes. Mirrors `pilot.press` for paste.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn paste(&mut self, text: &str) -> Result<()> {
         self.app.headless_inject_paste(self.root, text.to_string())
     }
 
     /// Simulate a left-click on the widget matched by `selector`, at the centre
     /// of its rendered region. Mirrors `pilot.click(selector)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn click(&mut self, selector: &str) -> Result<()> {
         let node = self
             .app
@@ -110,6 +136,11 @@ impl<'a> Pilot<'a> {
     }
 
     /// Click at an absolute screen coordinate.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn click_at(&mut self, x: u16, y: u16) -> Result<()> {
         self.app.headless_inject_click(self.root, x, y)
     }
@@ -132,6 +163,14 @@ impl<'a> Pilot<'a> {
 
     /// Press the left mouse button on the widget matched by `selector` (no
     /// release). Mirrors `pilot.mouse_down(selector)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn mouse_down(&mut self, selector: &str) -> Result<()> {
         let (cx, cy) = self.target_center(selector)?;
         self.app.headless_inject_mouse_down(self.root, cx, cy)
@@ -139,6 +178,11 @@ impl<'a> Pilot<'a> {
 
     /// Press the left mouse button at an absolute screen coordinate (no
     /// release). Mirrors `pilot.mouse_down` with a screen offset.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn mouse_down_at(&mut self, x: u16, y: u16) -> Result<()> {
         self.app.headless_inject_mouse_down(self.root, x, y)
     }
@@ -146,6 +190,14 @@ impl<'a> Pilot<'a> {
     /// Release the mouse button over the widget matched by `selector`.
     /// Mirrors `pilot.mouse_up(selector)`. Pairs with [`Pilot::mouse_down`]
     /// to produce a `Click` when the targets match.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn mouse_up(&mut self, selector: &str) -> Result<()> {
         let (cx, cy) = self.target_center(selector)?;
         self.app.headless_inject_mouse_up(self.root, cx, cy)
@@ -153,6 +205,11 @@ impl<'a> Pilot<'a> {
 
     /// Release the mouse button at an absolute screen coordinate. Mirrors
     /// `pilot.mouse_up` with a screen offset.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn mouse_up_at(&mut self, x: u16, y: u16) -> Result<()> {
         self.app.headless_inject_mouse_up(self.root, x, y)
     }
@@ -163,12 +220,25 @@ impl<'a> Pilot<'a> {
     /// Minimal behavior: the harness emits two plain `Click` events, one per
     /// cycle. Chained double-click events (a single `Click` carrying a click
     /// count) do not exist yet — see the dispatch-model RFC follow-up.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn double_click(&mut self, selector: &str) -> Result<()> {
         let (cx, cy) = self.target_center(selector)?;
         self.double_click_at(cx, cy)
     }
 
     /// Double-click at an absolute screen coordinate.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn double_click_at(&mut self, x: u16, y: u16) -> Result<()> {
         self.click_at(x, y)?;
         self.click_at(x, y)
@@ -177,12 +247,25 @@ impl<'a> Pilot<'a> {
     /// Triple-click the widget matched by `selector`: three press/release
     /// cycles. Mirrors `pilot.triple_click(selector)`. Same minimal-event
     /// note as [`Pilot::double_click`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn triple_click(&mut self, selector: &str) -> Result<()> {
         let (cx, cy) = self.target_center(selector)?;
         self.triple_click_at(cx, cy)
     }
 
     /// Triple-click at an absolute screen coordinate.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn triple_click_at(&mut self, x: u16, y: u16) -> Result<()> {
         self.click_at(x, y)?;
         self.click_at(x, y)?;
@@ -193,6 +276,14 @@ impl<'a> Pilot<'a> {
     /// updating hover state (`:hover`, Enter/Leave, the system tooltip) and
     /// dispatching a `MouseMove` to it, then advance to idle. Mirrors
     /// `pilot.hover(selector)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn hover(&mut self, selector: &str) -> Result<()> {
         let node = self
             .app
@@ -209,17 +300,32 @@ impl<'a> Pilot<'a> {
 
     /// Move the mouse to an absolute screen coordinate (hover + `MouseMove`),
     /// then advance to idle. Mirrors `pilot.hover((x, y))` / `pilot.move`.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn move_to(&mut self, x: u16, y: u16) -> Result<()> {
         self.app.headless_inject_mouse_move(self.root, x, y)
     }
 
     /// Advance the app to idle (process queued messages/timers/animations and
     /// render). Mirrors `pilot.pause()`.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn pause(&mut self) -> Result<()> {
         self.app.headless_pause(self.root)
     }
 
     /// Alias for [`Pilot::pause`] — wait until the app is idle.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn wait_for_idle(&mut self) -> Result<()> {
         self.pause()
     }
@@ -229,6 +335,11 @@ impl<'a> Pilot<'a> {
     /// `await pilot.pause(delay)`: Python sleeps real time so wall-clock
     /// timers fire; here the manual clock advances with the same
     /// deadline-by-deadline semantics as [`Pilot::advance_clock`].
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn pause_for(&mut self, delay: Duration) -> Result<()> {
         self.advance_clock(delay)?;
         self.pause()
@@ -241,6 +352,11 @@ impl<'a> Pilot<'a> {
     /// ~32 simulated seconds) so animations complete instantly in real
     /// time. Returns after the bound with the app settled even if an
     /// animation never finishes (e.g. an infinite repeat).
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn wait_for_animation(&mut self) -> Result<()> {
         const MAX_STEPS: usize = 2_000;
         const STEP: Duration = Duration::from_millis(16);
@@ -256,6 +372,11 @@ impl<'a> Pilot<'a> {
     /// Wait for current and scheduled animations to complete, then settle.
     /// Mirrors `await pilot.wait_for_scheduled_animations()`: pump once so
     /// newly scheduled animations enqueue, drain them, and settle.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn wait_for_scheduled_animations(&mut self) -> Result<()> {
         self.pause()?;
         self.wait_for_animation()?;
@@ -265,6 +386,11 @@ impl<'a> Pilot<'a> {
     /// Exit the app with `result`. Mirrors `await pilot.exit(result)`:
     /// records the result on the app (see [`App::exit`](crate::runtime::App::exit))
     /// with return code 0 and settles to idle.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn exit(&mut self, result: Option<String>) -> Result<()> {
         self.app.exit(result, 0, None);
         self.pause()
@@ -285,6 +411,11 @@ impl<'a> Pilot<'a> {
     /// 1s interval fires three discrete ticks (1s, 2s, 3s), not a single
     /// backlog-collapsed fire. The remaining sub-deadline time is then consumed
     /// so the clock ends exactly `delta` ahead.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn advance_clock(&mut self, delta: Duration) -> Result<()> {
         let mut remaining = delta;
         // Bound iterations defensively (a fast interval over a long delta still
@@ -334,6 +465,11 @@ impl<'a> Pilot<'a> {
     /// Python's animation frames firing while the loop runs. Use this (instead
     /// of [`Pilot::advance_clock`]) for demos whose motion is driven purely by
     /// `on_tick` rather than by elapsed time.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn advance_ticks(&mut self, count: u64) -> Result<()> {
         self.app.headless_advance_ticks(self.root, count)
     }
@@ -347,6 +483,12 @@ impl<'a> Pilot<'a> {
     }
 
     /// Resize the virtual terminal and advance to idle.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the size refresh or the headless pump. Both use
+    /// the virtual terminal and the in-memory frame, so they do not fail in
+    /// headless mode.
     pub fn resize(&mut self, width: u16, height: u16) -> Result<()> {
         self.app.headless_resize(self.root, width, height)
     }

@@ -223,14 +223,30 @@ impl DomQuery {
         self.nodes
     }
 
+    /// Return the first node in the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when the result is empty.
     pub fn first(&self) -> std::result::Result<NodeId, QueryError> {
         self.nodes.first().copied().ok_or(QueryError::NoMatch)
     }
 
+    /// Return the last node in the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when the result is empty.
     pub fn last(&self) -> std::result::Result<NodeId, QueryError> {
         self.nodes.last().copied().ok_or(QueryError::NoMatch)
     }
 
+    /// Return the single node in the result.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::NoMatch`] if the result is empty.
+    /// - [`QueryError::TooManyMatches`] if the result holds more than one node.
     pub fn only_one(&self) -> std::result::Result<NodeId, QueryError> {
         match self.nodes.len() {
             0 => Err(QueryError::NoMatch),
@@ -259,6 +275,12 @@ impl DomQuery {
         Self::from_nodes(filtered)
     }
 
+    /// Keep only the nodes that also match `selector` in `app`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn filter(self, app: &App, selector: &str) -> std::result::Result<Self, QueryError> {
         let matched = app.query(selector)?;
         let matched_set: HashSet<NodeId> = matched.nodes.into_iter().collect();
@@ -270,6 +292,12 @@ impl DomQuery {
         Ok(Self::from_nodes(filtered))
     }
 
+    /// Drop the nodes that also match `selector` in `app`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn exclude(self, app: &App, selector: &str) -> std::result::Result<Self, QueryError> {
         let matched = app.query(selector)?;
         let matched_set: HashSet<NodeId> = matched.nodes.into_iter().collect();
@@ -967,6 +995,12 @@ pub struct App {
 }
 
 impl App {
+    /// Create an app bound to the current terminal.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`] when the terminal driver cannot read the
+    /// terminal size, for example when no terminal is attached.
     pub fn new() -> Result<Self> {
         let options = DriverOptions {
             // Preserve textual-rs behavior: mouse capture enabled by default.
@@ -1638,6 +1672,11 @@ impl App {
     /// Query nodes in the active arena tree using a CSS selector.
     ///
     /// Returns a snapshot query object in tree traversal order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector. No match returns an empty query, not an error.
     pub fn query(&self, selector: &str) -> std::result::Result<DomQuery, QueryError> {
         if let Some(tree) = self.active_widget_tree() {
             tree.query(selector).map(DomQuery::from_nodes)
@@ -1648,6 +1687,12 @@ impl App {
     }
 
     /// Query first matching node (Python `query_one` semantics).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`, including when
+    ///   there is no active widget tree.
     pub fn query_one(&self, selector: &str) -> std::result::Result<NodeId, QueryError> {
         self.query(selector)?.first()
     }
@@ -1664,11 +1709,22 @@ impl App {
     }
 
     /// Query exactly one node; fails when more than one match exists.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
+    /// - [`QueryError::TooManyMatches`] if more than one node matches.
     pub fn query_exactly_one(&self, selector: &str) -> std::result::Result<NodeId, QueryError> {
         self.query(selector)?.only_one()
     }
 
     /// Query one node optionally.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector. No match returns `Ok(None)`, not an error.
     pub fn query_one_optional(
         &self,
         selector: &str,
@@ -1681,6 +1737,12 @@ impl App {
     }
 
     /// Query immediate children of the tree root.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector. An active tree with no root returns an empty result without
+    /// checking `selector`.
     pub fn query_children(&self, selector: &str) -> std::result::Result<DomQuery, QueryError> {
         if let Some(tree) = self.active_widget_tree() {
             match tree.root() {
@@ -1696,6 +1758,12 @@ impl App {
     }
 
     /// Query closest ancestor of a node matching a selector.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if there is no active widget tree, `node_id`
+    ///   is not in the active tree, or no ancestor of `node_id` matches.
     pub fn query_ancestor(
         &self,
         node_id: NodeId,
@@ -1718,16 +1786,31 @@ impl App {
     }
 
     /// Find first descendant by CSS id (selector `#id`).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `#{id}` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node in the active tree has that id.
     pub fn get_widget_by_id(&self, id: &str) -> std::result::Result<NodeId, QueryError> {
         self.query_one(&format!("#{id}"))
     }
 
     /// Find immediate child of the tree root by CSS id.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `#{id}` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no direct child of the root has that id.
     pub fn get_child_by_id(&self, id: &str) -> std::result::Result<NodeId, QueryError> {
         self.query_children(&format!("#{id}"))?.first()
     }
 
     /// Find immediate child of the tree root by widget type.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when there is no active widget tree,
+    /// the tree has no root, or no direct child of the root is a `T`.
     pub fn get_child_by_type<T: Widget + 'static>(
         &self,
     ) -> std::result::Result<NodeId, QueryError> {
@@ -1757,6 +1840,11 @@ impl App {
     }
 
     /// Mount a widget onto the active screen.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when there is no active widget tree or
+    /// the active tree has no root.
     pub fn mount(
         &mut self,
         widget: impl Widget + 'static,
@@ -1802,6 +1890,11 @@ impl App {
     /// `tree.mount` insert (the previous behavior) left composed children absent
     /// and the widget unpainted; it also targeted the bare tree root, mounting
     /// the widget offscreen (see [`Self::default_mount_parent`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when there is no active widget tree or
+    /// the active tree has no root.
     pub fn mount_boxed(
         &mut self,
         widget: Box<dyn Widget>,
@@ -1824,6 +1917,11 @@ impl App {
     ///
     /// Each widget is mounted through the same compose-aware path as
     /// [`mount_boxed`](Self::mount_boxed) so composed children build and paint.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when there is no active widget tree or
+    /// the active tree has no root. No widget is mounted in that case.
     pub fn mount_all(
         &mut self,
         widgets: Vec<Box<dyn Widget>>,
@@ -1865,6 +1963,11 @@ impl App {
     ///
     /// `selector` is a CSS selector resolved with [`query_one`](Self::query_one)
     /// (e.g. `"#timers"`, `"VerticalScroll"`). Returns the new node's `NodeId`.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
     pub fn mount_under(
         &mut self,
         selector: &str,
@@ -1875,6 +1978,11 @@ impl App {
     }
 
     /// Mount a boxed widget as the last child of `parent` (a live `NodeId`).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::NoMatch`] if there is no active widget tree.
+    /// - [`QueryError::Unmounted`] if `parent` is not in the active tree.
     pub fn mount_under_node(
         &mut self,
         parent: NodeId,
@@ -1884,6 +1992,11 @@ impl App {
     }
 
     /// Boxed twin of [`mount_under_node`](Self::mount_under_node).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::NoMatch`] if there is no active widget tree.
+    /// - [`QueryError::Unmounted`] if `parent` is not in the active tree.
     pub fn mount_under_node_boxed(
         &mut self,
         parent: NodeId,
@@ -1909,6 +2022,13 @@ impl App {
     ///
     /// Python parity: `mount(widget, before=...)`. The new node becomes a child
     /// of the sibling's parent, inserted at the sibling's index.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
+    /// - [`QueryError::Unmounted`] if the first match is the tree root, which
+    ///   has no parent to mount into.
     pub fn mount_before(
         &mut self,
         selector: &str,
@@ -1921,6 +2041,13 @@ impl App {
     /// Mount a widget immediately after the sibling matched by `selector`.
     ///
     /// Python parity: `mount(widget, after=...)`.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
+    /// - [`QueryError::Unmounted`] if the first match is the tree root, which
+    ///   has no parent to mount into.
     pub fn mount_after(
         &mut self,
         selector: &str,
@@ -1961,13 +2088,19 @@ impl App {
 
     /// Remove the node matched by `selector` (and its whole subtree).
     ///
-    /// Python parity: `Widget.remove` / `query(...).remove()`. Returns
-    /// `Err(QueryError::NoMatch)` if nothing matches, or
-    /// `Err(QueryError::TooManyMatches)` if the selector is ambiguous; use
+    /// Python parity: `Widget.remove` / `query(...).remove()`. Use
     /// [`remove_node`](Self::remove_node) to remove a specific `NodeId`.
     ///
     /// The returned [`AwaitRemove`] completes once the event loop has drained
     /// this removal's unmount work (PR-14).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
+    ///
+    /// When several nodes match, the first match is removed and no error is
+    /// returned.
     pub fn remove(&mut self, selector: &str) -> std::result::Result<AwaitRemove, QueryError> {
         let node_id = self.query_one(selector)?;
         self.remove_node(node_id)
@@ -1981,6 +2114,11 @@ impl App {
     ///
     /// The returned [`AwaitRemove`] completes once the event loop has drained
     /// this removal's unmount work (PR-14).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::NoMatch`] if there is no active widget tree.
+    /// - [`QueryError::Unmounted`] if `node_id` is not in the active tree.
     pub fn remove_node(&mut self, node_id: NodeId) -> std::result::Result<AwaitRemove, QueryError> {
         let generation = self.lifecycle_drain_generation();
         let (parent, removed) = {
@@ -2038,6 +2176,11 @@ impl App {
     }
 
     /// Mutable query handle for chainable bulk mutations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn query_mut(
         &mut self,
         selector: &str,
@@ -2075,6 +2218,11 @@ impl App {
     ///
     /// Whenever `set_data(key, ...)` is called, the binder runs for each
     /// matched widget with the latest typed value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector. The binding is not registered in that case.
     pub fn data_bind<T>(
         &mut self,
         key: impl Into<String>,
@@ -2125,6 +2273,11 @@ impl App {
     /// Apply `add_class` to all nodes matching `selector`.
     ///
     /// Returns the number of matched nodes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn action_add_class(
         &mut self,
         selector: &str,
@@ -2139,6 +2292,11 @@ impl App {
     /// Apply `remove_class` to all nodes matching `selector`.
     ///
     /// Returns the number of matched nodes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn action_remove_class(
         &mut self,
         selector: &str,
@@ -2153,6 +2311,11 @@ impl App {
     /// Apply `toggle_class` to all nodes matching `selector`.
     ///
     /// Returns the number of matched nodes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn action_toggle_class(
         &mut self,
         selector: &str,
@@ -2222,6 +2385,12 @@ impl App {
         false
     }
 
+    /// Focus the widget with CSS id `widget_id` and report whether focus changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `#{widget_id}` is not a valid
+    /// CSS selector. A missing widget returns `Ok(false)`, not an error.
     pub fn action_focus(&mut self, widget_id: &str) -> std::result::Result<bool, QueryError> {
         let selector = format!("#{widget_id}");
         let target = match self.query_one(&selector) {
@@ -2503,6 +2672,13 @@ impl App {
         self.push_screen(screen).is_ok()
     }
 
+    /// Remove every `HelpPanel` from the active widget tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] only if the fixed `HelpPanel`
+    /// selector fails to parse. It is a valid type selector, so this does not
+    /// happen in practice.
     pub fn action_hide_help_panel(&mut self) -> std::result::Result<bool, QueryError> {
         let ids = self.query("HelpPanel")?.into_ids();
         if ids.is_empty() {
@@ -2517,6 +2693,13 @@ impl App {
         Ok(false)
     }
 
+    /// Mount a `HelpPanel` under the active tree root if none is present.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] only if the fixed `HelpPanel`
+    /// selector fails to parse. It is a valid type selector, so this does not
+    /// happen in practice.
     pub fn action_show_help_panel(&mut self) -> std::result::Result<bool, QueryError> {
         if !self.query("HelpPanel")?.is_empty() {
             return Ok(false);
@@ -2648,6 +2831,13 @@ impl App {
     ///
     /// This is distinct from [`App::action_suspend_process`], which performs
     /// Unix job control (`SIGTSTP`) instead of lending the terminal in-process.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`] when the terminal driver fails to stop and
+    /// restore the terminal. This can happen only when the app is not
+    /// headless and the driver is started. The suspend signal has already
+    /// been published when this error returns.
     pub fn suspend(&mut self) -> Result<SuspendGuard<'_>> {
         self.app_suspend_signal.emit(&AppSuspended);
         // Mirror `action_suspend_process`: never touch a real terminal from
@@ -3029,6 +3219,12 @@ impl App {
     /// `reactive_dispatch_with_app` (`watch_with_app`) can run during fan-out.
     ///
     /// Returns `None` if the node is absent or its widget is not a `W`.
+    ///
+    /// # Panics
+    ///
+    /// Does not panic on its own. The internal `expect` downcasts the taken
+    /// widget to `W`, and that same widget passed the `W` check just before
+    /// it was taken.
     pub fn with_widget_taken_as<W, R>(
         &mut self,
         node_id: NodeId,
@@ -3168,6 +3364,11 @@ impl App {
     /// Query one widget by selector and borrow it mutably for a scoped update.
     ///
     /// Escape hatch; prefer `query_one_typed` + `Handle` for typed single-widget access.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
     pub fn with_query_one_mut<R>(
         &mut self,
         selector: &str,
@@ -3180,6 +3381,12 @@ impl App {
     /// Query one widget by selector and mutably downcast it to `T`.
     ///
     /// Escape hatch; prefer `query_one_typed` + `Handle` for typed single-widget access.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`, or the first
+    ///   matching widget is not a `T`.
     pub fn with_query_one_mut_as<T: Widget + 'static, R>(
         &mut self,
         selector: &str,
@@ -3428,12 +3635,18 @@ impl App {
         tasks::push_screen_wait(screen)
     }
 
-    /// Typed `query_one` upgrade: selector must match exactly one node whose
-    /// concrete type is `W`.
+    /// Typed `query_one` upgrade: returns a handle to the first node matching
+    /// `selector`, which must have concrete type `W`.
     ///
     /// Typed wrapper over the same arena access as `with_widget_mut_as`;
     /// for imperative widget APIs. Application state belongs in reactive
     /// fields/signals (RA-3).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
+    /// - [`QueryError::TypeMismatch`] if the first matching widget is not a `W`.
     pub fn query_one_typed<W: Widget>(
         &self,
         selector: &str,
@@ -3446,6 +3659,12 @@ impl App {
     ///
     /// Typed wrapper over the same arena access as `with_widget_mut_as`;
     /// for one-off access to a `NodeId` from a message (e.g. `MessageEvent.sender`).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::Unmounted`] if there is no active widget tree or
+    ///   `node_id` is not in it.
+    /// - [`QueryError::TypeMismatch`] if the widget at `node_id` is not a `W`.
     pub fn typed_handle<W: Widget>(
         &self,
         node_id: NodeId,
@@ -3454,8 +3673,13 @@ impl App {
         crate::handle::Handle::<W>::resolve(tree, node_id)
     }
 
-    /// Mount a widget as a direct child of the active tree root and return a
-    /// typed handle to it (typed twin of `App::mount`, src/runtime/mod.rs:882).
+    /// Mount a widget onto the active screen body, like [`App::mount`], and
+    /// return a typed handle to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::Unmounted`] when there is no active widget tree
+    /// or the active tree has no root.
     pub fn mount_typed<W: Widget>(
         &mut self,
         widget: W,
@@ -4210,6 +4434,12 @@ impl App {
         self.stylesheet_source = Some(css.to_string());
     }
 
+    /// Replace the app stylesheet with the CSS in a file.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`], which wraps the I/O error, when the file
+    /// at `path` cannot be read.
     pub fn load_stylesheet_file(&mut self, path: impl Into<PathBuf>) -> Result<()> {
         let path = path.into();
         let css = fs::read_to_string(&path)?;
@@ -4218,6 +4448,12 @@ impl App {
         Ok(())
     }
 
+    /// Load a stylesheet file and poll it for changes every `interval`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`], which wraps the I/O error, when the file
+    /// at `path` cannot be read.
     pub fn watch_stylesheet(&mut self, path: impl Into<PathBuf>, interval: Duration) -> Result<()> {
         let path = path.into();
         let css = fs::read_to_string(&path)?;
@@ -4238,6 +4474,13 @@ impl App {
         self.action_map.bind(key, action);
     }
 
+    /// Start the terminal driver and size the frame buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`] when the terminal driver fails to start,
+    /// the terminal size cannot be read, or writing the pointer-shape reset
+    /// sequence fails. Headless apps never return `Err`.
     pub fn start(&mut self) -> Result<()> {
         self.last_focused_on_app_blur = None;
         self.last_binding_hints.clear();
@@ -4265,6 +4508,12 @@ impl App {
         Ok(())
     }
 
+    /// Stop the terminal driver and print the exit message, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`] when the terminal driver fails to stop and
+    /// restore the terminal. Headless apps never return `Err`.
     pub fn finish(&mut self) -> Result<()> {
         if self.headless {
             return Ok(());
@@ -4317,6 +4566,11 @@ impl App {
 
     /// Ring the terminal bell. Python `App.bell`: a no-op while headless,
     /// otherwise writes `\x07` to stdout.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`] when writing `\x07` to stdout or flushing
+    /// stdout fails. Headless apps never return `Err`.
     pub fn bell(&self) -> Result<()> {
         if self.headless {
             return Ok(());
@@ -4336,6 +4590,11 @@ impl App {
     /// follows the browser's own settings (the underlying opener exposes no
     /// tab control). While headless there is no browser to open, so the URL
     /// is recorded instead — assert on [`App::last_opened_url`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`] when the system opener fails to open `url`.
+    /// Headless apps never return `Err`.
     pub fn open_url(&mut self, url: &str, new_tab: bool) -> Result<()> {
         let _ = new_tab;
         if self.headless {
@@ -4413,6 +4672,11 @@ impl App {
     /// Returns `Err` and pushes nothing when the screen's stylesheet path
     /// is missing/unreadable ([`Error::StylesheetError`], PR-11) instead of
     /// silently rendering unstyled.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::StylesheetError`] when the screen's `css()` value is a
+    /// file path and that file is missing or unreadable.
     pub fn push_screen(&mut self, screen: Box<dyn crate::screen::Screen>) -> Result<()> {
         self.dispatch_screen_lifecycle_event(Event::ScreenSuspend);
         self.screen_stack.push(screen)?;
@@ -4504,6 +4768,12 @@ impl App {
     ///
     /// The callback is invoked with the `ScreenResult` when the screen is
     /// popped (either via `pop_screen()` or via `dismiss_screen()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::StylesheetError`] when the screen's `css()` value is a
+    /// file path and that file is missing or unreadable. Nothing is pushed in
+    /// that case.
     pub fn push_screen_with_callback(
         &mut self,
         screen: Box<dyn crate::screen::Screen>,
@@ -4691,6 +4961,12 @@ impl App {
 
     /// Run the CSS-layout pass on the arena tree (if present).
     ///
+    /// # Errors
+    ///
+    /// - [`Error::RuntimeStopped`] if [`App::stop`] or [`App::exit`] ran
+    ///   before this call.
+    /// - Any error from [`App::start`], for example [`Error::Terminal`] when
+    ///   the terminal driver fails to start.
     pub async fn run(&mut self) -> Result<()> {
         if !self.running {
             return Err(Error::RuntimeStopped);

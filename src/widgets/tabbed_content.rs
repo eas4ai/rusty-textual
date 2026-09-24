@@ -264,6 +264,12 @@ impl TabbedContent {
         self
     }
 
+    /// Builder: append `pane`, giving it a `tab-N` id when it has none.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane mutex or the pane metadata mutex is poisoned. That
+    /// happens only if an earlier panic occurred while the mutex was held.
     #[must_use]
     pub fn with_pane(mut self, mut pane: TabPane) -> Self {
         let id = self.ensure_pane_id(&mut pane);
@@ -273,6 +279,12 @@ impl TabbedContent {
         self
     }
 
+    /// Append `pane`, giving it a `tab-N` id when it has none.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane mutex or the pane metadata mutex is poisoned. That
+    /// happens only if an earlier panic occurred while the mutex was held.
     pub fn add_pane(&mut self, mut pane: TabPane) {
         let id = self.ensure_pane_id(&mut pane);
         self.push_meta(&pane, id);
@@ -284,6 +296,14 @@ impl TabbedContent {
         self.active.as_deref()
     }
 
+    /// Activate the pane with id `pane_id`. Returns whether the active pane
+    /// changed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane metadata mutex or the tabs handle mutex is poisoned,
+    /// or if a mutex inside the inner [`Tabs`] is poisoned. A mutex is
+    /// poisoned only if an earlier panic occurred while it was held.
     pub fn set_active_id(
         &mut self,
         pane_id: &str,
@@ -318,6 +338,14 @@ impl TabbedContent {
         true
     }
 
+    /// Activate the pane at position `index`. Does nothing when `index` is out
+    /// of range.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane metadata mutex or the tabs handle mutex is poisoned,
+    /// or if a mutex inside the inner [`Tabs`] is poisoned. A mutex is
+    /// poisoned only if an earlier panic occurred while it was held.
     pub fn set_active(&mut self, index: usize) {
         let pane_id = self
             .pane_meta
@@ -330,6 +358,12 @@ impl TabbedContent {
         }
     }
 
+    /// Return a copy of the metadata for the pane with id `pane_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane metadata mutex is poisoned. That happens only if an
+    /// earlier panic occurred while the mutex was held.
     pub fn get_pane(&self, pane_id: &str) -> Option<TabPaneMeta> {
         self.pane_meta
             .lock()

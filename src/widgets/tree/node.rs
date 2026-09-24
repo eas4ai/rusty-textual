@@ -258,6 +258,11 @@ impl TreeNode {
     /// let child = parent.add_child(TreeNode::new("child"));
     /// child.add_child(TreeNode::new("grandchild"));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Does not panic. The `expect` on the last child cannot fail because
+    /// `child` is pushed onto the list just before it.
     pub fn add_child(&mut self, child: TreeNode) -> &mut TreeNode {
         self.children.push(child);
         self.children.last_mut().expect("just pushed")

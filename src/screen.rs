@@ -467,6 +467,14 @@ impl ScreenStack {
     /// - Builds the widget tree from `screen.compose()`.
     /// - Parses the screen's CSS (if any).
     /// - Calls `on_mount` on the new screen.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::error::Error::StylesheetError`] when `screen.css()`
+    /// names a stylesheet file (the value has no newline and no `{`) and
+    /// reading that file fails, for example because it does not exist. The
+    /// check runs first, so on error the stack is unchanged and no lifecycle
+    /// hook runs.
     pub fn push(&mut self, screen: Box<dyn Screen>) -> crate::error::Result<()> {
         self.push_inner(screen, None, None)
     }
@@ -475,6 +483,13 @@ impl ScreenStack {
     ///
     /// The callback is invoked with the `ScreenResult` when the screen is
     /// popped (either via `pop()` or via `dismiss()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::error::Error::StylesheetError`] when `screen.css()`
+    /// names a stylesheet file and reading that file fails. See
+    /// [`ScreenStack::push`]. On error the stack is unchanged and `callback`
+    /// is dropped without being called.
     pub fn push_with_callback(
         &mut self,
         screen: Box<dyn Screen>,
@@ -487,6 +502,12 @@ impl ScreenStack {
     ///
     /// The mode name is stored in the entry so that `pop_mode()` can identify
     /// and remove the correct screen even if transient screens are on top.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::error::Error::StylesheetError`] when `screen.css()`
+    /// names a stylesheet file and reading that file fails. See
+    /// [`ScreenStack::push`]. On error the stack is unchanged.
     pub fn push_mode(
         &mut self,
         screen: Box<dyn Screen>,

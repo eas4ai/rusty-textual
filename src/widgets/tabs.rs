@@ -327,6 +327,14 @@ impl Tabs {
         self
     }
 
+    /// Append `tab`, giving it a `tab-N` id when it has none. When no tab is
+    /// active, the first tab in the list becomes active.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state or pending-message mutex is poisoned. A mutex
+    /// is poisoned only if an earlier panic occurred while it was held. Clones
+    /// of this `Tabs` share these mutexes.
     pub fn add_tab(&mut self, tab: impl Into<Tab>) {
         let mut tab = tab.into();
         let tab_id = tab
@@ -385,23 +393,52 @@ impl Tabs {
         self.dock = Some(dock);
     }
 
+    /// Id of the active tab, or `None` when no tab is active.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
     #[must_use]
     pub fn active(&self) -> Option<String> {
         let state = self.state.lock().expect("tabs state lock");
         state.active.clone()
     }
 
+    /// Whether the tab with id `id` is the active tab.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
     #[must_use]
     pub fn is_active(&self, id: &str) -> bool {
         let state = self.state.lock().expect("tabs state lock");
         state.active.as_deref() == Some(id)
     }
 
+    /// Call `f` with the active tab id while the tab state mutex is held.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex. If `f` calls a method that locks the same mutex, on
+    /// this `Tabs` or a clone, the standard library may panic or deadlock.
     pub fn with_active_id<R>(&self, f: impl FnOnce(Option<&str>) -> R) -> R {
         let state = self.state.lock().expect("tabs state lock");
         f(state.active.as_deref())
     }
 
+    /// Index of the active tab, or `None` when no tab is active.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
     #[must_use]
     pub fn active_index(&self) -> Option<usize> {
         let state = self.state.lock().expect("tabs state lock");
@@ -409,6 +446,14 @@ impl Tabs {
         self.index_for_id(&state, id)
     }
 
+    /// Whether the tab with id `id` is disabled. Returns `false` for an
+    /// unknown id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
     #[must_use]
     pub fn is_tab_disabled(&self, id: &str) -> bool {
         let state = self.state.lock().expect("tabs state lock");
@@ -416,6 +461,14 @@ impl Tabs {
             .is_some_and(|tab| tab.disabled)
     }
 
+    /// Whether the tab with id `id` is hidden. Returns `false` for an unknown
+    /// id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
     #[must_use]
     pub fn is_tab_hidden(&self, id: &str) -> bool {
         let state = self.state.lock().expect("tabs state lock");
@@ -423,6 +476,13 @@ impl Tabs {
             .is_some_and(|tab| tab.hidden)
     }
 
+    /// Activate the tab with id `id`. Returns whether the active tab changed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state, underline, or pending-message mutex is
+    /// poisoned. A mutex is poisoned only if an earlier panic occurred while
+    /// it was held. Clones of this `Tabs` share these mutexes.
     pub fn set_active_id(&mut self, id: &str, ctx: Option<&mut crate::event::WidgetCtx>) -> bool {
         let state = self.state.lock().expect("tabs state lock");
         let Some(index) = self.index_for_id(&state, id) else {
@@ -432,6 +492,13 @@ impl Tabs {
         self.activate(index, ctx)
     }
 
+    /// Activate the tab with id `id` and record the `active` change in `ctx`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state, underline, or pending-message mutex is
+    /// poisoned. A mutex is poisoned only if an earlier panic occurred while
+    /// it was held. Clones of this `Tabs` share these mutexes.
     pub fn set_active(&mut self, id: &str, ctx: &mut ReactiveCtx) {
         if self.active().as_deref() == Some(id) {
             return;
@@ -451,6 +518,14 @@ impl Tabs {
         }
     }
 
+    /// Disable or enable the tab with id `id`. Returns `false` when no tab has
+    /// that id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state, underline, or pending-message mutex is
+    /// poisoned. A mutex is poisoned only if an earlier panic occurred while
+    /// it was held. Clones of this `Tabs` share these mutexes.
     pub fn set_tab_disabled(&mut self, id: &str, disabled: bool, ctx: &mut ReactiveCtx) -> bool {
         let mut state = self.state.lock().expect("tabs state lock");
         let Some(index) = self.index_for_id(&state, id) else {
@@ -472,6 +547,14 @@ impl Tabs {
         self.set_tab_disabled(id, false, ctx)
     }
 
+    /// Hide or show the tab with id `id`. Returns `false` when no tab has that
+    /// id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state, underline, or pending-message mutex is
+    /// poisoned. A mutex is poisoned only if an earlier panic occurred while
+    /// it was held. Clones of this `Tabs` share these mutexes.
     pub fn set_tab_hidden(&mut self, id: &str, hidden: bool, ctx: &mut ReactiveCtx) -> bool {
         let mut state = self.state.lock().expect("tabs state lock");
         let Some(index) = self.index_for_id(&state, id) else {
@@ -522,6 +605,13 @@ impl Tabs {
         self.run_alias_reactive_update(|this, ctx| this.show_tab(id, ctx))
     }
 
+    /// Remove the tab with id `id`. Returns `false` when no tab has that id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state or underline mutex is poisoned. A mutex is
+    /// poisoned only if an earlier panic occurred while it was held. Clones of
+    /// this `Tabs` share these mutexes.
     pub fn remove_tab(&mut self, id: &str) -> bool {
         let mut state = self.state.lock().expect("tabs state lock");
         let Some(index) = self.index_for_id(&state, id) else {
@@ -547,6 +637,13 @@ impl Tabs {
         true
     }
 
+    /// Remove all tabs and queue a [`TabsCleared`] message.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state, underline, or pending-message mutex is
+    /// poisoned. A mutex is poisoned only if an earlier panic occurred while
+    /// it was held. Clones of this `Tabs` share these mutexes.
     pub fn clear(&mut self) {
         let mut state = self.state.lock().expect("tabs state lock");
         state.tabs.clear();
@@ -560,6 +657,13 @@ impl Tabs {
             .push(Box::new(TabsCleared));
     }
 
+    /// Number of tabs, hidden tabs included.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
     #[must_use]
     pub fn tab_count(&self) -> usize {
         let state = self.state.lock().expect("tabs state lock");

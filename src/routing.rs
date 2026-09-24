@@ -174,6 +174,17 @@ impl Selector {
     /// Parse a selector string (`#id`, `.class`, `Type`, compound, or
     /// comma-separated groups). An empty/whitespace string yields the universal
     /// selector.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SelectorParseError`] when:
+    ///
+    /// - a comma-separated term is empty (for example `"#a,,#b"` or `"#a,"`);
+    /// - `#` or `.` is not followed by an identifier;
+    /// - one term has more than one `#id`;
+    /// - a term has any other character outside an identifier, such as a
+    ///   space, `>`, `*`, or `:`. Identifiers use ASCII letters, digits, `_`,
+    ///   and `-`.
     pub fn parse(input: &str) -> Result<Self, SelectorParseError> {
         let trimmed = input.trim();
         if trimmed.is_empty() {
@@ -338,6 +349,12 @@ impl<S> MessageRouter<S> {
 
     /// Fallible variant of [`on`][MessageRouter::on]: returns the parse error
     /// instead of panicking on a malformed selector.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SelectorParseError`] when `selector` is not a valid selector
+    /// string. See [`Selector::parse`] for the rules. On error, no route is
+    /// registered.
     pub fn try_on<M, F>(
         &mut self,
         selector: &str,

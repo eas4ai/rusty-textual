@@ -99,6 +99,12 @@ pub struct TerminalDriver {
 }
 
 impl TerminalDriver {
+    /// Create a driver for the current platform and read the terminal size.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when the terminal size cannot be read, for
+    /// example when no terminal is attached.
     pub fn new(options: DriverOptions) -> io::Result<Self> {
         let mut platform = platform::make_platform_driver();
         let size = platform.refresh_size()?;
@@ -148,6 +154,17 @@ impl TerminalDriver {
         self.negotiated
     }
 
+    /// Put the terminal into application mode. Does nothing when the driver
+    /// has already started.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when raw mode cannot be enabled, or when
+    /// writing a mode command to stdout fails (alternate screen, hidden
+    /// cursor, no line wrap, focus reporting, mouse capture, or bracketed
+    /// paste). On a write failure the driver first restores the terminal on a
+    /// best-effort basis. A failure to enable the Kitty keyboard protocol is
+    /// not an error.
     pub fn start(&mut self) -> io::Result<()> {
         if self.started {
             return Ok(());
@@ -161,6 +178,14 @@ impl TerminalDriver {
         Ok(())
     }
 
+    /// Restore the terminal to its normal mode. Does nothing when the driver
+    /// has not started.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`io::Error`] from the restore steps: writing a mode
+    /// command to stdout, or disabling raw mode. All steps still run after a
+    /// failure, and the driver is marked as stopped either way.
     pub fn stop(&mut self) -> io::Result<()> {
         if !self.started {
             return Ok(());
@@ -171,12 +196,24 @@ impl TerminalDriver {
         result
     }
 
+    /// Read the current terminal size, store it, and return it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when the terminal size cannot be read. The
+    /// stored size is left unchanged in that case.
     pub fn refresh_size(&mut self) -> io::Result<Size> {
         self.size = self.platform.refresh_size()?;
         Ok(self.size)
     }
 
     /// Re-apply runtime modes that some terminals may reset on resize.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when writing the mode commands to stdout
+    /// fails. When the driver has not started, it writes nothing and returns
+    /// `Ok(())`.
     pub fn reassert_runtime_modes(&mut self) -> io::Result<()> {
         self.platform.reassert_runtime_modes(self.started)
     }
@@ -186,6 +223,12 @@ impl TerminalDriver {
     /// Best effort: terminals that don't support it should ignore the OSC sequence.
     ///
     /// Protocol: `ESC ] 22 ; <shape> BEL`
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when writing or flushing the sequence to
+    /// stdout fails. When pointer shapes are not supported or not enabled, or
+    /// the driver has not started, it writes nothing and returns `Ok(())`.
     pub fn set_pointer_shape(&mut self, shape: PointerShape) -> io::Result<()> {
         if !self.capabilities.supports_pointer_shapes {
             return Ok(());

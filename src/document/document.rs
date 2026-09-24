@@ -83,6 +83,14 @@ impl Document {
     /// columns are clamped to grapheme cluster boundaries (a deliberate
     /// strengthening over Python, which allows splitting surrogate-free
     /// codepoint runs anywhere).
+    ///
+    /// # Panics
+    ///
+    /// Does not panic in practice. The `expect` on the last inserted line
+    /// runs only when the inserted text produced at least one line. The line
+    /// slices are safe because both columns are first clamped to a grapheme
+    /// boundary within their line, and rows past the end are handled without
+    /// indexing.
     pub fn replace_range(&mut self, start: Location, end: Location, text: &str) -> EditResult {
         let (top, bottom) = if start <= end {
             (start, end)

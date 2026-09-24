@@ -280,6 +280,14 @@ fn scrollbar_drag_trace_enabled() -> bool {
 }
 
 impl App {
+    /// Render `renderable` into a new frame, then write the changed cells to
+    /// the terminal.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`](crate::Error::Terminal) when reading the
+    /// terminal size fails or when writing the frame to the terminal fails.
+    /// In headless mode neither step touches a terminal, so this does not fail.
     pub fn render(&mut self, renderable: &dyn Renderable) -> crate::Result<()> {
         self.refresh_size()?;
         let base_style = self.theme.base.to_rich();
@@ -345,6 +353,14 @@ impl App {
         Ok(())
     }
 
+    /// Run a full layout pass and render every visible layer into a new
+    /// frame, then write the changed cells to the terminal.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`](crate::Error::Terminal) when reading the
+    /// terminal size fails or when writing the frame to the terminal fails.
+    /// In headless mode neither step touches a terminal, so this does not fail.
     pub fn render_widget(&mut self, widget: &mut dyn Widget) -> crate::Result<()> {
         self.render_widget_with_regions(widget, None, true)
     }

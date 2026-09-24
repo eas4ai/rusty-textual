@@ -387,14 +387,6 @@ impl WidgetTree {
         id
     }
 
-    /// Mount a child widget under `parent`. Returns the new node's `NodeId`.
-    ///
-    /// Emits a `Mount` lifecycle event for the new node.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `parent` is not in the tree (removed or never added).
-    /// Use [`set_root`](Self::set_root) for an empty tree.
     /// Internal helper: build a `WidgetNode` from a boxed widget, consuming its seed.
     fn make_node_from_seed(widget: Box<dyn Widget>, seed: NodeSeed) -> WidgetNode {
         let initial_disabled = widget.is_initially_disabled();
@@ -410,6 +402,15 @@ impl WidgetTree {
         node
     }
 
+    /// Mount a child widget under `parent`. Returns the new node's `NodeId`.
+    ///
+    /// Emits a `Mount` lifecycle event for the new node.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `parent` is not in the tree, because it was removed or
+    /// never added. The check runs before the tree changes. Use
+    /// [`set_root`](Self::set_root) for an empty tree.
     pub fn mount(&mut self, parent: NodeId, mut widget: Box<dyn Widget>) -> NodeId {
         // PR-05: mounting under a removed (or never-added) parent used to
         // insert a detached orphan and still emit Mount. That is always a
@@ -445,6 +446,12 @@ impl WidgetTree {
     /// Behaves exactly like [`mount`](Self::mount) (same seed consumption,
     /// `mounted` flag, and `Mount` lifecycle event) but lets callers insert
     /// before/after an existing sibling (Python's `mount(..., before=/after=)`).
+    ///
+    /// # Panics
+    ///
+    /// Panics when `parent` is not in the tree, because it was removed or
+    /// never added. The check runs before the tree changes. An out-of-range
+    /// `index` does not panic; it is clamped.
     pub fn mount_at(
         &mut self,
         parent: NodeId,
@@ -895,6 +902,14 @@ impl WidgetTree {
     /// combinators (`Container > Button`, `Panel .item`).
     ///
     /// Comma-separated selector lists are supported (`Button, Input`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` holds no usable
+    /// selector: it is empty, holds only whitespace and commas, or each
+    /// comma-separated group holds only `>` combinators. The parser is
+    /// lenient, so other malformed input does not return an error. A tree
+    /// with no root returns `Ok` with an empty list.
     pub fn query(&self, selector: &str) -> Result<Vec<NodeId>, QueryError> {
         let chains = parse_selector_list(selector);
         if chains.is_empty() {
@@ -923,6 +938,14 @@ impl WidgetTree {
     ///
     /// Returns `Err(QueryError::NoMatch)` if nothing matches, or
     /// `Err(QueryError::TooManyMatches(n))` if more than one node matches.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` holds no usable
+    /// selector (see [`query`](Self::query)). Returns [`QueryError::NoMatch`]
+    /// when no node matches, including when the tree has no root. Returns
+    /// [`QueryError::TooManyMatches`] with the match count when more than one
+    /// node matches.
     pub fn query_one(&self, selector: &str) -> Result<NodeId, QueryError> {
         let matches = self.query(selector)?;
         match matches.len() {
@@ -935,6 +958,13 @@ impl WidgetTree {
     /// Find nodes matching a CSS selector within the subtree rooted at `root`,
     /// **excluding `root` itself** (Python `widget.query(...)` searches
     /// descendants). Used by drain-time `CommandTarget::Selector` resolution.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` holds no usable
+    /// selector: it is empty, holds only whitespace and commas, or each
+    /// comma-separated group holds only `>` combinators. The parser is
+    /// lenient, so other malformed input does not return an error.
     pub fn query_within(&self, root: NodeId, selector: &str) -> Result<Vec<NodeId>, QueryError> {
         let chains = parse_selector_list(selector);
         if chains.is_empty() {
@@ -961,6 +991,14 @@ impl WidgetTree {
     ///
     /// `Err(QueryError::NoMatch)` if nothing matches, `TooManyMatches(n)` if more
     /// than one does.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` holds no usable
+    /// selector (see [`query_within`](Self::query_within)). Returns
+    /// [`QueryError::NoMatch`] when no descendant of `root` matches. Returns
+    /// [`QueryError::TooManyMatches`] with the match count when more than one
+    /// descendant matches.
     pub fn query_one_within(&self, root: NodeId, selector: &str) -> Result<NodeId, QueryError> {
         let matches = self.query_within(root, selector)?;
         match matches.len() {
@@ -973,6 +1011,13 @@ impl WidgetTree {
     /// Find direct children of `parent` that match a CSS selector.
     ///
     /// Only considers immediate children — not deeper descendants.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` holds no usable
+    /// selector: it is empty, holds only whitespace and commas, or each
+    /// comma-separated group holds only `>` combinators. The parser is
+    /// lenient, so other malformed input does not return an error.
     pub fn query_children(
         &self,
         parent: NodeId,

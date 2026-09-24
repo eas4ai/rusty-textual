@@ -448,6 +448,11 @@ fn apply_key_name_replacements(name: &str) -> String {
 /// assert_eq!(key_to_identifier("A"), "upper_a");
 /// assert_eq!(key_to_identifier("shift+left"), "shift_left");
 /// ```
+///
+/// # Panics
+///
+/// Does not panic. The `unwrap` on the first character runs only when `key`
+/// is exactly one byte long, so the string has a first character.
 #[must_use]
 pub fn key_to_identifier(key: &str) -> String {
     // Single uppercase character (e.g. "A", "Z").

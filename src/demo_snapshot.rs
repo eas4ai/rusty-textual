@@ -58,6 +58,14 @@ impl SnapshotArgs {
     }
 }
 
+/// Render `widget` to an SVG snapshot file at `args.path`.
+///
+/// # Errors
+///
+/// Returns [`Error::Terminal`](crate::Error::Terminal) when printing the
+/// widget to the recording console fails, or when writing the SVG file to
+/// `args.path` fails. A missing or unreadable `css_path` file is ignored and
+/// does not cause an error.
 pub fn snapshot_widget(
     widget: &dyn Widget,
     args: &SnapshotArgs,

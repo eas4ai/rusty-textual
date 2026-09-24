@@ -410,6 +410,14 @@ impl FrameBuffer {
     /// - Start with `Home` (cursor to 0,0)
     /// - Use cursor controls (no `\n`) for positioning
     /// - Emit styled text + metadata for changed spans
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` and `previous` have different widths or different
+    /// heights. It can also panic on an out-of-bounds cell index when a
+    /// caller has changed the public `width` or `height` field of either
+    /// buffer after [`FrameBuffer::new`], so the field no longer matches the
+    /// cell storage.
     #[must_use]
     pub fn diff_to_segments(&self, previous: &FrameBuffer) -> Segments {
         assert_eq!(self.width, previous.width, "buffer widths differ");
@@ -494,6 +502,15 @@ impl FrameBuffer {
     /// Compute an update sequence limited to the given dirty regions.
     ///
     /// Cells outside `dirty_regions` are treated as unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` and `previous` have different widths or different
+    /// heights. It can also panic on an out-of-bounds cell index when a
+    /// caller has changed the public `width` or `height` field of either
+    /// buffer after [`FrameBuffer::new`], so the field no longer matches the
+    /// cell storage. Region bounds are clamped to the buffer and never cause
+    /// a panic.
     #[must_use]
     pub fn diff_to_segments_in_regions(
         &self,

@@ -143,6 +143,14 @@ pub fn layout_resolve_1d_exact(
 ///
 /// The returned sizes normally sum to `total`, but may exceed it when minimum
 /// constraints force it (e.g. two edges with `min_size=20` in 30 cells of space).
+///
+/// # Panics
+///
+/// Does not panic in practice. The `unwrap` in the fast path runs only after
+/// a check that every edge has a fixed size. Each division by
+/// `total_fraction` runs only when it is nonzero. The integer arithmetic can
+/// overflow only when the fixed sizes sum to 2^31 or more, which needs more
+/// than 32,768 edges at the maximum `u16` size.
 #[allow(clippy::manual_checked_ops)] // guarded by if total_fraction > 0
 #[must_use]
 pub fn layout_resolve_1d(total: u16, edges: &[Edge]) -> Vec<u16> {

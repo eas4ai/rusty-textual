@@ -351,6 +351,8 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
 
     /// Add a selection to the end of the list (Python `add_option`).
     ///
+    /// # Errors
+    ///
     /// Returns `Err(OptionListError::DuplicateId)` on id collision; the list
     /// is not modified.
     pub fn add_selection(&mut self, selection: Selection<T>) -> Result<(), OptionListError> {
@@ -366,6 +368,12 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
 
     /// Add a batch of selections (Python `add_options`): the whole batch is
     /// validated first; a failing batch adds NOTHING.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::DuplicateId`] when a selection's id matches
+    /// an existing selection or another selection in the batch. The list is
+    /// not modified.
     pub fn add_selections(&mut self, selections: Vec<Selection<T>>) -> Result<(), OptionListError> {
         let items: Vec<OptionItem> = selections.iter().map(Selection::to_option_item).collect();
         self.inner.add_options(items)?;
@@ -381,16 +389,31 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     }
 
     /// Get a selection's option row by stable id.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no selection has the id
+    /// `id`.
     pub fn get_option_by_id(&self, id: &str) -> Result<&OptionItem, OptionListError> {
         self.inner.get_option_by_id(id)
     }
 
     /// Get the current index of the selection with the given id.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no selection has the id
+    /// `id`.
     pub fn get_option_index(&self, id: &str) -> Result<usize, OptionListError> {
         self.inner.get_option_index(id)
     }
 
     /// Get a selection's option row by index, with a typed error.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list.
     pub fn get_option_at_index(&self, index: usize) -> Result<&OptionItem, OptionListError> {
         self.inner.get_option_at_index(index)
     }
@@ -398,6 +421,11 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     /// Remove the selection with the given id, repairing the parallel
     /// value/selected bookkeeping in lockstep (the Rust wrapper owns `inner`,
     /// so it IS Python's `_pre_remove_option` hook).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no selection has the id
+    /// `id`. The list is not modified.
     pub fn remove_option(&mut self, id: &str) -> Result<(), OptionListError> {
         let index = self.inner.get_option_index(id)?;
         self.remove_option_at_index(index)
@@ -405,6 +433,11 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
 
     /// Remove the selection at the given index, repairing the parallel
     /// value/selected bookkeeping in lockstep.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list. The list is not modified.
     pub fn remove_option_at_index(&mut self, index: usize) -> Result<(), OptionListError> {
         self.inner.remove_option_at_index(index)?;
         if index < self.values.len() {

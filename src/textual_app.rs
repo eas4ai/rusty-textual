@@ -49,6 +49,13 @@ pub trait TextualApp: Send + 'static {
     }
 
     /// Optional runtime configuration hook (key bindings, debug flags, etc.).
+    ///
+    /// # Errors
+    ///
+    /// The default implementation never fails. An override can return any
+    /// error to abort startup. [`run_with_output`] and [`run_test_sized`]
+    /// (and the runners that wrap them) return that error before the app
+    /// starts.
     fn configure(&mut self, _app: &mut App) -> Result<()> {
         Ok(())
     }
@@ -139,6 +146,11 @@ pub trait TextualApp: Send + 'static {
     /// Run this app headless (in-process, no terminal) and drive it with a
     /// [`Pilot`](crate::runtime::Pilot), mirroring Python Textual's
     /// `app.run_test()`. See [`run_test`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`run_test_sized`]: a failed terminal size
+    /// read, an error from `configure`, or an error from `body`.
     fn run_test<F>(self, body: F) -> Result<()>
     where
         Self: Sized,
@@ -1433,6 +1445,18 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
 
 /// Run a `TextualApp` definition using the standard `App` runtime and return
 /// optional app output.
+///
+/// # Errors
+///
+/// - [`Error::StylesheetError`](crate::Error::StylesheetError) when
+///   `css_path` names a file that does not exist.
+/// - [`Error::Terminal`](crate::Error::Terminal) when [`App::new`] cannot
+///   read the terminal size, when the `css_path` file cannot be read, or
+///   when a terminal operation in the event loop fails (see
+///   [`App::run_widget_tree`]).
+/// - [`Error::RuntimeStopped`](crate::Error::RuntimeStopped) when
+///   `configure` calls [`App::stop`] or [`App::exit`].
+/// - Any error that [`TextualApp::configure`] returns.
 pub async fn run_with_output<T: TextualApp>(definition: T) -> Result<Option<String>> {
     let state = Arc::new(Mutex::new(definition));
     let mut app = App::new()?;
@@ -1474,6 +1498,10 @@ pub async fn run_with_output<T: TextualApp>(definition: T) -> Result<Option<Stri
 }
 
 /// Run a `TextualApp` definition using the standard `App` runtime.
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_with_output`].
 pub async fn run<T: TextualApp>(definition: T) -> Result<()> {
     let _ = run_with_output(definition).await?;
     Ok(())
@@ -1501,6 +1529,10 @@ pub async fn run<T: TextualApp>(definition: T) -> Result<()> {
 ///     Ok(())
 /// }).unwrap();
 /// ```
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_test_sized`].
 pub fn run_test<T, F>(definition: T, body: F) -> Result<()>
 where
     T: TextualApp,
@@ -1510,6 +1542,17 @@ where
 }
 
 /// Like [`run_test`] but with an explicit virtual terminal size.
+///
+/// # Errors
+///
+/// - [`Error::Terminal`](crate::Error::Terminal) when [`App::new`] cannot
+///   read the terminal size, for example when no terminal is attached.
+/// - Any error that [`TextualApp::configure`] returns.
+/// - Any error that `body` returns. The app is still unmounted in that
+///   case.
+///
+/// Headless startup and teardown do not touch the terminal, so they do
+/// not fail.
 pub fn run_test_sized<T, F>(definition: T, width: u16, height: u16, body: F) -> Result<()>
 where
     T: TextualApp,
@@ -1553,11 +1596,19 @@ where
 }
 
 /// Compatibility alias for [`run`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_with_output`].
 pub async fn run_textual_app<T: TextualApp>(definition: T) -> Result<()> {
     run(definition).await
 }
 
 /// Compatibility alias for [`run_with_output`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_with_output`].
 pub async fn run_textual_app_with_output<T: TextualApp>(definition: T) -> Result<Option<String>> {
     run_with_output(definition).await
 }
@@ -1565,17 +1616,29 @@ pub async fn run_textual_app_with_output<T: TextualApp>(definition: T) -> Result
 /// Optional helper for example/dev binaries that support both runtime and snapshot output.
 ///
 /// This keeps snapshot wiring out of example `main()` bodies while remaining opt-in.
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_snapshot_with_output`].
 pub async fn run_snapshot<T: TextualApp>(definition: T) -> Result<()> {
     let _ = run_snapshot_with_output(definition).await?;
     Ok(())
 }
 
 /// Compatibility alias for [`run_snapshot`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_snapshot_with_output`].
 pub async fn run_textual_app_or_snapshot<T: TextualApp>(definition: T) -> Result<()> {
     run_snapshot(definition).await
 }
 
 /// Compatibility alias for [`run_snapshot_with_output`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_snapshot_with_output`].
 pub async fn run_textual_app_or_snapshot_with_output<T: TextualApp>(
     definition: T,
 ) -> Result<Option<String>> {
@@ -1583,6 +1646,13 @@ pub async fn run_textual_app_or_snapshot_with_output<T: TextualApp>(
 }
 
 /// Variant of `run_snapshot` that returns optional app output.
+///
+/// # Errors
+///
+/// With `--snapshot <path>` on the command line, returns
+/// [`Error::Terminal`](crate::Error::Terminal) when printing the widget to
+/// the recording console fails or when writing the SVG file fails.
+/// Otherwise returns the same errors as [`run_with_output`].
 pub async fn run_snapshot_with_output<T: TextualApp>(mut definition: T) -> Result<Option<String>> {
     if let Some(args) = SnapshotArgs::parse() {
         let widget = definition.compose_for_snapshot();
@@ -1594,6 +1664,12 @@ pub async fn run_snapshot_with_output<T: TextualApp>(mut definition: T) -> Resul
 }
 
 /// Blocking/synchronous variant of [`run_with_output`].
+///
+/// # Errors
+///
+/// Returns [`Error::Terminal`](crate::Error::Terminal) when the Tokio
+/// runtime cannot be built. Otherwise returns the same errors as
+/// [`run_with_output`].
 pub fn run_sync_with_output<T: TextualApp>(definition: T) -> Result<Option<String>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -1602,12 +1678,22 @@ pub fn run_sync_with_output<T: TextualApp>(definition: T) -> Result<Option<Strin
 }
 
 /// Blocking/synchronous variant of [`run`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_sync_with_output`].
 pub fn run_sync<T: TextualApp>(definition: T) -> Result<()> {
     let _ = run_sync_with_output(definition)?;
     Ok(())
 }
 
 /// Blocking/synchronous variant of [`run_snapshot_with_output`].
+///
+/// # Errors
+///
+/// Returns [`Error::Terminal`](crate::Error::Terminal) when the Tokio
+/// runtime cannot be built. Otherwise returns the same errors as
+/// [`run_snapshot_with_output`].
 pub fn run_sync_snapshot_with_output<T: TextualApp>(definition: T) -> Result<Option<String>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -1616,6 +1702,10 @@ pub fn run_sync_snapshot_with_output<T: TextualApp>(definition: T) -> Result<Opt
 }
 
 /// Blocking/synchronous variant of [`run_snapshot`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_sync_snapshot_with_output`].
 pub fn run_sync_snapshot<T: TextualApp>(definition: T) -> Result<()> {
     let _ = run_sync_snapshot_with_output(definition)?;
     Ok(())

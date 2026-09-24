@@ -577,7 +577,12 @@ impl MaskedInput {
 
     /// Replace the template at runtime, re-parsing and resetting content/cursor state.
     ///
-    /// Returns `Err` if the template string contains no non-separator characters.
+    /// # Errors
+    ///
+    /// Returns `Err` with a message string when the mask part of
+    /// `template_str` (the text before the first unescaped `;`) has no
+    /// editable slot character. Escaped characters and the `>`, `<`, and `!`
+    /// modifiers do not count as slots. The widget is not modified.
     pub fn set_template(&mut self, template_str: &str) -> Result<(), String> {
         // Validate before modifying state: template must have at least one editable slot.
         let has_editable = {

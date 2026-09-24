@@ -265,6 +265,8 @@ impl OptionList {
 
     /// Add a selectable option.
     ///
+    /// # Errors
+    ///
     /// Returns `Err(OptionListError::DuplicateId)` if an option with the same
     /// id already exists (Python `DuplicateID`); the list is not modified.
     pub fn add_option(
@@ -283,6 +285,8 @@ impl OptionList {
 
     /// Add a pre-built [`OptionItem`] (option or separator).
     ///
+    /// # Errors
+    ///
     /// Returns `Err(OptionListError::DuplicateId)` if the item's id collides
     /// with an existing option; the list is not modified.
     pub fn add_item(&mut self, item: OptionItem) -> Result<(), OptionListError> {
@@ -294,6 +298,17 @@ impl OptionList {
     /// The whole batch is validated before any mutation (duplicate ids within
     /// the batch or against existing options): a failing batch adds NOTHING
     /// (Python parity, `_option_list.py` whole-batch pre-check).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::DuplicateId`] when an item's id matches an
+    /// existing option or another item in the batch. The list is not
+    /// modified.
+    ///
+    /// # Panics
+    ///
+    /// Does not panic. The `expect` on each append cannot fail because the
+    /// batch is checked for duplicate ids before any item is added.
     pub fn add_options(&mut self, items: Vec<OptionItem>) -> Result<(), OptionListError> {
         {
             let mut incoming: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -313,6 +328,8 @@ impl OptionList {
     }
 
     /// Add a selectable option with rich [`Text`] content.
+    ///
+    /// # Errors
     ///
     /// Returns `Err(OptionListError::DuplicateId)` on id collision; the list
     /// is not modified.
@@ -336,6 +353,8 @@ impl OptionList {
     /// The renderable is stored as `Arc<dyn Renderable>` and rendered live at
     /// the runtime widget width. Use this for `Table`, `Panel`, and other
     /// multi-row or dynamically-sized renderables.
+    ///
+    /// # Errors
     ///
     /// Returns `Err(OptionListError::DuplicateId)` on id collision; the list
     /// is not modified.
@@ -421,6 +440,8 @@ impl OptionList {
 
     /// Replace all items at once.
     ///
+    /// # Errors
+    ///
     /// Returns `Err(OptionListError::DuplicateId)` if two items carry the same
     /// id (Python `DuplicateID`); the list is left unmodified.
     pub fn set_items(&mut self, items: Vec<OptionItem>) -> Result<(), OptionListError> {
@@ -439,6 +460,10 @@ impl OptionList {
     // ── Key-based CRUD (Python `_option_list.py` identity API) ─────────
 
     /// Get an option by its id (Python `get_option`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn get_option_by_id(&self, id: &str) -> Result<&OptionItem, OptionListError> {
         let index = self.get_option_index(id)?;
         Ok(&self.items[index])
@@ -446,6 +471,10 @@ impl OptionList {
 
     /// Get the current index of the option with the given id
     /// (Python `get_option_index`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn get_option_index(&self, id: &str) -> Result<usize, OptionListError> {
         self.id_to_index
             .get(id)
@@ -456,6 +485,11 @@ impl OptionList {
     /// Get an option by index, with a typed error for a bad index
     /// (Python `get_option_at_index`). The `Option`-returning
     /// [`Self::get_option`] remains for source compatibility.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list.
     pub fn get_option_at_index(&self, index: usize) -> Result<&OptionItem, OptionListError> {
         self.items
             .get(index)
@@ -463,6 +497,10 @@ impl OptionList {
     }
 
     /// Remove the option with the given id (Python `remove_option`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn remove_option(&mut self, id: &str) -> Result<(), OptionListError> {
         let index = self.get_option_index(id)?;
         self.remove_option_inner(index);
@@ -470,6 +508,11 @@ impl OptionList {
     }
 
     /// Remove the option at the given index (Python `remove_option_at_index`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list.
     pub fn remove_option_at_index(&mut self, index: usize) -> Result<(), OptionListError> {
         if index >= self.items.len() {
             return Err(OptionListError::IndexOutOfBounds(index));
@@ -514,6 +557,10 @@ impl OptionList {
     /// Replace the prompt of the option with the given id
     /// (Python `replace_option_prompt`). Clears any rich content so the new
     /// prompt is the option's visual.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn replace_option_prompt(
         &mut self,
         id: &str,
@@ -526,6 +573,11 @@ impl OptionList {
 
     /// Replace the prompt of the option at the given index
     /// (Python `replace_option_prompt_at_index`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list or points at a separator.
     pub fn replace_option_prompt_at_index(
         &mut self,
         index: usize,
@@ -541,6 +593,10 @@ impl OptionList {
     }
 
     /// Enable the option with the given id (Python `enable_option`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn enable_option(&mut self, id: &str) -> Result<(), OptionListError> {
         let index = self.get_option_index(id)?;
         self.set_option_disabled(index, false);
@@ -548,6 +604,10 @@ impl OptionList {
     }
 
     /// Disable the option with the given id (Python `disable_option`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn disable_option(&mut self, id: &str) -> Result<(), OptionListError> {
         let index = self.get_option_index(id)?;
         self.set_option_disabled(index, true);
@@ -555,6 +615,11 @@ impl OptionList {
     }
 
     /// Enable the option at the given index (Python `enable_option_at_index`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list or points at a separator.
     pub fn enable_option_at_index(&mut self, index: usize) -> Result<(), OptionListError> {
         if index >= self.items.len() || self.items[index].is_separator() {
             return Err(OptionListError::IndexOutOfBounds(index));
@@ -564,6 +629,11 @@ impl OptionList {
     }
 
     /// Disable the option at the given index (Python `disable_option_at_index`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list or points at a separator.
     pub fn disable_option_at_index(&mut self, index: usize) -> Result<(), OptionListError> {
         if index >= self.items.len() || self.items[index].is_separator() {
             return Err(OptionListError::IndexOutOfBounds(index));

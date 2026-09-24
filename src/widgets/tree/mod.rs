@@ -311,6 +311,11 @@ impl Tree {
 
     /// Look up a node by id (Python `get_node_by_id`, typed
     /// `TreeError::UnknownNode` instead of `UnknownNodeID`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node, for example after the node was removed.
     pub fn get_node_by_id(&self, id: TreeNodeId) -> Result<NodeRef<'_>, TreeError> {
         self.node(id).ok_or(TreeError::UnknownNode(id))
     }
@@ -377,6 +382,11 @@ impl Tree {
     }
 
     /// Set the label of `id` (Python `node.set_label`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn set_label(&mut self, id: TreeNodeId, label: impl Into<String>) -> Result<(), TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -394,6 +404,11 @@ impl Tree {
     }
 
     /// Set the user data of `id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn set_data(&mut self, id: TreeNodeId, data: Option<String>) -> Result<(), TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -405,6 +420,11 @@ impl Tree {
     }
 
     /// Expand `id` (Python `node.expand()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn expand(&mut self, id: TreeNodeId) -> Result<(), TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -416,6 +436,11 @@ impl Tree {
     }
 
     /// Collapse `id` (Python `node.collapse()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn collapse(&mut self, id: TreeNodeId) -> Result<(), TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -427,6 +452,11 @@ impl Tree {
     }
 
     /// Toggle expansion of `id` (Python `node.toggle()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn toggle_node(&mut self, id: TreeNodeId) -> Result<bool, TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -438,6 +468,11 @@ impl Tree {
     }
 
     /// Set whether `id` can be expanded by the user.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn set_allow_expand(&mut self, id: TreeNodeId, value: bool) -> Result<(), TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -452,6 +487,11 @@ impl Tree {
 
     /// Add a seed (and its whole subtree) as the last child of `parent`,
     /// returning the subtree root's id (Python `node.add`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `parent` does not resolve to a
+    /// live node. The tree is not modified.
     pub fn add(&mut self, parent: TreeNodeId, node: TreeNode) -> Result<TreeNodeId, TreeError> {
         if !self.nodes.contains_key(parent) {
             return Err(TreeError::UnknownNode(parent));
@@ -462,6 +502,11 @@ impl Tree {
     }
 
     /// Add a seed as a leaf child of `parent` (Python `node.add_leaf`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `parent` does not resolve to a
+    /// live node. The tree is not modified.
     pub fn add_leaf(
         &mut self,
         parent: TreeNodeId,
@@ -476,6 +521,11 @@ impl Tree {
     /// node-addressed sibling insertion; use the index form via
     /// `children_of(parent)`), a stale anchor is `TreeError::InvalidAnchor`
     /// like Python's `AddNodeError` for a removed anchor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::InvalidAnchor`] when `sibling` is a root node or
+    /// does not resolve to a live node. The tree is not modified.
     pub fn add_before(
         &mut self,
         sibling: TreeNodeId,
@@ -486,6 +536,11 @@ impl Tree {
 
     /// Insert a seed as a sibling of `sibling`, immediately after it
     /// (Python `add(after=node)`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::InvalidAnchor`] when `sibling` is a root node or
+    /// does not resolve to a live node. The tree is not modified.
     pub fn add_after(
         &mut self,
         sibling: TreeNodeId,
@@ -517,6 +572,13 @@ impl Tree {
     ///
     /// Refuses roots with `TreeError::RemoveRoot`. All descendant slots are
     /// purged, so stale ids reliably miss every lookup afterwards.
+    ///
+    /// # Errors
+    ///
+    /// - [`TreeError::UnknownNode`] when `id` does not resolve to a live node.
+    /// - [`TreeError::RemoveRoot`] when `id` is a root node.
+    ///
+    /// The tree is not modified in either case.
     pub fn remove(&mut self, id: TreeNodeId) -> Result<(), TreeError> {
         let Some(node) = self.nodes.get(id) else {
             return Err(TreeError::UnknownNode(id));
@@ -532,6 +594,11 @@ impl Tree {
 
     /// Remove all children of `id`, keeping the node itself
     /// (Python `node.remove_children()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn remove_children(&mut self, id: TreeNodeId) -> Result<(), TreeError> {
         let Some(node) = self.nodes.get_mut(id) else {
             return Err(TreeError::UnknownNode(id));
@@ -659,6 +726,11 @@ impl Tree {
 
     /// Move the cursor to `id` and emit `TreeNodeSelected` +
     /// `TreeNodeHighlighted` (Python `select_node(node)`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node. The cursor does not move and no message is emitted.
     pub fn select_node_by_id(
         &mut self,
         id: TreeNodeId,

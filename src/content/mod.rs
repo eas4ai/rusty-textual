@@ -918,6 +918,10 @@ impl Content {
     /// trailing empty piece is dropped.
     ///
     /// Mirrors Python `Content.split(separator, allow_blank=False)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `separator` is empty.
     pub fn split_on(&self, separator: &str, allow_blank: bool) -> Vec<Content> {
         assert!(!separator.is_empty(), "separator must not be empty");
         if !self.text.contains(separator) {
