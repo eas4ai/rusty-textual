@@ -288,7 +288,7 @@ impl crate::widgets::Layout for Label {
     }
 
     fn style(&self) -> Option<crate::style::Style> {
-        if self.seed.styles.style == Default::default() {
+        if self.seed.styles.style == crate::style::Style::default() {
             None
         } else {
             Some(self.seed.styles.style.clone())
@@ -321,8 +321,8 @@ impl crate::widgets::StyleIdentity for Label {
         let seed = std::mem::take(&mut self.seed);
         // Preserve id/classes so off-tree CSS resolution keeps matching after the
         // seed is taken (see `css_id_cache` field doc).
-        self.css_id_cache = seed.css_id.clone();
-        self.classes_cache = seed.classes.clone();
+        self.css_id_cache.clone_from(&seed.css_id);
+        self.classes_cache.clone_from(&seed.classes);
         seed
     }
 }

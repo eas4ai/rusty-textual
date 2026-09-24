@@ -96,7 +96,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
     #[must_use]
     pub fn id(mut self, value: impl Into<String>) -> Self {
         let v = value.into();
-        self.focus_id = v.clone();
+        self.focus_id.clone_from(&v);
         self.seed.css_id = Some(v);
         self
     }

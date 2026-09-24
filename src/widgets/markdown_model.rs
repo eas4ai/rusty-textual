@@ -127,8 +127,7 @@ pub(crate) fn parse_markdown_blocks(markup: &str) -> Vec<MarkdownBlock> {
                 for (next, next_range) in parser.by_ref() {
                     end_offset = next_range.end;
                     match next {
-                        Event::Text(text) => code.push_str(&text),
-                        Event::Code(text) => code.push_str(&text),
+                        Event::Text(text) | Event::Code(text) => code.push_str(&text),
                         Event::SoftBreak | Event::HardBreak => code.push('\n'),
                         Event::End(TagEnd::CodeBlock) => break,
                         _ => {}
@@ -154,7 +153,6 @@ pub(crate) fn parse_markdown_blocks(markup: &str) -> Vec<MarkdownBlock> {
                 while let Some((next, next_range)) = parser.next() {
                     end_offset = next_range.end;
                     match next {
-                        Event::Start(Tag::TableHead) => current_row.clear(),
                         Event::End(TagEnd::TableHead)
                             if headers.is_empty() && !current_row.is_empty() =>
                         {
@@ -163,7 +161,9 @@ pub(crate) fn parse_markdown_blocks(markup: &str) -> Vec<MarkdownBlock> {
                                 current_row.iter().map(|(_, raw)| raw.clone()).collect();
                             current_row.clear();
                         }
-                        Event::Start(Tag::TableRow) => current_row.clear(),
+                        Event::Start(Tag::TableHead) | Event::Start(Tag::TableRow) => {
+                            current_row.clear()
+                        }
                         Event::End(TagEnd::TableRow) => {
                             if headers.is_empty() {
                                 headers =

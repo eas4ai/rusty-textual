@@ -413,7 +413,7 @@ impl Button {
         if self.disabled {
             classes.push("disabled".to_string());
         }
-        self.layout_classes = classes.clone();
+        self.layout_classes.clone_from(&classes);
         self.seed.classes = classes;
     }
 }
@@ -766,14 +766,14 @@ impl StyleIdentity for Button {
         // structural `Node` wrapper) into the Button's own seed, so both the
         // node record AND `ButtonPressed.button_id` (cached at `take_node_seed`)
         // resolve to it. Matches Python `Button(id="x")`.
-        self.seed.css_id = id.clone();
+        self.seed.css_id.clone_from(&id);
         self.css_id = id;
     }
 
     fn take_node_seed(&mut self) -> NodeSeed {
         let seed = std::mem::take(&mut self.seed);
         // Cache the CSS id so ButtonPressed.button_id can include it post-mount.
-        self.css_id = seed.css_id.clone();
+        self.css_id.clone_from(&seed.css_id);
         seed
     }
 

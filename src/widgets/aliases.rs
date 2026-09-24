@@ -479,8 +479,8 @@ impl crate::widgets::StyleIdentity for Static {
         // Preserve id/classes in the cache so `style_id()` / `style_classes()`
         // keep working after the seed has been taken (off-tree CSS resolution
         // in `layout_height()` runs post-mount when `seed.css_id` would be gone).
-        self.css_id_cache = seed.css_id.clone();
-        self.classes_cache = seed.classes.clone();
+        self.css_id_cache.clone_from(&seed.css_id);
+        self.classes_cache.clone_from(&seed.classes);
         seed
     }
 }

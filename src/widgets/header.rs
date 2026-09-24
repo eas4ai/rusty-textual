@@ -386,7 +386,7 @@ impl Header {
     #[must_use]
     pub fn title(mut self, title: impl Into<String>) -> Self {
         let t = title.into();
-        self.title = t.clone();
+        self.title.clone_from(&t);
         self.default_title = t;
         self
     }

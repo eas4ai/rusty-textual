@@ -118,7 +118,6 @@ pub(crate) fn compute_carve_box(
         Some(s) => resolve_scalar_to_cells(s, current_h, viewport),
     };
     let child_w = match style.width.as_ref() {
-        None => current_w, // truly unset → full available width
         Some(Scalar::Auto) => {
             // Explicit `width: auto`: size to content, NOT to the remaining
             // available width (the mirror of the `height: auto` branch above).
@@ -148,9 +147,10 @@ pub(crate) fn compute_carve_box(
                 max_w.unwrap_or(current_w)
             }
         }
-        // `width: 1fr` on a dock/split widget fills the available width (see the
-        // height `Fraction` arm above for the rationale).
-        Some(Scalar::Fraction(_)) => current_w,
+        // Unset width, or `width: 1fr` on a dock/split widget, fills the
+        // available width (see the height `Fraction` arm above for the
+        // rationale).
+        None | Some(Scalar::Fraction(_)) => current_w,
         Some(s) => resolve_scalar_to_cells(s, current_w, viewport),
     };
 

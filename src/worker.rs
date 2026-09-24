@@ -911,7 +911,7 @@ mod tests {
                 assert_eq!(delay_per_round_ms, 0);
                 assert_eq!(fail_with, None);
             }
-            other => panic!("unexpected payload: {other:?}"),
+            other @ WorkerRequestPayload::Task(_) => panic!("unexpected payload: {other:?}"),
         }
     }
 

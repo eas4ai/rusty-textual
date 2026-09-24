@@ -237,7 +237,7 @@ impl Widget for MarkdownTableOfContents {
     fn on_message(&mut self, message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
         if let Some(m) = message.downcast_ref::<MarkdownTableOfContentsUpdated>() {
             if let Ok(mut shared) = self.shared_headings.write() {
-                *shared = m.headings.clone();
+                shared.clone_from(&m.headings);
             }
             // TOC width is content-driven (`width: auto` with dock). Heading changes
             // must invalidate layout so the sidebar width can be recomputed.
@@ -591,7 +591,7 @@ impl MarkdownViewer {
     fn apply_content_update(&mut self, content: String) {
         self.content = content;
         if let Ok(mut shared) = self.shared_markup.write() {
-            *shared = self.content.clone();
+            shared.clone_from(&self.content);
         }
         let headings = Self::parse_headings(&self.content);
         if let Ok(mut shared_headings) = self.shared_headings.write() {
@@ -724,7 +724,7 @@ impl MarkdownViewer {
         self.flush_toc_message(ctx);
         if let Some(m) = message.downcast_ref::<MarkdownTableOfContentsUpdated>() {
             if let Ok(mut shared_headings) = self.shared_headings.write() {
-                *shared_headings = m.headings.clone();
+                shared_headings.clone_from(&m.headings);
             }
             // MarkdownViewer docks TOC with `width:auto`; heading updates must trigger
             // a relayout so the dock width tracks the rebuilt TOC tree width.

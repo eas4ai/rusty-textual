@@ -86,8 +86,7 @@ fn transact_with(
         match poll_ready(remaining) {
             Ok(true) => {}
             // Timeout or poll error ends the round-trip with whatever arrived.
-            Ok(false) => break,
-            Err(_) => break,
+            Ok(false) | Err(_) => break,
         }
         match read_byte() {
             Ok(Some(b)) => {
@@ -97,8 +96,7 @@ fn transact_with(
                 }
             }
             // EOF or read error ends the round-trip with whatever arrived.
-            Ok(None) => break,
-            Err(_) => break,
+            Ok(None) | Err(_) => break,
         }
     }
     if buf.is_empty() { None } else { Some(buf) }

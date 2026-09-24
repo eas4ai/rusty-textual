@@ -1542,11 +1542,7 @@ impl crate::widgets::Interactive for Tree {
                             self.cursor_parent(ctx);
                             true
                         }
-                        KeyCode::Right => {
-                            self.toggle_expand_all_selected(ctx);
-                            true
-                        }
-                        KeyCode::Char(' ') => {
+                        KeyCode::Right | KeyCode::Char(' ') => {
                             self.toggle_expand_all_selected(ctx);
                             true
                         }

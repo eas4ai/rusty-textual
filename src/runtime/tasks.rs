@@ -142,8 +142,7 @@ impl AsyncTaskRuntime {
         loop {
             let completion = match self.completion_rx.try_recv() {
                 Ok(completion) => completion,
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => break,
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             };
 
             let Some(active) = self.running.get(&completion.task_id) else {

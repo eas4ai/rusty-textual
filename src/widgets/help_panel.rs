@@ -53,7 +53,7 @@ impl HelpPanel {
     pub fn with_help(mut self, markup: impl Into<String>) -> Self {
         let markup = markup.into();
         let show = !markup.trim().is_empty();
-        self.help_markup = markup.clone();
+        self.help_markup.clone_from(&markup);
         self.show_help = show;
         self.markdown.set_markup(markup);
         if show {

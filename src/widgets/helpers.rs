@@ -545,10 +545,6 @@ pub(crate) fn border_chars(edge_type: &str) -> ([[char; 3]; 3], [[u8; 3]; 3]) {
             [['+', '-', '+'], ['|', ' ', '|'], ['+', '-', '+']],
             [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
         ),
-        "blank" => (
-            [[' ', ' ', ' '], [' ', ' ', ' '], [' ', ' ', ' ']],
-            [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-        ),
         "round" => (
             [['╭', '─', '╮'], ['│', ' ', '│'], ['╰', '─', '╯']],
             [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
@@ -573,14 +569,11 @@ pub(crate) fn border_chars(edge_type: &str) -> ([[char; 3]; 3], [[u8; 3]; 3]) {
             [['▊', '█', '▎'], ['▊', ' ', '▎'], ['▊', '▁', '▎']],
             [[2, 0, 1], [2, 0, 1], [2, 0, 1]],
         ),
-        "tab" => (
+        "tab" | "wide" => (
             [['▁', '▁', '▁'], ['▎', ' ', '▊'], ['▔', '▔', '▔']],
             [[1, 1, 1], [0, 1, 3], [1, 1, 1]],
         ),
-        "wide" => (
-            [['▁', '▁', '▁'], ['▎', ' ', '▊'], ['▔', '▔', '▔']],
-            [[1, 1, 1], [0, 1, 3], [1, 1, 1]],
-        ),
+        // "blank", and any unknown type, draws spaces.
         _ => (
             [[' ', ' ', ' '], [' ', ' ', ' '], [' ', ' ', ' ']],
             [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
@@ -609,7 +602,7 @@ fn parse_windows_safe_borders_mode(value: Option<&str>) -> WindowsSafeBordersMod
     match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
         Some("1" | "true" | "yes" | "on") => WindowsSafeBordersMode::On,
         Some("0" | "false" | "no" | "off") => WindowsSafeBordersMode::Off,
-        Some("auto") | None => WindowsSafeBordersMode::Auto,
+        // "auto", unset, or any other value.
         _ => WindowsSafeBordersMode::Auto,
     }
 }
@@ -624,9 +617,8 @@ fn windows_safe_border_fallback_enabled() -> bool {
         );
         match mode {
             WindowsSafeBordersMode::On => true,
-            WindowsSafeBordersMode::Off => false,
+            WindowsSafeBordersMode::Off | WindowsSafeBordersMode::Auto => false,
             // Keep auto conservative for now; enable explicitly in known-problematic terminals.
-            WindowsSafeBordersMode::Auto => false,
         }
     })
 }
@@ -645,7 +637,6 @@ fn resolve_border_char_style(
     outer: rich_rs::Style,
 ) -> rich_rs::Style {
     match location {
-        0 => inner,
         1 => outer,
         2 => {
             // Cross-combination (Textual): outer background + inner foreground, with reverse.

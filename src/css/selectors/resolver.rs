@@ -240,7 +240,7 @@ pub(crate) fn resolve_node_style(tree: &WidgetTree, node_id: NodeId, meta: &Sele
         .get(node_id)
         .expect("resolve_node_style called with absent node_id");
     // Inline style: node record wins over widget behavior contribution.
-    let node_inline = if node.styles.style == Default::default() {
+    let node_inline = if node.styles.style == Style::default() {
         node.widget.style()
     } else {
         Some(node.styles.style.clone())

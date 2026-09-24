@@ -364,7 +364,7 @@ impl KeyPanel {
             // Footer grouping is a footer concern. KeyPanel groups by namespace
             // in Python, which we model elsewhere.
             let mut binding = FooterBinding::new(key, hint.description.clone());
-            binding.tooltip = hint.tooltip.clone();
+            binding.tooltip.clone_from(&hint.tooltip);
             binding.group = namespace;
             mapped.push(binding);
         }

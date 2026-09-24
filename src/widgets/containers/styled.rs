@@ -76,11 +76,7 @@ impl crate::widgets::Layout for Styled {
 
     fn style(&self) -> Option<Style> {
         let s = self.seed.styles.style.clone();
-        if s == Default::default() {
-            None
-        } else {
-            Some(s)
-        }
+        if s == Style::default() { None } else { Some(s) }
     }
 }
 

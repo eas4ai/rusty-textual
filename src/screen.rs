@@ -1091,7 +1091,7 @@ mod tests {
                 let num = val.downcast_ref::<i32>().unwrap();
                 assert_eq!(*num, 42);
             }
-            _ => panic!("expected Value variant"),
+            ScreenResult::Dismissed => panic!("expected Value variant"),
         }
     }
 
@@ -1103,7 +1103,7 @@ mod tests {
                 let s = val.downcast_ref::<String>().unwrap();
                 assert_eq!(s, "hello");
             }
-            _ => panic!("expected Value variant"),
+            ScreenResult::Dismissed => panic!("expected Value variant"),
         }
     }
 

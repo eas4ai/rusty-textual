@@ -150,7 +150,7 @@ impl DevtoolsRuntime {
 
     pub(crate) fn publish_snapshot(&self, snapshot: String) {
         if let Ok(mut slot) = self.shared.snapshot.lock() {
-            *slot = snapshot.clone();
+            slot.clone_from(&snapshot);
         }
         if let Ok(mut watchers) = self.shared.watchers.lock() {
             watchers.retain(|watcher| watcher.send(snapshot.clone()).is_ok());

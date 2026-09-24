@@ -6041,7 +6041,7 @@ impl App {
         ) {
             return DispatchOutcome::default();
         }
-        self.last_binding_hints = current.clone();
+        self.last_binding_hints.clone_from(&current);
         self.last_binding_hint_sources = current_sources;
         let outcome = if let Some(tree) = self.active_widget_tree_mut() {
             dispatch_event_broadcast_tree(tree, &Event::BindingsChanged(current))
@@ -6841,10 +6841,9 @@ impl App {
             current.and_then(|id| focus_chain.iter().position(|candidate| *candidate == id));
         let next_index = match (action, current_index) {
             (Action::FocusNext, Some(idx)) => (idx + 1) % focus_chain.len(),
-            (Action::FocusPrev, Some(0)) => focus_chain.len() - 1,
+            (Action::FocusPrev, Some(0) | None) => focus_chain.len() - 1,
             (Action::FocusPrev, Some(idx)) => idx - 1,
             (Action::FocusNext, None) => 0,
-            (Action::FocusPrev, None) => focus_chain.len() - 1,
             _ => return false,
         };
 
@@ -8130,7 +8129,7 @@ mod tests {
             crate::widgets::NodeSeed {
                 css_id: self.style_id.take(),
                 classes: std::mem::take(&mut self.classes),
-                styles: Default::default(),
+                styles: crate::widgets::WidgetStyles::default(),
             }
         }
     }
@@ -8918,7 +8917,7 @@ mod tests {
             crate::widgets::NodeSeed {
                 css_id: Some(self.id.clone()),
                 classes: Vec::new(),
-                styles: Default::default(),
+                styles: crate::widgets::WidgetStyles::default(),
             }
         }
     }

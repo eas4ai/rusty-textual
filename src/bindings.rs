@@ -344,7 +344,7 @@ impl BindingsMap {
     /// Append a binding under its key (`dict.setdefault(key, []).append(..)`).
     fn push_binding(&mut self, binding: BindingDecl) {
         if let Some(idx) = self.position(&binding.key) {
-            self.key_to_bindings[idx].1.push(binding)
+            self.key_to_bindings[idx].1.push(binding);
         } else {
             let key = binding.key.clone();
             self.key_to_bindings.push((key, vec![binding]));

@@ -5473,8 +5473,7 @@ fn choose_deeper_target(
                 Some(frame)
             }
         }
-        (Some(frame), Some(_)) => Some(frame),
-        (Some(frame), None) => Some(frame),
+        (Some(frame), _) => Some(frame),
         (None, Some(tree_hit)) => Some(tree_hit),
         (None, None) => None,
     }

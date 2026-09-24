@@ -602,8 +602,8 @@ impl Footer {
                         .unwrap_or_else(|| Self::footer_key_display(&hint.key)),
                     hint.description.clone(),
                 );
-                binding.tooltip = hint.tooltip.clone();
-                binding.group = hint.group.clone();
+                binding.tooltip.clone_from(&hint.tooltip);
+                binding.group.clone_from(&hint.group);
                 // Store the raw key spec for click-to-invoke dispatch.
                 binding.action_key = Some(hint.key.clone());
                 // Propagate check_action enabled state for dimming.

@@ -574,7 +574,7 @@ fn importance_properties_for_key(key: &str) -> &'static [StyleProperty] {
         "max-width" => &[StyleProperty::MaxWidth],
         "min-height" => &[StyleProperty::MinHeight],
         "max-height" => &[StyleProperty::MaxHeight],
-        "padding" => &[StyleProperty::Padding],
+        "padding" | "line-pad" => &[StyleProperty::Padding],
         "layout" => &[StyleProperty::Layout],
         "display" => &[StyleProperty::Display],
         "visibility" => &[StyleProperty::Visibility],
@@ -595,7 +595,6 @@ fn importance_properties_for_key(key: &str) -> &'static [StyleProperty] {
         "background-tint" => &[StyleProperty::BackgroundTint],
         "text-opacity" => &[StyleProperty::TextOpacity],
         "opacity" => &[StyleProperty::Opacity],
-        "line-pad" => &[StyleProperty::Padding],
         "transition-duration" => &[StyleProperty::TransitionDuration],
         "transition-delay" => &[StyleProperty::TransitionDelay],
         "transition-timing-function" => &[StyleProperty::TransitionTiming],
@@ -2369,12 +2368,12 @@ fn apply_text_style_flag(style: &mut Style, flag: &str, value: bool, is_importan
 pub(super) fn parse_transition_timing(value: &str) -> Option<TransitionTiming> {
     match value.trim().to_lowercase().as_str() {
         "linear" => Some(TransitionTiming::Linear),
-        "ease" | "ease-in-out" => Some(TransitionTiming::InOutCubic),
-        "ease-out" => Some(TransitionTiming::OutCubic),
+        "ease" | "ease-in-out" | "in-out-cubic" | "in_out_cubic" => {
+            Some(TransitionTiming::InOutCubic)
+        }
+        "ease-out" | "out-cubic" | "out_cubic" => Some(TransitionTiming::OutCubic),
         "none" => Some(TransitionTiming::None),
         "round" | "step-end" | "steps(1,end)" => Some(TransitionTiming::Round),
-        "in-out-cubic" | "in_out_cubic" => Some(TransitionTiming::InOutCubic),
-        "out-cubic" | "out_cubic" => Some(TransitionTiming::OutCubic),
         _ => None,
     }
 }

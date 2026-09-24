@@ -203,7 +203,7 @@ impl FrameBuffer {
                 };
                 let mut seg = Segment::new(text);
                 seg.style = cell.style;
-                seg.meta = cell.meta.clone();
+                seg.meta.clone_from(&cell.meta);
                 out.push(seg);
             }
             if y + 1 < self.height {
@@ -487,7 +487,7 @@ impl FrameBuffer {
                     };
                     let mut seg = Segment::new(text);
                     seg.style = cell.style;
-                    seg.meta = cell.meta.clone();
+                    seg.meta.clone_from(&cell.meta);
                     out.push(seg);
                     run_x += w;
                 }

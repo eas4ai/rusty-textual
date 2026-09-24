@@ -380,7 +380,7 @@ impl crate::widgets::Layout for Container {
     }
 
     fn style(&self) -> Option<crate::style::Style> {
-        if self.seed.styles.style == Default::default() {
+        if self.seed.styles.style == crate::style::Style::default() {
             None
         } else {
             Some(self.seed.styles.style.clone())

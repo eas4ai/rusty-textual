@@ -408,12 +408,12 @@ fn parse_css_named_color(value: &str) -> Option<Color> {
     match value.to_ascii_lowercase().as_str() {
         "black" => Some(Color::rgb(0, 0, 0)),
         "silver" => Some(Color::rgb(192, 192, 192)),
-        "gray" => Some(Color::rgb(128, 128, 128)),
+        "gray" | "grey" => Some(Color::rgb(128, 128, 128)),
         "white" => Some(Color::rgb(255, 255, 255)),
         "maroon" => Some(Color::rgb(128, 0, 0)),
         "red" => Some(Color::rgb(255, 0, 0)),
         "purple" => Some(Color::rgb(128, 0, 128)),
-        "fuchsia" => Some(Color::rgb(255, 0, 255)),
+        "fuchsia" | "magenta" => Some(Color::rgb(255, 0, 255)),
         "green" => Some(Color::rgb(0, 128, 0)),
         "lime" => Some(Color::rgb(0, 255, 0)),
         "olive" => Some(Color::rgb(128, 128, 0)),
@@ -421,7 +421,7 @@ fn parse_css_named_color(value: &str) -> Option<Color> {
         "navy" => Some(Color::rgb(0, 0, 128)),
         "blue" => Some(Color::rgb(0, 0, 255)),
         "teal" => Some(Color::rgb(0, 128, 128)),
-        "aqua" => Some(Color::rgb(0, 255, 255)),
+        "aqua" | "cyan" => Some(Color::rgb(0, 255, 255)),
         "orange" => Some(Color::rgb(255, 165, 0)),
         "aliceblue" => Some(Color::rgb(240, 248, 255)),
         "antiquewhite" => Some(Color::rgb(250, 235, 215)),
@@ -440,13 +440,11 @@ fn parse_css_named_color(value: &str) -> Option<Color> {
         "cornflowerblue" => Some(Color::rgb(100, 149, 237)),
         "cornsilk" => Some(Color::rgb(255, 248, 220)),
         "crimson" => Some(Color::rgb(220, 20, 60)),
-        "cyan" => Some(Color::rgb(0, 255, 255)),
         "darkblue" => Some(Color::rgb(0, 0, 139)),
         "darkcyan" => Some(Color::rgb(0, 139, 139)),
         "darkgoldenrod" => Some(Color::rgb(184, 134, 11)),
-        "darkgray" => Some(Color::rgb(169, 169, 169)),
+        "darkgray" | "darkgrey" => Some(Color::rgb(169, 169, 169)),
         "darkgreen" => Some(Color::rgb(0, 100, 0)),
-        "darkgrey" => Some(Color::rgb(169, 169, 169)),
         "darkkhaki" => Some(Color::rgb(189, 183, 107)),
         "darkmagenta" => Some(Color::rgb(139, 0, 139)),
         "darkolivegreen" => Some(Color::rgb(85, 107, 47)),
@@ -456,14 +454,12 @@ fn parse_css_named_color(value: &str) -> Option<Color> {
         "darksalmon" => Some(Color::rgb(233, 150, 122)),
         "darkseagreen" => Some(Color::rgb(143, 188, 143)),
         "darkslateblue" => Some(Color::rgb(72, 61, 139)),
-        "darkslategray" => Some(Color::rgb(47, 79, 79)),
-        "darkslategrey" => Some(Color::rgb(47, 79, 79)),
+        "darkslategray" | "darkslategrey" => Some(Color::rgb(47, 79, 79)),
         "darkturquoise" => Some(Color::rgb(0, 206, 209)),
         "darkviolet" => Some(Color::rgb(148, 0, 211)),
         "deeppink" => Some(Color::rgb(255, 20, 147)),
         "deepskyblue" => Some(Color::rgb(0, 191, 255)),
-        "dimgray" => Some(Color::rgb(105, 105, 105)),
-        "dimgrey" => Some(Color::rgb(105, 105, 105)),
+        "dimgray" | "dimgrey" => Some(Color::rgb(105, 105, 105)),
         "dodgerblue" => Some(Color::rgb(30, 144, 255)),
         "firebrick" => Some(Color::rgb(178, 34, 34)),
         "floralwhite" => Some(Color::rgb(255, 250, 240)),
@@ -473,7 +469,6 @@ fn parse_css_named_color(value: &str) -> Option<Color> {
         "gold" => Some(Color::rgb(255, 215, 0)),
         "goldenrod" => Some(Color::rgb(218, 165, 32)),
         "greenyellow" => Some(Color::rgb(173, 255, 47)),
-        "grey" => Some(Color::rgb(128, 128, 128)),
         "honeydew" => Some(Color::rgb(240, 255, 240)),
         "hotpink" => Some(Color::rgb(255, 105, 180)),
         "indianred" => Some(Color::rgb(205, 92, 92)),
@@ -488,20 +483,17 @@ fn parse_css_named_color(value: &str) -> Option<Color> {
         "lightcoral" => Some(Color::rgb(240, 128, 128)),
         "lightcyan" => Some(Color::rgb(224, 255, 255)),
         "lightgoldenrodyellow" => Some(Color::rgb(250, 250, 210)),
-        "lightgray" => Some(Color::rgb(211, 211, 211)),
+        "lightgray" | "lightgrey" => Some(Color::rgb(211, 211, 211)),
         "lightgreen" => Some(Color::rgb(144, 238, 144)),
-        "lightgrey" => Some(Color::rgb(211, 211, 211)),
         "lightpink" => Some(Color::rgb(255, 182, 193)),
         "lightsalmon" => Some(Color::rgb(255, 160, 122)),
         "lightseagreen" => Some(Color::rgb(32, 178, 170)),
         "lightskyblue" => Some(Color::rgb(135, 206, 250)),
-        "lightslategray" => Some(Color::rgb(119, 136, 153)),
-        "lightslategrey" => Some(Color::rgb(119, 136, 153)),
+        "lightslategray" | "lightslategrey" => Some(Color::rgb(119, 136, 153)),
         "lightsteelblue" => Some(Color::rgb(176, 196, 222)),
         "lightyellow" => Some(Color::rgb(255, 255, 224)),
         "limegreen" => Some(Color::rgb(50, 205, 50)),
         "linen" => Some(Color::rgb(250, 240, 230)),
-        "magenta" => Some(Color::rgb(255, 0, 255)),
         "mediumaquamarine" => Some(Color::rgb(102, 205, 170)),
         "mediumblue" => Some(Color::rgb(0, 0, 205)),
         "mediumorchid" => Some(Color::rgb(186, 85, 211)),
@@ -540,8 +532,7 @@ fn parse_css_named_color(value: &str) -> Option<Color> {
         "sienna" => Some(Color::rgb(160, 82, 45)),
         "skyblue" => Some(Color::rgb(135, 206, 235)),
         "slateblue" => Some(Color::rgb(106, 90, 205)),
-        "slategray" => Some(Color::rgb(112, 128, 144)),
-        "slategrey" => Some(Color::rgb(112, 128, 144)),
+        "slategray" | "slategrey" => Some(Color::rgb(112, 128, 144)),
         "snow" => Some(Color::rgb(255, 250, 250)),
         "springgreen" => Some(Color::rgb(0, 255, 127)),
         "steelblue" => Some(Color::rgb(70, 130, 180)),
@@ -830,7 +821,6 @@ fn resolve_textual_dark_token(name: &str) -> Option<Color> {
         let background = base.get("background").copied()?;
         let contrast = contrast_text(background);
         let alpha = match name {
-            "text" => 0.87,
             "text-muted" => 0.60,
             "text-disabled" => 0.38,
             _ => 0.87,
@@ -1389,27 +1379,21 @@ pub(crate) fn resolve_text_style_token_flags(token: &str) -> Option<TextStyleFla
     // Text-style token defaults from Textual design/theme values.
     let mut flags = TextStyleFlags::default();
     match token {
-        "bold" => flags.bold = true,
-        "dim" => flags.dim = true,
-        "italic" => flags.italic = true,
-        "underline" => flags.underline = true,
+        "bold"
+        | "$link-style-hover"
+        | "$block-cursor-text-style"
+        | "$markdown-h1-text-style"
+        | "$markdown-h3-text-style" => flags.bold = true,
+        "dim" | "$markdown-h6-text-style" => flags.dim = true,
+        "italic" | "$markdown-h4-text-style" | "$markdown-h5-text-style" => flags.italic = true,
+        "underline" | "$link-style" | "$markdown-h2-text-style" => flags.underline = true,
         "reverse" => flags.reverse = true,
         "strike" | "strikethrough" => flags.strike = true,
-        "$link-style" => flags.underline = true,
-        "$link-style-hover" => flags.bold = true,
         "$button-focus-text-style" => {
             flags.bold = true;
             flags.reverse = true;
         }
-        "$block-cursor-text-style" => flags.bold = true,
-        "$block-cursor-blurred-text-style" => {}
-        "$input-cursor-text-style" => {}
-        "$markdown-h1-text-style" => flags.bold = true,
-        "$markdown-h2-text-style" => flags.underline = true,
-        "$markdown-h3-text-style" => flags.bold = true,
-        "$markdown-h4-text-style" => flags.italic = true,
-        "$markdown-h5-text-style" => flags.italic = true,
-        "$markdown-h6-text-style" => flags.dim = true,
+        "$block-cursor-blurred-text-style" | "$input-cursor-text-style" => {}
         _ => return None,
     }
     Some(flags)

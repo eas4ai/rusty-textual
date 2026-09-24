@@ -243,8 +243,7 @@ fn format_log_record(channel: DebugChannel, line: &str) -> String {
     let sanitized: String = line
         .chars()
         .map(|c| match c {
-            '\t' => ' ',
-            '\n' | '\r' => ' ',
+            '\t' | '\n' | '\r' => ' ',
             other => other,
         })
         .collect();
