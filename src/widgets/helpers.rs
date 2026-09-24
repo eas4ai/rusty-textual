@@ -1116,6 +1116,19 @@ pub(crate) fn apply_margin(
     out
 }
 
+/// Join lines into segments with a line break between them.
+pub(crate) fn join_lines(out_lines: Vec<Vec<Segment>>) -> Segments {
+    let line_count = out_lines.len();
+    let mut out = Segments::new();
+    for (idx, line) in out_lines.into_iter().enumerate() {
+        out.extend(line);
+        if idx + 1 < line_count {
+            out.push(Segment::line());
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::{WindowsSafeBordersMode, parse_windows_safe_borders_mode};

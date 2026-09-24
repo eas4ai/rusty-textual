@@ -2,6 +2,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use textual_macros::widget;
 
+use super::helpers::join_lines;
 use crate::compose::ComposeResult;
 use crate::css;
 use crate::debug::{DebugLayout, debug_input, debug_layout};
@@ -1748,19 +1749,6 @@ fn blank_block(width: usize, height: usize) -> Segments {
     for row in 0..height {
         out.extend(blank.clone());
         if row + 1 < height {
-            out.push(Segment::line());
-        }
-    }
-    out
-}
-
-/// Join lines into segments with a line break between them.
-fn join_lines(out_lines: Vec<Vec<Segment>>) -> Segments {
-    let line_count = out_lines.len();
-    let mut out = Segments::new();
-    for (idx, line) in out_lines.into_iter().enumerate() {
-        out.extend(line);
-        if idx + 1 < line_count {
             out.push(Segment::line());
         }
     }
