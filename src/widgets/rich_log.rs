@@ -73,6 +73,8 @@ impl LineCache {
 
 #[derive(Debug)]
 #[widget(Focus, Interactive, Scrollable)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct RichLog {
     lines: Vec<LogLine>,
     max_lines: Option<usize>,
@@ -345,6 +347,7 @@ impl RichLog {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_wrap(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         self.cache
             .lock()
@@ -352,6 +355,7 @@ impl RichLog {
             .clear();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_highlight(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         self.cache
             .lock()
@@ -359,6 +363,7 @@ impl RichLog {
             .clear();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_markup(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         self.cache
             .lock()

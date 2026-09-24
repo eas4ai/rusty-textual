@@ -155,6 +155,7 @@ impl Placeholder {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_variant(
         &mut self,
         old: &PlaceholderVariant,

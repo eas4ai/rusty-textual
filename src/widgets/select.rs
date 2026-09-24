@@ -248,6 +248,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
 
     // ── Watchers ─────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_allow_blank(&mut self, _old: &bool, new: &bool) {
         if !new && self.cursor.selected().is_none() && !self.options.is_empty() {
             self.cursor.set_selected(Some(0));

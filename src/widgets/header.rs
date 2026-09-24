@@ -339,6 +339,8 @@ impl crate::widgets::Render for HeaderClock {
 }
 #[derive(Debug, Clone)]
 #[widget(Focus, Interactive, Layout, StyleIdentity)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Header {
     title: String,
     subtitle: Option<String>,

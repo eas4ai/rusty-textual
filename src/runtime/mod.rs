@@ -372,7 +372,7 @@ impl<'a> DomQueryMut<'a> {
                 }
             }
         }
-        self.absorb_class_change(changed_nodes)
+        self.absorb_class_change(&changed_nodes)
     }
 
     pub fn add_class(self, class: &str) -> Self {
@@ -411,7 +411,7 @@ impl<'a> DomQueryMut<'a> {
                 }
             }
         }
-        self.absorb_class_change(changed_nodes)
+        self.absorb_class_change(&changed_nodes)
     }
 
     pub fn set_classes(self, classes: &[&str]) -> Self {
@@ -429,7 +429,7 @@ impl<'a> DomQueryMut<'a> {
                 }
             }
         }
-        self.absorb_class_change(changed_nodes)
+        self.absorb_class_change(&changed_nodes)
     }
 
     /// Shared invalidation for the class-mutation helpers above.
@@ -446,10 +446,10 @@ impl<'a> DomQueryMut<'a> {
     /// invalidation at all, leaving a `display` flip invisible until an
     /// unrelated relayout. A no-op class op (class set unchanged) requests
     /// nothing.
-    fn absorb_class_change(self, changed_nodes: Vec<NodeId>) -> Self {
+    fn absorb_class_change(self, changed_nodes: &[NodeId]) -> Self {
         if !changed_nodes.is_empty() {
             self.app.pending_force_relayout = true;
-            self.app.request_query_refresh(&changed_nodes);
+            self.app.request_query_refresh(changed_nodes);
         }
         self
     }
@@ -709,6 +709,8 @@ impl AwaitRemove {
     }
 }
 
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct App {
     driver: TerminalDriver,
     console: Console,
@@ -1003,6 +1005,7 @@ impl App {
     ///
     /// Returns [`Error::Terminal`] when the terminal driver cannot read the
     /// terminal size, for example when no terminal is attached.
+    #[allow(clippy::too_many_lines)] // One initializer per `App` field.
     pub fn new() -> Result<Self> {
         let options = DriverOptions {
             // Preserve textual-rs behavior: mouse capture enabled by default.
@@ -1184,7 +1187,7 @@ impl App {
         interval: Duration,
         repeat: Option<u64>,
         pause: bool,
-        name: Option<String>,
+        name: Option<&str>,
         callback: TimerCallback,
     ) -> TimerHandle {
         let timer_id = self.alloc_timer_id();
@@ -4059,10 +4062,10 @@ impl App {
             out.push(entry.hint.clone());
         }
 
-        self.normalize_binding_hints(out)
+        Self::normalize_binding_hints(out)
     }
 
-    pub(super) fn normalize_binding_hints(&self, out: Vec<BindingHint>) -> Vec<BindingHint> {
+    pub(super) fn normalize_binding_hints(out: Vec<BindingHint>) -> Vec<BindingHint> {
         let mut unique = BTreeSet::new();
         let mut deduped = Vec::new();
         for entry in out {
@@ -4400,7 +4403,7 @@ impl App {
         );
     }
 
-    fn dispatch_screen_lifecycle_event(&mut self, event: Event) {
+    fn dispatch_screen_lifecycle_event(&mut self, event: &Event) {
         // App-level lifecycle messages target the runtime root tree.
         // ScreenStack handles per-screen suspend/resume through Screen hooks.
         let Some(tree) = self.widget_tree.as_mut() else {
@@ -4410,7 +4413,7 @@ impl App {
             return;
         }
         let focused = routing::focused_node_id_tree(tree);
-        let _ = routing::dispatch_event_tree(tree, focused, &event);
+        let _ = routing::dispatch_event_tree(tree, focused, event);
     }
 
     pub fn set_stylesheet(&mut self, stylesheet: StyleSheet) {
@@ -4675,7 +4678,7 @@ impl App {
     /// Returns [`Error::StylesheetError`] when the screen's `css()` value is a
     /// file path and that file is missing or unreadable.
     pub fn push_screen(&mut self, screen: Box<dyn crate::screen::Screen>) -> Result<()> {
-        self.dispatch_screen_lifecycle_event(Event::ScreenSuspend);
+        self.dispatch_screen_lifecycle_event(&Event::ScreenSuspend);
         self.screen_stack.push(screen)?;
         self.honor_screen_auto_focus();
         // The active tree changed; force a relayout + full repaint, and re-sync
@@ -4776,7 +4779,7 @@ impl App {
         screen: Box<dyn crate::screen::Screen>,
         callback: crate::screen::ScreenResultCallback,
     ) -> Result<()> {
-        self.dispatch_screen_lifecycle_event(Event::ScreenSuspend);
+        self.dispatch_screen_lifecycle_event(&Event::ScreenSuspend);
         self.screen_stack.push_with_callback(screen, callback)?;
         self.honor_screen_auto_focus();
         // The active tree changed; force a relayout + full repaint, and re-sync
@@ -4797,7 +4800,7 @@ impl App {
                 if mode_name.is_some() {
                     self.current_mode = None;
                 }
-                self.dispatch_screen_lifecycle_event(Event::ScreenResume);
+                self.dispatch_screen_lifecycle_event(&Event::ScreenResume);
                 // Re-sync live notifications onto the resumed tree's ToastRack.
                 self.mark_notifications_for_resync();
             }
@@ -4817,7 +4820,7 @@ impl App {
             if mode_name.is_some() {
                 self.current_mode = None;
             }
-            self.dispatch_screen_lifecycle_event(Event::ScreenResume);
+            self.dispatch_screen_lifecycle_event(&Event::ScreenResume);
             // The active tree changed; force a relayout + full repaint.
             self.pending_force_relayout = true;
             result
@@ -4895,7 +4898,7 @@ impl App {
         // so that if the factory panics the old screen is still intact.
         let new_screen = factory();
 
-        self.dispatch_screen_lifecycle_event(Event::ScreenSuspend);
+        self.dispatch_screen_lifecycle_event(&Event::ScreenSuspend);
 
         // Remove the current mode screen by its mode tag (safe even if
         // transient screens are on top).
@@ -4916,7 +4919,7 @@ impl App {
         }
         let _ = self.focus_first_in_active_tree();
         self.current_mode = Some(name.to_string());
-        self.dispatch_screen_lifecycle_event(Event::ScreenResume);
+        self.dispatch_screen_lifecycle_event(&Event::ScreenResume);
         // Re-sync live notifications onto the new mode screen's ToastRack.
         self.mark_notifications_for_resync();
         true
@@ -6810,6 +6813,7 @@ mod tests {
 
         static SUSPEND_CALLS: AtomicUsize = AtomicUsize::new(0);
 
+        #[allow(clippy::unnecessary_wraps)] // Must match the suspend hook's signature.
         fn suspend_ok() -> io::Result<()> {
             SUSPEND_CALLS.fetch_add(1, Ordering::Relaxed);
             Ok(())

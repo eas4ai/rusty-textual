@@ -92,6 +92,8 @@ impl Default for SyntaxCache {
 }
 
 #[widget(Focus, Interactive, Selectable, Components)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct TextArea {
     /// The document model (lines + newline style + `replace_range`).
     document: Document,
@@ -1252,7 +1254,7 @@ impl TextArea {
         Some(self.document.get_text_range(a.location(), b.location()))
     }
 
-    fn cut_current_line(&mut self) -> Option<String> {
+    fn cut_current_line(&mut self) -> String {
         let line_count = self.document.line_count();
         let row = self.cursor.row.min(line_count.saturating_sub(1));
         let mut copied = self.document.line(row).to_string();
@@ -1269,7 +1271,7 @@ impl TextArea {
             let row_len = self.document.line(0).len();
             self.edit(Edit::new("", (0, 0), (0, row_len), false));
         }
-        Some(copied)
+        copied
     }
 
     /// Replace the selection with text that may span multiple lines, as a
@@ -1292,10 +1294,12 @@ impl TextArea {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_read_only(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         self.rebuild_classes();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_soft_wrap(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Layout invalidation is handled by ReactiveFlags::reactive_layout();
         // re-wrap now so navigation stays in sync (Python
@@ -1304,6 +1308,7 @@ impl TextArea {
         self.adjust_scroll_to_cursor();
     }
 
+    #[allow(clippy::ref_option)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_language(
         &mut self,
         _old: &Option<String>,
@@ -1315,6 +1320,7 @@ impl TextArea {
         }
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_cursor_blink(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         if self.node_state().focused && self.app_active {
             self.reset_blink();
@@ -1324,6 +1330,7 @@ impl TextArea {
         }
     }
 
+    #[allow(clippy::ref_option)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_theme(
         &mut self,
         _old: &Option<String>,
@@ -1689,7 +1696,8 @@ impl crate::widgets::Interactive for TextArea {
                                 changed = true;
                                 value_changed = true;
                             }
-                        } else if let Some(text) = self.cut_current_line() {
+                        } else {
+                            let text = self.cut_current_line();
                             ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
                             changed = true;
                             value_changed = true;

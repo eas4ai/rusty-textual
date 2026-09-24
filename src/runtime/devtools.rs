@@ -148,12 +148,13 @@ impl DevtoolsRuntime {
         })
     }
 
-    pub(crate) fn publish_snapshot(&self, snapshot: String) {
+    pub(crate) fn publish_snapshot(&self, snapshot: &str) {
         if let Ok(mut slot) = self.shared.snapshot.lock() {
-            slot.clone_from(&snapshot);
+            slot.clear();
+            slot.push_str(snapshot);
         }
         if let Ok(mut watchers) = self.shared.watchers.lock() {
-            watchers.retain(|watcher| watcher.send(snapshot.clone()).is_ok());
+            watchers.retain(|watcher| watcher.send(snapshot.to_owned()).is_ok());
         }
     }
 
@@ -207,6 +208,8 @@ fn write_instance_file(path: &Path, pid: u32, app: &str, addr: &str) -> io::Resu
     fs::write(path, body)
 }
 
+// Thread entry point: it owns what its thread uses and clones per client.
+#[allow(clippy::needless_pass_by_value)]
 fn server_loop(
     listener: TcpListener,
     shared: Arc<SharedState>,

@@ -383,6 +383,7 @@ fn render_outline_uses_table_chars() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)] // One scenario: build the panel, render it, check the title cell.
 fn render_panel_title_flip() {
     struct PanelCaptionWidget {
         title: &'static str,

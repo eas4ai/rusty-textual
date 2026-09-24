@@ -36,6 +36,8 @@ use std::cell::RefCell;
 
 /// Flags controlling what happens when a reactive field changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ReactiveFlags {
     /// Request repaint on change (default for `#[reactive]`).
     pub repaint: bool,
@@ -280,6 +282,8 @@ impl std::fmt::Debug for ReactiveChange {
 /// The context accumulates all changes that occurred during an event dispatch
 /// cycle, and the runtime drains them afterward to call watchers and request
 /// repaint/layout invalidation.
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ReactiveCtx {
     node_id: NodeId,
     changes: Vec<ReactiveChange>,
@@ -684,6 +688,8 @@ pub const MAX_REACTIVE_ITERATIONS: usize = 100;
 
 /// Outcome of running the reactive phase for a single widget.
 #[derive(Debug, Default)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ReactivePhaseResult {
     /// Whether any changes were processed.
     pub had_changes: bool,
@@ -1423,6 +1429,7 @@ mod tests {
 
     impl ValidateApp {
         // Python `validate_count`: clamp to [0, 10].
+        #[allow(clippy::unused_self)] // `#[derive(Reactive)]` calls validators as methods.
         fn validate_count(&self, count: i32) -> i32 {
             count.clamp(0, 10)
         }
@@ -1513,6 +1520,7 @@ mod tests {
         fn compute_color(&self) -> (u8, u8, u8) {
             (self.red, self.green, self.blue)
         }
+        #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
         fn watch_color(&mut self, _old: &(u8, u8, u8), new: &(u8, u8, u8), _ctx: &mut ReactiveCtx) {
             self.observed = Some(*new);
         }

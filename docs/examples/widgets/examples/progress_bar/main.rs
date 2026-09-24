@@ -93,13 +93,13 @@ impl TextualApp for FundingProgressApp {
             || message.downcast_ref::<InputSubmitted>().is_some();
 
         if triggered {
-            self.add_donation(app, ctx);
+            Self::add_donation(app, ctx);
         }
     }
 }
 
 impl FundingProgressApp {
-    fn add_donation(&mut self, app: &mut App, ctx: &mut textual::event::WidgetCtx) {
+    fn add_donation(app: &mut App, ctx: &mut textual::event::WidgetCtx) {
         // Read the current input value.
         let text_value = app
             .with_query_one_mut_as::<Input, _>("#amount", |input| input.value().to_string())

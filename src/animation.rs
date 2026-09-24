@@ -294,6 +294,10 @@ fn bounce_out(x: f32) -> f32 {
     }
 }
 
+// Exact 0.0 and 1.0 endpoints mirror the special cases in Python's easing
+// functions.
+#[allow(clippy::float_cmp)]
+#[allow(clippy::too_many_lines)] // One arm per easing function.
 fn apply_easing(ease: AnimationEase, x: f32) -> f32 {
     use std::f32::consts::PI;
 
@@ -676,6 +680,9 @@ pub fn interpolate_style_property(
 }
 
 #[cfg(test)]
+// These tests assert exact float results (endpoints and values a float holds
+// exactly); a tolerance would hide off-by-epsilon regressions.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::event::{AnimationEase, AnimationRequest, StyleAnimationRequest, StyleValue};

@@ -116,7 +116,7 @@ pub(crate) fn compute_carve_box(
         // cannot do this — it has no sibling-fr context and returns 0 — so resolve
         // it to the full available height here.
         Some(Scalar::Fraction(_)) => current_h,
-        Some(s) => resolve_scalar_to_cells(s, current_h, viewport),
+        Some(s) => resolve_scalar_to_cells(*s, current_h, viewport),
     };
     let child_w = match style.width.as_ref() {
         Some(Scalar::Auto) => {
@@ -152,27 +152,27 @@ pub(crate) fn compute_carve_box(
         // available width (see the height `Fraction` arm above for the
         // rationale).
         None | Some(Scalar::Fraction(_)) => current_w,
-        Some(s) => resolve_scalar_to_cells(s, current_w, viewport),
+        Some(s) => resolve_scalar_to_cells(*s, current_w, viewport),
     };
 
     // Apply min/max width constraints from CSS style.
     let child_w = {
         let mut w = child_w;
         if let Some(ref s) = style.min_width {
-            w = w.max(resolve_scalar_to_cells(s, current_w, viewport));
+            w = w.max(resolve_scalar_to_cells(*s, current_w, viewport));
         }
         if let Some(ref s) = style.max_width {
-            w = w.min(resolve_scalar_to_cells(s, current_w, viewport));
+            w = w.min(resolve_scalar_to_cells(*s, current_w, viewport));
         }
         w
     };
     let child_h = {
         let mut h = child_h;
         if let Some(ref s) = style.min_height {
-            h = h.max(resolve_scalar_to_cells(s, current_h, viewport));
+            h = h.max(resolve_scalar_to_cells(*s, current_h, viewport));
         }
         if let Some(ref s) = style.max_height {
-            h = h.min(resolve_scalar_to_cells(s, current_h, viewport));
+            h = h.min(resolve_scalar_to_cells(*s, current_h, viewport));
         }
         h
     };
@@ -395,7 +395,7 @@ pub(crate) fn layout_absolute(
                     |w| w.saturating_add(chrome_w),
                 ),
             Some(s) => {
-                let content_w = resolve_scalar_to_cells(s, available.width, viewport);
+                let content_w = resolve_scalar_to_cells(*s, available.width, viewport);
                 if box_sizing == BoxSizing::BorderBox && width_is_explicit {
                     content_w
                 } else {
@@ -422,7 +422,7 @@ pub(crate) fn layout_absolute(
                     )
             }
             Some(s) => {
-                let content_h = resolve_scalar_to_cells(s, available.height, viewport);
+                let content_h = resolve_scalar_to_cells(*s, available.height, viewport);
                 if box_sizing == BoxSizing::BorderBox && height_is_explicit {
                     content_h
                 } else {
@@ -434,7 +434,7 @@ pub(crate) fn layout_absolute(
 
         // Apply min/max constraints for absolute children (P2-24 follow-up).
         if let Some(ref s) = style.min_width {
-            let min_w = resolve_scalar_to_cells(s, available.width, viewport);
+            let min_w = resolve_scalar_to_cells(*s, available.width, viewport);
             let min_w_outer = if box_sizing == BoxSizing::BorderBox {
                 min_w
             } else {
@@ -443,7 +443,7 @@ pub(crate) fn layout_absolute(
             layout_w = layout_w.max(min_w_outer);
         }
         if let Some(ref s) = style.max_width {
-            let max_w = resolve_scalar_to_cells(s, available.width, viewport);
+            let max_w = resolve_scalar_to_cells(*s, available.width, viewport);
             let max_w_outer = if box_sizing == BoxSizing::BorderBox {
                 max_w
             } else {
@@ -452,7 +452,7 @@ pub(crate) fn layout_absolute(
             layout_w = layout_w.min(max_w_outer);
         }
         if let Some(ref s) = style.min_height {
-            let min_h = resolve_scalar_to_cells(s, available.height, viewport);
+            let min_h = resolve_scalar_to_cells(*s, available.height, viewport);
             let min_h_outer = if box_sizing == BoxSizing::BorderBox {
                 min_h
             } else {
@@ -461,7 +461,7 @@ pub(crate) fn layout_absolute(
             layout_h = layout_h.max(min_h_outer);
         }
         if let Some(ref s) = style.max_height {
-            let max_h = resolve_scalar_to_cells(s, available.height, viewport);
+            let max_h = resolve_scalar_to_cells(*s, available.height, viewport);
             let max_h_outer = if box_sizing == BoxSizing::BorderBox {
                 max_h
             } else {

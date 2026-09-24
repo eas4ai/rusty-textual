@@ -570,6 +570,7 @@ impl FiveByFiveApp {
     }
 
     /// Diff old/new cell arrays and update arena node classes for changed cells.
+    #[allow(clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_cells(&mut self, app: &mut App, old: &Cells, new: &Cells, ctx: &mut ReactiveCtx) {
         for row in 0..SIZE {
             for col in 0..SIZE {
@@ -590,6 +591,7 @@ impl FiveByFiveApp {
 
     /// Move cursor class from old node to new node. init fires with old == new →
     /// adds initial cursor class on the starting cell.
+    #[allow(clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_cursor(
         &mut self,
         app: &mut App,
@@ -610,6 +612,7 @@ impl FiveByFiveApp {
     }
 
     /// Update the moves label. init fires at mount → initializes header to 0.
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_moves(&mut self, app: &mut App, _old: &usize, new: &usize, ctx: &mut ReactiveCtx) {
         let moves = *new;
         let _ = app.with_query_one_mut_as::<Label, _>("#moves", |l| {
@@ -619,6 +622,7 @@ impl FiveByFiveApp {
     }
 
     /// Show/hide the winner overlay. init = false → does not fire at mount.
+    #[allow(clippy::ref_option)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_won_at(
         &mut self,
         app: &mut App,

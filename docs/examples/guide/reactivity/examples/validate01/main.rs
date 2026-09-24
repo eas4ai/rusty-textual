@@ -37,6 +37,7 @@ impl ValidateApp {
 
     /// Python `validate_count`: clamp the incoming value to [0, 10].
     /// Called by the generated `set_count` setter before the value is stored.
+    #[allow(clippy::unused_self)] // `#[derive(Reactive)]` calls validators as methods.
     fn validate_count(&self, count: i32) -> i32 {
         count.clamp(0, 10)
     }

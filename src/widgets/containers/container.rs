@@ -160,7 +160,7 @@ impl Container {
             ScrollbarAxis::Vertical => self.offset_y = offset,
         }
         self.clamp_offsets();
-        self.offset_x != before_x || self.offset_y != before_y
+        super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y))
     }
 
     #[must_use]
@@ -315,7 +315,7 @@ impl crate::widgets::Interactive for Container {
             _ => return,
         }
         self.clamp_offsets();
-        if self.offset_x != before_x || self.offset_y != before_y {
+        if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {
             ctx.request_layout_invalidation();
             ctx.set_handled();
         }
@@ -408,7 +408,7 @@ impl crate::widgets::Scrollable for Container {
                 .to_f32_lossy();
         }
         self.clamp_offsets();
-        if self.offset_x != before_x || self.offset_y != before_y {
+        if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {
             ctx.request_layout_invalidation();
             ctx.set_handled();
         }

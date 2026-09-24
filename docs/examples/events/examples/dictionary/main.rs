@@ -73,7 +73,7 @@ impl TextualApp for DictionaryApp {
         ctx: &mut textual::event::WidgetCtx,
     ) {
         let word = value.trim().to_string();
-        *self.current_word.lock().unwrap() = word.clone();
+        (*self.current_word.lock().unwrap()).clone_from(&word);
         let result_holder = Arc::clone(&self.result);
         let current_word = Arc::clone(&self.current_word);
 

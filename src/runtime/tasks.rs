@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::ThreadId;
 
 #[derive(Debug)]
@@ -139,12 +139,7 @@ impl AsyncTaskRuntime {
 
     pub(crate) fn drain_completed(&mut self) -> Vec<MessageEvent> {
         let mut out = Vec::new();
-        loop {
-            let completion = match self.completion_rx.try_recv() {
-                Ok(completion) => completion,
-                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
-            };
-
+        while let Ok(completion) = self.completion_rx.try_recv() {
             let Some(active) = self.running.get(&completion.task_id) else {
                 continue;
             };

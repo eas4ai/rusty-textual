@@ -242,14 +242,14 @@ impl TimerRuntime {
                 skip: true,
             },
         );
-        replaced.map(|timer| self.cancelled_event(timer_id, timer.target))
+        replaced.map(|timer| Self::cancelled_event(timer_id, timer.target))
     }
 
     /// Stop and remove a timer (`Timer.stop`). Returns a cancellation event if
     /// the timer existed.
     pub(crate) fn cancel(&mut self, timer_id: u64) -> Option<MessageEvent> {
         let timer = self.running.remove(&timer_id)?;
-        Some(self.cancelled_event(timer_id, timer.target))
+        Some(Self::cancelled_event(timer_id, timer.target))
     }
 
     /// Pause a timer (`Timer.pause`): it stops advancing/firing until resumed.
@@ -353,7 +353,7 @@ impl TimerRuntime {
         ready
     }
 
-    fn cancelled_event(&self, timer_id: u64, target: NodeId) -> MessageEvent {
+    fn cancelled_event(timer_id: u64, target: NodeId) -> MessageEvent {
         let sender = super::App::runtime_message_sender();
         MessageEvent::new(sender, TimerCancelled { timer_id, target }).with_control(sender)
     }

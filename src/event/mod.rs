@@ -592,6 +592,8 @@ pub enum ClassOp {
 }
 
 #[derive(Debug, Default)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct EventCtx {
     node_id: NodeId,
     handled: bool,
@@ -783,7 +785,7 @@ impl EventCtx {
         // Honour active `prevent(...)` scopes, mirroring Python's
         // `MessagePump.post_message` `_is_prevented` check: a prevented message
         // type is silently dropped (never queued).
-        if self.is_type_prevented(message.as_any().type_id()) {
+        if crate::message::is_message_type_prevented(message.as_any().type_id()) {
             debug_message(&format!(
                 "[post_message] PREVENTED sender={} payload={message:?}",
                 node_id_to_ffi(node)
@@ -798,18 +800,12 @@ impl EventCtx {
             .push(MessageEvent::from_boxed(node, message).with_control(node));
     }
 
-    /// Whether a concrete message type id is currently suppressed by an active
-    /// `prevent(...)` scope.
-    fn is_type_prevented(&self, type_id: TypeId) -> bool {
-        crate::message::is_message_type_prevented(type_id)
-    }
-
     /// Whether message type `M` is currently prevented from posting.
     ///
     /// Mirrors Python `MessagePump._is_prevented`.
     #[must_use]
     pub fn is_prevented<M: Message>(&self) -> bool {
-        self.is_type_prevented(TypeId::of::<M>())
+        crate::message::is_message_type_prevented(TypeId::of::<M>())
     }
 
     /// Run `f` with message type `M` prevented from being posted, then restore

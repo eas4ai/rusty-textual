@@ -111,6 +111,8 @@ struct SelectionRange {
 
 #[derive(Debug)]
 #[widget(Focus, Interactive, Layout, Scrollable, Selectable)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Log {
     lines: Vec<String>,
     max_lines: Option<usize>,

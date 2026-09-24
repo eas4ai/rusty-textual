@@ -275,6 +275,8 @@ impl Selection {
 }
 
 #[widget(Focus, Interactive, Layout, Selectable, StyleIdentity, Components)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Input {
     text: String,
     cursor: usize,

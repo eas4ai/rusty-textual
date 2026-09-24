@@ -13,6 +13,8 @@ use crate::node_id::NodeId;
 use crate::widgets::{NodeSeed, Spacer, Widget, WidgetRenderable};
 
 #[widget(Interactive, Layout, StyleIdentity)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Overlay {
     base: Box<dyn Widget>,
     modal: Box<dyn Widget>,
@@ -155,6 +157,7 @@ impl Overlay {
     /// overlay target is specified.  A precise check would require arena
     /// traversal (ancestor-of query), which is not available in widget-level
     /// event handlers.
+    #[allow(clippy::unused_self)] // A stub (see above), kept a method for the precise check.
     fn modal_contains(&mut self, _target: NodeId) -> bool {
         true
     }

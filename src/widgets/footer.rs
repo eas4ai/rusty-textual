@@ -380,6 +380,7 @@ impl Footer {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_compact(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Class op is queued in set_compact; layout invalidation via ReactiveFlags.
     }

@@ -675,6 +675,9 @@ impl ProgressBar {
     /// Reactive setter for `progress`. Records the change in the provided
     /// [`ReactiveCtx`]; the watcher samples the ETA estimator and recomposes
     /// the children.
+    // Exact on purpose: only a real change records a reactive update, as
+    // Python's reactive `!=` check does.
+    #[allow(clippy::float_cmp)]
     pub fn set_progress(&mut self, progress: f64, ctx: &mut ReactiveCtx) {
         if self.progress != progress {
             let old = self.progress;
@@ -760,6 +763,7 @@ impl ProgressBar {
 
     // ── Watchers ─────────────────────────────────────────────────────
 
+    #[allow(clippy::ref_option)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_total(&mut self, _old: &Option<f64>, _new: &Option<f64>, ctx: &mut ReactiveCtx) {
         // Reset ETA when total changes (matching Python behavior), then
         // rebuild the composed children with the new state (the Rust
@@ -768,6 +772,7 @@ impl ProgressBar {
         ctx.request_recompose();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_progress(&mut self, _old: &f64, _new: &f64, ctx: &mut ReactiveCtx) {
         self.record_eta_sample();
         ctx.request_recompose();
@@ -966,6 +971,9 @@ impl ReactiveWidget for ProgressBar {
 }
 
 #[cfg(test)]
+// These tests assert exact float results (endpoints and values a float holds
+// exactly); a tolerance would hide off-by-epsilon regressions.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::node_id::NodeId;

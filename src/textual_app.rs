@@ -2900,6 +2900,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // One row per Python action; a single inventory table.
     fn app_action_caller_inventory_rows_are_complete() {
         struct CallerRow {
             action: &'static str,
@@ -3779,7 +3780,7 @@ mod tests {
             Self { log: Vec::new() }
         }
 
-        #[allow(dead_code)] // reactive-setter scaffolding for the init-order watcher test
+        #[allow(dead_code, clippy::unused_self)] // reactive-setter scaffolding for the init-order watcher test
         fn set_count(&mut self, _val: i32, ctx: &mut ReactiveCtx) {
             use crate::reactive::ReactiveFlags;
             ctx.record_change(

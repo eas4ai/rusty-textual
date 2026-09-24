@@ -155,6 +155,7 @@ impl Rule {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_orientation(
         &mut self,
         old: &RuleOrientation,

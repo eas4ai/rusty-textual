@@ -1360,13 +1360,13 @@ pub(crate) fn render_widget_with_meta<W: Widget + ?Sized>(
     let styled = crate::css::apply_style_to_segments(
         node_id,
         segments,
-        resolved.clone(),
+        &resolved.clone(),
         parent_style.clone(),
     );
     let segments = helpers::apply_border_edges(
         styled,
         inner_width,
-        resolved.clone(),
+        &resolved.clone(),
         parent_style.clone(),
         full_width,
         full_height,
@@ -1517,6 +1517,8 @@ impl LayoutConstraints {
 /// Framework-owned per-node interaction state. Lives on the arena node record;
 /// widgets read it via `Widget::node_state()` (dispatch context), never store it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+// Separate widget and CSS pseudo-class states; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 pub struct NodeState {
     pub focused: bool,
     pub hovered: bool,

@@ -31,6 +31,8 @@ pub(super) fn resolve_input_component_rich<W: crate::widgets::Widget + ?Sized>(
 }
 
 #[derive(Debug, Clone)]
+// Separate widget and CSS pseudo-class states; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 pub(super) struct InputChrome {
     focused: bool,
     mouse_down: bool,

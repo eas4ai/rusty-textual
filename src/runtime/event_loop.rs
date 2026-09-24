@@ -517,14 +517,14 @@ fn dispatch_action_string(
 fn dispatch_simulated_key_like_input(
     app: &mut App,
     root: &mut dyn Widget,
-    key: KeyEventData,
+    key: &KeyEventData,
     pass: &mut RuntimeMessagePass,
 ) {
     // App-level key hook.
     let mut app_key_ctx = EventCtx::default();
     {
         let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut app_key_ctx);
-        root.on_app_key(app, &key, &mut __wctx);
+        root.on_app_key(app, key, &mut __wctx);
         __wctx.__enqueue_reactive_if_dirty();
     }
     pass.repaint_requested |= app_key_ctx.repaint_requested();
@@ -544,7 +544,7 @@ fn dispatch_simulated_key_like_input(
         return;
     }
 
-    let bind = crate::event::KeyBind::from_event(&key);
+    let bind = crate::event::KeyBind::from_event(key);
     let mapped_action = app.action_map.lookup(&bind);
 
     // Priority actions first (e.g. command palette).
@@ -554,7 +554,7 @@ fn dispatch_simulated_key_like_input(
         let mut outcome = if matches!(action, Action::CommandPalette) {
             app.dispatch_command_palette_open(root)
         } else {
-            app.dispatch_event_auto(root, Event::Action(action))
+            app.dispatch_event_auto(root, &Event::Action(action))
         };
         let handled = outcome.handled || matches!(action, Action::CommandPalette);
         merge_outcome_into_runtime_pass(pass, &mut outcome);
@@ -569,7 +569,7 @@ fn dispatch_simulated_key_like_input(
         match_binding_chain(
             tree,
             app.app_root_tree_when_screen_active(),
-            &key,
+            key,
             app.check_action_fn.as_deref(),
             &app.keymap,
             Some(&mut binding_clashes),
@@ -673,12 +673,12 @@ fn dispatch_simulated_key_like_input(
     }
 
     // P-F: `key_<name>` hook on the focused widget (no binding consumed it).
-    let mut key_name_outcome = dispatch_key_name_to_focused(app, &key);
+    let mut key_name_outcome = dispatch_key_name_to_focused(app, key);
     let key_name_handled = key_name_outcome.handled;
     merge_outcome_into_runtime_pass(pass, &mut key_name_outcome);
 
     // Raw key dispatch.
-    let mut key_outcome = app.dispatch_event_auto(root, Event::Key(key.clone()));
+    let mut key_outcome = app.dispatch_event_auto(root, &Event::Key(key.clone()));
     let key_handled = key_outcome.handled;
     merge_outcome_into_runtime_pass(pass, &mut key_outcome);
     if key_handled || key_name_handled {
@@ -709,7 +709,7 @@ fn dispatch_simulated_key_like_input(
             return;
         }
         if matches!(action, Action::FocusNext | Action::FocusPrev) {
-            let mut focus_outcome = app.dispatch_event_auto(root, Event::Action(action));
+            let mut focus_outcome = app.dispatch_event_auto(root, &Event::Action(action));
             let focus_handled = focus_outcome.handled;
             merge_outcome_into_runtime_pass(pass, &mut focus_outcome);
             if focus_handled {
@@ -723,7 +723,7 @@ fn dispatch_simulated_key_like_input(
         let mut outcome = if is_scroll_action(action) {
             app.dispatch_scroll_action_auto(root, action, app.hovered)
         } else {
-            app.dispatch_event_auto(root, Event::Action(action))
+            app.dispatch_event_auto(root, &Event::Action(action))
         };
         merge_outcome_into_runtime_pass(pass, &mut outcome);
     }
@@ -1306,7 +1306,7 @@ fn split_runtime_control_messages(
         } else if let Some(m) = event.downcast_ref::<crate::message::AppSimulateKey>() {
             let key = m.key.clone();
             if let Some(synthetic) = parse_simulated_key(&key) {
-                dispatch_simulated_key_like_input(app, root, synthetic, &mut pass);
+                dispatch_simulated_key_like_input(app, root, &synthetic, &mut pass);
             } else {
                 debug_input(&format!(
                     "[runtime] app.simulate_key ignored invalid key spec {key:?}"
@@ -1361,6 +1361,8 @@ fn split_runtime_control_messages(
 }
 
 #[derive(Clone)]
+// Separate widget and CSS pseudo-class states; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 struct SelectorSnapshot {
     type_name: String,
     style_id: Option<String>,
@@ -2319,7 +2321,7 @@ impl App {
                 );
             }
         }
-        devtools.publish_snapshot(snapshot);
+        devtools.publish_snapshot(&snapshot);
     }
 
     fn dispatch_message_queue_with_runtime(
@@ -2681,7 +2683,7 @@ impl App {
 
         // Dispatch Ready event once after the first successful render.
         {
-            let mut outcome = self.dispatch_event_auto(root, Event::Ready(ReadyEvent));
+            let mut outcome = self.dispatch_event_auto(root, &Event::Ready(ReadyEvent));
             self.absorb_outcome(
                 &mut outcome,
                 &mut pending_invalidation,
@@ -2894,7 +2896,7 @@ impl App {
                             let mut outcome = if matches!(action, Action::CommandPalette) {
                                 self.dispatch_command_palette_open(root)
                             } else {
-                                self.dispatch_event_auto(root, Event::Action(action))
+                                self.dispatch_event_auto(root, &Event::Action(action))
                             };
                             self.absorb_outcome(
                                 &mut outcome,
@@ -3183,7 +3185,7 @@ impl App {
 
                         // Dispatch the raw key so focused widgets (e.g. Input) can consume it.
                         let mut key_outcome =
-                            self.dispatch_event_auto(root, Event::Key(key.clone()));
+                            self.dispatch_event_auto(root, &Event::Key(key.clone()));
                         debug_input(&format!(
                             "[input] key dispatch handled={} repaint={} messages={}",
                             key_outcome.handled,
@@ -3282,7 +3284,7 @@ impl App {
                                     // Give the currently-focused branch a chance to descend
                                     // focus before falling back to tree-level focus cycling.
                                     let mut focus_outcome =
-                                        self.dispatch_event_auto(root, Event::Action(action));
+                                        self.dispatch_event_auto(root, &Event::Action(action));
                                     self.absorb_outcome(
                                         &mut focus_outcome,
                                         &mut pending_invalidation,
@@ -3341,7 +3343,7 @@ impl App {
                                 let mut outcome = if is_scroll_action(action) {
                                     self.dispatch_scroll_action_auto(root, action, self.hovered)
                                 } else {
-                                    self.dispatch_event_auto(root, Event::Action(action))
+                                    self.dispatch_event_auto(root, &Event::Action(action))
                                 };
                                 debug_input(&format!(
                                     "[input] action dispatch action={:?} handled={} repaint={} messages={}",
@@ -3731,7 +3733,7 @@ impl App {
                                         x: mouse.column,
                                         y: mouse.row,
                                     });
-                                    let mut outcome = self.dispatch_event_auto(root, down_event);
+                                    let mut outcome = self.dispatch_event_auto(root, &down_event);
                                     self.absorb_outcome(
                                         &mut outcome,
                                         &mut pending_invalidation,
@@ -3827,7 +3829,7 @@ impl App {
                                 let mut outcome = if let Some(target) = target {
                                     self.dispatch_event_to_target_auto(root, target, &up_event)
                                 } else {
-                                    self.dispatch_event_auto(root, up_event)
+                                    self.dispatch_event_auto(root, &up_event)
                                 };
                                 self.absorb_outcome(
                                     &mut outcome,
@@ -3967,7 +3969,7 @@ impl App {
                                 } else {
                                     self.dispatch_event_auto(
                                         root,
-                                        Event::MouseScroll(MouseScrollEvent {
+                                        &Event::MouseScroll(MouseScrollEvent {
                                             target: None,
                                             screen_x: mouse.column,
                                             screen_y: mouse.row,
@@ -4041,7 +4043,7 @@ impl App {
                         let size = self.driver.size();
                         root.on_resize(size.width, size.height);
                         let mut outcome =
-                            self.dispatch_event_auto(root, Event::Resize(size.width, size.height));
+                            self.dispatch_event_auto(root, &Event::Resize(size.width, size.height));
                         self.absorb_outcome(
                             &mut outcome,
                             &mut pending_invalidation,
@@ -4065,7 +4067,7 @@ impl App {
                                 .request_flags(crate::event::InvalidationFlags::layout());
                         }
                         debug_input("[event] FocusLost");
-                        let mut outcome = self.dispatch_event_auto(root, Event::AppFocus(false));
+                        let mut outcome = self.dispatch_event_auto(root, &Event::AppFocus(false));
                         self.absorb_outcome(
                             &mut outcome,
                             &mut pending_invalidation,
@@ -4086,7 +4088,7 @@ impl App {
                     CrosstermEvent::FocusGained => {
                         self.apply_app_focus_restore_state();
                         debug_input("[event] FocusGained");
-                        let mut outcome = self.dispatch_event_auto(root, Event::AppFocus(true));
+                        let mut outcome = self.dispatch_event_auto(root, &Event::AppFocus(true));
                         self.absorb_outcome(
                             &mut outcome,
                             &mut pending_invalidation,
@@ -4456,7 +4458,7 @@ impl App {
                 });
                 let _guard = set_style_context(sheet);
                 if let Some(reload) = self.poll_stylesheet() {
-                    self.absorb_stylesheet_reload(root, reload, &mut pending_invalidation);
+                    self.absorb_stylesheet_reload(root, &reload, &mut pending_invalidation);
                 }
                 root.on_tick(tick);
                 // `root.on_tick` only reaches the app adapter — its composed
@@ -4498,7 +4500,7 @@ impl App {
                     break 'event_loop;
                 }
 
-                let mut outcome = self.dispatch_event_auto(root, Event::Tick(tick));
+                let mut outcome = self.dispatch_event_auto(root, &Event::Tick(tick));
                 self.absorb_outcome(
                     &mut outcome,
                     &mut pending_invalidation,
@@ -4731,7 +4733,7 @@ impl App {
 
         // Ready event after first render.
         {
-            let mut outcome = self.dispatch_event_auto(root, Event::Ready(ReadyEvent));
+            let mut outcome = self.dispatch_event_auto(root, &Event::Ready(ReadyEvent));
             self.absorb_outcome(&mut outcome, &mut pending, InvalidationScope::Global);
             let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
             self.absorb_outcome(&mut msg_outcome, &mut pending, InvalidationScope::Global);
@@ -5206,7 +5208,7 @@ impl App {
         pending: &mut PendingInvalidation,
     ) -> bool {
         let mut outcome =
-            self.dispatch_event_auto(root, Event::Paste(crate::event::PasteEvent { text }));
+            self.dispatch_event_auto(root, &Event::Paste(crate::event::PasteEvent { text }));
         self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
         let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
         self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
@@ -5280,7 +5282,7 @@ impl App {
             let mut outcome = if matches!(action, Action::CommandPalette) {
                 self.dispatch_command_palette_open(root)
             } else {
-                self.dispatch_event_auto(root, Event::Action(action))
+                self.dispatch_event_auto(root, &Event::Action(action))
             };
             self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
             let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
@@ -5445,7 +5447,7 @@ impl App {
         self.absorb_outcome(&mut key_name_outcome, pending, InvalidationScope::Global);
 
         // Raw key dispatch so focused widgets (Input etc.) can consume it.
-        let mut key_outcome = self.dispatch_event_auto(root, Event::Key(key.clone()));
+        let mut key_outcome = self.dispatch_event_auto(root, &Event::Key(key.clone()));
         self.absorb_outcome(&mut key_outcome, pending, InvalidationScope::Global);
         let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, key_outcome.messages);
         self.absorb_outcome(&mut msg_outcome, pending, InvalidationScope::Global);
@@ -5456,7 +5458,7 @@ impl App {
         // Action-map fallback (non-priority).
         if let Some(action) = mapped_action.filter(|a| !is_priority_action(*a)) {
             if matches!(action, Action::FocusNext | Action::FocusPrev) {
-                let mut focus_outcome = self.dispatch_event_auto(root, Event::Action(action));
+                let mut focus_outcome = self.dispatch_event_auto(root, &Event::Action(action));
                 self.absorb_outcome(&mut focus_outcome, pending, InvalidationScope::Global);
                 let mut focus_msg_outcome =
                     self.dispatch_message_queue_with_runtime(root, focus_outcome.messages);
@@ -5472,7 +5474,7 @@ impl App {
             let mut outcome = if is_scroll_action(action) {
                 self.dispatch_scroll_action_auto(root, action, self.hovered)
             } else {
-                self.dispatch_event_auto(root, Event::Action(action))
+                self.dispatch_event_auto(root, &Event::Action(action))
             };
             self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
             let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
@@ -5631,7 +5633,7 @@ impl App {
         let mut outcome = if let Some(target) = target {
             self.dispatch_event_to_target_auto(root, target, &up_event)
         } else {
-            self.dispatch_event_auto(root, up_event)
+            self.dispatch_event_auto(root, &up_event)
         };
         self.absorb_outcome(&mut outcome, pending, InvalidationScope::Global);
 
@@ -5773,7 +5775,7 @@ impl App {
         self.refresh_size()?;
         root.on_resize(width, height);
         let mut pending = PendingInvalidation::default();
-        let mut outcome = self.dispatch_event_auto(root, Event::Resize(width, height));
+        let mut outcome = self.dispatch_event_auto(root, &Event::Resize(width, height));
         self.absorb_outcome(&mut outcome, &mut pending, InvalidationScope::Global);
         let mut msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
         self.absorb_outcome(&mut msg_outcome, &mut pending, InvalidationScope::Global);
@@ -6046,7 +6048,7 @@ impl App {
         let mut current = widget_hints;
         current.extend(self.binding_hints());
         self.apply_check_action(&mut current);
-        let current = self.normalize_binding_hints(current);
+        let current = Self::normalize_binding_hints(current);
         if !should_dispatch_binding_hints(
             &self.last_binding_hints,
             &self.last_binding_hint_sources,
@@ -6060,7 +6062,7 @@ impl App {
         let outcome = if let Some(tree) = self.active_widget_tree_mut() {
             dispatch_event_broadcast_tree(tree, &Event::BindingsChanged(current))
         } else {
-            self.dispatch_event_auto(root, Event::BindingsChanged(current))
+            self.dispatch_event_auto(root, &Event::BindingsChanged(current))
         };
         let msg_outcome = self.dispatch_message_queue_with_runtime(root, outcome.messages);
         let mut invalidation = outcome.invalidation;
@@ -6201,7 +6203,7 @@ impl App {
     fn absorb_stylesheet_reload(
         &mut self,
         root: &mut dyn Widget,
-        reload: StylesheetReload,
+        reload: &StylesheetReload,
         pending: &mut PendingInvalidation,
     ) {
         if reload.previous == reload.next {
@@ -6908,7 +6910,7 @@ impl App {
     }
 
     /// Dispatch an event through the arena tree.
-    fn dispatch_event_auto(&mut self, root: &mut dyn Widget, event: Event) -> DispatchOutcome {
+    fn dispatch_event_auto(&mut self, root: &mut dyn Widget, event: &Event) -> DispatchOutcome {
         self.ensure_runtime_tree(root);
         // ctrl+p dismisses the Header's command-palette tooltip (a Header feature,
         // independent of how the palette itself opens).
@@ -6922,7 +6924,7 @@ impl App {
             {
                 let mut __wctx =
                     WidgetCtx::__from_dispatch(NodeId::default(), &mut root_capture_ctx);
-                root.on_event_capture(&event, &mut __wctx);
+                root.on_event_capture(event, &mut __wctx);
                 __wctx.__enqueue_reactive_if_dirty();
             }
             if root_capture_ctx.handled() {
@@ -6946,7 +6948,7 @@ impl App {
         let mut outcome = {
             let tree = self.active_widget_tree_mut().expect("tree should exist");
             let focused = focused_node_id_tree(tree);
-            dispatch_event_tree(tree, focused, &event)
+            dispatch_event_tree(tree, focused, event)
         };
 
         // Merge root key-capture side effects (if any) while preserving
@@ -7002,7 +7004,7 @@ impl App {
             let mut root_event_ctx = EventCtx::default();
             {
                 let mut __wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut root_event_ctx);
-                root.on_event(&event, &mut __wctx);
+                root.on_event(event, &mut __wctx);
                 __wctx.__enqueue_reactive_if_dirty();
             }
             outcome.handled |= root_event_ctx.handled();
@@ -7275,6 +7277,9 @@ impl App {
 }
 
 #[cfg(test)]
+// These tests assert exact float results (endpoints and values a float holds
+// exactly); a tolerance would hide off-by-epsilon regressions.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::{
         ClipboardBackend, SelectorSnapshot, collect_clipboard_runtime_messages_with_backend,
@@ -7604,7 +7609,7 @@ mod tests {
 
         let outcome = app.dispatch_event_auto(
             &mut runtime_root,
-            Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
                 KeyCode::Char('k'),
                 KeyModifiers::NONE,
             ))),
@@ -7651,7 +7656,7 @@ mod tests {
 
         let outcome = app.dispatch_event_auto(
             &mut runtime_root,
-            Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
                 KeyCode::Char('k'),
                 KeyModifiers::NONE,
             ))),
@@ -7690,7 +7695,7 @@ mod tests {
             handle_message: false,
         };
 
-        let outcome = app.dispatch_event_auto(&mut runtime_root, Event::Action(Action::HelpQuit));
+        let outcome = app.dispatch_event_auto(&mut runtime_root, &Event::Action(Action::HelpQuit));
 
         assert_eq!(root_action_hits.load(Ordering::SeqCst), 1);
         assert_eq!(app_action_hits.load(Ordering::SeqCst), 0);
@@ -7723,7 +7728,7 @@ mod tests {
             handle_message: false,
         };
 
-        let outcome = app.dispatch_event_auto(&mut runtime_root, Event::Action(Action::HelpQuit));
+        let outcome = app.dispatch_event_auto(&mut runtime_root, &Event::Action(Action::HelpQuit));
 
         assert_eq!(root_action_hits.load(Ordering::SeqCst), 1);
         assert_eq!(app_action_hits.load(Ordering::SeqCst), 1);
@@ -7763,7 +7768,7 @@ mod tests {
 
         let outcome = app.dispatch_event_auto(
             &mut runtime_root,
-            Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
                 KeyCode::Char('x'),
                 KeyModifiers::NONE,
             ))),
@@ -7819,7 +7824,7 @@ mod tests {
 
         let mut runtime_root = AppRoot::new();
         let outcome =
-            app.dispatch_event_auto(&mut runtime_root, Event::Action(Action::CommandPalette));
+            app.dispatch_event_auto(&mut runtime_root, &Event::Action(Action::CommandPalette));
         assert!(
             outcome.repaint_requested,
             "opening command palette should request repaint when dismissing tooltip"
@@ -9087,6 +9092,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // One message per app action; a single coverage matrix.
     fn runtime_app_action_messages_cover_non_selector_paths() {
         let mut tree = crate::widget_tree::WidgetTree::new();
         let root_id = tree.set_root(Box::new(AppRoot::new()));

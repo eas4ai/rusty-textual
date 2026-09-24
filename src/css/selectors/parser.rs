@@ -140,7 +140,7 @@ fn parse_rule_block(
     let split = split_block_body(body, base_offset, source, issues);
     let style = parse_style_body(&split.declarations);
     if !style.is_empty() {
-        append_style_rules(sheet, selectors, style, issues, base_offset, source);
+        append_style_rules(sheet, selectors, &style, issues, base_offset, source);
     }
 
     for nested in split.nested_rules {
@@ -177,7 +177,7 @@ fn parse_rule_block(
 fn append_style_rules(
     sheet: &mut StyleSheet,
     selectors: &[String],
-    style: Style,
+    style: &Style,
     issues: &mut Vec<CssParseIssue>,
     base_offset: usize,
     source: &str,
@@ -565,6 +565,7 @@ fn strip_important(value: &str) -> (&str, bool) {
 /// Map a CSS property key to the [`StyleProperty`] variants it affects.
 ///
 /// Returns an empty slice for unknown keys.
+#[allow(clippy::too_many_lines)] // One arm per CSS property.
 fn importance_properties_for_key(key: &str) -> &'static [StyleProperty] {
     match key {
         "fg" | "color" => &[StyleProperty::Fg],
@@ -692,6 +693,7 @@ fn importance_properties_for_key(key: &str) -> &'static [StyleProperty] {
 
 /// Reset any `Option<T>` CSS property to `None` (the `initial` keyword).
 /// Returns `true` if the property was recognized and reset.
+#[allow(clippy::too_many_lines)] // One arm per CSS property; splitting would scatter the table.
 fn apply_initial(style: &mut Style, key: &str, is_important: bool) -> bool {
     macro_rules! reset {
         ($field:ident, $prop:expr) => {{
@@ -910,6 +912,7 @@ fn apply_initial(style: &mut Style, key: &str, is_important: bool) -> bool {
     }
 }
 
+#[allow(clippy::too_many_lines)] // One arm per CSS property; splitting would scatter the table.
 pub(super) fn parse_style_body(body: &str) -> Style {
     let mut style = Style::new();
     for decl in body.split(';') {

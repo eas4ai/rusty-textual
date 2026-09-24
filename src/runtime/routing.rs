@@ -12,18 +12,18 @@ use super::types::DispatchOutcome;
 use crate::event::ClassOp;
 
 #[cfg(test)]
-pub(crate) fn dispatch_event(root: &mut dyn Widget, event: Event) -> DispatchOutcome {
+pub(crate) fn dispatch_event(root: &mut dyn Widget, event: &Event) -> DispatchOutcome {
     let event_debug = format!("{event:?}");
     let mut ctx = EventCtx::default();
     let always_bubble = matches!(&event, Event::MouseUp(..));
     {
         let mut wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
-        root.on_event_capture(&event, &mut wctx);
+        root.on_event_capture(event, &mut wctx);
         wctx.__enqueue_reactive_if_dirty();
     }
     if always_bubble || !ctx.handled() {
         let mut wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
-        root.on_event(&event, &mut wctx);
+        root.on_event(event, &mut wctx);
         wctx.__enqueue_reactive_if_dirty();
     }
     let outcome = DispatchOutcome {
@@ -1338,7 +1338,7 @@ mod message_tests {
             KeyCode::Char('x'),
             KeyModifiers::empty(),
         ));
-        let outcome = dispatch_event(&mut root, Event::Key(key));
+        let outcome = dispatch_event(&mut root, &Event::Key(key));
         assert_eq!(outcome.messages.len(), 1);
 
         // Deliver message directly to root for this unit test.

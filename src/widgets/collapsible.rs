@@ -49,6 +49,8 @@ fn tag_segment_no_text_style(seg: &mut Segment) {
 /// like `CollapsibleTitle { ... }` resolve against this node directly and the
 /// arena renderer applies the resolved style (color / text-style / padding).
 #[widget(Focus, Interactive, Layout)]
+// Separate widget and CSS pseudo-class states; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 pub struct CollapsibleTitle {
     title: String,
     collapsed_symbol: String,
@@ -329,6 +331,8 @@ impl crate::widgets::Render for CollapsibleContents {
 // ── Collapsible ─────────────────────────────────────────────────────────
 
 #[widget(Focus, Interactive, Layout)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Collapsible {
     title: String,
     collapsed_symbol: String,
@@ -465,6 +469,7 @@ impl Collapsible {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_collapsed(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Layout invalidation is handled by ReactiveFlags::reactive_layout().
     }

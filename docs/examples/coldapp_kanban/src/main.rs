@@ -193,6 +193,7 @@ impl AutoSaveIndicator {
     }
 
     // Widget-level reactive watch: self-mutate the owned base widget.
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_ticks(&mut self, _old: &u64, new: &u64, _ctx: &mut ReactiveCtx) {
         self.base.update(format!("auto-save: saved #{new}"));
     }
@@ -218,6 +219,7 @@ impl ControlBar {
     }
 
     #[textual::on(ButtonPressed)]
+    #[allow(clippy::unused_self)] // `#[on(..)]` calls handlers as methods.
     fn on_add(&mut self, event: &ButtonPressed, ctx: &mut WidgetCtx) {
         if event.button_id.as_deref() == Some("add-btn") {
             // Widget-scoped self-mutation from a handler (the "Pomodoro #1" gap):
@@ -313,7 +315,7 @@ impl Screen for AddTaskScreen {
 
     fn on_message(&mut self, message: &MessageEvent, ctx: &mut ScreenMessageCtx) {
         if let Some(changed) = message.downcast_ref::<InputChanged>() {
-            self.title = changed.value.clone();
+            self.title.clone_from(&changed.value);
         } else if let Some(submitted) = message.downcast_ref::<InputSubmitted>() {
             let title = if submitted.value.is_empty() {
                 self.title.clone()
@@ -511,6 +513,7 @@ impl Board {
 
     /// Reactive watch (`#[reactive(watch_with_app)] completed`): repaint the
     /// top-bar "Done" label whenever the completed counter changes.
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_completed(&mut self, app: &mut App, _old: &u32, new: &u32, _ctx: &mut ReactiveCtx) {
         let text = format!("Done: {new}");
         let _ = app.with_query_one_mut_as::<Label, _>("#done-label", |l| l.set_text(text));

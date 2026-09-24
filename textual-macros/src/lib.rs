@@ -14,6 +14,11 @@ mod reactive;
 /// Annotate struct fields with `#[reactive]`, `#[reactive(layout)]`,
 /// `#[reactive(watch)]`, or `#[var]` to generate getters, setters with
 /// change detection, and watcher dispatch.
+///
+/// A watcher receives the old and new values as `&T`, whatever `T` is. For
+/// a small `Copy` type, `clippy::pedantic` reports
+/// `trivially_copy_pass_by_ref` on the watcher; allow it there, since the
+/// signature is fixed by this macro.
 #[proc_macro_derive(Reactive, attributes(reactive, var, computed))]
 pub fn derive_reactive(input: TokenStream) -> TokenStream {
     crate_path::retarget_crate_path(reactive::derive_reactive_impl(input.into())).into()

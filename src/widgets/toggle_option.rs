@@ -383,6 +383,8 @@ pub(crate) struct ToggleEventOutcome {
 
 /// Shared interaction state and input handling for binary toggle widgets.
 #[derive(Debug, Clone)]
+// Separate widget and CSS pseudo-class states; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct BinaryToggleState {
     value: bool,
     focused: bool,

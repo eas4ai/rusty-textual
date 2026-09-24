@@ -221,7 +221,7 @@ impl AppRoot {
             ScrollbarAxis::Vertical => self.offset_y = offset,
         }
         self.clamp_offsets();
-        self.offset_x != before_x || self.offset_y != before_y
+        super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y))
     }
 
     fn clamped_axis_offset(&self, axis: ScrollbarAxis, offset: f32) -> f32 {
@@ -387,7 +387,7 @@ impl crate::widgets::Interactive for AppRoot {
         }
         self.clamp_offsets();
 
-        if self.offset_x != before_x || self.offset_y != before_y {
+        if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {
             // Root scrolling can move large portions of the composed frame
             // (content + scrollbar thumbs + dock interactions). Request a
             // full-frame invalidation to avoid stale partial-region artifacts.
@@ -454,7 +454,7 @@ impl crate::widgets::Scrollable for AppRoot {
         }
         self.clamp_offsets();
 
-        if self.offset_x != before_x || self.offset_y != before_y {
+        if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {
             // Root scrolling can move large portions of the composed frame
             // (content + scrollbar thumbs + dock interactions). Request a
             // full-frame invalidation to avoid stale partial-region artifacts.

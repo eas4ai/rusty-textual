@@ -556,7 +556,7 @@ impl App {
         let geometry_changed = self.hit_test != next_hit_test;
         self.hit_test = next_hit_test;
         if layout_invalidation || geometry_changed || layout_affected_style_change {
-            self.apply_layout_info(widget, &self.hit_test);
+            Self::apply_layout_info(widget, &self.hit_test);
         }
         self.frame = next;
         Ok(())
@@ -631,7 +631,7 @@ impl App {
     ///
     /// Root-only: child widgets receive layout info via the tree-based
     /// [`apply_layout_info_tree`] path when the arena tree is available.
-    pub(super) fn apply_layout_info(&self, root: &mut dyn Widget, hit_test: &HitTestMap) {
+    pub(super) fn apply_layout_info(root: &mut dyn Widget, hit_test: &HitTestMap) {
         if let Some(rect) = hit_test.rect(NodeId::default()) {
             // Legacy (non-tree) root path: use widget-based meta.
             let meta = crate::css::selector_meta_generic(root);
@@ -2116,7 +2116,7 @@ fn paint_keylines(
         // `row-span` child is a SINGLE bigger region, so no interior divider is
         // drawn through it — unlike a cross-product of every column/row boundary,
         // which would bleed a lower row's cell edge up through a spanned cell.
-        paint_grid_keyline_rectangles(tree, &child_ids, parent_rect, ctx, frame, stroke);
+        paint_grid_keyline_rectangles(tree, &child_ids, parent_rect, ctx, frame, &stroke);
         return;
     }
 
@@ -2186,20 +2186,34 @@ fn paint_keylines(
         parent_rect,
         ctx,
         frame,
-        stroke,
+        &stroke,
         Some((&verticals, &horizontals)),
     );
 }
 
-fn keyline_junction_char(
-    keyline_type: KeylineType,
+/// Which arms of a box-drawing junction are present.
+#[derive(Default, Clone, Copy)]
+// The four arms of a box-drawing junction; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
+struct JunctionArms {
     up: bool,
     down: bool,
     left: bool,
     right: bool,
+}
+
+fn keyline_junction_char(
+    keyline_type: KeylineType,
+    arms: JunctionArms,
     h_char: char,
     v_char: char,
 ) -> char {
+    let JunctionArms {
+        up,
+        down,
+        left,
+        right,
+    } = arms;
     match keyline_type {
         KeylineType::None => ' ',
         KeylineType::Thin => match (up, down, left, right) {
@@ -2305,20 +2319,9 @@ fn paint_grid_keyline_rectangles(
     parent_rect: crate::widget_tree::Rect,
     ctx: TreeRenderCtx,
     frame: &mut FrameBuffer,
-    stroke: KeylineStroke,
+    stroke: &KeylineStroke,
 ) {
     use std::collections::HashMap;
-
-    // Per-cell accumulated direction bits (up/down/left/right) in frame coords.
-    // Each rectangle edge ORs the directions of the line passing through a cell;
-    // overlapping rectangles in the shared gutter naturally form T/cross junctions.
-    #[derive(Default, Clone, Copy)]
-    struct Dir {
-        up: bool,
-        down: bool,
-        left: bool,
-        right: bool,
-    }
 
     let frame_w = frame.width.to_i32_sat();
     let frame_h = frame.height.to_i32_sat();
@@ -2330,9 +2333,12 @@ fn paint_grid_keyline_rectangles(
         return;
     }
 
-    let mut cells: HashMap<(i32, i32), Dir> = HashMap::new();
+    // Per-cell accumulated junction arms in frame coords. Each rectangle edge
+    // ORs the directions of the line passing through a cell; overlapping
+    // rectangles in the shared gutter naturally form T/cross junctions.
+    let mut cells: HashMap<(i32, i32), JunctionArms> = HashMap::new();
 
-    let mark = |cells: &mut HashMap<(i32, i32), Dir>,
+    let mark = |cells: &mut HashMap<(i32, i32), JunctionArms>,
                 x: i32,
                 y: i32,
                 up: bool,
@@ -2404,15 +2410,7 @@ fn paint_grid_keyline_rectangles(
         {
             continue;
         }
-        let ch = keyline_junction_char(
-            stroke.keyline_type,
-            dir.up,
-            dir.down,
-            dir.left,
-            dir.right,
-            stroke.h_char,
-            stroke.v_char,
-        );
+        let ch = keyline_junction_char(stroke.keyline_type, dir, stroke.h_char, stroke.v_char);
         let cell = frame.get_mut(x.to_usize_sat(), y.to_usize_sat());
         cell.text = ch.to_string();
         let existing_bg = cell.style.and_then(|s| s.bgcolor);
@@ -2438,7 +2436,7 @@ fn paint_grid_keylines(
     parent_rect: crate::widget_tree::Rect,
     ctx: TreeRenderCtx,
     frame: &mut FrameBuffer,
-    stroke: KeylineStroke,
+    stroke: &KeylineStroke,
     precomputed: Option<(&BTreeSet<i32>, &BTreeSet<i32>)>,
 ) {
     let frame_w = frame.width.to_i32_sat();
@@ -2507,10 +2505,12 @@ fn paint_grid_keylines(
                 let right = h_ref.contains(&y) && x < x_end;
                 keyline_junction_char(
                     stroke.keyline_type,
-                    up,
-                    down,
-                    left,
-                    right,
+                    JunctionArms {
+                        up,
+                        down,
+                        left,
+                        right,
+                    },
                     stroke.h_char,
                     stroke.v_char,
                 )
@@ -4115,7 +4115,7 @@ mod tests {
         let child_ids = vec![wide, narrow];
         let stroke =
             KeylineStroke::new(line_style, KeylineType::Heavy).expect("heavy keyline draws");
-        paint_grid_keyline_rectangles(&tree, &child_ids, parent_rect, ctx, &mut frame, stroke);
+        paint_grid_keyline_rectangles(&tree, &child_ids, parent_rect, ctx, &mut frame, &stroke);
 
         // The narrow cell's right edge sits at x=38 (rect.x1). Its vertical line
         // spans only the narrow cell's gutter rows (y in [10..19]). It must NOT

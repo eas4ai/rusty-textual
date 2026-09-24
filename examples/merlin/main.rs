@@ -128,6 +128,8 @@ impl Widget for LabelSwitch {
 // App
 // ---------------------------------------------------------------------------
 
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct MerlinApp {
     start: Option<Instant>,
     running: bool,
@@ -186,27 +188,27 @@ impl MerlinApp {
         format!("#switch-{n}")
     }
 
-    fn read_switch(&mut self, app: &mut App, n: u8) -> bool {
+    fn read_switch(app: &mut App, n: u8) -> bool {
         app.with_query_one_mut_as::<Switch, _>(&Self::selector(n), |s| s.value())
             .unwrap_or(false)
     }
 
-    fn set_switch(&mut self, app: &mut App, ctx: &mut WidgetCtx, n: u8, value: bool) {
+    fn set_switch(app: &mut App, ctx: &mut WidgetCtx, n: u8, value: bool) {
         let _ =
             app.with_query_one_mut_as::<Switch, _>(&Self::selector(n), |s| s.set_value(value, ctx));
     }
 
-    fn flip_switch(&mut self, app: &mut App, ctx: &mut WidgetCtx, n: u8) {
-        let current = self.read_switch(app, n);
-        self.set_switch(app, ctx, n, !current);
+    fn flip_switch(app: &mut App, ctx: &mut WidgetCtx, n: u8) {
+        let current = Self::read_switch(app, n);
+        Self::set_switch(app, ctx, n, !current);
     }
 
-    fn on_switches(&mut self, app: &mut App) -> Vec<u8> {
-        (1..=9u8).filter(|&n| self.read_switch(app, n)).collect()
+    fn on_switches(app: &mut App) -> Vec<u8> {
+        (1..=9u8).filter(|&n| Self::read_switch(app, n)).collect()
     }
 
     fn check_win(&mut self, app: &mut App) {
-        if !self.won && is_win(&self.on_switches(app)) {
+        if !self.won && is_win(&Self::on_switches(app)) {
             self.won = true;
             self.running = false;
             app.notify(
@@ -259,7 +261,7 @@ impl TextualApp for MerlinApp {
         self.dealing = true;
         for n in 1..=9u8 {
             if self.next_bit() {
-                self.set_switch(app, ctx, n, true);
+                Self::set_switch(app, ctx, n, true);
             }
         }
         self.dealing = false;
@@ -283,7 +285,7 @@ impl TextualApp for MerlinApp {
         // Cascade to partners, then check the win (Python `on_switch_changed`).
         self.cascading = true;
         for &m in toggles(n) {
-            self.flip_switch(app, ctx, m);
+            Self::flip_switch(app, ctx, m);
         }
         self.cascading = false;
         self.check_win(app);
@@ -299,7 +301,7 @@ impl TextualApp for MerlinApp {
                     .filter(|&d| (1..=9).contains(&d))
                     .and_then(|d| u8::try_from(d).ok())
                 {
-                    self.flip_switch(app, ctx, n);
+                    Self::flip_switch(app, ctx, n);
                 }
             }
         }

@@ -367,6 +367,9 @@ impl crate::widgets::Components for Sparkline {
 }
 
 #[cfg(test)]
+// These tests assert exact float results (endpoints and values a float holds
+// exactly); a tolerance would hide off-by-epsilon regressions.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::node_id::NodeId;

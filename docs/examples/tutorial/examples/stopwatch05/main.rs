@@ -142,6 +142,7 @@ impl TimeDisplay {
     }
 
     /// Python `watch_time`: format the elapsed time and push it to the Digits.
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_time(&mut self, _old: &f64, new: &f64, _ctx: &mut ReactiveCtx) {
         self.inner.update(format_time(*new));
     }

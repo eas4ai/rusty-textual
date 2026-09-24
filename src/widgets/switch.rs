@@ -109,6 +109,7 @@ impl Switch {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_value(&mut self, _old: &bool, _new: &bool, ctx: &mut ReactiveCtx) {
         // Snap slider immediately (programmatic change, no animation).
         self.slider_target = if self.value { 1.0 } else { 0.0 };

@@ -36,6 +36,8 @@ pub struct AppActiveGuard(bool);
 pub struct AppRuntimePseudosGuard(AppRuntimePseudos);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+// Separate widget and CSS pseudo-class states; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 pub struct AppRuntimePseudos {
     pub dark: bool,
     pub inline: bool,

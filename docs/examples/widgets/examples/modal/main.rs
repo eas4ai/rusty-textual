@@ -8,12 +8,7 @@ struct ModalApp {
 }
 
 impl ModalApp {
-    fn set_overlay_visible(
-        &self,
-        app: &mut App,
-        visible: bool,
-        ctx: &mut textual::event::WidgetCtx,
-    ) {
+    fn set_overlay_visible(app: &mut App, visible: bool, ctx: &mut textual::event::WidgetCtx) {
         let Ok(overlay) = app.query_one("Overlay") else {
             return;
         };
@@ -74,7 +69,7 @@ impl TextualApp for ModalApp {
         }
         self.initialized = true;
         // Ensure initial state is hidden in tree mode.
-        self.set_overlay_visible(app, false, ctx);
+        Self::set_overlay_visible(app, false, ctx);
         self.overlay_open = false;
     }
 
@@ -89,11 +84,11 @@ impl TextualApp for ModalApp {
             match description.as_str() {
                 "Open modal" => {
                     self.overlay_open = true;
-                    self.set_overlay_visible(app, true, ctx);
+                    Self::set_overlay_visible(app, true, ctx);
                 }
                 "Close modal" => {
                     self.overlay_open = false;
-                    self.set_overlay_visible(app, false, ctx);
+                    Self::set_overlay_visible(app, false, ctx);
                 }
                 _ => {}
             }

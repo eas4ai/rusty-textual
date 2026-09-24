@@ -175,6 +175,7 @@ fn fetch_weather(city: &str, token: &CancellationToken) -> std::result::Result<S
 }
 
 #[cfg(not(feature = "http-examples"))]
+#[allow(clippy::unnecessary_wraps)] // Same signature as the `http-examples` version, which can fail.
 fn fetch_weather(city: &str, token: &CancellationToken) -> std::result::Result<String, String> {
     // Simulate the network round-trip with a short blocking sleep.
     std::thread::sleep(std::time::Duration::from_millis(80));

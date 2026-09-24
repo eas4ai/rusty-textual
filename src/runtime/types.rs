@@ -194,6 +194,8 @@ pub(crate) const SYNC_START: &str = "\x1b[?2026h";
 pub(crate) const SYNC_END: &str = "\x1b[?2026l";
 
 #[derive(Debug, Clone, Default)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct DispatchOutcome {
     pub handled: bool,
     pub repaint_requested: bool,

@@ -204,6 +204,7 @@ impl KeyEventData {
 
 /// Core normalization logic.  Maps a crossterm [`KeyCode`] + [`KeyModifiers`]
 /// to a canonical `(key_name, character, is_printable)` triple.
+#[allow(clippy::too_many_lines)] // One arm per key name.
 fn normalize_key_code(code: KeyCode, modifiers: KeyModifiers) -> (String, Option<char>, bool) {
     // We will strip SHIFT from the modifier set when the character already
     // encodes it (e.g. uppercase letter, or symbol produced by Shift).

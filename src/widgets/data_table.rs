@@ -248,6 +248,8 @@ impl ColumnKey {
 
 #[derive(Debug, Clone)]
 #[widget(Focus, Interactive, Layout, Scrollable, StyleIdentity, Components)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct DataTable {
     column_keys: Vec<ColumnKey>,
     headers: Vec<String>,
@@ -364,6 +366,8 @@ impl DataTable {
         }
     }
 
+    // Matches the table's `S: ToString` convention (`add_columns`, rows, ...).
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add_column<S>(&mut self, column: S) -> ColumnKey
     where
         S: ToString,
@@ -376,6 +380,8 @@ impl DataTable {
         key
     }
 
+    // Matches the table's `S: ToString` convention (`add_columns`, rows, ...).
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add_column_with_key<K, S>(&mut self, key: K, column: S) -> Option<ColumnKey>
     where
         K: Into<String>,
@@ -774,24 +780,29 @@ impl DataTable {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_cursor_type(&mut self, _old: &CursorType, _new: &CursorType, _ctx: &mut ReactiveCtx) {
         // Visual change only — repaint is handled by ReactiveFlags.
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_show_header(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Visible row count changes — recompute scroll offsets.
         self.ensure_visible(self.visible_rows());
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_show_cursor(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Visual change only — repaint is handled by ReactiveFlags.
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_header_height(&mut self, _old: &usize, _new: &usize, _ctx: &mut ReactiveCtx) {
         // Visible row count changes — recompute scroll offsets.
         self.ensure_visible(self.visible_rows());
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_zebra_stripes(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Visual change only — repaint is handled by ReactiveFlags.
     }
@@ -942,6 +953,8 @@ impl DataTable {
     /// Update the value of a specific cell with plain text. Returns `true` if the
     /// cell existed and was updated, `false` if the coordinates are out of bounds.
     /// The cell's alignment is preserved; its styling is reset to plain.
+    // Matches the table's `S: ToString` convention (`add_columns`, rows, ...).
+    #[allow(clippy::needless_pass_by_value)]
     pub fn update_cell(&mut self, row: usize, col: usize, value: impl ToString) -> bool {
         if let Some(cell) = self.rows.get_mut(row).and_then(|r| r.get_mut(col)) {
             cell.content = Content::from_text(value.to_string());

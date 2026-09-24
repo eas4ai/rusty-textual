@@ -80,10 +80,10 @@ struct WidgetArgs {
     /// The `base = <Type>` type path (documentation + readability; forwarding is
     /// by field name, not type). `None` selects OWN-WIDGET mode (the widget
     /// implements the capability traits itself instead of delegating to a base).
-    _base: Option<Path>,
+    base: Option<Path>,
     /// Own-widget-mode capability opt-in list (e.g. `Layout`, `Interactive`).
     /// Each listed capability's `Widget` methods are forwarded to the widget's
-    /// own `impl <Capability>`. Only meaningful when `_base` is `None`.
+    /// own `impl <Capability>`. Only meaningful when `base` is `None`.
     capabilities: Vec<Ident>,
     /// Field name to forward to (default `base`).
     field: Ident,
@@ -181,7 +181,7 @@ impl Parse for WidgetArgs {
         }
 
         Ok(WidgetArgs {
-            _base: base,
+            base,
             capabilities,
             field: field.unwrap_or_else(|| format_ident!("base")),
             style_type,
@@ -200,6 +200,7 @@ struct MethodSpec {
     call: TokenStream,
 }
 
+#[allow(clippy::too_many_lines)] // One entry per forwarded `Widget` method.
 fn method_table() -> Vec<MethodSpec> {
     macro_rules! m {
         ($name:literal, $sig:expr, $call:expr) => {
@@ -832,7 +833,7 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         Ok(a) => a,
         Err(e) => return e.to_compile_error(),
     };
-    let item_struct: ItemStruct = match parse2(item.clone()) {
+    let item_struct: ItemStruct = match parse2(item) {
         Ok(s) => s,
         Err(e) => return e.to_compile_error(),
     };
@@ -844,7 +845,7 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     // `impl Widget` forwards each opted-in capability's methods to the widget's
     // own capability-trait impl and lets every other method fall through to the
     // `Widget` default. Runtime dispatch stays monolithic through `dyn Widget`.
-    if args._base.is_none() {
+    if args.base.is_none() {
         return own_widget_impl(&item_struct, &args, &table);
     }
 
@@ -981,12 +982,12 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         // -> keep the trait default (own concrete type name).
     }
 
-    assemble_impl(&item_struct, methods)
+    assemble_impl(&item_struct, &methods)
 }
 
 /// Emit the widget struct plus its generated `impl Widget` (body = `methods`)
 /// and the always-present `impl Renderable` (both modes share this).
-fn assemble_impl(item_struct: &ItemStruct, methods: Vec<TokenStream>) -> TokenStream {
+fn assemble_impl(item_struct: &ItemStruct, methods: &[TokenStream]) -> TokenStream {
     let name = &item_struct.ident;
     let (impl_generics, ty_generics, where_clause) = item_struct.generics.split_for_impl();
     quote! {
@@ -1140,7 +1141,7 @@ fn own_widget_impl(
         }
     }
 
-    assemble_impl(item_struct, methods)
+    assemble_impl(item_struct, &methods)
 }
 
 #[cfg(test)]
@@ -1211,7 +1212,7 @@ mod tests {
     fn no_base_selects_own_widget_mode() {
         // No `base = ...` is now valid: it selects own-widget mode.
         let args: WidgetArgs = parse2(quote! { Layout }).unwrap();
-        assert!(args._base.is_none());
+        assert!(args.base.is_none());
     }
 
     #[test]
@@ -1224,7 +1225,7 @@ mod tests {
     #[test]
     fn own_mode_parses_capabilities() {
         let args: WidgetArgs = parse2(quote! { Layout, Interactive }).unwrap();
-        assert!(args._base.is_none());
+        assert!(args.base.is_none());
         let caps: Vec<String> = args
             .capabilities
             .iter()

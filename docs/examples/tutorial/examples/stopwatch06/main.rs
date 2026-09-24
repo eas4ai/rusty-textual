@@ -65,6 +65,7 @@ impl TimeDisplay {
     fn tick(&mut self, ctx: &mut WidgetCtx, tick: TimerTick) {
         self.set_time(self.time + tick.elapsed.as_secs_f64(), ctx);
     }
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_time(&mut self, _old: &f64, new: &f64, _ctx: &mut ReactiveCtx) {
         self.base.update(format_time(*new));
     }
@@ -102,6 +103,7 @@ impl Stopwatch {
     }
     /// Python `on_button_pressed`: query the `TimeDisplay`, drive it, toggle class.
     #[textual::on(ButtonPressed)]
+    #[allow(clippy::unused_self)] // `#[on(..)]` calls handlers as methods.
     fn on_button(&mut self, event: &ButtonPressed, ctx: &mut WidgetCtx) {
         let td = ctx.query_one::<TimeDisplay>();
         match event.button_id.as_deref() {

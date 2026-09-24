@@ -68,6 +68,7 @@ impl WatchApp {
     /// `query_mut(sel).set_styles(..)` (Python `widget.styles.background = color`).
     /// A post-mount `Static::set_inline_style` would only touch the widget's
     /// drained seed, so it must go through the node's inline styles here.
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_color(&mut self, app: &mut App, old: &Color, new: &Color, _ctx: &mut ReactiveCtx) {
         let old = *old;
         let new = *new;

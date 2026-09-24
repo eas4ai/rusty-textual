@@ -131,6 +131,8 @@ impl Rect {
 // ---------------------------------------------------------------------------
 
 /// A single node in the arena-based widget tree.
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct WidgetNode {
     /// The widget's behavior (render, events, messages).
     pub(crate) widget: Box<dyn Widget>,

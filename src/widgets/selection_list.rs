@@ -156,14 +156,17 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     ///
     /// Panics if two selections carry the same id (same constructor policy as
     /// [`OptionList::with_items`]).
+    #[must_use]
     pub fn with_selections(selections: Vec<Selection<T>>) -> Self {
         let mut list = Self::new();
-        let items: Vec<OptionItem> = selections.iter().map(Selection::to_option_item).collect();
-        let values: Vec<T> = selections.iter().map(|s| s.value.clone()).collect();
-        let selected: Vec<bool> = selections
-            .iter()
-            .map(|s| s.initially_selected && !s.disabled)
-            .collect();
+        let mut items = Vec::with_capacity(selections.len());
+        let mut values = Vec::with_capacity(selections.len());
+        let mut selected = Vec::with_capacity(selections.len());
+        for selection in selections {
+            items.push(selection.to_option_item());
+            selected.push(selection.initially_selected && !selection.disabled);
+            values.push(selection.value);
+        }
         list.inner = OptionList::with_items(items);
         list.values = values;
         list.selected_order = selected

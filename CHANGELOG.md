@@ -21,6 +21,16 @@ until the API stabilizes.
   delegation). Every implementation returned a string literal; an impl that
   returned borrowed data must now return a literal. `Screen::name` and
   `Provider::name` keep `&str`, so names can still be runtime values.
+- **Breaking:** `App::set_interval_named` takes the timer name as
+  `Option<&str>` instead of `Option<String>`. The name is not stored, so
+  the owned `String` was never needed.
+- `SelectionList::with_selections` is `#[must_use]` and moves each value
+  out of the given `Vec` instead of cloning it.
+- `#[derive(Reactive)]` no longer triggers `clippy::float_cmp` in the
+  user's crate: its exact change checks for float fields carry their own
+  allow. The derive's docs note that watchers take `&T`, so a watcher for a
+  small `Copy` type needs `#[allow(clippy::trivially_copy_pass_by_ref)]`
+  under `clippy::pedantic`.
 - Numeric conversions in layout, rendering and widgets clamp an
   out-of-range value to the target type's range instead of wrapping or
   truncating it. For example, a width above 65,535 cells now becomes

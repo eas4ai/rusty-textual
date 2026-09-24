@@ -93,6 +93,7 @@ impl WorldClock {
     }
 
     /// Python `watch_time`: localize and update this clock's Digits.
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_time(&mut self, app: &mut App, _old: &u64, new: &u64, _ctx: &mut ReactiveCtx) {
         let text = format_local(*new, self.utc_offset_secs);
         let sel = format!("#{}", self.digits_id);
@@ -153,6 +154,7 @@ impl WorldClockApp {
     }
 
     /// Python `watch_time`: push the timestamp to each `WorldClock`'s reactive.
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_time(&mut self, app: &mut App, _old: &u64, new: &u64, _ctx: &mut ReactiveCtx) {
         let time = *new;
         let clock_ids = app

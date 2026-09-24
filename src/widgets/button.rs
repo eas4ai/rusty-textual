@@ -293,6 +293,7 @@ impl Button {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_variant(
         &mut self,
         _old: &ButtonVariant,
@@ -302,14 +303,17 @@ impl Button {
         self.rebuild_classes_in_place();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_disabled(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         self.rebuild_classes_in_place();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_flat(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         self.rebuild_classes_in_place();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_compact(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         self.rebuild_classes_in_place();
     }

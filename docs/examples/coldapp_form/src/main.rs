@@ -88,7 +88,7 @@ impl FormApp {
     /// Gather every control's state, validate, and return either the success
     /// summary or the first error. Reads are by native id (`Input`) or by type
     /// selector (single-instance controls).
-    fn evaluate(&self, app: &mut App) -> std::result::Result<String, String> {
+    fn evaluate(app: &mut App) -> std::result::Result<String, String> {
         let username = app
             .with_query_one_mut_as::<Input, _>("#username", |i| i.value().to_string())
             .unwrap_or_default();
@@ -213,7 +213,7 @@ impl TextualApp for FormApp {
         if ev.button_id.as_deref() != Some("submit") {
             return;
         }
-        match self.evaluate(app) {
+        match Self::evaluate(app) {
             Ok(summary) => {
                 self.submitted += 1;
                 self.push_status(app, &summary, true);

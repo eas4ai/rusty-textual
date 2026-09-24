@@ -34,6 +34,7 @@ impl MarkdownApp {
         }
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_nav_state(
         &mut self,
         app: &mut App,

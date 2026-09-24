@@ -674,7 +674,6 @@ impl OptionList {
     /// containing newlines) are preserved as multiple lines — mirroring Python
     /// `OptionList`, where each option occupies as many lines as its visual height.
     fn render_rich_lines(
-        &self,
         content: &Text,
         line_style: rich_rs::Style,
         width: usize,
@@ -739,7 +738,6 @@ impl OptionList {
     /// the content is rendered live at the runtime `width` rather than being
     /// pre-rendered into a `Text`.
     fn render_renderable_lines(
-        &self,
         renderable: &dyn Renderable,
         line_style: rich_rs::Style,
         width: usize,
@@ -810,7 +808,7 @@ impl OptionList {
             ..Default::default()
         };
         let text = rich_rs::Text::from(prompt);
-        self.render_rich_lines(
+        Self::render_rich_lines(
             &text,
             rich_rs::Style::default(),
             content_w,
@@ -1501,7 +1499,7 @@ impl crate::widgets::Render for OptionList {
 
                             let lines = rendered_items.entry(index).or_insert_with(|| {
                                 let mut raw = match content {
-                                    Some(OptionContent::Text(rich)) => self.render_rich_lines(
+                                    Some(OptionContent::Text(rich)) => Self::render_rich_lines(
                                         rich, style, content_w, console, options,
                                     ),
                                     Some(OptionContent::Renderable(r)) => {
@@ -1511,7 +1509,7 @@ impl crate::widgets::Render for OptionList {
                                         // scrollable_content_region.width which already
                                         // subtracts scrollbar_size_vertical (default 2).
                                         let rw = renderable_width.saturating_sub(pad_left).max(1);
-                                        self.render_renderable_lines(
+                                        Self::render_renderable_lines(
                                             r.as_ref(),
                                             style,
                                             rw,
@@ -1526,7 +1524,7 @@ impl crate::widgets::Render for OptionList {
                                         // renderer so wrapping matches `item_height`'s
                                         // measurement exactly.
                                         let text = rich_rs::Text::from(prompt.as_str());
-                                        self.render_rich_lines(
+                                        Self::render_rich_lines(
                                             &text, style, content_w, console, options,
                                         )
                                     }

@@ -90,6 +90,7 @@ impl Checkbox {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_checked(&mut self, _old: &bool, _new: &bool, ctx: &mut ReactiveCtx) {
         // Keep the detached seed classes in sync (pre-mount identity — the node
         // inherits them at mount) AND queue a class op so the arena node toggles

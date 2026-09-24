@@ -223,6 +223,8 @@ impl SelectorMeta {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+// Separate widget and CSS pseudo-class states; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 pub(super) struct SelectorStates {
     pub(super) disabled: bool,
     pub(super) focused: bool,

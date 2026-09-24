@@ -161,9 +161,7 @@ pub(crate) fn parse_markdown_blocks(markup: &str) -> Vec<MarkdownBlock> {
                                 current_row.iter().map(|(_, raw)| raw.clone()).collect();
                             current_row.clear();
                         }
-                        Event::Start(Tag::TableHead) | Event::Start(Tag::TableRow) => {
-                            current_row.clear()
-                        }
+                        Event::Start(Tag::TableHead | Tag::TableRow) => current_row.clear(),
                         Event::End(TagEnd::TableRow) => {
                             if headers.is_empty() {
                                 headers =

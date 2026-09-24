@@ -14,11 +14,13 @@ use rusty_textual::runtime::{App, AppResumed, AppSuspended};
 static SUSPENDS: AtomicUsize = AtomicUsize::new(0);
 static RESUMES: AtomicUsize = AtomicUsize::new(0);
 
+#[allow(clippy::trivially_copy_pass_by_ref)] // `Signal` handlers receive the payload as `&T`.
 fn on_suspend(_: &AppSuspended) -> SignalResponse {
     SUSPENDS.fetch_add(1, Ordering::SeqCst);
     SignalResponse::Continue
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)] // `Signal` handlers receive the payload as `&T`.
 fn on_resume(_: &AppResumed) -> SignalResponse {
     RESUMES.fetch_add(1, Ordering::SeqCst);
     SignalResponse::Continue

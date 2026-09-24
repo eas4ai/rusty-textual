@@ -32,7 +32,7 @@ fn resolve_grid_box_dim(
         None | Some(Scalar::Fraction(_)) => avail,
         Some(Scalar::Auto) => intrinsic_outer.unwrap_or(avail).min(avail),
         Some(s) => {
-            let cells = resolve_scalar_to_cells(s, avail, viewport);
+            let cells = resolve_scalar_to_cells(*s, avail, viewport);
             let outer = if box_sizing == BoxSizing::BorderBox {
                 cells
             } else {
@@ -108,7 +108,7 @@ impl Rat {
 /// against `size` (the container dimension) / `viewport`. Mirrors
 /// `Scalar.resolve`, but `auto`/`fr` are handled by the caller and never reach
 /// here.
-fn resolve_fixed_scalar(scalar: &Scalar, size: u16, viewport: u16) -> Rat {
+fn resolve_fixed_scalar(scalar: Scalar, size: u16, viewport: u16) -> Rat {
     // Percentages keep the exact rational `value * size / 100` (Python does NOT
     // round here — rounding happens once at the cumulative-floor step). `value`
     // is integral in practice but quantize to 1/1000 to be safe.
@@ -123,11 +123,11 @@ fn resolve_fixed_scalar(scalar: &Scalar, size: u16, viewport: u16) -> Rat {
         }
     };
     match scalar {
-        Scalar::Cells(n) => Rat::whole(i64::from(*n)),
+        Scalar::Cells(n) => Rat::whole(i64::from(n)),
         // `w`/`h` track units are rare; resolve them like `%`, against the
         // track-axis size (the grid track resolver only knows one axis here).
-        Scalar::Percent(p) | Scalar::Width(p) | Scalar::Height(p) => exact(*p, size),
-        Scalar::ViewWidth(p) | Scalar::ViewHeight(p) => exact(*p, viewport),
+        Scalar::Percent(p) | Scalar::Width(p) | Scalar::Height(p) => exact(p, size),
+        Scalar::ViewWidth(p) | Scalar::ViewHeight(p) => exact(p, viewport),
         // Auto / Fraction are handled before calling this; treat defensively as 0.
         Scalar::Auto | Scalar::Fraction(_) => Rat::zero(),
     }
@@ -157,7 +157,7 @@ fn resolve_tracks(
             if matches!(s, Scalar::Fraction(_)) {
                 (*s, None)
             } else {
-                (*s, Some(resolve_fixed_scalar(s, size, viewport)))
+                (*s, Some(resolve_fixed_scalar(*s, size, viewport)))
             }
         })
         .collect();
@@ -244,10 +244,10 @@ fn frac_value(v: f32) -> Rat {
 /// (Python `apply_width_limits`). Limits resolve against the container size.
 fn apply_width_limits(style: &Style, mut width: u16, size: u16, viewport: (u16, u16)) -> u16 {
     if let Some(ref s) = style.min_width {
-        width = width.max(resolve_scalar_to_cells(s, size, viewport));
+        width = width.max(resolve_scalar_to_cells(*s, size, viewport));
     }
     if let Some(ref s) = style.max_width {
-        width = width.min(resolve_scalar_to_cells(s, size, viewport));
+        width = width.min(resolve_scalar_to_cells(*s, size, viewport));
     }
     width
 }
@@ -256,10 +256,10 @@ fn apply_width_limits(style: &Style, mut width: u16, size: u16, viewport: (u16, 
 /// (Python `apply_height_limits`).
 fn apply_height_limits(style: &Style, mut height: u16, size: u16, viewport: (u16, u16)) -> u16 {
     if let Some(ref s) = style.min_height {
-        height = height.max(resolve_scalar_to_cells(s, size, viewport));
+        height = height.max(resolve_scalar_to_cells(*s, size, viewport));
     }
     if let Some(ref s) = style.max_height {
-        height = height.min(resolve_scalar_to_cells(s, size, viewport));
+        height = height.min(resolve_scalar_to_cells(*s, size, viewport));
     }
     height
 }
@@ -639,7 +639,7 @@ pub fn layout_grid(
 
         // Apply max-width constraint.
         if let Some(ref s) = style.max_width {
-            let max_w = resolve_scalar_to_cells(s, available.width, viewport);
+            let max_w = resolve_scalar_to_cells(*s, available.width, viewport);
             let max_w_outer = if box_sizing == BoxSizing::BorderBox {
                 max_w
             } else {
@@ -649,7 +649,7 @@ pub fn layout_grid(
         }
         // Apply min-width constraint.
         if let Some(ref s) = style.min_width {
-            let min_w = resolve_scalar_to_cells(s, available.width, viewport);
+            let min_w = resolve_scalar_to_cells(*s, available.width, viewport);
             let min_w_outer = if box_sizing == BoxSizing::BorderBox {
                 min_w
             } else {
@@ -659,7 +659,7 @@ pub fn layout_grid(
         }
         // Apply max-height constraint.
         if let Some(ref s) = style.max_height {
-            let max_h = resolve_scalar_to_cells(s, available.height, viewport);
+            let max_h = resolve_scalar_to_cells(*s, available.height, viewport);
             let max_h_outer = if box_sizing == BoxSizing::BorderBox {
                 max_h
             } else {
@@ -669,7 +669,7 @@ pub fn layout_grid(
         }
         // Apply min-height constraint.
         if let Some(ref s) = style.min_height {
-            let min_h = resolve_scalar_to_cells(s, available.height, viewport);
+            let min_h = resolve_scalar_to_cells(*s, available.height, viewport);
             let min_h_outer = if box_sizing == BoxSizing::BorderBox {
                 min_h
             } else {

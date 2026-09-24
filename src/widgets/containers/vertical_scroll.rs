@@ -13,6 +13,7 @@ pub struct VerticalScroll {
 }
 
 impl VerticalScroll {
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn style_type_aliases(&self) -> &[&'static str] {
         &["ScrollableContainer"]
     }

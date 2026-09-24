@@ -85,6 +85,7 @@ impl CodeBrowserApp {
 
     /// Mirrors Python's `watch_show_tree`: toggles `-show-tree` CSS class on
     /// the Screen, which the stylesheet uses to show/hide the directory tree.
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_show_tree(&mut self, app: &mut App, _old: &bool, new: &bool, ctx: &mut ReactiveCtx) {
         let _ = app
             .query_mut("Screen")
@@ -96,6 +97,7 @@ impl CodeBrowserApp {
 
     /// Mirrors Python's `watch_path`: loads and syntax-highlights the file on
     /// each path change (None → clear the code pane).
+    #[allow(clippy::ref_option)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_path(
         &mut self,
         app: &mut App,

@@ -80,6 +80,7 @@ impl FocusableCard {
     }
 
     // MUST match `Widget::focusable`'s signature exactly.
+    #[allow(clippy::unused_self)]
     fn focusable(&self) -> bool {
         true
     }

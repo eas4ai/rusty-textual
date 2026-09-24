@@ -37,8 +37,8 @@ fn check_golden(name: &str, actual: &str) {
         std::fs::write(&path, actual).unwrap();
         return;
     }
-    let expected =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("missing golden {path:?}: {e}"));
+    let expected = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("missing golden {}: {e}", path.display()));
     assert_eq!(
         actual, expected,
         "width-0 render output changed for case {name}"

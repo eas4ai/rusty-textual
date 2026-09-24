@@ -102,7 +102,7 @@ impl Link {
 }
 
 /// Apply [`TextStyleFlags`] onto a `rich_rs::Style`.
-fn apply_text_style_flags(style: &mut rich_rs::Style, flags: &crate::style::TextStyleFlags) {
+fn apply_text_style_flags(style: &mut rich_rs::Style, flags: crate::style::TextStyleFlags) {
     if flags.bold {
         *style = (*style).with_bold(true);
     }
@@ -215,7 +215,7 @@ impl Render for Link {
                 }
             }
             if let Some(flags) = resolved.link_style_hover.or(resolved.link_style) {
-                apply_text_style_flags(&mut style, &flags);
+                apply_text_style_flags(&mut style, flags);
             }
         } else {
             // Normal state (also used for disabled links).
@@ -228,7 +228,7 @@ impl Render for Link {
                 }
             }
             if let Some(flags) = resolved.link_style {
-                apply_text_style_flags(&mut style, &flags);
+                apply_text_style_flags(&mut style, flags);
             }
         }
 

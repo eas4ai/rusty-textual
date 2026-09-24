@@ -224,6 +224,7 @@ impl PomodoroApp {
 
     /// Reactive watch (`#[reactive(watch_with_app)] completed`): repaint the
     /// top-bar "Completed pomodoros" label whenever a card finishes.
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_completed(&mut self, app: &mut App, _old: &u32, new: &u32, _ctx: &mut ReactiveCtx) {
         let text = format!("Completed pomodoros: {new}");
         let _ = app.with_query_one_mut_as::<Label, _>("#done", |l| l.set_text(text));
@@ -289,6 +290,9 @@ fn main() -> textual::Result<()> {
 // ===========================================================================
 
 #[cfg(test)]
+// These tests assert exact remaining-seconds values; a tolerance would hide
+// off-by-epsilon regressions.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

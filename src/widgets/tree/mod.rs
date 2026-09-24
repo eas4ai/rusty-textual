@@ -271,6 +271,7 @@ impl Tree {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_show_root(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Offset clamping is done in the setter; layout flag triggers re-layout.
         self.clamp_offsets();
@@ -845,9 +846,9 @@ impl Tree {
         // closest selectable line).
         let mut line = self.selected_line_in(&nodes).min(total - 1);
         if nodes.get(line).is_some_and(|node| node.disabled) {
-            if let Some(next) = self.closest_selectable(line, 1, &nodes) {
+            if let Some(next) = Self::closest_selectable(line, 1, &nodes) {
                 line = next;
-            } else if let Some(prev) = self.closest_selectable(line, -1, &nodes) {
+            } else if let Some(prev) = Self::closest_selectable(line, -1, &nodes) {
                 line = prev;
             }
         }
@@ -891,12 +892,7 @@ impl Tree {
         }
     }
 
-    fn emit_activated(
-        &self,
-        ctx: &mut crate::event::WidgetCtx,
-        index: usize,
-        nodes: &[VisibleNode],
-    ) {
+    fn emit_activated(ctx: &mut crate::event::WidgetCtx, index: usize, nodes: &[VisibleNode]) {
         if let Some(node) = nodes.get(index) {
             if node.disabled {
                 return;
@@ -922,7 +918,6 @@ impl Tree {
     }
 
     fn emit_toggled(
-        &self,
         ctx: &mut crate::event::WidgetCtx,
         index: usize,
         node_id: TreeNodeId,
@@ -957,9 +952,8 @@ impl Tree {
             return;
         }
         let selected = self.selected_line_in(&nodes);
-        let next = self
-            .closest_selectable(index, 1, &nodes)
-            .or_else(|| self.closest_selectable(index, -1, &nodes))
+        let next = Self::closest_selectable(index, 1, &nodes)
+            .or_else(|| Self::closest_selectable(index, -1, &nodes))
             .unwrap_or(selected.min(total - 1));
         if next != selected {
             self.cursor = nodes.get(next).map(|n| n.id);
@@ -997,18 +991,18 @@ impl Tree {
     fn toggle_selected(&mut self, ctx: &mut crate::event::WidgetCtx) {
         let nodes = self.visible_nodes();
         let selected = self.selected_line_in(&nodes);
-        self.toggle_line(selected, nodes, ctx);
+        self.toggle_line(selected, &nodes, ctx);
     }
 
     fn toggle_index(&mut self, index: usize, ctx: &mut crate::event::WidgetCtx) {
         let nodes = self.visible_nodes();
-        self.toggle_line(index, nodes, ctx);
+        self.toggle_line(index, &nodes, ctx);
     }
 
     fn toggle_line(
         &mut self,
         index: usize,
-        nodes: Vec<VisibleNode>,
+        nodes: &[VisibleNode],
         ctx: &mut crate::event::WidgetCtx,
     ) {
         let Some(info) = nodes.get(index).cloned() else {
@@ -1023,7 +1017,7 @@ impl Tree {
             expanded = node.expanded;
         }
         self.ensure_visible();
-        self.emit_toggled(ctx, index, info.id, info.label, expanded);
+        Self::emit_toggled(ctx, index, info.id, info.label, expanded);
         ctx.request_repaint();
     }
 
@@ -1250,7 +1244,7 @@ impl Tree {
         }
 
         self.ensure_visible();
-        self.emit_toggled(ctx, selected, info.id, info.label, new_state);
+        Self::emit_toggled(ctx, selected, info.id, info.label, new_state);
         ctx.request_repaint();
     }
 
@@ -1282,12 +1276,7 @@ impl Tree {
         }
     }
 
-    fn closest_selectable(
-        &self,
-        index: usize,
-        direction: isize,
-        nodes: &[VisibleNode],
-    ) -> Option<usize> {
+    fn closest_selectable(index: usize, direction: isize, nodes: &[VisibleNode]) -> Option<usize> {
         if nodes.is_empty() {
             return None;
         }
@@ -1408,7 +1397,7 @@ impl crate::widgets::Focus for Tree {
             "select_cursor" => {
                 let nodes = self.visible_nodes();
                 let selected = self.selected_line_in(&nodes);
-                self.emit_activated(ctx, selected, &nodes);
+                Self::emit_activated(ctx, selected, &nodes);
                 ctx.set_handled();
                 true
             }
@@ -1496,7 +1485,7 @@ impl crate::widgets::Interactive for Tree {
                 let index = self.offset.saturating_add(mouse.y as usize);
                 let nodes = self.visible_nodes();
                 if self.pressed_activation_index == Some(index) {
-                    self.emit_activated(ctx, index, &nodes);
+                    Self::emit_activated(ctx, index, &nodes);
                     ctx.set_handled();
                 }
                 self.pressed_activation_index = None;
@@ -1591,7 +1580,7 @@ impl crate::widgets::Interactive for Tree {
                         KeyCode::Enter => {
                             let nodes = self.visible_nodes();
                             let selected = self.selected_line_in(&nodes);
-                            self.emit_activated(ctx, selected, &nodes);
+                            Self::emit_activated(ctx, selected, &nodes);
                             ctx.set_handled();
                         }
                         KeyCode::Char(' ') => {

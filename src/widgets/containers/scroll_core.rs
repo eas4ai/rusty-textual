@@ -1,6 +1,13 @@
 use super::scroll_view::ScrollView;
 use crate::widgets::scrollbar;
 
+/// Whether a scroll changed the `(x, y)` offset. Exact on purpose: any
+/// change, however small, must trigger a repaint.
+#[allow(clippy::float_cmp)]
+pub(crate) fn offset_moved(before: (f32, f32), after: (f32, f32)) -> bool {
+    before.0 != after.0 || before.1 != after.1
+}
+
 /// Shared scroll math helpers used across scroll container wrappers.
 ///
 /// Transitional extraction: this centralizes the line-based helpers previously

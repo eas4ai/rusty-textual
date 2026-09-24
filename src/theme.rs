@@ -136,6 +136,7 @@ fn add(base: Color, over: Color) -> Color {
     blend_alpha(base, over, over.a, 1.0)
 }
 
+#[allow(clippy::too_many_lines)] // One entry per theme token, in the order Python's `ColorSystem` builds them.
 fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
     let mut colors: HashMap<String, Color> = HashMap::new();
 
@@ -608,6 +609,7 @@ fn vars(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
 
 /// The built-in named themes, ported exactly from Python `BUILTIN_THEMES`.
 #[must_use]
+#[allow(clippy::too_many_lines)] // The built-in theme definitions, one after another.
 pub fn builtin_themes() -> Vec<NamedTheme> {
     let mut out = Vec::new();
 

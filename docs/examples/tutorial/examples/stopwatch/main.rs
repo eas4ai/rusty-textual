@@ -194,6 +194,7 @@ impl TimeDisplay {
     }
 
     /// Python `watch_time`: format the elapsed time and push it to the Digits.
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_time(&mut self, _old: &f64, new: &f64, _ctx: &mut ReactiveCtx) {
         self.inner.update(format_time(*new));
     }
@@ -391,9 +392,8 @@ impl TextualApp for StopwatchApp {
     ) {
         if let Some(cmd) = message.downcast_ref::<TimeDisplayCmd>() {
             let sel = format!("#{}", cmd.display_id);
-            let node_id = match app.query(&sel).and_then(|q| q.first()) {
-                Ok(id) => id,
-                Err(_) => return,
+            let Ok(node_id) = app.query(&sel).and_then(|q| q.first()) else {
+                return;
             };
             let mut rctx = ReactiveCtx::new(node_id);
             app.with_widget_mut_as::<TimeDisplay, _>(node_id, |td| match cmd.kind {

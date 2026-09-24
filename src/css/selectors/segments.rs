@@ -7,7 +7,7 @@ use crate::style::Style;
 pub(crate) fn apply_style_to_segments(
     widget_id: NodeId,
     segments: Segments,
-    style: Style,
+    style: &Style,
     parent_style: Option<Style>,
 ) -> Segments {
     if style.is_empty() {

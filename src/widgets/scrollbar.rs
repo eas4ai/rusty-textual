@@ -376,6 +376,8 @@ impl ScrollbarPolicy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ScrollbarGeometry {
     pub widget_width: usize,
     pub widget_height: usize,

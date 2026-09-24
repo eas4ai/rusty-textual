@@ -1,5 +1,15 @@
 //! Integration tests for the reactive attribute system.
 
+// `#[derive(Reactive)]` calls watchers and validators as methods. Watchers
+// get `&T` for every field type and validators get `T` by value, so the
+// hooks below keep `self`, take `Copy` values by reference, and take owned
+// values they only read.
+#![allow(
+    clippy::needless_pass_by_value,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::unused_self
+)]
+
 use rusty_textual::App;
 use rusty_textual::Reactive;
 use rusty_textual::reactive::{

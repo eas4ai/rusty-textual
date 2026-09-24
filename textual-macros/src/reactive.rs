@@ -15,6 +15,8 @@ use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, Expr, Fields, Lit, Meta, parse2};
 
 /// Parsed annotation on a single field.
+// Each flag is a separate `#[reactive(..)]` / `#[var(..)]` option.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
 struct ReactiveField {
     /// The field identifier.
@@ -23,8 +25,8 @@ struct ReactiveField {
     ty: syn::Type,
     /// Whether `layout` was specified.
     layout: bool,
-    /// Whether `watch` was specified (opt-in watcher dispatch without app access).
-    watch: bool,
+    /// The plain watcher's shape (`watch`, `watch1`, `watch0`, `watch_async`).
+    watcher: WatcherShape,
     /// Whether `watch_with_app` was specified (watcher receives `&mut App`).
     watch_with_app: bool,
     /// Whether this is a `#[var]` field (no repaint, no layout).
@@ -41,18 +43,6 @@ struct ReactiveField {
     /// Whether `private_validate` was specified (call `_validate_<field>`
     /// before `validate_<field>` in the setter; Python `_set` order).
     private_validate: bool,
-    /// Watcher arity selection (Python `invoke_watcher` adapts to the
-    /// watcher's parameter count; static Rust declares it). `watch1` calls
-    /// `watch_<field>(new, ctx)`; `watch0` calls `watch_<field>()`. Mutually
-    /// exclusive with each other and with `watch`; `watch_with_app` combines
-    /// only with plain `watch`.
-    watch1: bool,
-    watch0: bool,
-    /// Async watcher (Python `async def watch_*`, awaited inline there).
-    /// The user's method returns a future driven on the worker pool:
-    /// `fn watch_<f>(&self, old: T, new: T) -> impl Future<Output = ()> + Send + 'static`.
-    /// Mutually exclusive with the other watcher flags (parse-time error).
-    watch_async: bool,
     /// Whether `bindings` was specified (refresh key bindings on change;
     /// Python `reactive(bindings=True)`).
     bindings: bool,
@@ -76,50 +66,66 @@ struct ComputedField {
     ty: syn::Type,
     /// Names of reactive fields this computed field depends on.
     depends_on: Vec<String>,
-    /// Whether `watch` was specified — call `watch_<field>(old, new, ctx)` when
-    /// the recomputed value changes (no app access).
-    watch: bool,
+    /// The plain watcher's shape; see [`WatcherShape`].
+    watcher: WatcherShape,
     /// Whether `watch_with_app` was specified — call
     /// `watch_<field>(app, old, new, ctx)` when the recomputed value changes.
     watch_with_app: bool,
     /// Whether `private_watch` was specified — call `_watch_<field>` before
     /// `watch_<field>` (same plain signature; Python `_check_watchers` order).
     private_watch: bool,
-    /// Watcher arity selection; see [`ReactiveField::watch1`].
-    watch1: bool,
-    watch0: bool,
-    /// Async watcher; see [`ReactiveField::watch_async`].
-    watch_async: bool,
 }
 
-/// Reject conflicting watcher-arity flags: at most one of
-/// `watch`/`watch1`/`watch0`, and `watch_with_app` combines only with plain
-/// `watch` (arity variants have no app-passing shape).
-fn check_watcher_arity(
-    attr: &syn::Attribute,
-    watch: bool,
-    watch1: bool,
-    watch0: bool,
-    watch_async: bool,
-    watch_with_app: bool,
-) -> syn::Result<()> {
-    let count = [watch, watch1, watch0, watch_async]
-        .iter()
-        .filter(|b| **b)
-        .count();
-    if count > 1 {
-        return Err(syn::Error::new_spanned(
-            attr,
-            "conflicting watcher flags; use at most one of `watch`, `watch1`, `watch0`, `watch_async`",
-        ));
+/// The shape of a field's plain watcher. Python's `invoke_watcher` adapts to
+/// the watcher's parameter count; static Rust declares it with one flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WatcherShape {
+    /// No plain watcher.
+    None,
+    /// `watch`: `watch_<field>(old, new, ctx)`.
+    Plain,
+    /// `watch1`: `watch_<field>(new, ctx)`.
+    NewOnly,
+    /// `watch0`: `watch_<field>()`.
+    NoArgs,
+    /// `watch_async` (Python `async def watch_*`, awaited inline there). The
+    /// method returns a future driven on the worker pool:
+    /// `fn watch_<f>(&self, old: T, new: T) -> impl Future<Output = ()> + Send + 'static`.
+    Async,
+}
+
+/// Record one watcher-shape flag; repeating the same flag is harmless.
+fn add_shape(shapes: &mut Vec<WatcherShape>, shape: WatcherShape) {
+    if !shapes.contains(&shape) {
+        shapes.push(shape);
     }
-    if (watch1 || watch0 || watch_async) && watch_with_app {
+}
+
+/// The field's watcher shape, rejecting conflicting flags: at most one of
+/// `watch`/`watch1`/`watch0`/`watch_async`, and `watch_with_app` combines
+/// only with plain `watch` (the other shapes have no app-passing form).
+fn watcher_shape(
+    attr: &syn::Attribute,
+    shapes: &[WatcherShape],
+    watch_with_app: bool,
+) -> syn::Result<WatcherShape> {
+    let shape = match shapes {
+        [] => WatcherShape::None,
+        [shape] => *shape,
+        _ => {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "conflicting watcher flags; use at most one of `watch`, `watch1`, `watch0`, `watch_async`",
+            ));
+        }
+    };
+    if watch_with_app && !matches!(shape, WatcherShape::None | WatcherShape::Plain) {
         return Err(syn::Error::new_spanned(
             attr,
             "`watch_with_app` combines only with plain `watch`, not `watch1`/`watch0`/`watch_async`",
         ));
     }
-    Ok(())
+    Ok(shape)
 }
 
 /// Parse reactive/var/computed attributes from a field's attributes.
@@ -141,10 +147,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
     for attr in &field.attrs {
         // Check for #[var] or #[var(...)]
         if attr.path().is_ident("var") {
-            let mut watch = false;
-            let mut watch1 = false;
-            let mut watch0 = false;
-            let mut watch_async = false;
+            let mut shapes: Vec<WatcherShape> = Vec::new();
             let mut watch_with_app = false;
             let mut init_false = false;
             let mut validate = false;
@@ -164,13 +167,13 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                     match nested_meta {
                         Meta::Path(path) => {
                             if path.is_ident("watch") {
-                                watch = true;
+                                add_shape(&mut shapes, WatcherShape::Plain);
                             } else if path.is_ident("watch1") {
-                                watch1 = true;
+                                add_shape(&mut shapes, WatcherShape::NewOnly);
                             } else if path.is_ident("watch0") {
-                                watch0 = true;
+                                add_shape(&mut shapes, WatcherShape::NoArgs);
                             } else if path.is_ident("watch_async") {
-                                watch_async = true;
+                                add_shape(&mut shapes, WatcherShape::Async);
                             } else if path.is_ident("watch_with_app") {
                                 watch_with_app = true;
                             } else if path.is_ident("validate") {
@@ -247,7 +250,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                 ));
                             }
                         }
-                        _ => {
+                        Meta::List(_) => {
                             return Err(syn::Error::new_spanned(
                                 nested_meta,
                                 "expected a simple identifier (e.g. `watch`, `watch_with_app`) or `init = false`",
@@ -257,16 +260,13 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                 }
             }
 
-            check_watcher_arity(attr, watch, watch1, watch0, watch_async, watch_with_app)?;
+            let watcher = watcher_shape(attr, &shapes, watch_with_app)?;
             return Ok(Some(FieldAnnotation::Reactive(ReactiveField {
                 ident,
                 ty,
                 layout: false,
-                watch,
-                watch1,
-                watch0,
+                watcher,
                 watch_with_app,
-                watch_async,
                 is_var: true,
                 init_false,
                 recompose: false,
@@ -282,10 +282,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
         // Check for #[computed(depends_on = "field1, field2"[, watch | watch_with_app | private_watch])]
         if attr.path().is_ident("computed") {
             let mut depends_on = Vec::new();
-            let mut watch = false;
-            let mut watch1 = false;
-            let mut watch0 = false;
-            let mut watch_async = false;
+            let mut shapes: Vec<WatcherShape> = Vec::new();
             let mut watch_with_app = false;
             let mut private_watch = false;
 
@@ -322,16 +319,16 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                             }
                         }
                         Meta::Path(path) if path.is_ident("watch") => {
-                            watch = true;
+                            add_shape(&mut shapes, WatcherShape::Plain);
                         }
                         Meta::Path(path) if path.is_ident("watch1") => {
-                            watch1 = true;
+                            add_shape(&mut shapes, WatcherShape::NewOnly);
                         }
                         Meta::Path(path) if path.is_ident("watch0") => {
-                            watch0 = true;
+                            add_shape(&mut shapes, WatcherShape::NoArgs);
                         }
                         Meta::Path(path) if path.is_ident("watch_async") => {
-                            watch_async = true;
+                            add_shape(&mut shapes, WatcherShape::Async);
                         }
                         Meta::Path(path) if path.is_ident("watch_with_app") => {
                             watch_with_app = true;
@@ -358,27 +355,21 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                 ));
             }
 
-            check_watcher_arity(attr, watch, watch1, watch0, watch_async, watch_with_app)?;
+            let watcher = watcher_shape(attr, &shapes, watch_with_app)?;
             return Ok(Some(FieldAnnotation::Computed(ComputedField {
                 ident,
                 ty,
                 depends_on,
-                watch,
+                watcher,
                 watch_with_app,
                 private_watch,
-                watch1,
-                watch0,
-                watch_async,
             })));
         }
 
         // Check for #[reactive] or #[reactive(...)]
         if attr.path().is_ident("reactive") {
             let mut layout = false;
-            let mut watch = false;
-            let mut watch1 = false;
-            let mut watch0 = false;
-            let mut watch_async = false;
+            let mut shapes: Vec<WatcherShape> = Vec::new();
             let mut watch_with_app = false;
             let mut init_false = false;
             let mut recompose = false;
@@ -402,13 +393,13 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                             if path.is_ident("layout") {
                                 layout = true;
                             } else if path.is_ident("watch") {
-                                watch = true;
+                                add_shape(&mut shapes, WatcherShape::Plain);
                             } else if path.is_ident("watch1") {
-                                watch1 = true;
+                                add_shape(&mut shapes, WatcherShape::NewOnly);
                             } else if path.is_ident("watch0") {
-                                watch0 = true;
+                                add_shape(&mut shapes, WatcherShape::NoArgs);
                             } else if path.is_ident("watch_async") {
-                                watch_async = true;
+                                add_shape(&mut shapes, WatcherShape::Async);
                             } else if path.is_ident("watch_with_app") {
                                 watch_with_app = true;
                             } else if path.is_ident("recompose") {
@@ -490,7 +481,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                 ));
                             }
                         }
-                        _ => {
+                        Meta::List(_) => {
                             return Err(syn::Error::new_spanned(
                                 nested_meta,
                                 "expected a simple identifier (e.g. `layout`, `watch`, `watch_with_app`) or `init = false`",
@@ -500,16 +491,13 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                 }
             }
 
-            check_watcher_arity(attr, watch, watch1, watch0, watch_async, watch_with_app)?;
+            let watcher = watcher_shape(attr, &shapes, watch_with_app)?;
             return Ok(Some(FieldAnnotation::Reactive(ReactiveField {
                 ident,
                 ty,
                 layout,
-                watch,
-                watch1,
-                watch0,
+                watcher,
                 watch_with_app,
-                watch_async,
                 is_var: false,
                 init_false,
                 recompose,
@@ -567,10 +555,7 @@ fn flags_expr(field: &ReactiveField) -> TokenStream {
 fn watcher_arm(
     ident: &syn::Ident,
     ty: &syn::Type,
-    watch: bool,
-    watch1: bool,
-    watch0: bool,
-    watch_async: bool,
+    watcher: WatcherShape,
     private_watch: bool,
 ) -> TokenStream {
     let field_name_str = ident.to_string();
@@ -580,27 +565,24 @@ fn watcher_arm(
         calls.push(quote! { self.#watcher_name(old, new, ctx); });
     }
     // Public arity (Python `invoke_watcher` adapts to 0/1/2 parameters;
-    // static Rust selects the shape by flag — exactly one of
-    // `watch`/`watch1`/`watch0`, enforced at parse time).
-    if watch0 {
-        let watcher_name = format_ident!("watch_{}", ident);
-        calls.push(quote! { self.#watcher_name(); });
-    } else if watch1 {
-        let watcher_name = format_ident!("watch_{}", ident);
-        calls.push(quote! { self.#watcher_name(new, ctx); });
-    } else if watch_async {
-        // Python `async def watch_*` is awaited inline; static Rust has no
-        // inline executor in dispatch, so the future rides the worker pool
-        // (plain threads — never a nesting runtime). Owned clones: the future
-        // must be 'static, so it cannot borrow the widget or the context.
-        let watcher_name = format_ident!("watch_{}", ident);
-        calls.push(quote! {{
-            let __watch_future = self.#watcher_name(old.clone(), new.clone());
-            ctx.request_async_watcher_task(stringify!(#watcher_name), __watch_future);
-        }});
-    } else if watch {
-        let watcher_name = format_ident!("watch_{}", ident);
-        calls.push(quote! { self.#watcher_name(old, new, ctx); });
+    // static Rust selects the shape by flag, one per field).
+    let watcher_name = format_ident!("watch_{}", ident);
+    match watcher {
+        WatcherShape::None => {}
+        WatcherShape::NoArgs => calls.push(quote! { self.#watcher_name(); }),
+        WatcherShape::NewOnly => calls.push(quote! { self.#watcher_name(new, ctx); }),
+        WatcherShape::Async => {
+            // Python `async def watch_*` is awaited inline; static Rust has no
+            // inline executor in dispatch, so the future rides the worker pool
+            // (plain threads — never a nesting runtime). Owned clones: the
+            // future must be 'static, so it cannot borrow the widget or the
+            // context.
+            calls.push(quote! {{
+                let __watch_future = self.#watcher_name(old.clone(), new.clone());
+                ctx.request_async_watcher_task(stringify!(#watcher_name), __watch_future);
+            }});
+        }
+        WatcherShape::Plain => calls.push(quote! { self.#watcher_name(old, new, ctx); }),
     }
     quote! {
         #field_name_str => {
@@ -715,8 +697,12 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
                 );
             }
         } else {
+            // Change detection is exact on purpose, floats included; the
+            // allow keeps `clippy::float_cmp` quiet in the user's crate.
             quote! {
-                if self.#field_ident != value {
+                #[allow(clippy::float_cmp)]
+                let __changed = self.#field_ident != value;
+                if __changed {
                     let old = self.#field_ident.clone();
                     self.#field_ident = value;
                     let new = self.#field_ident.clone();
@@ -786,7 +772,6 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
     let mut computed_recompute_stmts = Vec::new();
     for cf in &computed_fields {
         let field_ident = &cf.ident;
-        let _field_ty = &cf.ty;
         let compute_fn = format_ident!("compute_{}", field_ident);
         let dep_strs: Vec<&str> = cf
             .depends_on
@@ -802,7 +787,9 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
                 let dep_changed = changes.iter().any(|c| dep_names.contains(&c.field_name));
                 if dep_changed {
                     let new_val = self.#compute_fn();
-                    if self.#field_ident != new_val {
+                    #[allow(clippy::float_cmp)] // Exact change detection, as for setters.
+                    let __changed = self.#field_ident != new_val;
+                    if __changed {
                         let old_val = self.#field_ident.clone();
                         self.#field_ident = new_val.clone();
                         ctx.record_change(
@@ -821,10 +808,7 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
     // These go into reactive_dispatch (no app access).
     let plain_watch_fields: Vec<&ReactiveField> = reactive_fields
         .iter()
-        .filter(|f| {
-            (f.watch || f.watch1 || f.watch0 || f.watch_async || f.private_watch)
-                && !f.watch_with_app
-        })
+        .filter(|f| (f.watcher != WatcherShape::None || f.private_watch) && !f.watch_with_app)
         .collect();
 
     // watch_with_app fields: watch_with_app=true (may or may not also have watch=true).
@@ -838,10 +822,7 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
     // re-iterates through dispatch; these arms invoke the matching `watch_*`.
     let computed_plain_watch: Vec<&ComputedField> = computed_fields
         .iter()
-        .filter(|c| {
-            (c.watch || c.watch1 || c.watch0 || c.watch_async || c.private_watch)
-                && !c.watch_with_app
-        })
+        .filter(|c| (c.watcher != WatcherShape::None || c.private_watch) && !c.watch_with_app)
         .collect();
     let computed_app_watch: Vec<&ComputedField> = computed_fields
         .iter()
@@ -862,28 +843,12 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
             let mut match_arms: Vec<TokenStream> = plain_watch_fields
                 .iter()
                 .map(|field| {
-                    watcher_arm(
-                        &field.ident,
-                        &field.ty,
-                        field.watch,
-                        field.watch1,
-                        field.watch0,
-                        field.watch_async,
-                        field.private_watch,
-                    )
+                    watcher_arm(&field.ident, &field.ty, field.watcher, field.private_watch)
                 })
                 .collect();
             // Computed-field plain watchers (fire when the recomputed value changes).
             for cf in &computed_plain_watch {
-                match_arms.push(watcher_arm(
-                    &cf.ident,
-                    &cf.ty,
-                    cf.watch,
-                    cf.watch1,
-                    cf.watch0,
-                    cf.watch_async,
-                    cf.private_watch,
-                ));
+                match_arms.push(watcher_arm(&cf.ident, &cf.ty, cf.watcher, cf.private_watch));
             }
 
             quote! {
@@ -918,31 +883,13 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
         // All watcher arms for the with-app override: plain-watch first, then app-watch.
         let plain_arms: Vec<TokenStream> = plain_watch_fields
             .iter()
-            .map(|field| {
-                watcher_arm(
-                    &field.ident,
-                    &field.ty,
-                    field.watch,
-                    field.watch1,
-                    field.watch0,
-                    field.watch_async,
-                    field.private_watch,
-                )
-            })
+            .map(|field| watcher_arm(&field.ident, &field.ty, field.watcher, field.private_watch))
             .collect();
 
         let mut plain_arms = plain_arms;
         // Computed-field plain watchers also fire in the with-app dispatch.
         for cf in &computed_plain_watch {
-            plain_arms.push(watcher_arm(
-                &cf.ident,
-                &cf.ty,
-                cf.watch,
-                cf.watch1,
-                cf.watch0,
-                cf.watch_async,
-                cf.private_watch,
-            ));
+            plain_arms.push(watcher_arm(&cf.ident, &cf.ty, cf.watcher, cf.private_watch));
         }
 
         let mut app_arms: Vec<TokenStream> = app_watch_fields

@@ -66,6 +66,7 @@ impl ComputedApp {
     /// Python `watch_color`: paint the swatch's background. Writes straight to the
     /// arena node via `query_mut().set_styles(..)` (Python `styles.background = c`);
     /// a post-mount `Static::set_inline_style` would only touch the drained seed.
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_color(&mut self, app: &mut App, _old: &Color, new: &Color, _ctx: &mut ReactiveCtx) {
         let new = *new;
         let _ = app

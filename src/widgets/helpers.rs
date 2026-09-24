@@ -251,7 +251,7 @@ pub(crate) fn border_spacing_from_style(style: &Style) -> (usize, usize, usize, 
 pub(crate) fn apply_border_edges(
     segments: Segments,
     inner_width: usize,
-    style: Style,
+    style: &Style,
     parent_style: Option<Style>,
     full_width: usize,
     full_height: usize,

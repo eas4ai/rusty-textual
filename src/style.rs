@@ -408,6 +408,7 @@ fn parse_textual_ansi_color_name(value: &str) -> Option<Color> {
 /// keywords resolve to their W3C values (`white` = #ffffff, `cyan` = #00ffff),
 /// matching Python Textual rather than the terminal ANSI palette. `transparent`
 /// and the `ansi_*` names are handled separately by the callers.
+#[allow(clippy::too_many_lines)] // One arm per CSS named colour.
 fn parse_css_named_color(value: &str) -> Option<Color> {
     match value.to_ascii_lowercase().as_str() {
         "black" => Some(Color::rgb(0, 0, 0)),
@@ -631,6 +632,7 @@ fn resolve_color_token(token: &str) -> Option<Color> {
     resolve_textual_dark_token(name)
 }
 
+#[allow(clippy::too_many_lines)] // One entry per design token, in the order Python's `ColorSystem` builds them.
 fn resolve_textual_dark_token(name: &str) -> Option<Color> {
     // MVP: approximate Textual's default "textual-dark" theme.
     // Source of base values (Python Textual): `textual/theme.py` + `textual/design.py`.
@@ -1376,6 +1378,8 @@ pub enum ScrollbarVisibility {
 /// Text style flags for compound text-style properties
 /// (border-title-style, link-style, etc.).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+// Separate text styles (bold, italic, ...); any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 pub struct TextStyleFlags {
     pub bold: bool,
     pub dim: bool,
@@ -1913,8 +1917,8 @@ pub enum TransitionTiming {
 ///
 /// Returns `(resolved_value, is_important)`.
 fn cascade_opt<T: Clone>(
-    self_val: &Option<T>,
-    other_val: &Option<T>,
+    self_val: Option<&T>,
+    other_val: Option<&T>,
     self_imp: bool,
     other_imp: bool,
     respect_earlier: bool,
@@ -1922,11 +1926,11 @@ fn cascade_opt<T: Clone>(
     match (other_val.is_some(), self_val.is_some()) {
         // Both have the value; self is important, other is not → self wins.
         // Skipped at layer boundaries (PR-10): the higher layer always wins.
-        (true, true) if respect_earlier && self_imp && !other_imp => (self_val.clone(), true),
+        (true, true) if respect_earlier && self_imp && !other_imp => (self_val.cloned(), true),
         // Other has a value and self doesn't block it → other wins
-        (true, _) => (other_val.clone(), other_imp),
+        (true, _) => (other_val.cloned(), other_imp),
         // Other has no value → keep self
-        _ => (self_val.clone(), self_imp && self_val.is_some()),
+        _ => (self_val.cloned(), self_imp && self_val.is_some()),
     }
 }
 
@@ -1955,8 +1959,8 @@ fn cascade_border(
 macro_rules! cascade_field {
     ($self:expr, $other:expr, $imp:ident, $field:ident, $prop:expr, $respect:expr) => {{
         let (val, is_imp) = cascade_opt(
-            &$self.$field,
-            &$other.$field,
+            $self.$field.as_ref(),
+            $other.$field.as_ref(),
             $self.importance.get($prop),
             $other.importance.get($prop),
             $respect,
@@ -2234,6 +2238,7 @@ impl Style {
         self.combine_inner(other, false)
     }
 
+    #[allow(clippy::too_many_lines)] // One block per `Style` field; splitting would scatter the field list.
     fn combine_inner(&self, other: &Style, respect_earlier_important: bool) -> Style {
         let mut imp = ImportanceBitset::new();
 
@@ -3102,6 +3107,7 @@ impl Style {
     // --- Inheritance: inheritable properties fall through from parent ---
 
     #[must_use]
+    #[allow(clippy::too_many_lines)] // One block per inherited `Style` field.
     pub fn inherit_from(&self, parent: &Style) -> Style {
         let (fg, fg_auto) = if let Some(color) = self.fg {
             (Some(color), None)
@@ -3353,6 +3359,7 @@ impl Style {
     }
 
     #[must_use]
+    #[allow(clippy::too_many_lines)] // One check per `Style` field.
     pub fn is_empty(&self) -> bool {
         self.fg.is_none()
             && self.fg_auto.is_none()
@@ -3463,8 +3470,9 @@ impl Style {
 
     /// Returns `(property_name, formatted_value)` pairs for every set (non-None/non-Unset)
     /// property. Used by the devtools snapshot protocol to expose resolved CSS.
+    #[allow(clippy::too_many_lines)] // One entry per `Style` property.
     pub fn debug_properties(&self) -> Vec<(&'static str, String)> {
-        fn fmt_color(c: &Color) -> String {
+        fn fmt_color(c: Color) -> String {
             if c.a >= 1.0 {
                 format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)
             } else {
@@ -3476,11 +3484,11 @@ impl Style {
                 BorderEdge::Unset => None,
                 BorderEdge::None => Some("none".to_string()),
                 BorderEdge::Edge { border_type, color } => {
-                    Some(format!("{:?} {}", border_type, fmt_color(color)).to_lowercase())
+                    Some(format!("{:?} {}", border_type, fmt_color(*color)).to_lowercase())
                 }
             }
         }
-        fn fmt_scalar(s: &Scalar) -> String {
+        fn fmt_scalar(s: Scalar) -> String {
             match s {
                 Scalar::Auto => "auto".to_string(),
                 Scalar::Cells(n) => format!("{n}"),
@@ -3492,7 +3500,7 @@ impl Style {
                 Scalar::ViewHeight(p) => format!("{p}vh"),
             }
         }
-        fn fmt_spacing(s: &Spacing) -> String {
+        fn fmt_spacing(s: Spacing) -> String {
             if s.top == s.right && s.right == s.bottom && s.bottom == s.left {
                 format!("{}", s.top)
             } else if s.top == s.bottom && s.right == s.left {
@@ -3501,7 +3509,7 @@ impl Style {
                 format!("{} {} {} {}", s.top, s.right, s.bottom, s.left)
             }
         }
-        fn fmt_text_style_flags(f: &TextStyleFlags) -> String {
+        fn fmt_text_style_flags(f: TextStyleFlags) -> String {
             let mut parts = Vec::new();
             if f.bold {
                 parts.push("bold");
@@ -3532,13 +3540,13 @@ impl Style {
 
         // Text / color
         if let Some(c) = &self.fg {
-            out.push(("fg", fmt_color(c)));
+            out.push(("fg", fmt_color(*c)));
         }
         if let Some(a) = &self.fg_auto {
             out.push(("fg-auto", format!("{}%", a.alpha_percent)));
         }
         if let Some(c) = &self.bg {
-            out.push(("bg", fmt_color(c)));
+            out.push(("bg", fmt_color(*c)));
         }
         if let Some(v) = self.text_opacity {
             out.push(("text-opacity", format!("{v}%")));
@@ -3584,41 +3592,41 @@ impl Style {
 
         // Tint
         if let Some(t) = &self.tint {
-            out.push(("tint", format!("{} {}%", fmt_color(&t.color), t.percent)));
+            out.push(("tint", format!("{} {}%", fmt_color(t.color), t.percent)));
         }
         if let Some(t) = &self.background_tint {
             out.push((
                 "background-tint",
-                format!("{} {}%", fmt_color(&t.color), t.percent),
+                format!("{} {}%", fmt_color(t.color), t.percent),
             ));
         }
 
         // Spacing
         if let Some(s) = &self.margin {
-            out.push(("margin", fmt_spacing(s)));
+            out.push(("margin", fmt_spacing(*s)));
         }
         if let Some(s) = &self.padding {
-            out.push(("padding", fmt_spacing(s)));
+            out.push(("padding", fmt_spacing(*s)));
         }
 
         // Size
         if let Some(v) = &self.width {
-            out.push(("width", fmt_scalar(v)));
+            out.push(("width", fmt_scalar(*v)));
         }
         if let Some(v) = &self.height {
-            out.push(("height", fmt_scalar(v)));
+            out.push(("height", fmt_scalar(*v)));
         }
         if let Some(v) = &self.min_width {
-            out.push(("min-width", fmt_scalar(v)));
+            out.push(("min-width", fmt_scalar(*v)));
         }
         if let Some(v) = &self.max_width {
-            out.push(("max-width", fmt_scalar(v)));
+            out.push(("max-width", fmt_scalar(*v)));
         }
         if let Some(v) = &self.min_height {
-            out.push(("min-height", fmt_scalar(v)));
+            out.push(("min-height", fmt_scalar(*v)));
         }
         if let Some(v) = &self.max_height {
-            out.push(("max-height", fmt_scalar(v)));
+            out.push(("max-height", fmt_scalar(*v)));
         }
 
         // Layout
@@ -3684,13 +3692,21 @@ impl Style {
         if let Some(v) = &self.grid_columns {
             out.push((
                 "grid-columns",
-                v.iter().map(fmt_scalar).collect::<Vec<_>>().join(" "),
+                v.iter()
+                    .copied()
+                    .map(fmt_scalar)
+                    .collect::<Vec<_>>()
+                    .join(" "),
             ));
         }
         if let Some(v) = &self.grid_rows {
             out.push((
                 "grid-rows",
-                v.iter().map(fmt_scalar).collect::<Vec<_>>().join(" "),
+                v.iter()
+                    .copied()
+                    .map(fmt_scalar)
+                    .collect::<Vec<_>>()
+                    .join(" "),
             ));
         }
         if let Some(v) = self.grid_gutter_horizontal {
@@ -3778,45 +3794,45 @@ impl Style {
             out.push(("border-subtitle-align", format!("{v:?}").to_lowercase()));
         }
         if let Some(c) = &self.border_title_color {
-            out.push(("border-title-color", fmt_color(c)));
+            out.push(("border-title-color", fmt_color(*c)));
         }
         if let Some(c) = &self.border_title_background {
-            out.push(("border-title-background", fmt_color(c)));
+            out.push(("border-title-background", fmt_color(*c)));
         }
         if let Some(f) = &self.border_title_style {
-            out.push(("border-title-style", fmt_text_style_flags(f)));
+            out.push(("border-title-style", fmt_text_style_flags(*f)));
         }
         if let Some(c) = &self.border_subtitle_color {
-            out.push(("border-subtitle-color", fmt_color(c)));
+            out.push(("border-subtitle-color", fmt_color(*c)));
         }
         if let Some(c) = &self.border_subtitle_background {
-            out.push(("border-subtitle-background", fmt_color(c)));
+            out.push(("border-subtitle-background", fmt_color(*c)));
         }
         if let Some(f) = &self.border_subtitle_style {
-            out.push(("border-subtitle-style", fmt_text_style_flags(f)));
+            out.push(("border-subtitle-style", fmt_text_style_flags(*f)));
         }
 
         // Scrollbar
         if let Some(c) = &self.scrollbar_color {
-            out.push(("scrollbar-color", fmt_color(c)));
+            out.push(("scrollbar-color", fmt_color(*c)));
         }
         if let Some(c) = &self.scrollbar_color_hover {
-            out.push(("scrollbar-color-hover", fmt_color(c)));
+            out.push(("scrollbar-color-hover", fmt_color(*c)));
         }
         if let Some(c) = &self.scrollbar_color_active {
-            out.push(("scrollbar-color-active", fmt_color(c)));
+            out.push(("scrollbar-color-active", fmt_color(*c)));
         }
         if let Some(c) = &self.scrollbar_background {
-            out.push(("scrollbar-background", fmt_color(c)));
+            out.push(("scrollbar-background", fmt_color(*c)));
         }
         if let Some(c) = &self.scrollbar_background_hover {
-            out.push(("scrollbar-background-hover", fmt_color(c)));
+            out.push(("scrollbar-background-hover", fmt_color(*c)));
         }
         if let Some(c) = &self.scrollbar_background_active {
-            out.push(("scrollbar-background-active", fmt_color(c)));
+            out.push(("scrollbar-background-active", fmt_color(*c)));
         }
         if let Some(c) = &self.scrollbar_corner_color {
-            out.push(("scrollbar-corner-color", fmt_color(c)));
+            out.push(("scrollbar-corner-color", fmt_color(*c)));
         }
         if let Some(v) = &self.scrollbar_gutter {
             out.push(("scrollbar-gutter", format!("{v:?}").to_lowercase()));
@@ -3844,22 +3860,22 @@ impl Style {
 
         // Link styling
         if let Some(c) = &self.link_color {
-            out.push(("link-color", fmt_color(c)));
+            out.push(("link-color", fmt_color(*c)));
         }
         if let Some(c) = &self.link_background {
-            out.push(("link-background", fmt_color(c)));
+            out.push(("link-background", fmt_color(*c)));
         }
         if let Some(f) = &self.link_style {
-            out.push(("link-style", fmt_text_style_flags(f)));
+            out.push(("link-style", fmt_text_style_flags(*f)));
         }
         if let Some(c) = &self.link_color_hover {
-            out.push(("link-color-hover", fmt_color(c)));
+            out.push(("link-color-hover", fmt_color(*c)));
         }
         if let Some(c) = &self.link_background_hover {
-            out.push(("link-background-hover", fmt_color(c)));
+            out.push(("link-background-hover", fmt_color(*c)));
         }
         if let Some(f) = &self.link_style_hover {
-            out.push(("link-style-hover", fmt_text_style_flags(f)));
+            out.push(("link-style-hover", fmt_text_style_flags(*f)));
         }
 
         // Grid child
@@ -3872,10 +3888,7 @@ impl Style {
 
         // Hatch, overlay, keyline
         if let Some(h) = &self.hatch {
-            out.push((
-                "hatch",
-                format!("'{}' {}", h.character, fmt_color(&h.color)),
-            ));
+            out.push(("hatch", format!("'{}' {}", h.character, fmt_color(h.color))));
         }
         if let Some(v) = &self.overlay {
             out.push(("overlay", format!("{v:?}").to_lowercase()));
@@ -3883,7 +3896,7 @@ impl Style {
         if let Some(k) = &self.keyline {
             out.push((
                 "keyline",
-                format!("{:?} {}", k.keyline_type, fmt_color(&k.color)).to_lowercase(),
+                format!("{:?} {}", k.keyline_type, fmt_color(k.color)).to_lowercase(),
             ));
         }
 
@@ -3956,6 +3969,9 @@ impl Default for Theme {
 }
 
 #[cfg(test)]
+// These tests assert exact float results (endpoints and values a float holds
+// exactly); a tolerance would hide off-by-epsilon regressions.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

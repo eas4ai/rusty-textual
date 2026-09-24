@@ -115,7 +115,7 @@ mod tests {
         let mut segments = Segments::new();
         segments.push(Segment::new("   "));
         let style = Style::new().bg(Color::parse("#334455").expect("valid color"));
-        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, style, None);
+        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, &style, None);
         let bg = styled
             .into_iter()
             .next()
@@ -133,7 +133,7 @@ mod tests {
         let seg_style = rich_rs::Style::new().with_bgcolor(rich_rs::SimpleColor::Default);
         segments.push(Segment::styled("x", seg_style));
         let style = Style::new().bg(Color::parse("#334455").expect("valid color"));
-        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, style, None);
+        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, &style, None);
         let bg = styled
             .into_iter()
             .next()
@@ -181,7 +181,7 @@ mod tests {
         let mut dark_segments = Segments::new();
         dark_segments.push(Segment::new("x"));
         let dark_style = parse_style_body("bg: #121212; fg: auto 87%;");
-        let dark = apply_style_to_segments(node_id_from_ffi(1), dark_segments, dark_style, None);
+        let dark = apply_style_to_segments(node_id_from_ffi(1), dark_segments, &dark_style, None);
         let dark_fg = dark
             .into_iter()
             .next()
@@ -192,7 +192,8 @@ mod tests {
         let mut light_segments = Segments::new();
         light_segments.push(Segment::new("x"));
         let light_style = parse_style_body("bg: #f5f5f5; fg: auto 87%;");
-        let light = apply_style_to_segments(node_id_from_ffi(1), light_segments, light_style, None);
+        let light =
+            apply_style_to_segments(node_id_from_ffi(1), light_segments, &light_style, None);
         let light_fg = light
             .into_iter()
             .next()
@@ -242,7 +243,7 @@ mod tests {
         segments.push(Segment::styled("x", rich_style));
 
         let style = parse_style_body("bg: #000000; text-opacity: 50%;");
-        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, style, None);
+        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, &style, None);
         let fg = styled
             .into_iter()
             .next()
@@ -262,7 +263,7 @@ mod tests {
         let mut segments = Segments::new();
         segments.push(Segment::new("x"));
         let style = parse_style_body("bg: #121212; background-tint: #ffffff 100%; fg: auto 87%;");
-        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, style, None);
+        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, &style, None);
         let fg = styled
             .into_iter()
             .next()
@@ -387,7 +388,8 @@ mod tests {
         let parent_style = Style::new().bg(parent_bg);
         let seg_style = rich_rs::Style::new().with_bgcolor(raw_bg.to_simple_opaque());
         let segments = Segments::from(vec![Segment::styled("x", seg_style)]);
-        let out = apply_style_to_segments(node_id_from_ffi(1), segments, style, Some(parent_style));
+        let out =
+            apply_style_to_segments(node_id_from_ffi(1), segments, &style, Some(parent_style));
         let color = out
             .into_iter()
             .next()
@@ -419,7 +421,8 @@ mod tests {
         let parent_style = Style::new().bg(parent_bg);
         let seg_style = rich_rs::Style::new().with_bgcolor(raw_bg.to_simple_opaque());
         let segments = Segments::from(vec![Segment::styled("x", seg_style)]);
-        let out = apply_style_to_segments(node_id_from_ffi(1), segments, style, Some(parent_style));
+        let out =
+            apply_style_to_segments(node_id_from_ffi(1), segments, &style, Some(parent_style));
         let color = out
             .into_iter()
             .next()
@@ -526,7 +529,7 @@ mod tests {
                 apply_style_to_segments(
                     node_id_from_ffi(1),
                     Segments::from(vec![Segment::new("x")]),
-                    Style::default().fg(Color::rgb(255, 255, 255)),
+                    &Style::default().fg(Color::rgb(255, 255, 255)),
                     None,
                 )
             })

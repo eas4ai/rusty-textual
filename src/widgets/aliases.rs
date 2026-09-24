@@ -42,6 +42,8 @@ enum StaticContent {
 /// [`Static::update()`] / [`Static::update_rich()`] to change content at
 /// runtime, matching Python's `Static.update(content)` API.
 #[widget(Interactive, Layout, StyleIdentity)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Static {
     text: String,
     markup: bool,
@@ -280,7 +282,6 @@ impl Static {
     /// `apply_link_style` mirrors the `markup` flag: only markup-derived content
     /// gets `[@click=...]` link styling overlaid.
     fn render_content(
-        &self,
         content: &crate::content::Content,
         options: &ConsoleOptions,
         apply_link_style: bool,
@@ -496,12 +497,12 @@ impl crate::widgets::Render for Static {
                 } else {
                     crate::content::Content::from_text(&self.text)
                 };
-                self.render_content(&content, options, self.markup)
+                Self::render_content(&content, options, self.markup)
             }
             StaticContent::Content(content) => {
                 // Pre-built Content (e.g. with template variables substituted).
                 // Treat it like markup output for link styling/resolution purposes.
-                self.render_content(content, options, true)
+                Self::render_content(content, options, true)
             }
             StaticContent::Rich(text) => text.render(console, options),
             StaticContent::Renderable(renderable) => renderable.render(console, options),

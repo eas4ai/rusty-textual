@@ -30,6 +30,31 @@ pub(crate) const SCROLL_VIEW_VSCROLLBAR_ID: &str = "__scrollview_vscrollbar";
 pub(crate) const SCROLL_VIEW_HSCROLLBAR_ID: &str = "__scrollview_hscrollbar";
 pub(crate) const SCROLL_VIEW_SCROLLBAR_CORNER_ID: &str = "__scrollview_scrollbar_corner";
 
+/// Where the pointer is on one scrollbar. The thumb lies on the track, so
+/// `Thumb` also counts as hovering the track.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScrollbarHover {
+    None,
+    Track,
+    Thumb,
+}
+
+impl ScrollbarHover {
+    fn from_flags(on_track: bool, on_thumb: bool) -> Self {
+        if on_thumb {
+            Self::Thumb
+        } else if on_track {
+            Self::Track
+        } else {
+            Self::None
+        }
+    }
+
+    fn on_track(self) -> bool {
+        self != Self::None
+    }
+}
+
 #[widget(Focus, Interactive, Layout, Scrollable, StyleIdentity, Components)]
 pub struct ScrollView {
     child: Box<dyn Widget>,
@@ -49,10 +74,8 @@ pub struct ScrollView {
     widget_height: AtomicUsize,
     drag_v: Option<usize>,
     drag_h: Option<usize>,
-    hover_v_thumb: bool,
-    hover_v_track: bool,
-    hover_h_thumb: bool,
-    hover_h_track: bool,
+    hover_v: ScrollbarHover,
+    hover_h: ScrollbarHover,
     seed: NodeSeed,
     border_title: Option<String>,
     border_subtitle: Option<String>,
@@ -93,10 +116,8 @@ impl ScrollView {
             widget_height: AtomicUsize::new(0),
             drag_v: None,
             drag_h: None,
-            hover_v_thumb: false,
-            hover_v_track: false,
-            hover_h_thumb: false,
-            hover_h_track: false,
+            hover_v: ScrollbarHover::None,
+            hover_h: ScrollbarHover::None,
             seed: NodeSeed::default(),
             border_title: None,
             border_subtitle: None,
@@ -564,14 +585,11 @@ impl ScrollView {
                 local_x >= thumb_start && local_x < thumb_start.saturating_add(thumb_len);
         }
 
-        let changed = self.hover_v_thumb != next_v_thumb
-            || self.hover_v_track != next_v_track
-            || self.hover_h_thumb != next_h_thumb
-            || self.hover_h_track != next_h_track;
-        self.hover_v_thumb = next_v_thumb;
-        self.hover_v_track = next_v_track;
-        self.hover_h_thumb = next_h_thumb;
-        self.hover_h_track = next_h_track;
+        let next_v = ScrollbarHover::from_flags(next_v_track, next_v_thumb);
+        let next_h = ScrollbarHover::from_flags(next_h_track, next_h_thumb);
+        let changed = self.hover_v != next_v || self.hover_h != next_h;
+        self.hover_v = next_v;
+        self.hover_h = next_h;
         changed
     }
 
@@ -790,10 +808,8 @@ impl crate::widgets::Interactive for ScrollView {
         new: crate::widgets::NodeState,
     ) {
         if !new.hovered {
-            self.hover_v_thumb = false;
-            self.hover_v_track = false;
-            self.hover_h_thumb = false;
-            self.hover_h_track = false;
+            self.hover_v = ScrollbarHover::None;
+            self.hover_h = ScrollbarHover::None;
         }
     }
 
@@ -1676,14 +1692,14 @@ impl crate::widgets::Render for ScrollView {
                 let style = if in_track && row >= thumb_start && row < thumb_start + thumb_len {
                     if self.drag_v.is_some() {
                         thumb_active_style
-                    } else if self.hover_v_thumb {
+                    } else if self.hover_v == ScrollbarHover::Thumb {
                         thumb_hover_style
                     } else {
                         thumb_style
                     }
                 } else if self.drag_v.is_some() {
                     track_active_style
-                } else if self.hover_v_track {
+                } else if self.hover_v.on_track() {
                     track_hover_style
                 } else {
                     track_style
@@ -1701,7 +1717,7 @@ impl crate::widgets::Render for ScrollView {
                 }
                 let active_style = if self.drag_v.is_some() {
                     thumb_active_style
-                } else if self.hover_v_thumb {
+                } else if self.hover_v == ScrollbarHover::Thumb {
                     thumb_hover_style
                 } else {
                     thumb_style
@@ -1721,14 +1737,14 @@ impl crate::widgets::Render for ScrollView {
                 let style = if col >= thumb_start && col < thumb_start + thumb_len {
                     if self.drag_h.is_some() {
                         thumb_active_style
-                    } else if self.hover_h_thumb {
+                    } else if self.hover_h == ScrollbarHover::Thumb {
                         thumb_hover_style
                     } else {
                         thumb_style
                     }
                 } else if self.drag_h.is_some() {
                     track_active_style
-                } else if self.hover_h_track {
+                } else if self.hover_h.on_track() {
                     track_hover_style
                 } else {
                     track_style
@@ -1801,6 +1817,9 @@ impl crate::widgets::Components for ScrollView {
     }
 }
 #[cfg(test)]
+// These tests assert exact float results (endpoints and values a float holds
+// exactly); a tolerance would hide off-by-epsilon regressions.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::action::ParsedAction;

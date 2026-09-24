@@ -60,6 +60,7 @@ impl Clock {
     }
 
     /// Python `watch_time`: update the Digits display from the current time.
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_time(&mut self, app: &mut App, _old: &u64, new: &u64, _ctx: &mut ReactiveCtx) {
         let text = format_hms(*new);
         let _ = app.with_query_one_mut_as::<Digits, _>("Digits", |digits| {

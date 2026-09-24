@@ -49,6 +49,7 @@ impl Counter {
     }
 
     /// Python `watch_counter`: update the internal Label text.
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_counter(&mut self, app: &mut App, _old: &i64, new: &i64, _ctx: &mut ReactiveCtx) {
         let text = new.to_string();
         let _ = app.with_query_one_mut_as::<Label, _>("#counter-label", |label| {

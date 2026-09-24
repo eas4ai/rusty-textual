@@ -36,7 +36,8 @@ fn write_key_event(log: &mut RichLog, key: &KeyEventData) {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        repr.push_str(&format!(", aliases={aliases_str}"));
+        repr.push_str(", aliases=");
+        repr.push_str(&aliases_str);
     }
     repr.push(')');
     // Python: `RichLog.write(event)` wraps the Key event in `Pretty`, coloured

@@ -66,7 +66,7 @@ impl TextualApp for MyApp {
         ctx: &mut textual::event::WidgetCtx,
     ) {
         if let Some(ev) = message.downcast_ref::<ButtonPressed>() {
-            self.reply = ev.button_id.clone();
+            self.reply.clone_from(&ev.button_id);
             ctx.request_stop();
             ctx.set_handled();
         }

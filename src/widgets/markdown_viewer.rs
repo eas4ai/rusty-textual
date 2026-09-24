@@ -676,6 +676,7 @@ impl MarkdownViewer {
         parse_markdown_heading_lines(content)
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn style_type(&self) -> &'static str {
         "MarkdownViewer"
     }
@@ -699,14 +700,17 @@ impl MarkdownViewer {
         seed
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn focusable(&self) -> bool {
         false
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn can_focus(&self) -> bool {
         false
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn can_focus_children(&self) -> bool {
         true
     }
@@ -753,10 +757,12 @@ impl MarkdownViewer {
         self.inner.on_message(message, ctx);
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn action_namespace(&self) -> &'static str {
         "markdown_viewer"
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn action_registry(&self) -> &[ActionDecl] {
         MARKDOWN_VIEWER_ACTIONS
     }

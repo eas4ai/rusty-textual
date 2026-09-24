@@ -236,19 +236,14 @@ pub(crate) struct ChildSpec {
 }
 
 /// Vertical chrome = margin.top + `border_top` + padding.top + padding.bottom + `border_bottom` + margin.bottom.
-fn vertical_chrome(
-    margin: &Spacing,
-    padding: &Spacing,
-    border_top: u16,
-    border_bottom: u16,
-) -> u16 {
+fn vertical_chrome(margin: Spacing, padding: Spacing, border_top: u16, border_bottom: u16) -> u16 {
     margin.top + border_top + padding.top + padding.bottom + border_bottom + margin.bottom
 }
 
 /// Horizontal chrome = margin.left + `border_left` + padding.left + padding.right + `border_right` + margin.right.
 fn horizontal_chrome(
-    margin: &Spacing,
-    padding: &Spacing,
+    margin: Spacing,
+    padding: Spacing,
     border_left: u16,
     border_right: u16,
 ) -> u16 {
@@ -281,14 +276,14 @@ pub(crate) fn own_box_chrome(style: &Style) -> (u16, u16) {
 /// assumes the scalar's own axis equals `parent_size` for `w`/`h` too (correct
 /// when sizing the same axis), or [`resolve_scalar_to_cells_2d`] to pass both.
 pub(crate) fn resolve_scalar_to_cells_2d(
-    scalar: &Scalar,
+    scalar: Scalar,
     parent_size: u16,
     parent_width: u16,
     parent_height: u16,
     viewport: (u16, u16),
 ) -> u16 {
     resolve_scalar(
-        scalar,
+        &scalar,
         parent_size,
         parent_width,
         parent_height,
@@ -306,12 +301,12 @@ pub(crate) fn resolve_scalar_to_cells_2d(
 /// real parent width AND height for correct `w`/`h` resolution. `vw`/`vh` always
 /// resolve against the correct viewport axis (the full `viewport` is threaded).
 pub(crate) fn resolve_scalar_to_cells(
-    scalar: &Scalar,
+    scalar: Scalar,
     parent_size: u16,
     viewport: (u16, u16),
 ) -> u16 {
     resolve_scalar(
-        scalar,
+        &scalar,
         parent_size,
         parent_size,
         parent_size,
@@ -347,8 +342,8 @@ pub(crate) fn extract_child_spec(
         (margin.top + margin.bottom, margin.left + margin.right)
     } else {
         (
-            vertical_chrome(&margin, &padding, border_top, border_bottom),
-            horizontal_chrome(&margin, &padding, border_left, border_right),
+            vertical_chrome(margin, padding, border_top, border_bottom),
+            horizontal_chrome(margin, padding, border_left, border_right),
         )
     };
 
@@ -356,17 +351,17 @@ pub(crate) fn extract_child_spec(
     // against the correct parent axis (e.g. `min-height: 40w` = 40% of parent
     // WIDTH), while `%`/`cells` keep resolving against the property's own axis.
     let min_h_cells = style.min_height.as_ref().map_or(0, |s| {
-        resolve_scalar_to_cells_2d(s, parent_height, parent_width, parent_height, viewport)
+        resolve_scalar_to_cells_2d(*s, parent_height, parent_width, parent_height, viewport)
     });
     let min_w_cells = style.min_width.as_ref().map_or(0, |s| {
-        resolve_scalar_to_cells_2d(s, parent_width, parent_width, parent_height, viewport)
+        resolve_scalar_to_cells_2d(*s, parent_width, parent_width, parent_height, viewport)
     });
 
     let max_h_cells = style.max_height.as_ref().map(|s| {
-        resolve_scalar_to_cells_2d(s, parent_height, parent_width, parent_height, viewport)
+        resolve_scalar_to_cells_2d(*s, parent_height, parent_width, parent_height, viewport)
     });
     let max_w_cells = style.max_width.as_ref().map(|s| {
-        resolve_scalar_to_cells_2d(s, parent_width, parent_width, parent_height, viewport)
+        resolve_scalar_to_cells_2d(*s, parent_width, parent_width, parent_height, viewport)
     });
 
     // Margin-adjusted parent dims for `w`/`h` units (Python resolves these
@@ -385,8 +380,8 @@ pub(crate) fn extract_child_spec(
     // relying on each widget's context-free `layout_height()` chrome baking —
     // which could not resolve descendant-selected chrome (`#questions .button`)
     // and collapsed such boxes.
-    let full_h_chrome = horizontal_chrome(&margin, &padding, border_left, border_right);
-    let full_v_chrome = vertical_chrome(&margin, &padding, border_top, border_bottom);
+    let full_h_chrome = horizontal_chrome(margin, padding, border_left, border_right);
+    let full_v_chrome = vertical_chrome(margin, padding, border_top, border_bottom);
 
     // Build height edge for 1D resolver.
     //
@@ -945,7 +940,7 @@ fn measure_child_outer_width(
         None | Some(Scalar::Auto | Scalar::Fraction(_)) => {
             measure_intrinsic_content_width(tree, node, viewport).unwrap_or(0)
         }
-        Some(other) => resolve_scalar_to_cells(other, 0, viewport),
+        Some(other) => resolve_scalar_to_cells(*other, 0, viewport),
     };
     let mut outer = content.saturating_add(h_chrome);
     // Respect min/max-width: Textual treats these as outer-size bounds for the
@@ -953,10 +948,10 @@ fn measure_child_outer_width(
     // Button's `min-width: 16`). Without the min clamp a narrow label would make
     // its auto-width parent under-size and clip the widget.
     if let Some(min_w) = style.min_width.as_ref() {
-        outer = outer.max(resolve_scalar_to_cells(min_w, 0, viewport));
+        outer = outer.max(resolve_scalar_to_cells(*min_w, 0, viewport));
     }
     if let Some(max_w) = style.max_width.as_ref() {
-        let max = resolve_scalar_to_cells(max_w, 0, viewport);
+        let max = resolve_scalar_to_cells(*max_w, 0, viewport);
         if max > 0 {
             outer = outer.min(max);
         }
@@ -998,13 +993,13 @@ fn measure_child_outer_height(
             let content = measure_intrinsic_content_height(tree, node, viewport, 0).unwrap_or(0);
             content.saturating_add(v_chrome)
         }
-        Some(other) => resolve_scalar_to_cells(other, 0, viewport).saturating_add(v_chrome),
+        Some(other) => resolve_scalar_to_cells(*other, 0, viewport).saturating_add(v_chrome),
     };
     if let Some(min_h) = style.min_height.as_ref() {
-        outer = outer.max(resolve_scalar_to_cells(min_h, 0, viewport));
+        outer = outer.max(resolve_scalar_to_cells(*min_h, 0, viewport));
     }
     if let Some(max_h) = style.max_height.as_ref() {
-        let max = resolve_scalar_to_cells(max_h, 0, viewport);
+        let max = resolve_scalar_to_cells(*max_h, 0, viewport);
         if max > 0 {
             outer = outer.min(max);
         }
@@ -1049,7 +1044,7 @@ fn scalar_to_edge(
         Some(scalar) => {
             // Percent, Width (`w`), Height (`h`), ViewWidth, ViewHeight.
             let cells = resolve_scalar_to_cells_2d(
-                scalar,
+                *scalar,
                 parent_size,
                 parent_width,
                 parent_height,

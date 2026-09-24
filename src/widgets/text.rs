@@ -56,6 +56,8 @@ impl LabelVariant {
 
 #[derive(Debug, Clone)]
 #[widget(Interactive, Layout, StyleIdentity)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Label {
     text: String,
     wrap: bool,
@@ -689,7 +691,7 @@ impl InlineTextDoc {
                         }
                     }
                     if let Some(flags) = resolved.link_style_hover.or(resolved.link_style) {
-                        apply_text_style_flags(&mut style, &flags);
+                        apply_text_style_flags(&mut style, flags);
                         has_style = true;
                     }
                 } else {
@@ -704,7 +706,7 @@ impl InlineTextDoc {
                         }
                     }
                     if let Some(flags) = resolved.link_style {
-                        apply_text_style_flags(&mut style, &flags);
+                        apply_text_style_flags(&mut style, flags);
                         has_style = true;
                     }
                 }
@@ -933,7 +935,7 @@ pub(crate) fn compute_link_span_style(
     Some(style)
 }
 
-fn apply_text_style_flags(style: &mut rich_rs::Style, flags: &crate::style::TextStyleFlags) {
+fn apply_text_style_flags(style: &mut rich_rs::Style, flags: crate::style::TextStyleFlags) {
     if flags.bold {
         *style = style.with_bold(true);
     }
@@ -1082,9 +1084,9 @@ struct MarkdownParagraphBlock {
 }
 
 impl MarkdownParagraphBlock {
-    fn new(raw: String) -> Self {
+    fn new(raw: &str) -> Self {
         Self {
-            inline_doc: InlineTextDoc::parse(&raw),
+            inline_doc: InlineTextDoc::parse(raw),
             layout_width: 0,
             hovered_link: None,
         }
@@ -1561,9 +1563,9 @@ struct MarkdownInlineItem {
 }
 
 impl MarkdownInlineItem {
-    fn new(raw: String) -> Self {
+    fn new(raw: &str) -> Self {
         Self {
-            inline_doc: InlineTextDoc::parse(&raw),
+            inline_doc: InlineTextDoc::parse(raw),
             layout_width: 0,
             hovered_link: None,
         }
@@ -1650,15 +1652,15 @@ struct MarkdownListItemBlock {
 }
 
 impl MarkdownListItemBlock {
-    fn new(symbol: String, _item_text: String, item_markup: String) -> Self {
-        let content = Vertical::new().with_child(MarkdownInlineItem::new(item_markup.clone()));
+    fn new(symbol: String, _item_text: String, item_markup: &str) -> Self {
+        let content = Vertical::new().with_child(MarkdownInlineItem::new(item_markup));
         let children: Vec<Box<dyn Widget>> = vec![
             Box::new(MarkdownBullet::new(symbol.clone())),
             Box::new(content),
         ];
         Self {
             symbol,
-            item_inline_doc: InlineTextDoc::parse(&item_markup),
+            item_inline_doc: InlineTextDoc::parse(item_markup),
             layout_width: 0,
             children,
         }
@@ -1719,7 +1721,7 @@ impl MarkdownListBlock {
                     Box::new(MarkdownListItemBlock::new(
                         format!("{:>width$}", format!("{}. ", index + 1), width = width),
                         item,
-                        item_markups.get(index).cloned().unwrap_or_else(String::new),
+                        &item_markups.get(index).cloned().unwrap_or_else(String::new),
                     )) as Box<dyn Widget>
                 })
                 .collect()
@@ -1732,7 +1734,7 @@ impl MarkdownListBlock {
                     Box::new(MarkdownListItemBlock::new(
                         BULLET.to_string(),
                         item,
-                        item_markups.get(index).cloned().unwrap_or_else(String::new),
+                        &item_markups.get(index).cloned().unwrap_or_else(String::new),
                     )) as Box<dyn Widget>
                 })
                 .collect()
@@ -1813,14 +1815,14 @@ struct MarkdownTableCell {
 }
 
 impl MarkdownTableCell {
-    fn new(text: String, raw: String, classes: Vec<String>) -> Self {
+    fn new(text: String, raw: &str, classes: Vec<String>) -> Self {
         let seed = NodeSeed {
             classes,
             ..NodeSeed::default()
         };
         Self {
             text,
-            inline_doc: InlineTextDoc::parse(&raw),
+            inline_doc: InlineTextDoc::parse(raw),
             layout_width: 0,
             hovered_link: None,
             seed,
@@ -2121,9 +2123,9 @@ struct MarkdownTableContentBlock {
 impl MarkdownTableContentBlock {
     fn new(
         headers: Vec<String>,
-        header_markups: Vec<String>,
+        header_markups: &[String],
         rows: Vec<Vec<String>>,
-        row_markups: Vec<Vec<String>>,
+        row_markups: &[Vec<String>],
     ) -> Self {
         let column_count = headers.len().max(1).to_u16_sat();
         let mut effective_header_markups = Vec::with_capacity(headers.len());
@@ -2159,7 +2161,7 @@ impl MarkdownTableContentBlock {
         for (index, header) in headers.into_iter().enumerate() {
             children.push(Box::new(MarkdownTableCell::new(
                 header,
-                effective_header_markups
+                &effective_header_markups
                     .get(index)
                     .cloned()
                     .unwrap_or_else(String::new),
@@ -2170,7 +2172,7 @@ impl MarkdownTableContentBlock {
             for (cell_index, cell) in row.into_iter().enumerate() {
                 children.push(Box::new(MarkdownTableCell::new(
                     cell,
-                    effective_row_markups
+                    &effective_row_markups
                         .get(row_index)
                         .and_then(|cells| cells.get(cell_index))
                         .cloned()
@@ -2281,9 +2283,9 @@ struct MarkdownTableBlock {
 impl MarkdownTableBlock {
     fn new(
         headers: Vec<String>,
-        header_markups: Vec<String>,
+        header_markups: &[String],
         rows: Vec<Vec<String>>,
-        row_markups: Vec<Vec<String>>,
+        row_markups: &[Vec<String>],
     ) -> Self {
         let mut effective_header_markups = Vec::with_capacity(headers.len());
         for (index, header) in headers.iter().enumerate() {
@@ -2318,9 +2320,9 @@ impl MarkdownTableBlock {
             layout_width: 0,
             children: vec![Box::new(MarkdownTableContentBlock::new(
                 headers,
-                effective_header_markups,
+                &effective_header_markups,
                 rows,
-                effective_row_markups,
+                &effective_row_markups,
             ))],
         }
     }
@@ -2480,7 +2482,7 @@ fn push_block_widget(children: &mut Vec<Box<dyn Widget>>, block: MarkdownBlock) 
             children.push(Box::new(MarkdownHeadingBlock::new(level, text)));
         }
         MarkdownBlock::Paragraph { raw, .. } => {
-            children.push(Box::new(MarkdownParagraphBlock::new(raw)));
+            children.push(Box::new(MarkdownParagraphBlock::new(&raw)));
         }
         MarkdownBlock::List {
             ordered,
@@ -2503,9 +2505,9 @@ fn push_block_widget(children: &mut Vec<Box<dyn Widget>>, block: MarkdownBlock) 
         } => {
             children.push(Box::new(MarkdownTableBlock::new(
                 headers,
-                header_markups,
+                &header_markups,
                 rows,
-                row_markups,
+                &row_markups,
             )));
         }
         MarkdownBlock::CodeFence { language, code, .. } => {
@@ -2873,9 +2875,8 @@ I must not fear. Fear is the mind-killer. Fear is the little-death that brings t
 
     #[test]
     fn markdown_paragraph_renders_click_action_meta_for_links() {
-        let paragraph = super::MarkdownParagraphBlock::new(
-            "See [example.md](./example.md) for details.".to_string(),
-        );
+        let paragraph =
+            super::MarkdownParagraphBlock::new("See [example.md](./example.md) for details.");
         let console = Console::new();
         let mut options = console.options().clone();
         options.size = (80, 1);
@@ -2897,9 +2898,8 @@ I must not fear. Fear is the mind-killer. Fear is the little-death that brings t
 
     #[test]
     fn markdown_paragraph_link_default_background_is_transparent() {
-        let paragraph = super::MarkdownParagraphBlock::new(
-            "See [example.md](./example.md) for details.".to_string(),
-        );
+        let paragraph =
+            super::MarkdownParagraphBlock::new("See [example.md](./example.md) for details.");
         let console = Console::new();
         let mut options = console.options().clone();
         options.size = (80, 1);
@@ -2941,11 +2941,7 @@ I must not fear. Fear is the mind-killer. Fear is the little-death that brings t
 
     #[test]
     fn markdown_table_cell_tooltip_anchor_uses_local_center() {
-        let mut cell = MarkdownTableCell::new(
-            "True".to_string(),
-            "True".to_string(),
-            vec!["cell".to_string()],
-        );
+        let mut cell = MarkdownTableCell::new("True".to_string(), "True", vec!["cell".to_string()]);
         cell.on_layout(12, 1);
         assert_eq!(cell.tooltip_anchor(), Some((6, 0)));
     }
@@ -3059,7 +3055,7 @@ I must not fear. Fear is the mind-killer. Fear is the little-death that brings t
                 "Default".to_string(),
                 "Description".to_string(),
             ],
-            vec![
+            &[
                 "Name".to_string(),
                 "Type".to_string(),
                 "Default".to_string(),
@@ -3079,7 +3075,7 @@ I must not fear. Fear is the mind-killer. Fear is the little-death that brings t
                     "Number of fixed columns".to_string(),
                 ],
             ],
-            vec![
+            &[
                 vec![
                     "`show_header`".to_string(),
                     "`bool`".to_string(),

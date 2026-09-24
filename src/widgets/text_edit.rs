@@ -59,6 +59,7 @@ pub(crate) enum EditCommand {
     SelectLine,
 }
 
+#[allow(clippy::too_many_lines)] // One arm per key binding.
 pub(crate) fn edit_command_from_key(key: &KeyEventData, multiline: bool) -> Option<EditCommand> {
     let mut mods_without_shift = key.modifiers;
     mods_without_shift.remove(KeyModifiers::SHIFT);

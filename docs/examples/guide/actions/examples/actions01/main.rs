@@ -8,6 +8,7 @@ use textual::prelude::*;
 struct ActionsApp;
 
 impl ActionsApp {
+    #[allow(clippy::unused_self)] // Mirrors the Python action method this example teaches.
     fn action_set_background(
         &self,
         color: &str,

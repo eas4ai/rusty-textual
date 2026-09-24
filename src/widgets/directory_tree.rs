@@ -394,6 +394,7 @@ impl DirectoryTree {
         }
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn focusable(&self) -> bool {
         true
     }
@@ -496,6 +497,7 @@ impl DirectoryTree {
         self.tree.layout_height()
     }
 
+    #[allow(clippy::unnecessary_wraps)] // `#[widget(override(..))]` forwards the trait method here.
     fn content_width(&self) -> Option<usize> {
         let content_width = self.tree.content_width().unwrap_or(1);
         let meta = crate::css::selector_meta_generic(self);
@@ -508,6 +510,7 @@ impl DirectoryTree {
         Some(content_width.saturating_add(chrome_lr).max(1))
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn style_type(&self) -> &'static str {
         "DirectoryTree"
     }
