@@ -78,5 +78,5 @@ pub(crate) fn set_dispatch_tree(tree_id: u64) -> DispatchTreeGuard {
 /// a dispatch scope; enqueue sites then stamp `None` = "active tree at drain",
 /// today's (pre-stamp) resolution.
 pub(crate) fn dispatch_tree_id() -> Option<u64> {
-    DISPATCH_TREE.with(|cell| cell.get())
+    DISPATCH_TREE.with(std::cell::Cell::get)
 }

@@ -67,11 +67,13 @@ impl Failure {
         self
     }
 
+    #[must_use]
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         self.value = Some(value.into());
         self
     }
 
+    #[must_use]
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
         self
@@ -269,6 +271,7 @@ impl Number {
 
     /// Set an explicit failure description (Python's `failure_description`
     /// constructor argument). Takes priority over the default messages.
+    #[must_use]
     pub fn with_failure_description(mut self, description: impl Into<String>) -> Self {
         self.failure_description = Some(description.into());
         self
@@ -348,6 +351,7 @@ impl Integer {
 
     /// Set an explicit failure description (Python's `failure_description`
     /// constructor argument). Takes priority over the default messages.
+    #[must_use]
     pub fn with_failure_description(mut self, description: impl Into<String>) -> Self {
         self.failure_description = Some(description.into());
         self
@@ -431,6 +435,7 @@ impl Length {
 
     /// Set an explicit failure description (Python's `failure_description`
     /// constructor argument). Takes priority over the default messages.
+    #[must_use]
     pub fn with_failure_description(mut self, description: impl Into<String>) -> Self {
         self.failure_description = Some(description.into());
         self
@@ -487,6 +492,7 @@ impl Url {
 
     /// Set an explicit failure description (Python's `failure_description`
     /// constructor argument). Takes priority over the default message.
+    #[must_use]
     pub fn with_failure_description(mut self, description: impl Into<String>) -> Self {
         self.failure_description = Some(description.into());
         self
@@ -558,6 +564,7 @@ impl Regex {
 
     /// Set an explicit failure description (Python's `failure_description`
     /// constructor argument). Takes priority over the default message.
+    #[must_use]
     pub fn with_failure_description(mut self, description: impl Into<String>) -> Self {
         self.failure_description = Some(description.into());
         self

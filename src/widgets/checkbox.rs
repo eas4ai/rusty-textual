@@ -163,7 +163,7 @@ impl Focus for Checkbox {
         self.pressed && crate::widgets::Widget::node_state(self).hovered
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "checkbox"
     }
 

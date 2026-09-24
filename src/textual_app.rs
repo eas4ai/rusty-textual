@@ -459,7 +459,9 @@ impl<T: TextualApp> TextualAppAdapter<T> {
     fn new(app: Arc<Mutex<T>>, child: impl Widget + 'static) -> Self {
         let mut message_handlers = crate::message_handlers::MessageHandlers::new();
         {
-            let mut locked = app.lock().unwrap_or_else(|e| e.into_inner());
+            let mut locked = app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             locked.register_message_handlers(&mut message_handlers);
         }
         Self {
@@ -557,7 +559,7 @@ impl<T: TextualApp> TextualAppAdapter<T> {
         self.command_palette_providers = self
             .app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .command_palette_providers();
         for provider in &mut self.command_palette_providers {
             provider.startup(ctx);
@@ -625,7 +627,7 @@ impl<T: TextualApp> TextualAppAdapter<T> {
         // Preserve the app-level lifecycle hook (Python `CommandPalette.Opened`).
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_command_palette_opened(ctx);
 
         // The dismiss callback runs while the screen is popped mid-drain; it
@@ -695,7 +697,7 @@ impl<T: TextualApp> TextualAppAdapter<T> {
             if let Some(rw) = self
                 .app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .reactive_widget_mut()
             {
                 rw.reactive_dispatch_with_app(app, &changes, &mut rctx);
@@ -754,7 +756,11 @@ impl<T: TextualApp> TextualAppAdapter<T> {
         // state), re-invoke the app's `compose()` and rebuild the app-content
         // subtree via `App::recompose_app`. A recompose implies layout + repaint.
         if needs_recompose {
-            let fresh_root = self.app.lock().unwrap_or_else(|e| e.into_inner()).compose();
+            let fresh_root = self
+                .app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .compose();
             app.recompose_app(fresh_root);
             ctx.request_layout_invalidation();
         }
@@ -800,13 +806,13 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         bindings.extend(
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .bindings(),
         );
         bindings
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "app"
     }
 
@@ -821,7 +827,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     ) -> Option<bool> {
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .check_action(action, parameters)
     }
 
@@ -1123,7 +1129,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         self.app_child.on_mount(ctx);
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_mount();
     }
 
@@ -1161,7 +1167,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     fn on_app_key(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut crate::event::WidgetCtx) {
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_key_with_app(app, key, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1169,7 +1175,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     fn on_app_action(&mut self, app: &mut App, action: Action, ctx: &mut crate::event::WidgetCtx) {
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_action_with_app(app, action, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1182,7 +1188,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     ) {
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_app_action_str(app, action, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1200,7 +1206,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         self.sync_help_panel_visible_from_runtime(app);
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_message_with_app(app, message, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1208,7 +1214,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     fn on_app_tick(&mut self, app: &mut App, tick: u64, ctx: &mut crate::event::WidgetCtx) {
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_tick_with_app(app, tick, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1233,7 +1239,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         app.set_check_action_fn(Arc::new(move |action, params| {
             app_ref
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .check_action(action, params)
         }));
 
@@ -1243,7 +1249,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         app.set_bindings_clash_fn(Arc::new(move |clashes| {
             app_ref
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .handle_bindings_clash(clashes);
         }));
 
@@ -1251,7 +1257,11 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         // #5742). Merged via `update_keymap` so entries set earlier (e.g. from
         // `configure(&mut App)`) survive unless overridden by the declaration.
         {
-            let declared = self.app.lock().unwrap_or_else(|e| e.into_inner()).keymap();
+            let declared = self
+                .app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .keymap();
             if !declared.is_empty() {
                 app.update_keymap(declared);
             }
@@ -1263,7 +1273,11 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         // type(self).__name__` (app.py): an explicit `title()` override wins;
         // otherwise default to the app type's name (final path segment).
         {
-            let app_title = self.app.lock().unwrap_or_else(|e| e.into_inner()).title();
+            let app_title = self
+                .app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .title();
             if app_title.is_empty() {
                 app.set_title(app_type_name::<T>());
             } else {
@@ -1279,7 +1293,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
             if let Some(rw) = self
                 .app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .reactive_widget_mut()
             {
                 rw.reactive_record_init(app.reactive_ctx());
@@ -1289,7 +1303,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
 
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_mount_with_app(app, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1307,7 +1321,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
             self.initialize_command_palette_providers(ctx);
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_command_palette_opened(ctx);
             if ctx.handled() {
                 return;
@@ -1317,7 +1331,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
             self.shutdown_command_palette_providers(ctx);
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_command_palette_closed(ctx);
             if ctx.handled() {
                 return;
@@ -1334,7 +1348,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
             self.handle_command_palette_selection(&id, ctx);
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_command_palette_command_selected(&id, &title, ctx);
             if ctx.handled() {
                 return;
@@ -1350,7 +1364,10 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         // Runs AFTER adapter state management (Block A) but BEFORE built-in typed hooks
         // (Block B), so `palette_screen_open` / `help_panel_visible` are already set.
         {
-            let mut app = self.app.lock().unwrap_or_else(|e| e.into_inner());
+            let mut app = self
+                .app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             self.message_handlers
                 .dispatch(&mut *app, message, ctx.event_ctx_mut());
         }
@@ -1360,54 +1377,54 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         if let Some(m) = message.downcast_ref::<crate::message::ButtonPressed>() {
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_button_pressed(&m.description, ctx);
             return;
         }
         if let Some(m) = message.downcast_ref::<crate::message::CheckboxChanged>() {
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_checkbox_changed(m.checked, ctx);
             return;
         }
         if let Some(m) = message.downcast_ref::<crate::message::InputChanged>() {
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_input_changed(&m.value, &m.validation, ctx);
             return;
         }
         if let Some(m) = message.downcast_ref::<crate::message::InputSubmitted>() {
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_input_submitted(&m.value, ctx);
             return;
         }
         if let Some(m) = message.downcast_ref::<crate::message::TextAreaChanged>() {
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_text_area_changed(&m.value, ctx);
             return;
         }
         if let Some(m) = message.downcast_ref::<crate::message::ListViewSelectionChanged>() {
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_list_view_selection_changed(m.index, &m.item, ctx);
         }
         if let Some(m) = message.downcast_ref::<crate::message::ListViewItemActivated>() {
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_list_view_item_activated(m.index, &m.item, ctx);
         }
         if let Some(m) = message.downcast_ref::<crate::message::TabActivated>() {
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .on_tab_activated(m.index, &m.title, ctx);
         }
         if ctx.handled() {}
@@ -1420,7 +1437,10 @@ pub async fn run_with_output<T: TextualApp>(definition: T) -> Result<Option<Stri
     let state = Arc::new(Mutex::new(definition));
     let mut app = App::new()?;
 
-    let css_path = state.lock().unwrap_or_else(|e| e.into_inner()).css_path();
+    let css_path = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .css_path();
     if let Some(path) = css_path {
         // PR-11: a missing `css_path` fails startup with `StylesheetError`
         // (Python parity) instead of silently running unstyled.
@@ -1432,21 +1452,24 @@ pub async fn run_with_output<T: TextualApp>(definition: T) -> Result<Option<Stri
         }
         let interval = state
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .stylesheet_watch_interval();
         app.watch_stylesheet(path, interval)?;
     }
 
     state
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .configure(&mut app)?;
-    let composed = state.lock().unwrap_or_else(|e| e.into_inner()).compose();
+    let composed = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .compose();
     let mut root = build_textual_app_runtime_root(state.clone(), composed);
     app.run_widget_tree(&mut root).await?;
     Ok(state
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .take_exit_output())
 }
 
@@ -1498,9 +1521,12 @@ where
 
     state
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .configure(&mut app)?;
-    let composed = state.lock().unwrap_or_else(|e| e.into_inner()).compose();
+    let composed = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .compose();
     let mut root = build_textual_app_runtime_root(state.clone(), composed);
 
     // Install the deterministic manual clock BEFORE startup so timers and
@@ -2061,11 +2087,9 @@ mod tests {
         }
         assert_eq!(state.startup_count.load(Ordering::SeqCst), 1);
         let open_messages = open_ctx.take_messages();
-        assert!(
-            open_messages
-                .iter()
-                .any(|event| event.is::<crate::message::CommandPaletteSetCommands>())
-        );
+        assert!(open_messages.iter().any(
+            super::super::message::MessageEvent::is::<crate::message::CommandPaletteSetCommands>
+        ));
 
         let mut select_ctx = EventCtx::default();
         {
@@ -2395,7 +2419,9 @@ mod tests {
             }
         }
 
-        let app = app.lock().unwrap_or_else(|e| e.into_inner());
+        let app = app
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(app.hooks.last_button.as_deref(), Some("ok"));
         assert_eq!(app.hooks.input_changed, Some(("42".to_string(), true)));
         assert_eq!(app.hooks.input_submitted.as_deref(), Some("submit"));
@@ -2995,19 +3021,35 @@ mod tests {
 
         let messages = ctx.take_messages();
         assert!(!messages.is_empty());
-        assert!(messages.iter().any(|m| m.is::<crate::message::AppBack>()));
-        assert!(messages.iter().any(|m| m.is::<crate::message::AppBell>()));
-        assert!(messages.iter().any(|m| m.is::<crate::message::AppFocus>()));
-        assert!(messages.iter().any(|m| m.is::<crate::message::AppNotify>()));
         assert!(
             messages
                 .iter()
-                .any(|m| m.is::<crate::message::AppSwitchMode>())
+                .any(super::super::message::MessageEvent::is::<crate::message::AppBack>)
         );
         assert!(
             messages
                 .iter()
-                .any(|m| m.is::<crate::message::AppToggleDark>())
+                .any(super::super::message::MessageEvent::is::<crate::message::AppBell>)
+        );
+        assert!(
+            messages
+                .iter()
+                .any(super::super::message::MessageEvent::is::<crate::message::AppFocus>)
+        );
+        assert!(
+            messages
+                .iter()
+                .any(super::super::message::MessageEvent::is::<crate::message::AppNotify>)
+        );
+        assert!(
+            messages
+                .iter()
+                .any(super::super::message::MessageEvent::is::<crate::message::AppSwitchMode>)
+        );
+        assert!(
+            messages
+                .iter()
+                .any(super::super::message::MessageEvent::is::<crate::message::AppToggleDark>)
         );
     }
 

@@ -197,10 +197,10 @@ impl crate::widgets::Interactive for HeaderTitle {
         ctx: &mut crate::event::WidgetCtx,
     ) {
         if let Some(m) = message.downcast_ref::<ScreenTitleChanged>() {
-            self.title = m
-                .title
-                .as_deref()
-                .map_or_else(|| self.default_title.clone(), |s| s.to_string());
+            self.title = m.title.as_deref().map_or_else(
+                || self.default_title.clone(),
+                std::string::ToString::to_string,
+            );
             self.subtitle = m
                 .sub_title
                 .as_deref()
@@ -383,6 +383,7 @@ impl Header {
         }
     }
 
+    #[must_use]
     pub fn title(mut self, title: impl Into<String>) -> Self {
         let t = title.into();
         self.title = t.clone();
@@ -390,6 +391,7 @@ impl Header {
         self
     }
 
+    #[must_use]
     pub fn subtitle(mut self, subtitle: impl Into<String>) -> Self {
         let s = subtitle.into();
         self.subtitle = Some(s.clone());
@@ -436,7 +438,10 @@ impl Header {
     ///
     /// Pass `None` to revert to the default (app-level) title.
     pub fn set_title(&mut self, title: Option<&str>, ctx: &mut ReactiveCtx) {
-        let new_title = title.map_or_else(|| self.default_title.clone(), |s| s.to_string());
+        let new_title = title.map_or_else(
+            || self.default_title.clone(),
+            std::string::ToString::to_string,
+        );
         if self.title != new_title {
             let old = self.title.clone();
             self.title = new_title;
@@ -512,6 +517,7 @@ impl Header {
         self
     }
 
+    #[must_use]
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = icon.into();
         self
@@ -523,6 +529,7 @@ impl Header {
         self
     }
 
+    #[must_use]
     pub fn time_format(mut self, time_format: impl Into<String>) -> Self {
         self.time_format = time_format.into();
         self
@@ -586,10 +593,10 @@ impl crate::widgets::Interactive for Header {
     ) {
         if let Some(m) = message.downcast_ref::<ScreenTitleChanged>() {
             // Direct field assignment (internal call site — not reactive setter).
-            self.title = m
-                .title
-                .as_deref()
-                .map_or_else(|| self.default_title.clone(), |s| s.to_string());
+            self.title = m.title.as_deref().map_or_else(
+                || self.default_title.clone(),
+                std::string::ToString::to_string,
+            );
             self.subtitle = m
                 .sub_title
                 .as_deref()

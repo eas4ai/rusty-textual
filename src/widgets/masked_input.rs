@@ -505,6 +505,7 @@ impl MaskedInput {
         out
     }
 
+    #[must_use]
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         let v: Vec<char> = value.into().chars().collect();
         if !v.is_empty() {
@@ -515,6 +516,7 @@ impl MaskedInput {
         self
     }
 
+    #[must_use]
     pub fn with_placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = placeholder.into();
         self.template.update_mask(&self.placeholder);
@@ -528,6 +530,7 @@ impl MaskedInput {
         self
     }
 
+    #[must_use]
     pub fn class(mut self, class: impl Into<String>) -> Self {
         self.seed.classes.push(class.into());
         self
@@ -855,7 +858,7 @@ impl crate::widgets::Focus for MaskedInput {
         self.chrome.is_active()
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "masked-input"
     }
 

@@ -30,6 +30,7 @@ impl Panel {
         }
     }
 
+    #[must_use]
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self

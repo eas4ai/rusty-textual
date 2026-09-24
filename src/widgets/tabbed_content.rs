@@ -95,11 +95,13 @@ impl TabPane {
         }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.inner.push(child);
         self
     }
 
+    #[must_use]
     pub fn id(mut self, pane_id: impl Into<String>) -> Self {
         let id = pane_id.into();
         self.pane_id = Some(id.clone());
@@ -256,11 +258,13 @@ impl TabbedContent {
         }
     }
 
+    #[must_use]
     pub fn initial(mut self, pane_id: impl Into<String>) -> Self {
         self.initial = Some(pane_id.into());
         self
     }
 
+    #[must_use]
     pub fn with_pane(mut self, mut pane: TabPane) -> Self {
         let id = self.ensure_pane_id(&mut pane);
         self.push_meta(&pane, id);
@@ -460,7 +464,7 @@ impl TabbedContent {
             self.active = panes
                 .last()
                 .and_then(|p| p.pane_id())
-                .map(|id| id.to_string());
+                .map(std::string::ToString::to_string);
         }
     }
 
@@ -611,7 +615,7 @@ impl crate::widgets::Render for TabbedContent {
 }
 
 impl crate::widgets::Focus for TabbedContent {
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "tabbed_content"
     }
 

@@ -334,6 +334,9 @@ impl CommandPaletteScreen {
 impl super::command_palette::SystemModalScreen for CommandPaletteScreen {}
 
 impl Screen for CommandPaletteScreen {
+    // `Screen::name` returns `&str` so names may be runtime values; an impl
+    // cannot narrow it to `&'static str`, whatever clippy suggests.
+    #[allow(clippy::unnecessary_literal_bound)]
     fn name(&self) -> &str {
         "CommandPaletteScreen"
     }

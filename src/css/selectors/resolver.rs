@@ -122,7 +122,7 @@ pub(crate) fn selector_meta_generic<T: Widget + ?Sized>(widget: &T) -> SelectorM
             .iter()
             .map(|name| (*name).to_string())
             .collect(),
-        id: widget.style_id().map(|s| s.to_string()),
+        id: widget.style_id().map(std::string::ToString::to_string),
         classes: widget.style_classes().to_vec(),
         states: dispatch_states(widget),
         component_phantom: false,
@@ -414,7 +414,7 @@ impl Drop for FrozenAncestorBgGuard {
 /// NOT read by `current_ancestor_composited_background()`, so content GLYPH
 /// foregrounds keep resolving against the LIVE surface (see the thread-local).
 pub(crate) fn frozen_ancestor_bg_override() -> Option<crate::style::Color> {
-    FROZEN_ANCESTOR_BG_OVERRIDE.with(|cell| cell.get())
+    FROZEN_ANCESTOR_BG_OVERRIDE.with(std::cell::Cell::get)
 }
 
 /// Returns the composited background of ALL ANCESTORS of the widget currently

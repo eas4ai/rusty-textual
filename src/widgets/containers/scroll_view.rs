@@ -103,12 +103,14 @@ impl ScrollView {
     }
 
     /// Set the text rendered on the top border (Python `widget.border_title`).
+    #[must_use]
     pub fn with_border_title(mut self, title: impl Into<String>) -> Self {
         self.border_title = Some(title.into());
         self
     }
 
     /// Set the text rendered on the bottom border (Python `widget.border_subtitle`).
+    #[must_use]
     pub fn with_border_subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.border_subtitle = Some(subtitle.into());
         self
@@ -119,6 +121,7 @@ impl ScrollView {
         child_any.downcast_mut::<Container>()
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         if let Some(container) = self.child_container_mut() {
             container.push(child);
@@ -126,6 +129,7 @@ impl ScrollView {
         self
     }
 
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         if let Some(container) = self.child_container_mut() {
             let mut replacement = Container::new();
@@ -142,6 +146,7 @@ impl ScrollView {
         }
     }
 
+    #[must_use]
     pub fn height(mut self, height: usize) -> Self {
         self.height = Some(height.max(1));
         self
@@ -193,6 +198,7 @@ impl ScrollView {
         self.render_offset_x = self.offset_x as f32;
     }
 
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);
         self
@@ -202,6 +208,7 @@ impl ScrollView {
         self.scroll_step = step.max(1);
     }
 
+    #[must_use]
     pub fn scroll_step_x(mut self, step: usize) -> Self {
         self.scroll_step_x = step.max(1);
         self
@@ -211,11 +218,13 @@ impl ScrollView {
         self.scroll_step_x = step.max(1);
     }
 
+    #[must_use]
     pub fn with_overflow_x(mut self, overflow: crate::style::Overflow) -> Self {
         self.seed.styles.style.overflow_x = Some(overflow);
         self
     }
 
+    #[must_use]
     pub fn with_overflow_y(mut self, overflow: crate::style::Overflow) -> Self {
         self.seed.styles.style.overflow_y = Some(overflow);
         self
@@ -678,7 +687,7 @@ impl crate::widgets::Focus for ScrollView {
         true
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "scroll-view"
     }
 

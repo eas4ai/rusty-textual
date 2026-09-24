@@ -178,7 +178,7 @@ fn resolve_tracks(
         let consumed: Rat = resolved
             .iter()
             .filter_map(|(_, f)| *f)
-            .fold(Rat::zero(), |a, f| a.add(f));
+            .fold(Rat::zero(), Rat::add);
         let mut remaining = Rat::whole(i64::from(total) - total_gutter).sub(consumed);
         if !remaining.is_positive() {
             remaining = Rat::zero();

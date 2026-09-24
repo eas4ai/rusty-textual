@@ -729,7 +729,7 @@ fn find_close_bracket(s: &str, start: usize) -> Option<usize> {
 
 /// Return the byte length of the UTF-8 character starting at `pos` in `s`.
 fn char_len_at(s: &str, pos: usize) -> usize {
-    s[pos..].chars().next().map_or(1, |c| c.len_utf8())
+    s[pos..].chars().next().map_or(1, char::len_utf8)
 }
 
 // ---------------------------------------------------------------------------

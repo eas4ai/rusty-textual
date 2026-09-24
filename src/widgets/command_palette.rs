@@ -99,6 +99,9 @@ impl SystemCommandsProvider {
 }
 
 impl Provider for SystemCommandsProvider {
+    // `Provider::name` returns `&str` so names may be runtime values; an impl
+    // cannot narrow it to `&'static str`, whatever clippy suggests.
+    #[allow(clippy::unnecessary_literal_bound)]
     fn name(&self) -> &str {
         "system"
     }

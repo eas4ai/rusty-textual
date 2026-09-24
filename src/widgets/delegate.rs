@@ -373,7 +373,7 @@ macro_rules! delegate_widget_method {
     };
 
     ($field:ident, action_namespace) => {
-        fn action_namespace(&self) -> &str { self.$field.action_namespace() }
+        fn action_namespace(&self) -> &'static str { self.$field.action_namespace() }
     };
 
     ($field:ident, action_registry) => {

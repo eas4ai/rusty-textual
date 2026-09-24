@@ -56,7 +56,7 @@ pub fn parse_decrqm_reply(bytes: &[u8], mode: u16) -> Option<bool> {
     let at = text.find(&marker)?;
     let ps: String = text[at + marker.len()..]
         .chars()
-        .take_while(|c| c.is_ascii_digit())
+        .take_while(char::is_ascii_digit)
         .collect();
     let ps: u16 = ps.parse().ok()?;
     let rest = &text[at + marker.len() + ps.to_string().len()..];

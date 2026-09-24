@@ -270,7 +270,7 @@ pub trait ActionHandler {
     /// Used by [`resolve_action`] to route namespaced actions like `"app.quit"`.
     /// Returns `""` by default (no namespace — the handler participates in
     /// bubble resolution only).
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         ""
     }
 
@@ -1426,7 +1426,7 @@ mod tests {
     fn custom_action_namespace() {
         struct AppHandler;
         impl ActionHandler for AppHandler {
-            fn action_namespace(&self) -> &str {
+            fn action_namespace(&self) -> &'static str {
                 "app"
             }
         }

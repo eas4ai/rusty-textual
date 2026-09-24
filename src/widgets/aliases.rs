@@ -89,6 +89,7 @@ impl Static {
     /// Mirrors Python `Static(text, markup=False)`: tags are rendered as-is
     /// (not interpreted).  The widget CSS type remains `Static`, so type-based
     /// CSS rules such as `Static { height: 1fr }` still apply.
+    #[must_use]
     pub fn without_markup(mut self) -> Self {
         self.markup = false;
         self
@@ -97,6 +98,7 @@ impl Static {
     /// When true, the widget expands to fill the available width.
     ///
     /// Mirrors Python `Static(expand=True)`.
+    #[must_use]
     pub fn with_expand(mut self, expand: bool) -> Self {
         self.expand = expand;
         self
@@ -107,6 +109,7 @@ impl Static {
     ///
     /// This allows CSS rules like `#custom { link-color: ... }` to target the
     /// Static widget directly with id-selector specificity.
+    #[must_use]
     pub fn id(mut self, value: impl Into<String>) -> Self {
         self.seed.css_id = Some(value.into());
         self
@@ -121,6 +124,7 @@ impl Static {
     /// leaf because the height-chrome keystone lets the flow layout add the
     /// ancestor-resolved chrome (previously this had to ride a `Node` wrapper so
     /// the chrome resolved with ancestor context).
+    #[must_use]
     pub fn class(mut self, value: impl Into<String>) -> Self {
         let v = value.into();
         if !self.seed.classes.iter().any(|c| c == &v) {
@@ -130,6 +134,7 @@ impl Static {
     }
 
     /// Add several CSS classes at once (Python `classes="a b c"`). Idempotent.
+    #[must_use]
     pub fn classes(mut self, values: impl IntoIterator<Item = impl Into<String>>) -> Self {
         for value in values {
             let v = value.into();
@@ -216,12 +221,14 @@ impl Static {
     }
 
     /// Set the text rendered on the top border (Python `widget.border_title`).
+    #[must_use]
     pub fn with_border_title(mut self, title: impl Into<String>) -> Self {
         self.border_title = Some(title.into());
         self
     }
 
     /// Set the text rendered on the bottom border (Python `widget.border_subtitle`).
+    #[must_use]
     pub fn with_border_subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.border_subtitle = Some(subtitle.into());
         self

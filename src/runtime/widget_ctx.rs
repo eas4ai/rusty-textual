@@ -480,7 +480,7 @@ mod tests {
     fn handle_update_via_does_not_alias_across_trees() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_widget_commands();
 
         // Tree A (NOT installed in the app) and a handle to its root.
@@ -519,7 +519,7 @@ mod tests {
     fn handle_update_via_applies_in_owning_tree() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_widget_commands();
 
         let (tree_a, root_a) = build_probe_tree(1);
@@ -540,6 +540,9 @@ mod tests {
     struct ModalScreenStub;
 
     impl crate::screen::Screen for ModalScreenStub {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "modal-stub"
         }
@@ -558,7 +561,7 @@ mod tests {
     fn handle_update_via_applies_to_owning_tree_while_other_screen_active() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_widget_commands();
 
         let (tree_a, root_a) = build_probe_tree(1);
@@ -607,7 +610,7 @@ mod tests {
     fn unstamped_node_target_resolves_against_active_tree() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Direct queue write (simulates what dispatch would enqueue): mark this
         // thread draining so a foreign test's live loop can't trip the assert.
         let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
@@ -637,7 +640,7 @@ mod tests {
     fn ctx_class_ops_stamp_dispatching_tree() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_widget_commands();
 
         let (_tree, root) = build_probe_tree(1);

@@ -252,7 +252,7 @@ impl<W: Widget> fmt::Debug for HandleSlot<W> {
         let filled = self
             .cell
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .is_some();
         write!(f, "HandleSlot<{}>(filled: {})", type_name::<W>(), filled)
     }
@@ -271,7 +271,10 @@ impl<W: Widget> HandleSlot<W> {
     /// `None` until the bound widget has been mounted.
     #[must_use]
     pub fn get(&self) -> Option<Handle<W>> {
-        let guard = self.cell.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self
+            .cell
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.map(|(node, tree_id)| Handle::new(node, tree_id))
     }
 
@@ -292,7 +295,9 @@ impl<W: Widget> HandleSlot<W> {
     pub(crate) fn make_sink(&self) -> HandleSink {
         let cell = Arc::clone(&self.cell);
         Box::new(move |node, tree_id| {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some((node, tree_id));
+            *cell
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((node, tree_id));
         })
     }
 }

@@ -50,16 +50,19 @@ impl FooterBinding {
         }
     }
 
+    #[must_use]
     pub fn with_group(mut self, group: impl Into<String>) -> Self {
         self.group = Some(group.into());
         self
     }
 
+    #[must_use]
     pub fn with_action_key(mut self, action_key: impl Into<String>) -> Self {
         self.action_key = Some(action_key.into());
         self
     }
 
+    #[must_use]
     pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
         self.tooltip = Some(tooltip.into());
         self
@@ -323,6 +326,7 @@ impl Footer {
         }
     }
 
+    #[must_use]
     pub fn with_binding(mut self, key: impl Into<String>, description: impl Into<String>) -> Self {
         self.bindings.push(FooterBinding::new(key, description));
         self

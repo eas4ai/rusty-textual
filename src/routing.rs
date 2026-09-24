@@ -66,18 +66,21 @@ impl ControlMeta {
     }
 
     /// Builder: set the type name.
+    #[must_use]
     pub fn type_named(mut self, type_name: impl Into<String>) -> Self {
         self.type_name = Some(type_name.into());
         self
     }
 
     /// Builder: add a class.
+    #[must_use]
     pub fn class(mut self, class: impl Into<String>) -> Self {
         self.classes.push(class.into());
         self
     }
 
     /// Builder: add several classes.
+    #[must_use]
     pub fn classes<I, S>(mut self, classes: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -504,7 +507,7 @@ mod tests {
             node_id_from_ffi(1),
             ButtonPressed {
                 description: "x".into(),
-                button_id: id.map(|s| s.to_string()),
+                button_id: id.map(std::string::ToString::to_string),
             },
         )
     }

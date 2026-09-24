@@ -226,12 +226,14 @@ impl TreeNode {
         self
     }
 
+    #[must_use]
     pub fn with_component_class(mut self, class: impl Into<String>) -> Self {
         self.component_classes.push(class.into());
         self
     }
 
     /// Set optional user data on this node (builder pattern).
+    #[must_use]
     pub fn with_data(mut self, data: impl Into<String>) -> Self {
         self.data = Some(data.into());
         self

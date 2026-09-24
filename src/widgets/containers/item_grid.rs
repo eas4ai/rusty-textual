@@ -28,11 +28,13 @@ impl ItemGrid {
         }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.inner.push(child);
         self
     }
 
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         self.inner = self.inner.with_compose(children);
         self
@@ -42,23 +44,27 @@ impl ItemGrid {
         self.inner.push(child);
     }
 
+    #[must_use]
     pub fn stretch_height(self, stretch_height: bool) -> Self {
         self.stretch_height.store(stretch_height, Ordering::Relaxed);
         self
     }
 
+    #[must_use]
     pub fn min_column_width(self, width: Option<usize>) -> Self {
         self.min_column_width
             .store(width.unwrap_or(0), Ordering::Relaxed);
         self
     }
 
+    #[must_use]
     pub fn max_column_width(self, width: Option<usize>) -> Self {
         self.max_column_width
             .store(width.unwrap_or(0), Ordering::Relaxed);
         self
     }
 
+    #[must_use]
     pub fn regular(self, regular: bool) -> Self {
         self.regular.store(regular, Ordering::Relaxed);
         self

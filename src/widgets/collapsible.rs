@@ -389,16 +389,19 @@ impl Collapsible {
         self
     }
 
+    #[must_use]
     pub fn collapsed_symbol(mut self, symbol: impl Into<String>) -> Self {
         self.collapsed_symbol = symbol.into();
         self
     }
 
+    #[must_use]
     pub fn expanded_symbol(mut self, symbol: impl Into<String>) -> Self {
         self.expanded_symbol = symbol.into();
         self
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(Box::new(child));
         self
@@ -915,8 +918,16 @@ mod tests {
             c.on_message(&MessageEvent::new(sender, CollapsibleTitleToggle), &mut __w);
         }
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<CollapsibleExpanded>()));
-        assert!(!messages.iter().any(|m| m.is::<CollapsibleCollapsed>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleExpanded>)
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleCollapsed>)
+        );
 
         // Expanded -> collapsed posts `CollapsibleCollapsed`.
         let mut ctx = EventCtx::default();
@@ -928,8 +939,16 @@ mod tests {
             c.on_message(&MessageEvent::new(sender, CollapsibleTitleToggle), &mut __w);
         }
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<CollapsibleCollapsed>()));
-        assert!(!messages.iter().any(|m| m.is::<CollapsibleExpanded>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleCollapsed>)
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleExpanded>)
+        );
     }
 
     /// A programmatic `set_collapsed` posts the state message too (Python
@@ -943,11 +962,19 @@ mod tests {
 
         c.set_collapsed(false, &mut rctx);
         let messages = rctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<CollapsibleExpanded>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleExpanded>)
+        );
 
         c.set_collapsed(true, &mut rctx);
         let messages = rctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<CollapsibleCollapsed>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleCollapsed>)
+        );
 
         // No change, no message.
         c.set_collapsed(true, &mut rctx);

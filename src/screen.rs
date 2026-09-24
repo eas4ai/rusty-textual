@@ -31,6 +31,9 @@ use crate::event::Event;
 /// Screens are stacked — only the topmost screen is active (receives events, renders).
 pub trait Screen: Send + Sync {
     /// Human-readable name for this screen (used in debug/logging).
+    // `Screen::name` returns `&str` so names may be runtime values; an impl
+    // cannot narrow it to `&'static str`, whatever clippy suggests.
+    #[allow(clippy::unnecessary_literal_bound)]
     fn name(&self) -> &str {
         "Screen"
     }
@@ -745,7 +748,7 @@ impl ScreenStack {
     /// last drain, or `None`. The runtime uses this to pop the active screen and
     /// deliver the result to its callback on the next loop pass.
     pub(crate) fn take_active_dismissal(&self) -> Option<ScreenResult> {
-        self.top().and_then(|e| e.take_pending_dismissal())
+        self.top().and_then(ScreenEntry::take_pending_dismissal)
     }
 }
 
@@ -1580,6 +1583,9 @@ mod tests {
     struct QuitScreen;
 
     impl Screen for QuitScreen {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "QuitScreen"
         }

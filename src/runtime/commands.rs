@@ -304,7 +304,7 @@ pub(crate) fn enqueue_widget_command(cmd: WidgetCommand) {
     debug_assert!(
         !crate::runtime::tasks::ui_thread_running()
             || crate::runtime::tasks::is_ui_thread()
-            || DISPATCH_DRAINING.with(|flag| flag.get()),
+            || DISPATCH_DRAINING.with(std::cell::Cell::get),
         "WidgetCommand enqueued off the UI thread; workers must use the worker channel"
     );
     RUNTIME_COMMAND_QUEUE.with(|queue| queue.borrow_mut().push(cmd));

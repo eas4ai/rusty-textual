@@ -471,6 +471,7 @@ impl BindingHint {
         }
     }
 
+    #[must_use]
     pub fn with_action(mut self, action: impl Into<String>) -> Self {
         let action = action.into();
         self.action = Some(action.clone());
@@ -490,21 +491,25 @@ impl BindingHint {
         self
     }
 
+    #[must_use]
     pub fn with_key_display(mut self, key_display: impl Into<String>) -> Self {
         self.key_display = Some(key_display.into());
         self
     }
 
+    #[must_use]
     pub fn with_group(mut self, group: impl Into<String>) -> Self {
         self.group = Some(group.into());
         self
     }
 
+    #[must_use]
     pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
         self.tooltip = Some(tooltip.into());
         self
     }
 
+    #[must_use]
     pub fn with_namespace(mut self, namespace: impl Into<String>) -> Self {
         self.namespace = Some(namespace.into());
         self
@@ -985,7 +990,7 @@ impl EventCtx {
         self.worker_requests.push(WorkerRequest {
             owner: self.node_id,
             exclusive_key: None,
-            name: name.map(|s| s.to_string()),
+            name: name.map(std::string::ToString::to_string),
             payload,
         });
     }
@@ -1008,7 +1013,7 @@ impl EventCtx {
         self.worker_requests.push(WorkerRequest {
             owner: self.node_id,
             exclusive_key: Some(key.to_string()),
-            name: name.map(|s| s.to_string()),
+            name: name.map(std::string::ToString::to_string),
             payload,
         });
     }
@@ -1119,7 +1124,9 @@ impl EventCtx {
     /// Whether a message of type `M` is currently queued in this context.
     #[must_use]
     pub fn has_pending_message<M: Message>(&self) -> bool {
-        self.messages.iter().any(|m| m.is::<M>())
+        self.messages
+            .iter()
+            .any(super::message::MessageEvent::is::<M>)
     }
 
     pub(crate) fn take_animation_requests(&mut self) -> Vec<AnimationRequest> {

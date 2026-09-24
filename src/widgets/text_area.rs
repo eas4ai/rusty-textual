@@ -220,6 +220,7 @@ impl TextArea {
         out
     }
 
+    #[must_use]
     pub fn with_read_only(mut self, read_only: bool) -> Self {
         self.read_only = read_only;
         self.rebuild_classes();
@@ -245,6 +246,7 @@ impl TextArea {
         }
     }
 
+    #[must_use]
     pub fn with_show_line_numbers(mut self, show: bool) -> Self {
         self.show_line_numbers = show;
         self
@@ -268,6 +270,7 @@ impl TextArea {
         }
     }
 
+    #[must_use]
     pub fn with_indent_width(mut self, width: usize) -> Self {
         self.indent_width = width;
         self
@@ -291,6 +294,7 @@ impl TextArea {
         }
     }
 
+    #[must_use]
     pub fn with_soft_wrap(mut self, wrap: bool) -> Self {
         self.soft_wrap = wrap;
         self
@@ -314,6 +318,7 @@ impl TextArea {
         }
     }
 
+    #[must_use]
     pub fn with_placeholder(mut self, text: impl Into<String>) -> Self {
         self.placeholder = text.into();
         self
@@ -339,6 +344,7 @@ impl TextArea {
         }
     }
 
+    #[must_use]
     pub fn with_language(mut self, language: impl Into<String>) -> Self {
         self.language = Some(language.into());
         if let Ok(mut cache) = self.syntax_cache.lock() {
@@ -385,6 +391,7 @@ impl TextArea {
         }
     }
 
+    #[must_use]
     pub fn with_cursor_blink(mut self, enabled: bool) -> Self {
         self.cursor_blink_enabled = enabled;
         self
@@ -436,6 +443,7 @@ impl TextArea {
         }
     }
 
+    #[must_use]
     pub fn with_theme(mut self, name: impl Into<String>) -> Self {
         self.theme = Some(name.into());
         if let Ok(mut cache) = self.syntax_cache.lock() {
@@ -458,6 +466,7 @@ impl TextArea {
         self.reset_blink();
     }
 
+    #[must_use]
     pub fn with_selection(mut self, selection: Selection) -> Self {
         self.set_selection(selection);
         self
@@ -1372,7 +1381,7 @@ impl crate::widgets::Focus for TextArea {
         self.mouse_down
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "text-area"
     }
 
@@ -1811,7 +1820,10 @@ impl crate::widgets::Render for TextArea {
         }
 
         let syntax_cache = {
-            let mut guard = self.syntax_cache.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = self
+                .syntax_cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if guard.revision != self.doc_revision || guard.line_offsets.is_empty() {
                 self.recompute_syntax_cache(&mut guard);
             }

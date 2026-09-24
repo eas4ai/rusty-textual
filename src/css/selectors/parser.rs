@@ -1238,14 +1238,14 @@ pub(super) fn parse_style_body(body: &str) -> Style {
             "grid-columns" => {
                 let parsed: Vec<Option<Scalar>> =
                     value.split_whitespace().map(parse_scalar).collect();
-                if !parsed.is_empty() && parsed.iter().all(|s| s.is_some()) {
+                if !parsed.is_empty() && parsed.iter().all(std::option::Option::is_some) {
                     style.grid_columns = Some(parsed.into_iter().map(|s| s.unwrap()).collect());
                 }
             }
             "grid-rows" => {
                 let parsed: Vec<Option<Scalar>> =
                     value.split_whitespace().map(parse_scalar).collect();
-                if !parsed.is_empty() && parsed.iter().all(|s| s.is_some()) {
+                if !parsed.is_empty() && parsed.iter().all(std::option::Option::is_some) {
                     style.grid_rows = Some(parsed.into_iter().map(|s| s.unwrap()).collect());
                 }
             }
@@ -1287,7 +1287,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                 let names: Vec<String> = value
                     .split_whitespace()
                     .filter(|t| !t.is_empty())
-                    .map(|t| t.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect();
                 if !names.is_empty() {
                     style.layers = Some(names);

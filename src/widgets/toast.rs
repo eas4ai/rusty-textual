@@ -85,6 +85,7 @@ impl Toast {
         }
     }
 
+    #[must_use]
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self

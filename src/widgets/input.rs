@@ -193,6 +193,7 @@ impl SuggestFromList {
 
     /// Set whether suggestion results are cached by input value
     /// (Python's `use_cache`; the default is `true`).
+    #[must_use]
     pub fn use_cache(mut self, use_cache: bool) -> Self {
         self.cache = if use_cache {
             Some(SuggestionCache::new())
@@ -333,6 +334,7 @@ impl Input {
     /// This enables Python-style subclass selector behavior. For example,
     /// `CommandInput` can use `style_type_name="CommandInput"` while still
     /// inheriting `Input` selector rules via aliases.
+    #[must_use]
     pub fn with_style_type(
         mut self,
         style_type_name: &'static str,
@@ -343,6 +345,7 @@ impl Input {
         self
     }
 
+    #[must_use]
     pub fn with_placeholder(mut self, value: impl Into<String>) -> Self {
         self.placeholder = Some(value.into());
         self
@@ -353,6 +356,7 @@ impl Input {
     /// A non-empty initial value is rendered as the input's text — not the
     /// placeholder. The cursor is placed at the end of the value, matching the
     /// post-construction `set_text` behaviour.
+    #[must_use]
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         self.set_text(value);
         self
@@ -371,11 +375,13 @@ impl Input {
         self
     }
 
+    #[must_use]
     pub fn class(mut self, class: impl Into<String>) -> Self {
         self.seed.classes.push(class.into());
         self
     }
 
+    #[must_use]
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.seed.css_id = Some(id.into());
         self
@@ -474,6 +480,7 @@ impl Input {
     }
 
     /// Attach a [`Suggester`] that provides auto-completion ghost text.
+    #[must_use]
     pub fn with_suggester(mut self, suggester: impl Suggester + 'static) -> Self {
         self.suggester = Some(Box::new(suggester));
         self
@@ -918,7 +925,7 @@ impl crate::widgets::Focus for Input {
         self.chrome.is_active()
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "input"
     }
 

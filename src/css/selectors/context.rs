@@ -161,7 +161,7 @@ impl Drop for LiveWidgetMetaGuard {
 /// guarantees: the stack as the CALLING widget's own `render()` sees it.
 pub(super) fn live_widget_meta_on_top(caller_type: &str, caller_aliases: &[&str]) -> bool {
     let depth = SELECTOR_STACK.with(|stack| stack.borrow().len());
-    if depth == 0 || LIVE_WIDGET_META_DEPTH.with(|cell| cell.get()) != Some(depth) {
+    if depth == 0 || LIVE_WIDGET_META_DEPTH.with(std::cell::Cell::get) != Some(depth) {
         return false;
     }
     SELECTOR_STACK.with(|stack| {

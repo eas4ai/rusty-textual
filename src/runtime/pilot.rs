@@ -601,6 +601,9 @@ Horizontal { width: auto; height: auto; }
     }
 
     impl crate::screen::Screen for AutoFocusScreen {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "AutoFocusScreen"
         }
@@ -798,6 +801,9 @@ Horizontal { width: auto; height: auto; }
     }
 
     impl crate::screen::Screen for SnapshotScreen {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "SnapshotScreen"
         }
@@ -878,6 +884,9 @@ Horizontal { width: auto; height: auto; }
     struct DimModalScreen;
 
     impl crate::screen::Screen for DimModalScreen {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "DimModalScreen"
         }

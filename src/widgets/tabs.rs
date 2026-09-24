@@ -58,6 +58,7 @@ impl Tab {
         }
     }
 
+    #[must_use]
     pub fn id(mut self, id: impl Into<String>) -> Self {
         let id = id.into();
         self.seed.css_id = Some(id.clone());
@@ -65,6 +66,7 @@ impl Tab {
         self
     }
 
+    #[must_use]
     pub fn class(mut self, class: impl Into<String>) -> Self {
         let class = class.into();
         self.seed.classes.push(class.clone());
@@ -72,6 +74,7 @@ impl Tab {
         self
     }
 
+    #[must_use]
     pub fn classes(mut self, classes: impl IntoIterator<Item = impl Into<String>>) -> Self {
         for class in classes {
             let class = class.into();
@@ -318,6 +321,7 @@ impl Tabs {
         }
     }
 
+    #[must_use]
     pub fn with_tab(mut self, tab: impl Into<Tab>) -> Self {
         self.add_tab(tab);
         self
@@ -365,6 +369,7 @@ impl Tabs {
         drop(state);
     }
 
+    #[must_use]
     pub fn with_tab_id(mut self, id: impl Into<String>, title: impl Into<String>) -> Self {
         let tab = Tab::new(title).id(id.into());
         self.add_tab(tab);
@@ -1098,7 +1103,7 @@ impl crate::widgets::Focus for Tabs {
         self.focused
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "tabs"
     }
 
@@ -1415,7 +1420,11 @@ mod tests {
         assert!(ctx.handled());
         assert!(ctx.repaint_requested());
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<TabActivated>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<TabActivated>)
+        );
     }
 
     /// Python parity (`Tabs.BINDINGS`): left/right only, `previous_tab` /

@@ -257,6 +257,7 @@ impl OptionItem {
     /// Builder: attach a renderable to this option.
     ///
     /// The renderable is rendered live at the runtime widget width.
+    #[must_use]
     pub fn with_renderable(mut self, renderable: impl Renderable + 'static) -> Self {
         if let Self::Option {
             content: ref mut c, ..

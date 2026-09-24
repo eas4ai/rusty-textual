@@ -101,6 +101,7 @@ impl Cell {
     }
 
     /// Set the horizontal alignment (builder).
+    #[must_use]
     pub fn with_align(mut self, align: TextAlign) -> Self {
         self.align = align;
         self
@@ -353,7 +354,11 @@ impl DataTable {
         S: ToString,
     {
         for row in rows {
-            let row_values = row.as_ref().iter().map(|s| s.to_string()).collect();
+            let row_values = row
+                .as_ref()
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             let _ = self.add_row(row_values);
         }
     }
@@ -1582,7 +1587,7 @@ impl crate::widgets::Focus for DataTable {
         true
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "data-table"
     }
 
@@ -3639,7 +3644,9 @@ mod tests {
         }
         let messages = ctx.take_messages();
         assert!(
-            !messages.iter().any(|m| m.is::<DataTableCellSelected>()),
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<DataTableCellSelected>),
             "space must not select (enter-only parity)"
         );
     }

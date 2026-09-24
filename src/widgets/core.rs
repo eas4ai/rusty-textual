@@ -157,12 +157,14 @@ impl BindingDecl {
     }
 
     /// Attach optional extended help text for key/help panel rows.
+    #[must_use]
     pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
         self.tooltip = Some(tooltip.into());
         self
     }
 
     /// Attach an optional namespace/grouping marker for help panel sections.
+    #[must_use]
     pub fn with_namespace(mut self, namespace: impl Into<String>) -> Self {
         self.namespace = Some(namespace.into());
         self
@@ -170,6 +172,7 @@ impl BindingDecl {
 
     /// Attach a binding ID so the binding can be addressed by the App's keymap
     /// (mirrors Python `Binding(id=...)`).
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
         self
@@ -534,7 +537,7 @@ pub trait Widget: Send + Sync + Any {
     ///
     /// Used by [`crate::action::resolve_action`] to route namespaced actions.
     #[doc(hidden)]
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         ""
     }
     /// List of actions this widget can handle.
@@ -1551,11 +1554,13 @@ pub struct NodeSeed {
 macro_rules! seed_ident_methods {
     () => {
         /// Set this widget's CSS id (Python `id=`).
+        #[must_use]
         pub fn id(mut self, value: impl ::std::convert::Into<String>) -> Self {
             self.seed.css_id = Some(value.into());
             self
         }
         /// Add a CSS class (Python `classes=`). Idempotent.
+        #[must_use]
         pub fn class(mut self, value: impl ::std::convert::Into<String>) -> Self {
             let v = value.into();
             if !self.seed.classes.iter().any(|c| c == &v) {
@@ -1565,6 +1570,7 @@ macro_rules! seed_ident_methods {
         }
         /// Add several CSS classes at once (Python `classes="a b c"`). Each is
         /// added idempotently, mirroring repeated [`class`](Self::class) calls.
+        #[must_use]
         pub fn classes(
             mut self,
             values: impl ::std::iter::IntoIterator<Item = impl ::std::convert::Into<String>>,
@@ -1614,16 +1620,19 @@ macro_rules! seed_style_identity_methods {
 macro_rules! delegate_ident_methods {
     ($field:ident) => {
         /// Set this widget's CSS id (delegated to the inner widget).
+        #[must_use]
         pub fn id(mut self, value: impl ::std::convert::Into<String>) -> Self {
             self.$field = self.$field.id(value);
             self
         }
         /// Add a CSS class (delegated to the inner widget). Idempotent.
+        #[must_use]
         pub fn class(mut self, value: impl ::std::convert::Into<String>) -> Self {
             self.$field = self.$field.class(value);
             self
         }
         /// Add several CSS classes at once (delegated to the inner widget).
+        #[must_use]
         pub fn classes(
             mut self,
             values: impl ::std::iter::IntoIterator<Item = impl ::std::convert::Into<String>>,
@@ -1647,11 +1656,13 @@ macro_rules! delegate_ident_methods {
 macro_rules! delegate_border_title_methods {
     ($field:ident) => {
         /// Set the text rendered on the top border (delegated to the inner container).
+        #[must_use]
         pub fn with_border_title(mut self, title: impl ::std::convert::Into<String>) -> Self {
             self.$field = self.$field.with_border_title(title);
             self
         }
         /// Set the text rendered on the bottom border (delegated to the inner container).
+        #[must_use]
         pub fn with_border_subtitle(mut self, subtitle: impl ::std::convert::Into<String>) -> Self {
             self.$field = self.$field.with_border_subtitle(subtitle);
             self

@@ -79,6 +79,7 @@ impl Placeholder {
     /// Python `_placeholder.py`, where `label = label or (f"#{id}" if id else
     /// "Placeholder")`. The label is fixed at build time (the id seed is consumed
     /// at mount, so it can't be recovered at render).
+    #[must_use]
     pub fn id(mut self, value: impl Into<String>) -> Self {
         let id = value.into();
         if self.label.is_empty() {
@@ -89,6 +90,7 @@ impl Placeholder {
     }
 
     /// Add a CSS class (Python `classes=`). Idempotent.
+    #[must_use]
     pub fn class(mut self, value: impl Into<String>) -> Self {
         let v = value.into();
         if !self.seed.classes.iter().any(|c| c == &v) {

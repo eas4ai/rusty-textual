@@ -184,7 +184,11 @@ fn node_own_style_fingerprint_at(
     )
         .hash(&mut h);
     node.css_id.hash(&mut h);
-    let mut classes: Vec<&str> = node.classes.iter().map(|s| s.as_str()).collect();
+    let mut classes: Vec<&str> = node
+        .classes
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     classes.sort_unstable();
     classes.hash(&mut h);
     h.finish()
@@ -4750,7 +4754,7 @@ mod tests {
         );
         let app_viewport = (root.widget.as_ref() as &dyn std::any::Any)
             .downcast_ref::<AppRoot>()
-            .and_then(|app_root| app_root.scroll_viewport_size())
+            .and_then(crate::widgets::Widget::scroll_viewport_size)
             .expect("app root viewport size should be available after layout info");
         assert_eq!(
             app_viewport.0, 38,

@@ -162,18 +162,21 @@ impl Container {
         self.offset_x != before_x || self.offset_y != before_y
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(Box::new(child));
         self
     }
 
     /// Set the text rendered on the top border (Python `widget.border_title`).
+    #[must_use]
     pub fn with_border_title(mut self, title: impl Into<String>) -> Self {
         self.border_title = Some(title.into());
         self
     }
 
     /// Set the text rendered on the bottom border (Python `widget.border_subtitle`).
+    #[must_use]
     pub fn with_border_subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.border_subtitle = Some(subtitle.into());
         self
@@ -184,6 +187,7 @@ impl Container {
     /// Preserves each `ChildDecl`'s `id`/`classes` (so CSS id/class selectors
     /// match the mounted nodes) and any `handle_sink` bound via
     /// `HandleSlot::bind`, mirroring `App::mount_declarations`.
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         for decl in children {
             let crate::compose::ChildDecl {

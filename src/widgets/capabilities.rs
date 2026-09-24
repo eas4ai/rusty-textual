@@ -278,7 +278,7 @@ pub trait Focus {
         Vec::new()
     }
     /// The namespace this widget owns for action routing.
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         ""
     }
     /// List of actions this widget can handle.

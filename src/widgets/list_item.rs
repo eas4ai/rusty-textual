@@ -91,6 +91,7 @@ impl ListItem {
     }
 
     /// Builder: append another child widget to this item.
+    #[must_use]
     pub fn with_child(mut self, child: impl crate::widgets::Widget + 'static) -> Self {
         if self.text.is_empty() {
             self.text = widget_text(&child);
@@ -108,12 +109,14 @@ impl ListItem {
     }
 
     /// Builder: set the CSS id of this item.
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.seed.css_id = Some(id.into());
         self
     }
 
     /// Builder: add a CSS class to this item.
+    #[must_use]
     pub fn with_class(mut self, class: impl Into<String>) -> Self {
         self.seed.classes.push(class.into());
         self

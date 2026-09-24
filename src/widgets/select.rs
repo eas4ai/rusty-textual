@@ -93,6 +93,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
 
     /// Set this widget's CSS id (Python `id=`). Also becomes the id it re-focuses
     /// itself by after a dismiss.
+    #[must_use]
     pub fn id(mut self, value: impl Into<String>) -> Self {
         let v = value.into();
         self.focus_id = v.clone();
@@ -101,6 +102,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
     }
 
     /// Add a CSS class (Python `classes=`). Idempotent.
+    #[must_use]
     pub fn class(mut self, value: impl Into<String>) -> Self {
         let v = value.into();
         if !self.seed.classes.iter().any(|c| c == &v) {
@@ -398,7 +400,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Widget for Select<T> {
         }
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "select"
     }
 

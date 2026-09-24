@@ -100,6 +100,7 @@ impl AppRoot {
         }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(Box::new(child));
         self
@@ -107,6 +108,7 @@ impl AppRoot {
 
     /// Add a child and bind `slot` to it; the slot is filled with the child's
     /// arena identity when the widget tree is built.
+    #[must_use]
     pub fn with_child_handle<W: Widget + 'static>(
         mut self,
         child: W,
@@ -123,6 +125,7 @@ impl AppRoot {
     /// Preserves each `ChildDecl`'s `id`/`classes` (so CSS id/class selectors
     /// match the mounted nodes) and any `handle_sink` bound via
     /// `HandleSlot::bind`, mirroring `App::mount_declarations`.
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         for decl in children {
             let crate::compose::ChildDecl {

@@ -192,7 +192,7 @@ impl Widget for TooltipButton {
         self.inner.execute_action(action, ctx)
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         self.inner.action_namespace()
     }
 

@@ -19,7 +19,10 @@ impl PrettySource {
     fn read(&self) -> String {
         match self {
             PrettySource::Static(s) => s.clone(),
-            PrettySource::Shared(s) => s.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            PrettySource::Shared(s) => s
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone(),
         }
     }
 }
@@ -97,6 +100,7 @@ impl Pretty {
     }
 
     /// Set a border title for this widget.
+    #[must_use]
     pub fn with_border_title(mut self, title: impl Into<String>) -> Self {
         self.border_title_text = Some(title.into());
         self
@@ -110,7 +114,8 @@ impl Pretty {
         let s = format!("{value:?}");
         match &self.source {
             PrettySource::Shared(arc) => {
-                *arc.lock().unwrap_or_else(|e| e.into_inner()) = s;
+                *arc.lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = s;
             }
             PrettySource::Static(_) => {
                 self.source = PrettySource::Static(s);
@@ -126,7 +131,8 @@ impl Pretty {
         let s = debug_str.into();
         match &self.source {
             PrettySource::Shared(arc) => {
-                *arc.lock().unwrap_or_else(|e| e.into_inner()) = s;
+                *arc.lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = s;
             }
             PrettySource::Static(_) => {
                 self.source = PrettySource::Static(s);

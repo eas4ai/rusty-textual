@@ -14,6 +14,13 @@ until the API stabilizes.
   their result warns. `DomQueryMut`'s chainable operations (`add_class`,
   `set`, `focus`, `remove`, ...) are not `#[must_use]`: they act on the
   call, and the returned query only enables chaining.
+- 206 builder methods that take and return `Self` (widget, container,
+  content, validator and binding builders) are now `#[must_use]`.
+- **Breaking:** `action_namespace` returns `&'static str` instead of `&str`
+  on the `Widget`, `Focus` and `ActionHandler` traits (and in `#[widget]`
+  delegation). Every implementation returned a string literal; an impl that
+  returned borrowed data must now return a literal. `Screen::name` and
+  `Provider::name` keep `&str`, so names can still be runtime values.
 
 ## [1.1.0] - 2026-07-16
 

@@ -97,6 +97,7 @@ impl Sparkline {
     }
 
     /// Set the summary function used to reduce each bucket to a single value.
+    #[must_use]
     pub fn summary_function(mut self, f: SummaryFunction) -> Self {
         self.summary_function = f;
         self
@@ -408,7 +409,7 @@ mod tests {
         let b = Sparkline::buckets(&data, 3);
         assert_eq!(b.len(), 3);
         // 5 items / 3 buckets: bucket sizes should be 1,2,2 or 2,1,2 etc.
-        let total: usize = b.iter().map(|x| x.len()).sum();
+        let total: usize = b.iter().map(std::vec::Vec::len).sum();
         assert_eq!(total, 5);
     }
 
@@ -538,7 +539,7 @@ mod tests {
         // [42.0] into 3 buckets → only one non-empty partition survives.
         let b = Sparkline::buckets(&[42.0], 3);
         assert_eq!(b.len(), 1);
-        let total: usize = b.iter().map(|x| x.len()).sum();
+        let total: usize = b.iter().map(std::vec::Vec::len).sum();
         assert_eq!(total, 1);
     }
 
@@ -547,7 +548,7 @@ mod tests {
         // [1,2] into 5 buckets → empties dropped, 2 partitions survive.
         let b = Sparkline::buckets(&[1.0, 2.0], 5);
         assert_eq!(b.len(), 2);
-        let total: usize = b.iter().map(|x| x.len()).sum();
+        let total: usize = b.iter().map(std::vec::Vec::len).sum();
         assert_eq!(total, 2);
     }
 

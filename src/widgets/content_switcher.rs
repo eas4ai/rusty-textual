@@ -135,11 +135,13 @@ impl ContentSwitcher {
         }
     }
 
+    #[must_use]
     pub fn initial(mut self, id: impl Into<String>) -> Self {
         self.current = Some(id.into());
         self
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         // CSS id is read from the node record after mount; push None as a placeholder.
         self.child_ids.push(None);
@@ -210,7 +212,7 @@ impl ContentSwitcher {
     fn visible_child(&self) -> Option<&dyn Widget> {
         self.query_visible_child_index()
             .and_then(|index| self.children.get(index))
-            .map(|child| child.as_ref())
+            .map(std::convert::AsRef::as_ref)
     }
 
     fn visible_child_mut(&mut self) -> Option<&mut Box<dyn Widget>> {

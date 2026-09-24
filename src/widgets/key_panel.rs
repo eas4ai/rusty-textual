@@ -41,6 +41,7 @@ impl BindingsTable {
         }
     }
 
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.seed.css_id = Some(id.into());
         self
@@ -320,16 +321,19 @@ impl KeyPanel {
         }
     }
 
+    #[must_use]
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
         self
     }
 
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.seed.css_id = Some(id.into());
         self
     }
 
+    #[must_use]
     pub fn with_bindings(mut self, bindings: Vec<FooterBinding>) -> Self {
         self.table.set_bindings(bindings);
         self
@@ -374,6 +378,7 @@ impl KeyPanel {
         });
     }
 
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);
         self
@@ -649,7 +654,11 @@ mod tests {
             panel.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<KeyPanelScrolled>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<KeyPanelScrolled>)
+        );
     }
 
     #[test]

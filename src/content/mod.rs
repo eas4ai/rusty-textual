@@ -565,6 +565,7 @@ impl Content {
     /// correctly.
     ///
     /// Returns a new `Content` with all spans resolved to `SpanStyle::Parsed`.
+    #[must_use]
     pub fn resolve_styles<F>(&self, parse_fn: F) -> Self
     where
         F: Fn(&str) -> Style,
@@ -592,6 +593,7 @@ impl Content {
     // -----------------------------------------------------------------------
 
     /// Append another `Content` to this one, returning a new `Content`.
+    #[must_use]
     pub fn append(&self, other: &Content) -> Content {
         let offset = self.text.len();
         let mut spans = self.spans.clone();
@@ -612,6 +614,7 @@ impl Content {
     /// returning a new `Content` with the extra span inserted.
     ///
     /// Mirrors Python `Content.stylize(style, start, end)`.
+    #[must_use]
     pub fn stylize(&self, style: Style, start: usize, end: usize) -> Content {
         let end = end.min(self.text.len());
         if start >= end {
@@ -628,6 +631,7 @@ impl Content {
     /// (e.g. markup spans) layer on top of it at render time.
     ///
     /// Mirrors Python `Content.stylize_before(style, start, end)`.
+    #[must_use]
     pub fn stylize_before(&self, style: Style, start: usize, end: usize) -> Content {
         let end = end.min(self.text.len());
         if start >= end {
@@ -672,6 +676,7 @@ impl Content {
     /// most `max_width` cells wide, `self` is returned unchanged.
     ///
     /// Mirrors Python `Content.truncate(max_width, ellipsis=False)`.
+    #[must_use]
     pub fn truncate(&self, max_width: usize, ellipsis: bool) -> Content {
         let length = self.cell_length();
         if length <= max_width {
@@ -695,6 +700,7 @@ impl Content {
     /// Remove `amount` bytes from the end of the text.
     ///
     /// Mirrors Python `Content.right_crop(amount)`.
+    #[must_use]
     pub fn right_crop(&self, amount: usize) -> Content {
         if amount == 0 {
             return self.clone();
@@ -727,6 +733,7 @@ impl Content {
     /// Strip trailing whitespace from the plain text, adjusting spans.
     ///
     /// Mirrors Python `Content.rstrip()`.
+    #[must_use]
     pub fn rstrip(&self) -> Content {
         let stripped = self.text.trim_end();
         if stripped.len() == self.text.len() {
@@ -740,6 +747,7 @@ impl Content {
     ///
     /// If the text is longer than `size` bytes, up to that many trailing
     /// whitespace bytes are removed.  Mirrors Python `Content.rstrip_end(size)`.
+    #[must_use]
     pub fn rstrip_end(&self, size: usize) -> Content {
         let text_length = self.text.len();
         if text_length > size {
@@ -750,7 +758,7 @@ impl Content {
                 .chars()
                 .rev()
                 .take_while(|c| c.is_whitespace())
-                .map(|c| c.len_utf8())
+                .map(char::len_utf8)
                 .sum::<usize>();
             if trailing_ws > 0 {
                 let crop = trailing_ws.min(excess);
@@ -767,6 +775,7 @@ impl Content {
     /// Pad the left side with `count` spaces (no style on padding).
     ///
     /// Mirrors Python `Content.pad_left(count)`.
+    #[must_use]
     pub fn pad_left(&self, count: usize) -> Content {
         if count == 0 {
             return self.clone();
@@ -785,6 +794,7 @@ impl Content {
     /// Pad the right side with `count` spaces (no style on padding).
     ///
     /// Mirrors Python `Content.pad_right(count)`.
+    #[must_use]
     pub fn pad_right(&self, count: usize) -> Content {
         if count == 0 {
             return self.clone();
@@ -799,6 +809,7 @@ impl Content {
     /// Pad both the left (`left` spaces) and right (`right` spaces).
     ///
     /// Mirrors Python `Content.pad(left, right)`.
+    #[must_use]
     pub fn pad(&self, left: usize, right: usize) -> Content {
         match (left, right) {
             (0, 0) => self.clone(),
@@ -812,6 +823,7 @@ impl Content {
     ///
     /// rstrips trailing whitespace then truncates to `width` before centering.
     /// Mirrors Python `Content.center(width, ellipsis=False)`.
+    #[must_use]
     pub fn center(&self, width: usize, ellipsis: bool) -> Content {
         let content = self.rstrip().truncate(width, ellipsis);
         let len = content.cell_length();
@@ -824,6 +836,7 @@ impl Content {
     ///
     /// rstrips trailing whitespace then truncates to `width` before padding.
     /// Mirrors Python `Content.right(width, ellipsis=False)`.
+    #[must_use]
     pub fn right_align(&self, width: usize, ellipsis: bool) -> Content {
         let content = self.rstrip().truncate(width, ellipsis);
         let len = content.cell_length();
@@ -2620,7 +2633,11 @@ mod tests {
         let lines = c.wrap_and_format(4, "fold", false, 0);
         // divide_line with fold=true should split the long word.
         assert!(!lines.is_empty());
-        let combined: String = lines.iter().map(|l| l.plain()).collect::<Vec<_>>().join("");
+        let combined: String = lines
+            .iter()
+            .map(super::Content::plain)
+            .collect::<Vec<_>>()
+            .join("");
         assert_eq!(combined, "abcdefghij");
     }
 

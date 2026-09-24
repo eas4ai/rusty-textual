@@ -157,6 +157,7 @@ impl Button {
     ///
     /// The id is included in `ButtonPressed.button_id`, mirroring Python's
     /// `Button.Pressed.button.id` semantics.
+    #[must_use]
     pub fn id(mut self, id: impl Into<String>) -> Self {
         let id = id.into();
         self.seed.css_id = Some(id.clone());
@@ -171,6 +172,7 @@ impl Button {
     /// suppressed, matching Python Textual's behavior.
     ///
     /// Accepted formats: `"toggle_dark"`, `"app.quit"`, `"push_screen('settings')"`.
+    #[must_use]
     pub fn with_action(mut self, action: impl Into<String>) -> Self {
         self.action = Some(action.into());
         self
@@ -484,7 +486,7 @@ impl Focus for Button {
         self.disabled
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "button"
     }
 
@@ -821,7 +823,11 @@ mod tests {
         }
 
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<ButtonPressed>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>)
+        );
     }
 
     #[test]
@@ -850,7 +856,11 @@ mod tests {
             button.execute_action(&action, &mut __w)
         });
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<ButtonPressed>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>)
+        );
     }
 
     // ── WP-18: Button action parameter ──────────────────────────────────
@@ -884,13 +894,15 @@ mod tests {
         let messages = ctx.take_messages();
         // ButtonPressed should NOT be posted when action is set.
         assert!(
-            !messages.iter().any(|m| m.is::<ButtonPressed>()),
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>),
             "ButtonPressed should be suppressed when action is set"
         );
         assert!(
             messages
                 .iter()
-                .any(|m| m.is::<crate::message::ActionDispatchRequested>()),
+                .any(crate::message::MessageEvent::is::<crate::message::ActionDispatchRequested>),
             "ActionDispatchRequested should be emitted when action is set"
         );
     }
@@ -915,13 +927,15 @@ mod tests {
 
         let messages = ctx.take_messages();
         assert!(
-            !messages.iter().any(|m| m.is::<ButtonPressed>()),
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>),
             "ButtonPressed should be suppressed when action is set"
         );
         assert!(
             messages
                 .iter()
-                .any(|m| m.is::<crate::message::ActionDispatchRequested>()),
+                .any(crate::message::MessageEvent::is::<crate::message::ActionDispatchRequested>),
             "ActionDispatchRequested should be emitted when action is set"
         );
     }
@@ -948,7 +962,9 @@ mod tests {
 
         let messages = ctx.take_messages();
         assert!(
-            messages.iter().any(|m| m.is::<ButtonPressed>()),
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>),
             "ButtonPressed should be posted when no action is set"
         );
     }
@@ -977,7 +993,9 @@ mod tests {
 
         let messages = ctx.take_messages();
         assert!(
-            !messages.iter().any(|m| m.is::<ButtonPressed>()),
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>),
             "space must not press a Button (enter-only parity)"
         );
     }

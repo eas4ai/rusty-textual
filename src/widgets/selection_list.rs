@@ -71,6 +71,7 @@ impl<T: Clone + PartialEq> Selection<T> {
     }
 
     /// Builder: attach a stable id to this selection.
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<OptionId>) -> Self {
         self.id = Some(id.into());
         self
@@ -175,6 +176,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     }
 
     /// Builder: set a border title (rendered on the top border).
+    #[must_use]
     pub fn with_border_title(mut self, title: impl Into<String>) -> Self {
         self.border_title_text = Some(title.into());
         self
@@ -941,10 +943,10 @@ mod tests {
         let messages = ctx.take_messages();
         let toggled_pos = messages
             .iter()
-            .position(|m| m.is::<crate::message::SelectionListToggled>());
-        let changed_pos = messages
-            .iter()
-            .position(|m| m.is::<crate::message::SelectionListSelectedChanged>());
+            .position(crate::message::MessageEvent::is::<crate::message::SelectionListToggled>);
+        let changed_pos = messages.iter().position(
+            crate::message::MessageEvent::is::<crate::message::SelectionListSelectedChanged>,
+        );
         assert!(toggled_pos.is_some() && changed_pos.is_some() && toggled_pos < changed_pos);
     }
 
@@ -974,7 +976,7 @@ mod tests {
         assert!(
             !messages
                 .iter()
-                .any(|m| m.is::<crate::message::OptionHighlighted>()),
+                .any(crate::message::MessageEvent::is::<crate::message::OptionHighlighted>),
             "raw OptionHighlighted must not escape a SelectionList"
         );
     }
@@ -1049,11 +1051,11 @@ mod tests {
         let messages = ctx.take_messages();
         let highlighted_pos = messages
             .iter()
-            .position(|m| m.is::<crate::message::SelectionListHighlighted>())
+            .position(crate::message::MessageEvent::is::<crate::message::SelectionListHighlighted>)
             .expect("SelectionListHighlighted posted");
         let toggled_pos = messages
             .iter()
-            .position(|m| m.is::<crate::message::SelectionListToggled>())
+            .position(crate::message::MessageEvent::is::<crate::message::SelectionListToggled>)
             .expect("SelectionListToggled posted");
         assert!(highlighted_pos < toggled_pos);
         assert_eq!(

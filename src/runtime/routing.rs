@@ -2333,11 +2333,17 @@ mod envelope_tests {
             match event {
                 Event::DescendantFocus(e) => {
                     self.seen_focus.fetch_add(1, Ordering::Relaxed);
-                    *self.seen_node.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.node);
+                    *self
+                        .seen_node
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(e.node);
                 }
                 Event::DescendantBlur(e) => {
                     self.seen_blur.fetch_add(1, Ordering::Relaxed);
-                    *self.seen_node.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.node);
+                    *self
+                        .seen_node
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(e.node);
                 }
                 _ => {}
             }
@@ -2386,7 +2392,9 @@ mod envelope_tests {
         assert_eq!(mid_seen.load(Ordering::Relaxed), 1, "bubbles to mid");
         assert_eq!(root_seen.load(Ordering::Relaxed), 1, "bubbles to root");
         assert_eq!(
-            *seen_node.lock().unwrap_or_else(|e| e.into_inner()),
+            *seen_node
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
             Some(leaf_id),
             "carries the focused node"
         );
@@ -2422,7 +2430,9 @@ mod envelope_tests {
         );
         assert_eq!(seen.load(Ordering::Relaxed), 2, "leaf + root see it");
         assert_eq!(
-            *seen_node.lock().unwrap_or_else(|e| e.into_inner()),
+            *seen_node
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
             Some(leaf_id)
         );
         assert_eq!(

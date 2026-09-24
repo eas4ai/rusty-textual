@@ -68,15 +68,17 @@ impl Link {
 
     /// Set the tooltip text. Pass `None` to clear.
     pub fn set_tooltip(&mut self, tooltip: Option<impl Into<String>>) {
-        self.tooltip = tooltip.map(|t| t.into());
+        self.tooltip = tooltip.map(std::convert::Into::into);
     }
 
+    #[must_use]
     pub fn with_url(mut self, url: impl Into<String>) -> Self {
         self.url = url.into();
         self
     }
 
     /// Builder-style tooltip setter.
+    #[must_use]
     pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
         self.tooltip = Some(tooltip.into());
         self

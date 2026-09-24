@@ -63,6 +63,7 @@ impl Row {
         }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(Box::new(child));
         self
@@ -568,7 +569,7 @@ impl crate::widgets::Render for Row {
 
         let max_child_height = child_lines
             .iter()
-            .map(|lines| lines.len())
+            .map(std::vec::Vec::len)
             .max()
             .unwrap_or(1)
             .max(1)
@@ -765,7 +766,7 @@ impl crate::widgets::Render for Row {
 
         let max_child_height = child_lines
             .iter()
-            .map(|lines| lines.len())
+            .map(std::vec::Vec::len)
             .max()
             .unwrap_or(1)
             .max(1)
@@ -881,11 +882,13 @@ impl Dock {
         }
     }
 
+    #[must_use]
     pub fn height(mut self, height: usize) -> Self {
         self.fixed_height = Some(height.max(1));
         self
     }
 
+    #[must_use]
     pub fn push_top(mut self, height: Option<usize>, child: impl Widget + 'static) -> Self {
         self.items.push(DockItem {
             kind: DockKind::Top,
@@ -895,6 +898,7 @@ impl Dock {
         self
     }
 
+    #[must_use]
     pub fn push_bottom(mut self, height: Option<usize>, child: impl Widget + 'static) -> Self {
         self.items.push(DockItem {
             kind: DockKind::Bottom,
@@ -904,6 +908,7 @@ impl Dock {
         self
     }
 
+    #[must_use]
     pub fn push_left(mut self, width: usize, child: impl Widget + 'static) -> Self {
         self.items.push(DockItem {
             kind: DockKind::Left,
@@ -913,6 +918,7 @@ impl Dock {
         self
     }
 
+    #[must_use]
     pub fn push_right(mut self, width: usize, child: impl Widget + 'static) -> Self {
         self.items.push(DockItem {
             kind: DockKind::Right,
@@ -922,6 +928,7 @@ impl Dock {
         self
     }
 
+    #[must_use]
     pub fn push_fill(mut self, child: impl Widget + 'static) -> Self {
         self.items.push(DockItem {
             kind: DockKind::Fill,
@@ -1872,11 +1879,13 @@ impl Grid {
         self.cells[idx] = Some(Box::new(child));
     }
 
+    #[must_use]
     pub fn with_cell(mut self, row: usize, col: usize, child: impl Widget + 'static) -> Self {
         self.set(row, col, child);
         self
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.push(child);
         self
@@ -1914,7 +1923,7 @@ impl Grid {
     }
 
     fn push_boxed(&mut self, child: Box<dyn Widget>) {
-        if let Some(idx) = self.cells.iter().position(|cell| cell.is_none()) {
+        if let Some(idx) = self.cells.iter().position(std::option::Option::is_none) {
             self.cells[idx] = Some(child);
         } else {
             // Allow overflow so tree-mode grid auto-placement can flow into extra rows.
@@ -1922,16 +1931,19 @@ impl Grid {
         }
     }
 
+    #[must_use]
     pub fn id(mut self, value: impl Into<String>) -> Self {
         self.seed.css_id = Some(value.into());
         self
     }
 
+    #[must_use]
     pub fn class(mut self, value: impl Into<String>) -> Self {
         self.seed.classes.push(value.into());
         self
     }
 
+    #[must_use]
     pub fn classes(mut self, values: impl IntoIterator<Item = impl Into<String>>) -> Self {
         for value in values {
             self.seed.classes.push(value.into());
@@ -2036,7 +2048,7 @@ impl crate::widgets::Render for Grid {
         let children: Vec<Box<dyn Widget>> = self
             .cells
             .iter_mut()
-            .filter_map(|cell| cell.take())
+            .filter_map(std::option::Option::take)
             .collect();
         crate::compose::zip_child_decls(
             children,

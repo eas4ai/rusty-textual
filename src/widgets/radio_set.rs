@@ -200,7 +200,11 @@ impl RadioSet {
             return;
         }
         let index = self.cursor.highlighted().unwrap_or(0);
-        if self.buttons.get(index).is_none_or(|b| b.is_disabled()) {
+        if self
+            .buttons
+            .get(index)
+            .is_none_or(super::radio_button::RadioButton::is_disabled)
+        {
             return;
         }
         let already_pressed = self.cursor.selected() == Some(index);

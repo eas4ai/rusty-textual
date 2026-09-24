@@ -4993,7 +4993,7 @@ impl App {
                 self.headless_bridge_guard = Some(
                     crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
                         .lock()
-                        .unwrap_or_else(|e| e.into_inner()),
+                        .unwrap_or_else(std::sync::PoisonError::into_inner),
                 );
             }
         }
@@ -6453,7 +6453,7 @@ impl App {
             // initial selection) on mount; purge the node's timers on unmount.
             // The posted messages bubble through the shared flush's PostUp path.
             if is_mount {
-                self.run_on_node_widget(node_id, |w, ctx| w.on_mount(ctx), pending);
+                self.run_on_node_widget(node_id, crate::widgets::Widget::on_mount, pending);
             } else {
                 self.purge_node_widget_timers(node_id);
                 // PR-04: Python cancels a node's workers on unmount. The
@@ -8542,7 +8542,7 @@ mod tests {
     fn worker_full_pipeline_ctx_to_registry() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         use crate::event::EventCtx;
         use crate::worker::{WorkerRegistry, WorkerState, process_worker_requests};
         let _ = super::drain_accumulated_worker_requests();
@@ -8596,7 +8596,7 @@ mod tests {
     fn worker_request_processing_in_runtime_hot_path_is_non_blocking() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         use crate::worker::{WorkerRegistry, WorkerRequest, WorkerRequestPayload, WorkerState};
 
         let owner = node_id_from_ffi(90);
@@ -8669,7 +8669,7 @@ mod tests {
     fn worker_state_changes_route_to_owning_widgets_via_message_pipeline() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         use crate::worker::{
             WorkerRegistry, WorkerRequest, WorkerRequestPayload, WorkerState,
             process_worker_requests,
@@ -8766,7 +8766,7 @@ mod tests {
     fn worker_state_runtime_messages_fallback_to_runtime_sender_when_owner_missing() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let registry = crate::worker::WorkerRegistry::new();
         let orphan_change = crate::worker::WorkerStateChanged {
             worker_id: crate::worker::WorkerId::new(),
@@ -9131,7 +9131,7 @@ mod tests {
             Segments::new()
         }
 
-        fn action_namespace(&self) -> &str {
+        fn action_namespace(&self) -> &'static str {
             "app"
         }
 
@@ -9817,7 +9817,7 @@ mod tests {
     fn widget_command_applied_by_flush_live_loop_path() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -9858,7 +9858,7 @@ mod tests {
     fn widget_command_applied_by_flush_headless_pump_path() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -9891,7 +9891,7 @@ mod tests {
     fn shared_flush_round_budget_terminates_on_cycle() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -9997,7 +9997,7 @@ mod tests {
     fn query_one_update_via_fires_target_watcher_same_pass() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 
@@ -10019,7 +10019,7 @@ mod tests {
             ectx.set_node_id(a);
             let mut wctx = crate::event::WidgetCtx::new(a, &mut ectx);
             let q = wctx.query_one::<ChildB>();
-            q.update_via(&mut wctx, |b, bctx| b.bump(bctx));
+            q.update_via(&mut wctx, ChildB::bump);
         }
         // Deferred — nothing applied, watcher not fired yet.
         assert_eq!(watched.load(Ordering::SeqCst), 0);
@@ -10063,7 +10063,7 @@ mod tests {
             let mut ectx = EventCtx::default();
             ectx.set_node_id(a);
             let mut wctx = crate::event::WidgetCtx::new(a, &mut ectx);
-            handle.update_via(&mut wctx, |b, bctx| b.bump(bctx));
+            handle.update_via(&mut wctx, ChildB::bump);
         }
 
         let mut app = test_app_with_tree(tree);
@@ -10192,7 +10192,7 @@ mod tests {
     fn post_up_bubbles_closure_posted_message_to_ancestor() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_runtime_reactive_entries();
         let _ = crate::runtime::commands::take_widget_commands();
 

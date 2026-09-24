@@ -1260,7 +1260,7 @@ impl crate::widgets::Focus for Tree {
         true
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "tree"
     }
 

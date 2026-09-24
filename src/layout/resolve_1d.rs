@@ -154,7 +154,7 @@ pub fn layout_resolve_1d(total: u16, edges: &[Edge]) -> Vec<u16> {
     let mut sizes: Vec<Option<u16>> = edges.iter().map(|e| e.size).collect();
 
     // Fast path: all edges are fixed.
-    if sizes.iter().all(|s| s.is_some()) {
+    if sizes.iter().all(std::option::Option::is_some) {
         return sizes.iter().map(|s| s.unwrap()).collect();
     }
 

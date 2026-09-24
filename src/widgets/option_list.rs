@@ -838,7 +838,9 @@ impl OptionList {
     }
 
     fn first_selectable(&self) -> Option<usize> {
-        self.items.iter().position(|item| item.is_selectable())
+        self.items
+            .iter()
+            .position(toggle_option::OptionItem::is_selectable)
     }
 
     fn last_selectable(&self) -> Option<usize> {
@@ -1952,7 +1954,10 @@ mod tests {
     fn option_item_with_content_builder() {
         let item = OptionItem::new("Plain").with_content(rich_rs::Text::plain("Rich"));
         assert!(item.content().is_some());
-        assert_eq!(item.text_content().map(|t| t.plain_text()), Some("Rich"));
+        assert_eq!(
+            item.text_content().map(rich_rs::Text::plain_text),
+            Some("Rich")
+        );
     }
 
     #[test]

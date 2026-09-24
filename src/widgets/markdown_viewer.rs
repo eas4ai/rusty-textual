@@ -482,6 +482,7 @@ impl MarkdownViewer {
     }
 
     /// Set a CSS id for this viewer (for query routing via `#id` selectors).
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         let id = id.into();
         self.seed.css_id = Some(id);
@@ -493,6 +494,7 @@ impl MarkdownViewer {
         self.content_map.insert(path.into(), content.into());
     }
 
+    #[must_use]
     pub fn show_table_of_contents(mut self, show: bool) -> Self {
         self.set_show_table_of_contents(show);
         self
@@ -750,7 +752,7 @@ impl MarkdownViewer {
         self.inner.on_message(message, ctx);
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "markdown_viewer"
     }
 

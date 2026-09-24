@@ -60,6 +60,7 @@ impl Bar {
         self
     }
 
+    #[must_use]
     pub fn clickable_range(mut self, name: impl Into<String>, range: (usize, usize)) -> Self {
         self.clickable_ranges.insert(name.into(), range);
         self

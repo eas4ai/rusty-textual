@@ -170,51 +170,68 @@ impl RichLog {
         }
     }
 
+    #[must_use]
     pub fn cache_size(mut self, max_entries: usize) -> Self {
         self.cache = Mutex::new(LineCache::new(max_entries));
         self
     }
 
+    #[must_use]
     pub fn max_lines(mut self, max_lines: usize) -> Self {
         self.max_lines = Some(max_lines.max(1));
         self.trim_to_max_lines();
         self
     }
 
+    #[must_use]
     pub fn auto_scroll(mut self, auto_scroll: bool) -> Self {
         self.auto_scroll = auto_scroll;
         self
     }
 
+    #[must_use]
     pub fn wrap(mut self, wrap: bool) -> Self {
         if self.wrap != wrap {
             self.wrap = wrap;
-            self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            self.cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
         }
         self
     }
 
+    #[must_use]
     pub fn highlight(mut self, highlight: bool) -> Self {
         if self.highlight != highlight {
             self.highlight = highlight;
-            self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            self.cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
         }
         self
     }
 
+    #[must_use]
     pub fn markup(mut self, markup: bool) -> Self {
         if self.markup != markup {
             self.markup = markup;
-            self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            self.cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
         }
         self
     }
 
+    #[must_use]
     pub fn min_width(mut self, min_width: usize) -> Self {
         self.min_width = min_width;
         self
     }
 
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);
         self
@@ -328,15 +345,24 @@ impl RichLog {
     // ── Watchers ─────────────────────────────────────────────────────────
 
     fn watch_wrap(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     fn watch_highlight(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     fn watch_markup(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     /// Returns true if the widget has been rendered at least once (size is known).
@@ -368,7 +394,7 @@ impl RichLog {
         }
         self.cache
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .invalidate_from(insert_from);
         self.trim_to_max_lines();
         if self.auto_scroll {
@@ -392,7 +418,7 @@ impl RichLog {
         self.lines.push(LogLine::Styled(segments));
         self.cache
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .invalidate_from(insert_from);
         self.trim_to_max_lines();
         if self.auto_scroll {
@@ -423,7 +449,7 @@ impl RichLog {
         }
         self.cache
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .invalidate_from(insert_from);
         self.trim_to_max_lines();
         if self.auto_scroll {
@@ -446,7 +472,7 @@ impl RichLog {
         self.lines.push(LogLine::Renderable(Box::new(renderable)));
         self.cache
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .invalidate_from(insert_from);
         self.trim_to_max_lines();
         if self.auto_scroll {
@@ -498,7 +524,10 @@ impl RichLog {
         self.lines.clear();
         self.offset_y = 0;
         self.content_height.store(1, Ordering::Relaxed);
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
         self
     }
 
@@ -509,7 +538,10 @@ impl RichLog {
                 self.lines.drain(0..excess);
                 self.offset_y = self.offset_y.saturating_sub(excess);
                 // Indices shifted — clear the whole cache
-                self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+                self.cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clear();
             }
         }
     }
@@ -578,7 +610,10 @@ impl RichLog {
         // Invalidate cache if width changed
         let prev_width = self.cache_width.swap(width, Ordering::Relaxed);
         if prev_width != width {
-            self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            self.cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
         }
 
         let mut out: Vec<Vec<Segment>> = Vec::new();
@@ -592,7 +627,10 @@ impl RichLog {
 
                 // Try cache first
                 {
-                    let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut cache = self
+                        .cache
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     if let Some(cached) = cache.get(&cache_key) {
                         out.extend(cached.iter().cloned());
                         continue;
@@ -603,7 +641,10 @@ impl RichLog {
 
                 // Store in cache
                 {
-                    let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut cache = self
+                        .cache
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     cache.insert(cache_key, rendered_lines.clone());
                 }
 
@@ -1093,7 +1134,11 @@ mod tests {
             log.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<RichLogScrolled>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<RichLogScrolled>)
+        );
     }
 
     #[test]

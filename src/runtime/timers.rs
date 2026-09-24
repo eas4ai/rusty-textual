@@ -594,7 +594,9 @@ mod tests {
         let mut saw_task = false;
         for _ in 0..200 {
             let timer_events = timers.drain_ready(Instant::now());
-            saw_timer |= timer_events.iter().any(|event| event.is::<TimerFired>());
+            saw_timer |= timer_events
+                .iter()
+                .any(crate::message::MessageEvent::is::<TimerFired>);
 
             let task_events = tasks.drain_completed();
             saw_task |= task_events.iter().any(|event| {

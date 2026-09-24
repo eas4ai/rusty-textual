@@ -243,6 +243,7 @@ impl DomQuery {
         self.nodes.iter().copied()
     }
 
+    #[must_use]
     pub fn results_where(self, app: &App, mut predicate: impl FnMut(&dyn Widget) -> bool) -> Self {
         let Some(tree) = app.widget_tree.as_ref() else {
             return Self::from_nodes(Vec::new());
@@ -1225,7 +1226,9 @@ impl App {
         T: 'static,
     {
         let app_struct = self.app_struct.clone()?;
-        let mut guard = app_struct.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = app_struct
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let typed = guard.downcast_mut::<T>()?;
         Some(f(typed, self, ctx))
     }
@@ -1234,7 +1237,7 @@ impl App {
     fn runtime_node_id(&self) -> NodeId {
         self.widget_tree
             .as_ref()
-            .and_then(|tree| tree.root())
+            .and_then(super::widget_tree::WidgetTree::root)
             .unwrap_or_default()
     }
 
@@ -2316,7 +2319,7 @@ impl App {
         let Some(owner) = self.active_selection_owner.take() else {
             return false;
         };
-        self.with_widget_mut(owner, |widget| widget.clear_selection())
+        self.with_widget_mut(owner, crate::widgets::Widget::clear_selection)
             .unwrap_or(false)
     }
 
@@ -2518,7 +2521,10 @@ impl App {
         if !self.query("HelpPanel")?.is_empty() {
             return Ok(false);
         }
-        let mount_parent = match self.active_widget_tree().and_then(|tree| tree.root()) {
+        let mount_parent = match self
+            .active_widget_tree()
+            .and_then(super::widget_tree::WidgetTree::root)
+        {
             Some(root) => root,
             None => return Ok(false),
         };
@@ -2980,7 +2986,7 @@ impl App {
             let value = typed.clone();
             let node_ids = app
                 .query(&target_selector)
-                .map(|q| q.into_ids())
+                .map(DomQuery::into_ids)
                 .unwrap_or_default();
             for node_id in node_ids {
                 let value_ref = &value;
@@ -4164,7 +4170,7 @@ impl App {
                     || bind.modifiers.contains(KeyModifiers::SUPER)
             })
             .or_else(|| self.quit_keys.first())
-            .map_or_else(|| "ctrl+q".to_string(), |bind| bind.key_name());
+            .map_or_else(|| "ctrl+q".to_string(), super::event::KeyBind::key_name);
         self.notify(
             format!("Press [b]{key}[/b] to quit the app"),
             "Do you want to quit?",
@@ -4659,7 +4665,7 @@ impl App {
     /// Returns the list of registered mode names.
     #[must_use]
     pub fn mode_names(&self) -> Vec<&str> {
-        self.modes.keys().map(|s| s.as_str()).collect()
+        self.modes.keys().map(std::string::String::as_str).collect()
     }
 
     /// Remove a registered mode by name.
@@ -5298,7 +5304,7 @@ pub fn build_widget_tree_from_root(root: &mut dyn Widget) -> Option<WidgetTree> 
     // inheritance reads the root widget's `style()`, not the root node's styles.
     {
         let root_classes: Vec<String> = root.style_classes().to_vec();
-        let root_css_id: Option<String> = root.style_id().map(|s| s.to_string());
+        let root_css_id: Option<String> = root.style_id().map(std::string::ToString::to_string);
         for class in &root_classes {
             tree.add_class(root_node_id, class);
         }
@@ -5666,7 +5672,10 @@ mod tests {
         assert_eq!(app.app_content_node_id(), Some(app_content));
 
         // Before: exactly one Label with text "before".
-        let before_labels = app.query("Label").map(|q| q.into_ids()).unwrap_or_default();
+        let before_labels = app
+            .query("Label")
+            .map(super::DomQuery::into_ids)
+            .unwrap_or_default();
         assert_eq!(
             before_labels.len(),
             1,
@@ -5685,7 +5694,10 @@ mod tests {
             Some(app_content),
             "app-content node id is stable across recompose"
         );
-        let after_labels = app.query("Label").map(|q| q.into_ids()).unwrap_or_default();
+        let after_labels = app
+            .query("Label")
+            .map(super::DomQuery::into_ids)
+            .unwrap_or_default();
         assert_eq!(after_labels.len(), 2, "expected two Labels after recompose");
         assert!(
             after_labels.iter().all(|id| !before_labels.contains(id)),
@@ -6651,7 +6663,10 @@ mod tests {
             &mut pending,
         );
         // The post bubbled into the pending widget-post queue (PostUp path).
-        posted |= app.pending_widget_posts.iter().any(|m| m.is::<MountPing>());
+        posted |= app
+            .pending_widget_posts
+            .iter()
+            .any(super::super::message::MessageEvent::is::<MountPing>);
         assert!(posted, "on_mount should post a MountPing");
     }
 
@@ -7216,7 +7231,7 @@ mod tests {
     fn screen_callback_defers_app_message_via_widget_command_on_dismiss() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         use crate::message::CommandPaletteCommandSelected;
         use crate::runtime::commands::{WidgetCommand, take_widget_commands};
         use crate::screen::{Screen, ScreenMessageCtx, ScreenResult};
@@ -7233,6 +7248,9 @@ mod tests {
         // it observes any key (standing in for a CommandList `OptionSelected`).
         struct StubScreen;
         impl Screen for StubScreen {
+            // `Screen::name` returns `&str` so names may be runtime values; an impl
+            // cannot narrow it to `&'static str`, whatever clippy suggests.
+            #[allow(clippy::unnecessary_literal_bound)]
             fn name(&self) -> &str {
                 "CommandPaletteScreen"
             }

@@ -51,11 +51,13 @@ impl StyleSelector {
         self
     }
 
+    #[must_use]
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
         self
     }
 
+    #[must_use]
     pub fn class(mut self, class: impl Into<String>) -> Self {
         self.classes.push(class.into());
         self

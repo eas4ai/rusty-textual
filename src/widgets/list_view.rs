@@ -477,7 +477,7 @@ impl crate::widgets::Focus for ListView {
         false
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "list-view"
     }
 

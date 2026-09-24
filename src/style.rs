@@ -86,7 +86,7 @@ impl Color {
             .strip_prefix("rgba(")
             .and_then(|s| s.strip_suffix(')'))
         {
-            let parts: Vec<&str> = args.split(',').map(|p| p.trim()).collect();
+            let parts: Vec<&str> = args.split(',').map(str::trim).collect();
             if parts.len() == 4 {
                 let r: u8 = parts[0].parse().ok()?;
                 let g: u8 = parts[1].parse().ok()?;
@@ -99,7 +99,7 @@ impl Color {
         // hsl(h, s%, l%) / hsla(h, s%, l%, a) — Python Textual supports CSS hsl().
         for (prefix, has_alpha) in [("hsla(", true), ("hsl(", false)] {
             if let Some(args) = value.strip_prefix(prefix).and_then(|s| s.strip_suffix(')')) {
-                let parts: Vec<&str> = args.split(',').map(|p| p.trim()).collect();
+                let parts: Vec<&str> = args.split(',').map(str::trim).collect();
                 if parts.len() == if has_alpha { 4 } else { 3 } {
                     let h: f32 = parts[0].parse().ok()?;
                     let s: f32 = parts[1].trim_end_matches('%').trim().parse::<f32>().ok()? / 100.0;
@@ -4633,7 +4633,10 @@ mod tests {
         let combined = base.combine(&overlay);
         assert_eq!(combined.grid_size_columns, Some(5)); // overridden
         assert_eq!(combined.grid_gutter_horizontal, Some(1)); // kept from base
-        assert_eq!(combined.grid_columns.as_ref().map(|v| v.len()), Some(2)); // from overlay
+        assert_eq!(
+            combined.grid_columns.as_ref().map(std::vec::Vec::len),
+            Some(2)
+        ); // from overlay
     }
 
     #[test]
@@ -4694,7 +4697,7 @@ mod tests {
         };
         let overlay = Style::new();
         let combined = base.combine(&overlay);
-        assert_eq!(combined.layers.as_ref().map(|v| v.len()), Some(2));
+        assert_eq!(combined.layers.as_ref().map(std::vec::Vec::len), Some(2));
     }
 
     #[test]

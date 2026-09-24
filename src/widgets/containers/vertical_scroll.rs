@@ -31,11 +31,13 @@ impl VerticalScroll {
         Self { inner }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.inner = self.inner.with_child(child);
         self
     }
 
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         self.inner = self.inner.with_compose(children);
         self
@@ -45,6 +47,7 @@ impl VerticalScroll {
         self.inner.push(child);
     }
 
+    #[must_use]
     pub fn height(mut self, height: usize) -> Self {
         self.inner = self.inner.height(height);
         self
@@ -58,6 +61,7 @@ impl VerticalScroll {
         self.inner.scroll_to(offset_y);
     }
 
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.inner = self.inner.scroll_step(step);
         self

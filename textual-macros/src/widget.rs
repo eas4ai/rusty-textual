@@ -418,7 +418,7 @@ fn method_table() -> Vec<MethodSpec> {
         ),
         m!(
             "action_namespace",
-            quote! { fn action_namespace(&self) -> &str },
+            quote! { fn action_namespace(&self) -> &'static str },
             quote! { action_namespace() }
         ),
         m!(

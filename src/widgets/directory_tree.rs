@@ -41,7 +41,7 @@ impl DirectoryNode {
         let label = path
             .file_name()
             .and_then(|name| name.to_str())
-            .map(|name| name.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_default();
         Self {
             path,

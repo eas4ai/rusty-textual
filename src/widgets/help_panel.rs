@@ -49,6 +49,7 @@ impl HelpPanel {
         }
     }
 
+    #[must_use]
     pub fn with_help(mut self, markup: impl Into<String>) -> Self {
         let markup = markup.into();
         let show = !markup.trim().is_empty();
@@ -81,6 +82,7 @@ impl HelpPanel {
         self.show_help
     }
 
+    #[must_use]
     pub fn with_bindings(mut self, bindings: Vec<FooterBinding>) -> Self {
         self.key_panel.set_bindings(bindings);
         self

@@ -234,7 +234,10 @@ fn call_from_thread_bridge() -> &'static CallFromThreadBridge {
 /// detect (and reject) calls made from the UI thread itself.
 pub(crate) fn register_ui_thread() {
     let bridge = call_from_thread_bridge();
-    *bridge.ui_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::thread::current().id());
+    *bridge
+        .ui_thread
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(std::thread::current().id());
     bridge.generation.fetch_add(1, Ordering::SeqCst);
     bridge.running.store(true, Ordering::SeqCst);
 }
@@ -247,7 +250,10 @@ pub(crate) fn register_ui_thread() {
 pub(crate) fn unregister_ui_thread() {
     let bridge = call_from_thread_bridge();
     bridge.running.store(false, Ordering::SeqCst);
-    *bridge.ui_thread.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *bridge
+        .ui_thread
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     // Drop any pending jobs so blocked workers unblock (their result senders
     // are dropped inside the job closures we discard here).
     bridge
@@ -261,7 +267,7 @@ pub(crate) fn unregister_ui_thread() {
 pub(crate) fn is_ui_thread() -> bool {
     let bridge = call_from_thread_bridge();
     matches!(
-        *bridge.ui_thread.lock().unwrap_or_else(|e| e.into_inner()),
+        *bridge.ui_thread.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
         Some(id) if id == std::thread::current().id()
     )
 }
@@ -620,7 +626,7 @@ mod tests {
     fn call_from_thread_not_running_returns_error_without_blocking() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Ensure no app registered.
         unregister_ui_thread();
         assert!(!ui_thread_running());
@@ -632,7 +638,7 @@ mod tests {
     fn call_from_thread_same_thread_is_rejected() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         register_ui_thread();
         assert!(is_ui_thread());
         // Calling on the UI thread itself must not deadlock; it errors instead.
@@ -645,7 +651,7 @@ mod tests {
     fn call_from_thread_round_trips_value_and_runs_with_app() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         // This thread plays the role of the UI/event-loop thread, holding the
         // single `&mut App`.
@@ -700,7 +706,7 @@ mod tests {
     fn unregister_drops_pending_jobs_and_unblocks_worker() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         register_ui_thread();
 
         // Worker posts a job but the UI thread never drains it — instead the app
@@ -765,6 +771,9 @@ mod tests {
     struct AnswerScreen;
 
     impl Screen for AnswerScreen {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "AnswerScreen"
         }
@@ -801,7 +810,7 @@ mod tests {
     fn push_screen_wait_not_running_errors() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         unregister_ui_thread();
         assert!(!ui_thread_running());
         let result = push_screen_wait(Box::new(AnswerScreen));
@@ -814,7 +823,7 @@ mod tests {
     fn push_screen_wait_on_ui_thread_is_rejected() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         register_ui_thread();
         assert!(is_ui_thread());
         let result = push_screen_wait(Box::new(AnswerScreen));
@@ -836,7 +845,7 @@ mod tests {
     fn push_screen_wait_resumes_worker_with_dismiss_value() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let mut app = crate::runtime::App::new().expect("app should initialize");
         register_ui_thread();

@@ -103,6 +103,7 @@ impl Label {
         }
     }
 
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.seed.css_id = Some(id.into());
         self
@@ -122,12 +123,14 @@ impl Label {
     /// Set the text rendered on the top border (Python `widget.border_title`).
     /// Only visible when the widget has a border; align/colors come from the
     /// `border-title-*` CSS properties.
+    #[must_use]
     pub fn with_border_title(mut self, title: impl Into<String>) -> Self {
         self.border_title = Some(title.into());
         self
     }
 
     /// Set the text rendered on the bottom border (Python `widget.border_subtitle`).
+    #[must_use]
     pub fn with_border_subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.border_subtitle = Some(subtitle.into());
         self
@@ -1420,7 +1423,7 @@ fn wrap_plain_lines(text: &str, width: usize) -> Vec<String> {
                 .to_string()
         })
         .collect();
-    while lines.last().is_some_and(|l| l.is_empty()) {
+    while lines.last().is_some_and(std::string::String::is_empty) {
         lines.pop();
     }
     if lines.is_empty() {
@@ -2630,6 +2633,7 @@ impl Markdown {
         self
     }
 
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.seed.css_id = Some(id.into());
         self
