@@ -1,6 +1,6 @@
 use rich_rs::{MetaValue, Segments};
 
-use crate::node_id::{NodeId, node_id_to_ffi};
+use crate::node_id::{NodeId, node_id_to_meta};
 use crate::renderables::{TextOpacity, Tint};
 use crate::style::Style;
 
@@ -30,7 +30,7 @@ pub(crate) fn apply_style_to_segments(
             // parent widgets should not overwrite them during this pass.
             if let Some(meta) = seg.meta.as_ref().and_then(|meta| meta.meta.as_ref()) {
                 if let Some(MetaValue::Int(value)) = meta.get("textual:widget_id") {
-                    if *value != node_id_to_ffi(widget_id) as i64 {
+                    if *value != node_id_to_meta(widget_id) {
                         return seg;
                     }
                 }

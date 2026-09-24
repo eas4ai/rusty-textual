@@ -7,6 +7,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::num::Cast;
+
 #[derive(Debug, Clone)]
 pub struct DebugLayout {
     pub enabled: bool,
@@ -239,7 +241,8 @@ fn format_log_record(channel: DebugChannel, line: &str) -> String {
     let ts_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_millis() as u64;
+        .as_millis()
+        .to_u64_sat();
     let sanitized: String = line
         .chars()
         .map(|c| match c {

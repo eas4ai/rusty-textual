@@ -1,4 +1,6 @@
 /// Edge descriptor for the 1D resolver.
+use crate::num::Cast;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Edge {
     /// Fixed size in cells, or `None` for flexible.
@@ -127,7 +129,7 @@ pub fn layout_resolve_1d_exact(
         .iter()
         .map(|s| {
             let e = s.unwrap_or(0.0);
-            let disp = ((cum + e).floor() - cum.floor()) as u16;
+            let disp = ((cum + e).floor() - cum.floor()).to_u16_sat();
             cum += e;
             disp
         })
@@ -176,7 +178,7 @@ pub fn layout_resolve_1d(total: u16, edges: &[Edge]) -> Vec<u16> {
 
     // Remaining space after fixed edges.
     let fixed_sum: u32 = sizes.iter().map(|s| u32::from(s.unwrap_or(0))).sum();
-    let remaining_signed = i32::from(total) - fixed_sum as i32;
+    let remaining_signed = i32::from(total) - fixed_sum.to_i32_sat();
 
     if remaining_signed <= 0 {
         // No room for flexible edges — assign min_size (at least 1).
@@ -191,7 +193,7 @@ pub fn layout_resolve_1d(total: u16, edges: &[Edge]) -> Vec<u16> {
             .collect();
     }
 
-    let mut remaining = remaining_signed as u64;
+    let mut remaining = remaining_signed.to_u64_sat();
     let mut total_fraction: u64 = flexible.iter().map(|&(_, f, _)| u64::from(f)).sum();
 
     // Iteratively fix edges whose proportional share falls below their min_size.
@@ -230,7 +232,7 @@ pub fn layout_resolve_1d(total: u16, edges: &[Edge]) -> Vec<u16> {
                 let mut rem_num: u64 = 0;
                 for &(edge_idx, fraction, _) in &flexible {
                     let raw = remaining * u64::from(fraction) + rem_num;
-                    sizes[edge_idx] = Some((raw / total_fraction) as u16);
+                    sizes[edge_idx] = Some((raw / total_fraction).to_u16_sat());
                     rem_num = raw % total_fraction;
                 }
             }

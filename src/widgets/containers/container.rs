@@ -8,6 +8,7 @@ use crate::css;
 use crate::debug::DebugLayout;
 use crate::event::Event;
 use crate::message::{MessageEvent, ScrollbarAxis, ScrollbarScrollTo};
+use crate::num::Cast;
 use crate::style::Overflow;
 use crate::widgets::{NodeSeed, Widget, helpers::apply_debug_box, scrollbar_max_offset};
 
@@ -23,7 +24,7 @@ fn clamp_offset_f32(offset: f32, content_len: usize, viewport_len: usize) -> f32
     if !offset.is_finite() {
         return 0.0;
     }
-    let max = scrollbar_max_offset(content_len.max(1), viewport_len.max(1)) as f32;
+    let max = scrollbar_max_offset(content_len.max(1), viewport_len.max(1)).to_f32_lossy();
     offset.clamp(0.0, max)
 }
 
@@ -280,35 +281,36 @@ impl crate::widgets::Interactive for Container {
                 self.offset_y = scrollbar_max_offset(
                     self.content_height.load(Ordering::Relaxed).max(1),
                     self.viewport_height.load(Ordering::Relaxed).max(1),
-                ) as f32;
+                )
+                .to_f32_lossy();
             }
             crate::event::Action::ScrollUp => {
-                self.offset_y = (self.offset_y - self.scroll_step_y as f32).max(0.0);
+                self.offset_y = (self.offset_y - self.scroll_step_y.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollDown => {
-                self.offset_y += self.scroll_step_y as f32;
+                self.offset_y += self.scroll_step_y.to_f32_lossy();
             }
             crate::event::Action::ScrollPageUp => {
                 let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                self.offset_y = (self.offset_y - page as f32).max(0.0);
+                self.offset_y = (self.offset_y - page.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollPageDown => {
                 let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                self.offset_y += page as f32;
+                self.offset_y += page.to_f32_lossy();
             }
             crate::event::Action::ScrollLeft => {
-                self.offset_x = (self.offset_x - self.scroll_step_x as f32).max(0.0);
+                self.offset_x = (self.offset_x - self.scroll_step_x.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollRight => {
-                self.offset_x += self.scroll_step_x as f32;
+                self.offset_x += self.scroll_step_x.to_f32_lossy();
             }
             crate::event::Action::ScrollPageLeft => {
                 let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                self.offset_x = (self.offset_x - page as f32).max(0.0);
+                self.offset_x = (self.offset_x - page.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollPageRight => {
                 let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                self.offset_x += page as f32;
+                self.offset_x += page.to_f32_lossy();
             }
             _ => return,
         }
@@ -396,10 +398,14 @@ impl crate::widgets::Scrollable for Container {
         let before_x = self.offset_x;
         let before_y = self.offset_y;
         if delta_y != 0 && self.scrollable_y() {
-            self.offset_y += delta_y.saturating_mul(self.scroll_step_y as i32) as f32;
+            self.offset_y += delta_y
+                .saturating_mul(self.scroll_step_y.to_i32_sat())
+                .to_f32_lossy();
         }
         if delta_x != 0 && self.scrollable_x() {
-            self.offset_x += delta_x.saturating_mul(self.scroll_step_x as i32) as f32;
+            self.offset_x += delta_x
+                .saturating_mul(self.scroll_step_x.to_i32_sat())
+                .to_f32_lossy();
         }
         self.clamp_offsets();
         if self.offset_x != before_x || self.offset_y != before_y {
@@ -410,7 +416,7 @@ impl crate::widgets::Scrollable for Container {
 
     fn scroll_offset(&self) -> (usize, usize) {
         let (x, y) = crate::widgets::Scrollable::scroll_offset_f32(self);
-        (x.round() as usize, y.round() as usize)
+        (x.round().to_usize_sat(), y.round().to_usize_sat())
     }
 
     fn scroll_offset_f32(&self) -> (f32, f32) {

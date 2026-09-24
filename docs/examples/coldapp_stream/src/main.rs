@@ -83,7 +83,7 @@ impl StreamApp {
 /// clock, no randomness — so the demo and its tests are reproducible).
 fn log_line(n: u64) -> (String, &'static str) {
     const PATHS: [&str; 4] = ["/api/users", "/api/orders", "/health", "/api/search"];
-    let path = PATHS[(n as usize) % PATHS.len()];
+    let path = PATHS[usize::try_from(n).map_or(0, |n| n % PATHS.len())];
     let ms = 3 + (n * 7) % 40;
     // Every 6th request is a slow 503 to exercise the warn color.
     if n % 6 == 5 {
@@ -152,7 +152,7 @@ impl TextualApp for StreamApp {
                 // Follow the tail: scrolling to `count` rows always lands at the
                 // bottom (VerticalScroll clamps the offset; it has no scroll_end).
                 let _ = app.with_query_one_mut_as::<VerticalScroll, _>("#log", |s| {
-                    s.scroll_to(count as usize);
+                    s.scroll_to(usize::try_from(count).unwrap_or(usize::MAX));
                 });
                 let _ = app.with_query_one_mut_as::<Label, _>("#header", |l| {
                     l.set_text(StreamApp::header_text(count, false));

@@ -351,7 +351,7 @@ impl TextualApp for ByteInputApp {
             let byte_val: u32 = text
                 .trim()
                 .parse::<i64>()
-                .map_or(0, |v| v.clamp(0, 255) as u32);
+                .map_or(0, |v| u32::try_from(v.clamp(0, 255)).unwrap_or_default());
 
             // Suppress feedback while we set switches programmatically —
             // Python: `with switch.prevent(BitSwitch.BitChanged):`. The scope

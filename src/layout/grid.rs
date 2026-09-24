@@ -1,4 +1,5 @@
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::style::{BoxSizing, KeylineType, Scalar, Style};
 use crate::widget_tree::WidgetTree;
 
@@ -113,10 +114,10 @@ fn resolve_fixed_scalar(scalar: &Scalar, size: u16, viewport: u16) -> Rat {
     // is integral in practice but quantize to 1/1000 to be safe.
     let exact = |v: f32, base: u16| -> Rat {
         if v.fract() == 0.0 {
-            Rat::new(v as i64 * i64::from(base), 100)
+            Rat::new(v.to_i64_sat() * i64::from(base), 100)
         } else {
             Rat::new(
-                (f64::from(v) * 1000.0).round() as i64 * i64::from(base),
+                (f64::from(v) * 1000.0).round().to_i64_sat() * i64::from(base),
                 100_000,
             )
         }
@@ -171,7 +172,7 @@ fn resolve_tracks(
         acc
     });
 
-    let total_gutter = i64::from(gutter) * (n as i64 - 1);
+    let total_gutter = i64::from(gutter) * (n.to_i64_sat() - 1);
 
     let resolved_fractions: Vec<Rat> = if total_fraction.is_positive() {
         let consumed: Rat = resolved
@@ -221,8 +222,8 @@ fn resolve_tracks(
     for i in 0..n {
         let o1 = offsets[i * 2];
         let o2 = offsets[i * 2 + 1];
-        let off = o1.max(0) as u16;
-        let len = (o2 - o1).max(0) as u16;
+        let off = o1.to_u16_sat();
+        let len = (o2 - o1).to_u16_sat();
         results.push((off, len));
     }
     results
@@ -233,9 +234,9 @@ fn resolve_tracks(
 /// practice (`1fr`, `2fr`), so quantize to 1/1000 to stay exact and bounded.
 fn frac_value(v: f32) -> Rat {
     if v.fract() == 0.0 {
-        Rat::whole(v as i64)
+        Rat::whole(v.to_i64_sat())
     } else {
-        Rat::new((f64::from(v) * 1000.0).round() as i64, 1000)
+        Rat::new((f64::from(v) * 1000.0).round().to_i64_sat(), 1000)
     }
 }
 

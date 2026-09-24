@@ -13,6 +13,7 @@ use crate::message::{
     MessageEvent, TextAreaChanged, TextAreaSelectionChanged, TextEditClipboardCopyRequested,
     TextEditClipboardPaste, TextEditClipboardPasteRequested,
 };
+use crate::num::Cast;
 use crate::style::{Color, Style, parse_color_like};
 use crate::{Error, Result};
 
@@ -509,11 +510,14 @@ impl TextArea {
     }
 
     pub fn move_cursor_relative(&mut self, columns: isize, rows: isize) {
-        let row = (self.cursor.row as isize + rows)
-            .clamp(0, self.document.line_count().saturating_sub(1) as isize)
-            as usize;
-        let cur_cells = self.cursor_cell_x() as isize;
-        let target_cells = (cur_cells + columns).max(0) as usize;
+        let row = (self.cursor.row.to_isize_sat() + rows)
+            .clamp(
+                0,
+                self.document.line_count().saturating_sub(1).to_isize_sat(),
+            )
+            .to_usize_sat();
+        let cur_cells = self.cursor_cell_x().to_isize_sat();
+        let target_cells = (cur_cells + columns).to_usize_sat();
         let col = self.cursor_from_cell_x(row, target_cells);
         self.cursor = Cursor { row, col };
         self.selection = Selection::cursor(self.cursor);
@@ -758,7 +762,7 @@ impl TextArea {
     /// Map widget-local mouse coordinates to a document location through
     /// the wrapped view (clamps click-past-end automatically).
     fn hit_test_location(&self, x: u16, y: u16) -> Cursor {
-        let gutter = self.line_number_gutter_width() as u16;
+        let gutter = self.line_number_gutter_width().to_u16_sat();
         let local_x = x.saturating_sub(gutter) as usize;
         let cell_x = if self.wrapped.width() == 0 {
             self.scroll_col.saturating_add(local_x)
@@ -766,9 +770,11 @@ impl TextArea {
             local_x
         };
         let visual_y = self.scroll_row.saturating_add(y as usize);
-        let (row, col) =
-            self.wrapped
-                .offset_to_location(&self.document, cell_x as isize, visual_y as isize);
+        let (row, col) = self.wrapped.offset_to_location(
+            &self.document,
+            cell_x.to_isize_sat(),
+            visual_y.to_isize_sat(),
+        );
         Cursor { row, col }
     }
 

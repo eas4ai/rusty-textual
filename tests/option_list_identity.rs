@@ -646,12 +646,12 @@ fn selection_options_are_available_soon() {
 #[test]
 fn selection_removing_option_updates_indexes() {
     let mut list = selection_fixture();
-    for n in 0..5 {
-        assert_eq!(list.value_at(n), Some(&(n as i32)));
+    for (n, value) in (0..5).zip(0_i32..) {
+        assert_eq!(list.value_at(n), Some(&value));
     }
     list.remove_option_at_index(0).unwrap();
-    for n in 0..4 {
-        assert_eq!(list.value_at(n), Some(&(n as i32 + 1)));
+    for (n, value) in (0..4).zip(1_i32..) {
+        assert_eq!(list.value_at(n), Some(&value));
     }
     // Registry follows: id "3" now resolves to index 2.
     assert_eq!(list.get_option_index("3"), Ok(2));

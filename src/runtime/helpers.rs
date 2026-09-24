@@ -4,6 +4,7 @@ use crate::event::{
     Action, ActionMap, ClickEvent, Event, KeyBind, MouseEnterEvent, MouseLeaveEvent,
 };
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::widget_tree::WidgetTree;
 use crate::widgets::{
     APP_ROOT_HSCROLLBAR_ID, APP_ROOT_SCROLLBAR_CORNER_ID, APP_ROOT_VSCROLLBAR_ID,
@@ -364,8 +365,8 @@ pub fn widget_at_tree_layout(tree: &WidgetTree, x: u16, y: u16) -> Option<NodeId
                 continue;
             }
             let (ox, oy) = ancestor.widget.scroll_offset();
-            render_shift_x -= ox as i32;
-            render_shift_y -= oy as i32;
+            render_shift_x -= ox.to_i32_sat();
+            render_shift_y -= oy.to_i32_sat();
         }
         let rect = node.layout_rect;
         let x0 = rect.x0 + render_shift_x;
@@ -420,14 +421,14 @@ pub fn tree_content_local_coords(
             continue;
         }
         let (ox, oy) = ancestor.widget.scroll_offset();
-        render_shift_x -= ox as i32;
-        render_shift_y -= oy as i32;
+        render_shift_x -= ox.to_i32_sat();
+        render_shift_y -= oy.to_i32_sat();
     }
 
     let origin_x = rect.x0 + render_shift_x;
     let origin_y = rect.y0 + render_shift_y;
-    let local_x = i32::from(screen_x).saturating_sub(origin_x).max(0) as u16;
-    let local_y = i32::from(screen_y).saturating_sub(origin_y).max(0) as u16;
+    let local_x = i32::from(screen_x).saturating_sub(origin_x).to_u16_sat();
+    let local_y = i32::from(screen_y).saturating_sub(origin_y).to_u16_sat();
     (local_x, local_y)
 }
 

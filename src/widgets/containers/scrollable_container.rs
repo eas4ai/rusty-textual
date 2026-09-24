@@ -1,4 +1,5 @@
 use crate::compose::ComposeResult;
+use crate::num::Cast;
 use crate::widgets::{BindingDecl, Container, Widget};
 use textual_macros::widget;
 
@@ -201,7 +202,7 @@ impl ScrollableContainer {
             "page_left" => {
                 let before = self.inner.offset_x();
                 let page = self.inner.layout_height().unwrap_or(1).max(1);
-                self.inner.scroll_by_x(-(page as i32));
+                self.inner.scroll_by_x(-page.to_i32_sat());
                 if self.inner.offset_x() != before {
                     ctx.request_repaint();
                 }
@@ -211,7 +212,7 @@ impl ScrollableContainer {
             "page_right" => {
                 let before = self.inner.offset_x();
                 let page = self.inner.layout_height().unwrap_or(1).max(1);
-                self.inner.scroll_by_x(page as i32);
+                self.inner.scroll_by_x(page.to_i32_sat());
                 if self.inner.offset_x() != before {
                     ctx.request_repaint();
                 }

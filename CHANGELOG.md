@@ -21,6 +21,17 @@ until the API stabilizes.
   delegation). Every implementation returned a string literal; an impl that
   returned borrowed data must now return a literal. `Screen::name` and
   `Provider::name` keep `&str`, so names can still be runtime values.
+- Numeric conversions in layout, rendering and widgets clamp an
+  out-of-range value to the target type's range instead of wrapping or
+  truncating it. For example, a width above 65,535 cells now becomes
+  65,535, and a negative extent becomes 0. Values inside the range are
+  unchanged.
+
+### Fixed
+
+- A child-combinator selector with more parts than the widget has
+  ancestors (`A > B > C` where `B` is the top ancestor) no longer panics
+  with an index out of bounds; the rule does not match.
 
 ## [1.1.0] - 2026-07-16
 

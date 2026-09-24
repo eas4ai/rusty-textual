@@ -110,11 +110,15 @@ impl FundingProgressApp {
             Err(_) => return,
         };
 
+        // A typed donation is far below 2^53, where f64 holds every integer.
+        #[allow(clippy::cast_precision_loss)]
+        let amount = value as f64;
+
         // Advance the progress bar (reactive path: the recorded change
         // recomposes the bar's sub-widgets with the new value).
         if let Ok(handle) = app.query_one_typed::<ProgressBar>("#progress") {
             let _ = handle.update(app, |bar, rctx| {
-                bar.advance(value as f64, rctx);
+                bar.advance(amount, rctx);
             });
         }
 

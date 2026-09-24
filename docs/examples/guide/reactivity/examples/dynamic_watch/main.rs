@@ -137,6 +137,8 @@ impl TextualApp for WatchApp {
         if let Ok(counter_id) = app.query_one("Counter") {
             app.watch_reactive(counter_id, "counter", |app, value| {
                 if let Some(v) = value.downcast_ref::<i64>() {
+                    // The counter stays far below 2^53, where f64 is exact.
+                    #[allow(clippy::cast_precision_loss)]
                     let progress = *v as f64;
                     if let Ok(handle) = app.query_one_typed::<ProgressBar>("#progress") {
                         let _ = handle.update(app, |bar, rctx| {

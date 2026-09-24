@@ -10,6 +10,7 @@ use crate::event::{
     Action, AnimationEase, AnimationLevel, AnimationRequest, AnimationValueEvent, Event, EventCtx,
 };
 use crate::message::{MessageEvent, ScrollbarAxis, ScrollbarScrollTo};
+use crate::num::Cast;
 use crate::style::{Overflow, ScrollbarGutter, ScrollbarVisibility, parse_color_like};
 
 use crate::action::ParsedAction;
@@ -155,7 +156,7 @@ impl ScrollView {
     pub fn scroll_to(&mut self, offset_y: usize) {
         self.offset_y = offset_y;
         self.clamp_offset();
-        self.render_offset_y = self.offset_y as f32;
+        self.render_offset_y = self.offset_y.to_f32_lossy();
     }
 
     /// Scroll to the top of the content (offset 0).
@@ -175,27 +176,27 @@ impl ScrollView {
     pub fn scroll_to_x(&mut self, offset_x: usize) {
         self.offset_x = offset_x;
         self.clamp_offset();
-        self.render_offset_x = self.offset_x as f32;
+        self.render_offset_x = self.offset_x.to_f32_lossy();
     }
 
     pub fn scroll_by(&mut self, delta: i32) {
         if delta.is_negative() {
             self.offset_y = self.offset_y.saturating_sub(delta.unsigned_abs() as usize);
         } else {
-            self.offset_y = self.offset_y.saturating_add(delta as usize);
+            self.offset_y = self.offset_y.saturating_add(delta.to_usize_sat());
         }
         self.clamp_offset();
-        self.render_offset_y = self.offset_y as f32;
+        self.render_offset_y = self.offset_y.to_f32_lossy();
     }
 
     pub fn scroll_by_x(&mut self, delta: i32) {
         if delta.is_negative() {
             self.offset_x = self.offset_x.saturating_sub(delta.unsigned_abs() as usize);
         } else {
-            self.offset_x = self.offset_x.saturating_add(delta as usize);
+            self.offset_x = self.offset_x.saturating_add(delta.to_usize_sat());
         }
         self.clamp_offset();
-        self.render_offset_x = self.offset_x as f32;
+        self.render_offset_x = self.offset_x.to_f32_lossy();
     }
 
     #[must_use]
@@ -366,12 +367,12 @@ impl ScrollView {
         if self.offset_y > max_y {
             self.offset_y = max_y;
         }
-        self.render_offset_y = self.render_offset_y.clamp(0.0, max_y as f32);
+        self.render_offset_y = self.render_offset_y.clamp(0.0, max_y.to_f32_lossy());
         let max_x = self.max_offset_x();
         if self.offset_x > max_x {
             self.offset_x = max_x;
         }
-        self.render_offset_x = self.render_offset_x.clamp(0.0, max_x as f32);
+        self.render_offset_x = self.render_offset_x.clamp(0.0, max_x.to_f32_lossy());
     }
 
     // transition_timing_to_animation_ease removed — delegated to
@@ -390,13 +391,13 @@ impl ScrollView {
         if let Some(duration) = duration_override
             && !duration.is_zero()
         {
-            self.render_offset_y = from as f32;
+            self.render_offset_y = from.to_f32_lossy();
             ctx.request_animation(
                 AnimationRequest::new(
                     self.node_id(),
                     Self::OFFSET_Y_ATTR,
-                    from as f32,
-                    to as f32,
+                    from.to_f32_lossy(),
+                    to.to_f32_lossy(),
                     duration,
                 )
                 .with_ease(AnimationEase::OutCubic)
@@ -405,13 +406,13 @@ impl ScrollView {
         } else if let Some((duration, delay, ease)) =
             self.animation_params_for_property(Self::OFFSET_Y_ATTR)
         {
-            self.render_offset_y = from as f32;
+            self.render_offset_y = from.to_f32_lossy();
             ctx.request_animation(
                 AnimationRequest::new(
                     self.node_id(),
                     Self::OFFSET_Y_ATTR,
-                    from as f32,
-                    to as f32,
+                    from.to_f32_lossy(),
+                    to.to_f32_lossy(),
                     duration,
                 )
                 .with_delay(delay)
@@ -419,7 +420,7 @@ impl ScrollView {
                 .with_level(AnimationLevel::Basic),
             );
         } else {
-            self.render_offset_y = to as f32;
+            self.render_offset_y = to.to_f32_lossy();
         }
         ctx.request_repaint();
     }
@@ -446,13 +447,13 @@ impl ScrollView {
         if let Some(duration) = duration_override
             && !duration.is_zero()
         {
-            self.render_offset_x = from as f32;
+            self.render_offset_x = from.to_f32_lossy();
             ctx.request_animation(
                 AnimationRequest::new(
                     self.node_id(),
                     Self::OFFSET_X_ATTR,
-                    from as f32,
-                    to as f32,
+                    from.to_f32_lossy(),
+                    to.to_f32_lossy(),
                     duration,
                 )
                 .with_ease(AnimationEase::OutCubic)
@@ -461,13 +462,13 @@ impl ScrollView {
         } else if let Some((duration, delay, ease)) =
             self.animation_params_for_property(Self::OFFSET_X_ATTR)
         {
-            self.render_offset_x = from as f32;
+            self.render_offset_x = from.to_f32_lossy();
             ctx.request_animation(
                 AnimationRequest::new(
                     self.node_id(),
                     Self::OFFSET_X_ATTR,
-                    from as f32,
-                    to as f32,
+                    from.to_f32_lossy(),
+                    to.to_f32_lossy(),
                     duration,
                 )
                 .with_delay(delay)
@@ -475,7 +476,7 @@ impl ScrollView {
                 .with_level(AnimationLevel::Basic),
             );
         } else {
-            self.render_offset_x = to as f32;
+            self.render_offset_x = to.to_f32_lossy();
         }
         ctx.request_repaint();
     }
@@ -491,8 +492,8 @@ impl ScrollView {
 
     fn child_coords(&self, x: u16, y: u16) -> (u16, u16) {
         (
-            x.saturating_add(self.offset_x as u16),
-            y.saturating_add(self.offset_y as u16),
+            x.saturating_add(self.offset_x.to_u16_sat()),
+            y.saturating_add(self.offset_y.to_u16_sat()),
         )
     }
 
@@ -500,8 +501,16 @@ impl ScrollView {
         if self.child_extracted {
             return;
         }
-        let width = self.viewport_width.load(Ordering::Relaxed).max(1) as u16;
-        let height = self.viewport_height.load(Ordering::Relaxed).max(1) as u16;
+        let width = self
+            .viewport_width
+            .load(Ordering::Relaxed)
+            .max(1)
+            .to_u16_sat();
+        let height = self
+            .viewport_height
+            .load(Ordering::Relaxed)
+            .max(1)
+            .to_u16_sat();
         self.child.on_layout(width, height);
     }
 
@@ -528,8 +537,9 @@ impl ScrollView {
             next_v_track = true;
             let offset = self
                 .render_offset_y
-                .clamp(0.0, self.max_offset() as f32)
-                .round() as usize;
+                .clamp(0.0, self.max_offset().to_f32_lossy())
+                .round()
+                .to_usize_sat();
             let (thumb_start, thumb_len) =
                 Self::line_scrollbar_thumb(viewport_h, content_h, viewport_h, offset);
             next_v_thumb =
@@ -545,8 +555,9 @@ impl ScrollView {
             next_h_track = true;
             let offset = self
                 .render_offset_x
-                .clamp(0.0, self.max_offset_x() as f32)
-                .round() as usize;
+                .clamp(0.0, self.max_offset_x().to_f32_lossy())
+                .round()
+                .to_usize_sat();
             let (thumb_start, thumb_len) =
                 Self::line_scrollbar_thumb(viewport_w, content_w, viewport_w, offset);
             next_h_thumb =
@@ -708,14 +719,14 @@ impl crate::widgets::Focus for ScrollView {
         match action.name.as_str() {
             "scroll_up" => {
                 let before = self.offset_y;
-                self.scroll_by(-(self.scroll_step as i32));
+                self.scroll_by(-self.scroll_step.to_i32_sat());
                 self.request_offset_y_animation(before, self.offset_y, ctx);
                 ctx.set_handled();
                 true
             }
             "scroll_down" => {
                 let before = self.offset_y;
-                self.scroll_by(self.scroll_step as i32);
+                self.scroll_by(self.scroll_step.to_i32_sat());
                 self.request_offset_y_animation(before, self.offset_y, ctx);
                 ctx.set_handled();
                 true
@@ -723,7 +734,7 @@ impl crate::widgets::Focus for ScrollView {
             "page_up" => {
                 let before = self.offset_y;
                 let viewport_h = self.viewport_height.load(Ordering::Relaxed);
-                self.scroll_by(-(viewport_h as i32));
+                self.scroll_by(-viewport_h.to_i32_sat());
                 self.request_offset_y_animation(before, self.offset_y, ctx);
                 ctx.set_handled();
                 true
@@ -731,7 +742,7 @@ impl crate::widgets::Focus for ScrollView {
             "page_down" => {
                 let before = self.offset_y;
                 let viewport_h = self.viewport_height.load(Ordering::Relaxed);
-                self.scroll_by(viewport_h as i32);
+                self.scroll_by(viewport_h.to_i32_sat());
                 self.request_offset_y_animation(before, self.offset_y, ctx);
                 ctx.set_handled();
                 true
@@ -755,14 +766,14 @@ impl crate::widgets::Focus for ScrollView {
             }
             "scroll_left" => {
                 let before = self.offset_x;
-                self.scroll_by_x(-(self.scroll_step as i32));
+                self.scroll_by_x(-self.scroll_step.to_i32_sat());
                 self.request_offset_x_animation(before, self.offset_x, ctx);
                 ctx.set_handled();
                 true
             }
             "scroll_right" => {
                 let before = self.offset_x;
-                self.scroll_by_x(self.scroll_step as i32);
+                self.scroll_by_x(self.scroll_step.to_i32_sat());
                 self.request_offset_x_animation(before, self.offset_x, ctx);
                 ctx.set_handled();
                 true
@@ -828,7 +839,11 @@ impl crate::widgets::Interactive for ScrollView {
             if *target == self.node_id() {
                 if attribute == Self::OFFSET_Y_ATTR {
                     if self.drag_v.is_none() {
-                        self.render_offset_y = if *done { self.offset_y as f32 } else { *value };
+                        self.render_offset_y = if *done {
+                            self.offset_y.to_f32_lossy()
+                        } else {
+                            *value
+                        };
                         ctx.request_repaint();
                     }
                     ctx.set_handled();
@@ -836,7 +851,11 @@ impl crate::widgets::Interactive for ScrollView {
                 }
                 if attribute == Self::OFFSET_X_ATTR {
                     if self.drag_h.is_none() {
-                        self.render_offset_x = if *done { self.offset_x as f32 } else { *value };
+                        self.render_offset_x = if *done {
+                            self.offset_x.to_f32_lossy()
+                        } else {
+                            *value
+                        };
                         ctx.request_repaint();
                     }
                     ctx.set_handled();
@@ -881,9 +900,9 @@ impl crate::widgets::Interactive for ScrollView {
                     }
                     let before = self.offset_y;
                     if local_y < thumb_start {
-                        self.scroll_by(-(viewport_h as i32));
+                        self.scroll_by(-viewport_h.to_i32_sat());
                     } else if local_y >= thumb_start.saturating_add(thumb_len) {
-                        self.scroll_by(viewport_h as i32);
+                        self.scroll_by(viewport_h.to_i32_sat());
                     }
                     if self.offset_y != before {
                         self.request_offset_y_animation(before, self.offset_y, ctx);
@@ -914,9 +933,9 @@ impl crate::widgets::Interactive for ScrollView {
                     }
                     let before = self.offset_x;
                     if local_x < thumb_start {
-                        self.scroll_by_x(-(viewport_w as i32));
+                        self.scroll_by_x(-viewport_w.to_i32_sat());
                     } else if local_x >= thumb_start.saturating_add(thumb_len) {
-                        self.scroll_by_x(viewport_w as i32);
+                        self.scroll_by_x(viewport_w.to_i32_sat());
                     }
                     if self.offset_x != before {
                         self.request_offset_x_animation(before, self.offset_x, ctx);
@@ -1020,7 +1039,7 @@ impl crate::widgets::Interactive for ScrollView {
                 }
                 Action::ScrollUp => {
                     let before = self.offset_y;
-                    self.scroll_by(-(self.scroll_step as i32));
+                    self.scroll_by(-self.scroll_step.to_i32_sat());
                     self.request_offset_y_animation(before, self.offset_y, ctx);
                     debug_input(&format!(
                         "[scrollview] action=ScrollUp before_y={} after_y={} max_y={}",
@@ -1032,7 +1051,7 @@ impl crate::widgets::Interactive for ScrollView {
                 }
                 Action::ScrollDown => {
                     let before = self.offset_y;
-                    self.scroll_by(self.scroll_step as i32);
+                    self.scroll_by(self.scroll_step.to_i32_sat());
                     self.request_offset_y_animation(before, self.offset_y, ctx);
                     debug_input(&format!(
                         "[scrollview] action=ScrollDown before_y={} after_y={} max_y={}",
@@ -1045,7 +1064,7 @@ impl crate::widgets::Interactive for ScrollView {
                 Action::ScrollPageUp => {
                     let before = self.offset_y;
                     let page = self.height.unwrap_or(1).max(1);
-                    self.scroll_by(-(page as i32));
+                    self.scroll_by(-page.to_i32_sat());
                     self.request_offset_y_animation(before, self.offset_y, ctx);
                     debug_input(&format!(
                         "[scrollview] action=ScrollPageUp page={} before_y={} after_y={} max_y={}",
@@ -1059,7 +1078,7 @@ impl crate::widgets::Interactive for ScrollView {
                 Action::ScrollPageDown => {
                     let before = self.offset_y;
                     let page = self.height.unwrap_or(1).max(1);
-                    self.scroll_by(page as i32);
+                    self.scroll_by(page.to_i32_sat());
                     self.request_offset_y_animation(before, self.offset_y, ctx);
                     debug_input(&format!(
                         "[scrollview] action=ScrollPageDown page={} before_y={} after_y={} max_y={}",
@@ -1072,7 +1091,7 @@ impl crate::widgets::Interactive for ScrollView {
                 }
                 Action::ScrollLeft => {
                     let before = self.offset_x;
-                    self.scroll_by_x(-(self.scroll_step_x as i32));
+                    self.scroll_by_x(-self.scroll_step_x.to_i32_sat());
                     self.request_offset_x_animation(before, self.offset_x, ctx);
                     debug_input(&format!(
                         "[scrollview] action=ScrollLeft before_x={} after_x={} max_x={}",
@@ -1084,7 +1103,7 @@ impl crate::widgets::Interactive for ScrollView {
                 }
                 Action::ScrollRight => {
                     let before = self.offset_x;
-                    self.scroll_by_x(self.scroll_step_x as i32);
+                    self.scroll_by_x(self.scroll_step_x.to_i32_sat());
                     self.request_offset_x_animation(before, self.offset_x, ctx);
                     debug_input(&format!(
                         "[scrollview] action=ScrollRight before_x={} after_x={} max_x={}",
@@ -1097,7 +1116,7 @@ impl crate::widgets::Interactive for ScrollView {
                 Action::ScrollPageLeft => {
                     let before = self.offset_x;
                     let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                    self.scroll_by_x(-(page as i32));
+                    self.scroll_by_x(-page.to_i32_sat());
                     self.request_offset_x_animation(before, self.offset_x, ctx);
                     debug_input(&format!(
                         "[scrollview] action=ScrollPageLeft page={} before_x={} after_x={} max_x={}",
@@ -1111,7 +1130,7 @@ impl crate::widgets::Interactive for ScrollView {
                 Action::ScrollPageRight => {
                     let before = self.offset_x;
                     let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                    self.scroll_by_x(page as i32);
+                    self.scroll_by_x(page.to_i32_sat());
                     self.request_offset_x_animation(before, self.offset_x, ctx);
                     debug_input(&format!(
                         "[scrollview] action=ScrollPageRight page={} before_x={} after_x={} max_x={}",
@@ -1142,7 +1161,7 @@ impl crate::widgets::Interactive for ScrollView {
             ScrollbarAxis::Vertical => {
                 let before = self.offset_y;
                 let next = Self::line_clamp_offset(
-                    offset.max(0.0).round() as usize,
+                    offset.max(0.0).round().to_usize_sat(),
                     self.content_height.load(Ordering::Relaxed).max(1),
                     self.viewport_height.load(Ordering::Relaxed).max(1),
                 );
@@ -1155,14 +1174,14 @@ impl crate::widgets::Interactive for ScrollView {
                         ctx,
                     );
                 } else {
-                    self.render_offset_y = self.offset_y as f32;
+                    self.render_offset_y = self.offset_y.to_f32_lossy();
                     ctx.request_repaint();
                 }
             }
             ScrollbarAxis::Horizontal => {
                 let before = self.offset_x;
                 let next = Self::line_clamp_offset(
-                    offset.max(0.0).round() as usize,
+                    offset.max(0.0).round().to_usize_sat(),
                     self.content_width.load(Ordering::Relaxed).max(1),
                     self.viewport_width.load(Ordering::Relaxed).max(1),
                 );
@@ -1175,7 +1194,7 @@ impl crate::widgets::Interactive for ScrollView {
                         ctx,
                     );
                 } else {
-                    self.render_offset_x = self.offset_x as f32;
+                    self.render_offset_x = self.offset_x.to_f32_lossy();
                     ctx.request_repaint();
                 }
             }
@@ -1200,7 +1219,7 @@ impl crate::widgets::Interactive for ScrollView {
                 );
                 if new_offset != self.offset_y {
                     self.offset_y = new_offset;
-                    self.render_offset_y = new_offset as f32;
+                    self.render_offset_y = new_offset.to_f32_lossy();
                     changed = true;
                 }
             }
@@ -1218,7 +1237,7 @@ impl crate::widgets::Interactive for ScrollView {
                 );
                 if new_offset != self.offset_x {
                     self.offset_x = new_offset;
-                    self.render_offset_x = new_offset as f32;
+                    self.render_offset_x = new_offset.to_f32_lossy();
                     changed = true;
                 }
             }
@@ -1267,10 +1286,10 @@ impl crate::widgets::Scrollable for ScrollView {
         let before_y = self.offset_y;
 
         if resolved_dy != 0 {
-            self.scroll_by(resolved_dy.saturating_mul(self.scroll_step as i32));
+            self.scroll_by(resolved_dy.saturating_mul(self.scroll_step.to_i32_sat()));
         }
         if resolved_dx != 0 {
-            self.scroll_by_x(resolved_dx.saturating_mul(self.scroll_step_x as i32));
+            self.scroll_by_x(resolved_dx.saturating_mul(self.scroll_step_x.to_i32_sat()));
         }
         debug_input(&format!(
             "[scrollview] mouse dx={} dy={} before=({}, {}) after=({}, {}) max=({}, {})",
@@ -1286,8 +1305,8 @@ impl crate::widgets::Scrollable for ScrollView {
 
         if self.offset_x != before_x || self.offset_y != before_y {
             // Python parity: wheel scrolling is immediate (non-animated).
-            self.render_offset_x = self.offset_x as f32;
-            self.render_offset_y = self.offset_y as f32;
+            self.render_offset_x = self.offset_x.to_f32_lossy();
+            self.render_offset_y = self.offset_y.to_f32_lossy();
             ctx.request_repaint();
             ctx.set_handled();
         }
@@ -1302,12 +1321,12 @@ impl crate::widgets::Scrollable for ScrollView {
             .content_width
             .load(Ordering::Relaxed)
             .saturating_sub(self.viewport_width.load(Ordering::Relaxed).max(1))
-            as f32;
+            .to_f32_lossy();
         let max_y = self
             .content_height
             .load(Ordering::Relaxed)
             .saturating_sub(self.viewport_height.load(Ordering::Relaxed).max(1))
-            as f32;
+            .to_f32_lossy();
         (
             self.render_offset_x.clamp(0.0, max_x),
             self.render_offset_y.clamp(0.0, max_y),
@@ -1607,9 +1626,17 @@ impl crate::widgets::Render for ScrollView {
         self.content_width.store(content_width, Ordering::Relaxed);
 
         let max_offset = content_height.saturating_sub(content_viewport_h);
-        let offset = self.render_offset_y.clamp(0.0, max_offset as f32).round() as usize;
+        let offset = self
+            .render_offset_y
+            .clamp(0.0, max_offset.to_f32_lossy())
+            .round()
+            .to_usize_sat();
         let max_offset_x = content_width.saturating_sub(content_viewport_w);
-        let offset_x = self.render_offset_x.clamp(0.0, max_offset_x as f32).round() as usize;
+        let offset_x = self
+            .render_offset_x
+            .clamp(0.0, max_offset_x.to_f32_lossy())
+            .round()
+            .to_usize_sat();
         let start = offset.min(lines.len());
         let end = (start + content_viewport_h).min(lines.len());
         let mut slice = lines[start..end]
@@ -1932,7 +1959,7 @@ mod tests {
         );
         assert!(ctx.take_animation_requests().is_empty());
         assert!(sv.offset_y > before);
-        assert_eq!(sv.render_offset_y, sv.offset_y as f32);
+        assert_eq!(sv.render_offset_y, sv.offset_y.to_f32_lossy());
     }
 
     #[test]

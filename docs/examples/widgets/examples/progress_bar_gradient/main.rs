@@ -35,6 +35,8 @@ fn rainbow_gradient() -> LinearGradient {
         Color::rgb(0x66, 0x33, 0x99),
     ];
     let n = colors.len() - 1;
+    // Twelve stops: every index is exact in f32.
+    #[allow(clippy::cast_precision_loss)]
     let stops: Vec<(f32, Color)> = colors
         .iter()
         .enumerate()

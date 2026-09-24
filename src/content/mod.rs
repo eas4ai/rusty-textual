@@ -41,6 +41,7 @@
 
 pub mod markup;
 
+use crate::num::Cast;
 use crate::style::Style;
 use markup::parse_markup;
 use std::sync::OnceLock;
@@ -201,8 +202,8 @@ impl Span {
     /// saturating arithmetic — start clamps to 0).
     #[must_use]
     pub fn shift(&self, distance: isize) -> Self {
-        let start = (self.start as isize + distance).max(0) as usize;
-        let end = (self.end as isize + distance).max(0) as usize;
+        let start = (self.start.to_isize_sat() + distance).to_usize_sat();
+        let end = (self.end.to_isize_sat() + distance).to_usize_sat();
         Span {
             start,
             end,

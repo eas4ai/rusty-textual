@@ -58,7 +58,7 @@ fn now_secs() -> u64 {
 
 /// Format the local time (UTC seconds + offset) as HH:MM:SS.
 fn format_local(utc_secs: u64, offset_secs: i64) -> String {
-    let local = (utc_secs as i64 + offset_secs).rem_euclid(24 * 3600) as u64;
+    let local = utc_secs.saturating_add_signed(offset_secs) % (24 * 3600);
     let s = local % 60;
     let m = (local / 60) % 60;
     let h = (local / 3600) % 24;

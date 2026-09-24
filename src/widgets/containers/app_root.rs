@@ -12,6 +12,7 @@ use crate::debug::debug_input;
 use crate::event::{AnimationEase, AnimationLevel, AnimationRequest, AnimationValueEvent, Event};
 use crate::message::{MessageEvent, ScrollbarAxis, ScrollbarScrollTo};
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::style::parse_color_like;
 use crate::widgets::{NodeSeed, ScrollBar, ScrollBarCorner, Widget, scrollbar_max_offset};
 
@@ -55,7 +56,7 @@ fn scrollbar_clamp_offset_f32(offset: f32, content_len: usize, viewport_len: usi
     if !offset.is_finite() {
         return 0.0;
     }
-    let max = scrollbar_max_offset(content_len.max(1), viewport_len.max(1)) as f32;
+    let max = scrollbar_max_offset(content_len.max(1), viewport_len.max(1)).to_f32_lossy();
     offset.clamp(0.0, max)
 }
 
@@ -196,7 +197,8 @@ impl AppRoot {
         scrollbar_max_offset(
             self.content_height.load(Ordering::Relaxed).max(1),
             self.viewport_height.load(Ordering::Relaxed).max(1),
-        ) as f32
+        )
+        .to_f32_lossy()
     }
 
     fn clamp_offsets(&mut self) {
@@ -354,32 +356,32 @@ impl crate::widgets::Interactive for AppRoot {
             crate::event::Action::ScrollHome => self.offset_y = 0.0,
             crate::event::Action::ScrollEnd => self.offset_y = self.max_offset_y(),
             crate::event::Action::ScrollUp => {
-                self.offset_y = (self.offset_y - self.scroll_step_y as f32).max(0.0);
+                self.offset_y = (self.offset_y - self.scroll_step_y.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollDown => {
-                self.offset_y += self.scroll_step_y as f32;
+                self.offset_y += self.scroll_step_y.to_f32_lossy();
             }
             crate::event::Action::ScrollPageUp => {
                 let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                self.offset_y = (self.offset_y - page as f32).max(0.0);
+                self.offset_y = (self.offset_y - page.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollPageDown => {
                 let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                self.offset_y += page as f32;
+                self.offset_y += page.to_f32_lossy();
             }
             crate::event::Action::ScrollLeft => {
-                self.offset_x = (self.offset_x - self.scroll_step_x as f32).max(0.0);
+                self.offset_x = (self.offset_x - self.scroll_step_x.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollRight => {
-                self.offset_x += self.scroll_step_x as f32;
+                self.offset_x += self.scroll_step_x.to_f32_lossy();
             }
             crate::event::Action::ScrollPageLeft => {
                 let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                self.offset_x = (self.offset_x - page as f32).max(0.0);
+                self.offset_x = (self.offset_x - page.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollPageRight => {
                 let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                self.offset_x += page as f32;
+                self.offset_x += page.to_f32_lossy();
             }
             _ => return,
         }
@@ -441,10 +443,14 @@ impl crate::widgets::Scrollable for AppRoot {
         let before_y = self.offset_y;
 
         if delta_y != 0 {
-            self.offset_y += delta_y.saturating_mul(self.scroll_step_y as i32) as f32;
+            self.offset_y += delta_y
+                .saturating_mul(self.scroll_step_y.to_i32_sat())
+                .to_f32_lossy();
         }
         if delta_x != 0 {
-            self.offset_x += delta_x.saturating_mul(self.scroll_step_x as i32) as f32;
+            self.offset_x += delta_x
+                .saturating_mul(self.scroll_step_x.to_i32_sat())
+                .to_f32_lossy();
         }
         self.clamp_offsets();
 
@@ -464,13 +470,15 @@ impl crate::widgets::Scrollable for AppRoot {
                 self.content_width.load(Ordering::Relaxed).max(1),
                 self.viewport_width.load(Ordering::Relaxed).max(1),
             )
-            .round() as usize,
+            .round()
+            .to_usize_sat(),
             scrollbar_clamp_offset_f32(
                 self.offset_y,
                 self.content_height.load(Ordering::Relaxed).max(1),
                 self.viewport_height.load(Ordering::Relaxed).max(1),
             )
-            .round() as usize,
+            .round()
+            .to_usize_sat(),
         )
     }
 

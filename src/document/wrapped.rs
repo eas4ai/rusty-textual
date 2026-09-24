@@ -6,6 +6,8 @@ use super::Location;
 use super::graphemes::{byte_index_from_cell_x, cell_len_prefix, prev_grapheme_boundary};
 use super::wrap::{compute_wrap_offsets, get_tab_widths};
 
+use crate::num::Cast;
+
 /// A view into a [`Document`] which wraps the document at a certain width
 /// and can be queried to retrieve lines from the *wrapped* version of the
 /// document. Allows for incremental updates, ensuring that we only re-wrap
@@ -218,14 +220,15 @@ impl WrappedDocument {
 
         // How much did the edit/rewrap alter the offsets?
         let old_height = old_bottom_y_offset - top_y_offset + 1;
-        let offset_shift = new_height as isize - old_height as isize;
-        let line_shift = new_bottom_line_index as isize - old_bottom_line_index as isize;
+        let offset_shift = new_height.to_isize_sat() - old_height.to_isize_sat();
+        let line_shift =
+            new_bottom_line_index.to_isize_sat() - old_bottom_line_index.to_isize_sat();
 
         // Update the line info at all offsets below the edit region.
         if line_shift != 0 {
             for y_offset in (top_y_offset + new_height)..self.offset_to_line_info.len() {
                 let (old_line_index, section_offset) = self.offset_to_line_info[y_offset];
-                let new_line_index = (old_line_index as isize + line_shift) as usize;
+                let new_line_index = (old_line_index.to_isize_sat() + line_shift).to_usize_sat();
                 self.offset_to_line_info[y_offset] = (new_line_index, section_offset);
             }
         }
@@ -234,7 +237,7 @@ impl WrappedDocument {
         if offset_shift != 0 {
             for line_index in (top_line_index + new_line_count)..self.line_index_to_offsets.len() {
                 for offset in &mut self.line_index_to_offsets[line_index] {
-                    *offset = (*offset as isize + offset_shift) as usize;
+                    *offset = (offset.to_isize_sat() + offset_shift).to_usize_sat();
                 }
             }
         }
@@ -248,8 +251,8 @@ impl WrappedDocument {
     /// clamped to valid locations.
     #[must_use]
     pub fn offset_to_location(&self, document: &Document, x: isize, y: isize) -> Location {
-        let x = x.max(0) as usize;
-        let y = y.max(0) as usize;
+        let x = x.to_usize_sat();
+        let y = y.to_usize_sat();
 
         if self.width == 0 {
             // No wrapping: directly map the offset to a location and clamp.
@@ -266,7 +269,8 @@ impl WrappedDocument {
             .or_else(|| self.offset_to_line_info.last())
             .copied()
             .unwrap_or((0, 0));
-        let column = self.get_target_document_column(document, line_index, x, section_y as isize);
+        let column =
+            self.get_target_document_column(document, line_index, x, section_y.to_isize_sat());
         (line_index, column)
     }
 
@@ -314,9 +318,9 @@ impl WrappedDocument {
         let sections = self.get_sections(document, line_index);
         let section_count = sections.len();
         let section_index = if y_offset < 0 {
-            (section_count as isize + y_offset).max(0) as usize
+            (section_count.to_isize_sat() + y_offset).to_usize_sat()
         } else {
-            (y_offset as usize).min(section_count - 1)
+            y_offset.to_usize_sat().min(section_count - 1)
         };
 
         let target_section = sections[section_index];

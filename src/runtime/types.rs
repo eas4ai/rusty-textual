@@ -3,7 +3,8 @@ use crate::event::{
     AnimationRequest, BindingHint, ClassOp, EventCtx, InvalidationFlags, StyleAnimationRequest,
 };
 use crate::message::MessageEvent;
-use crate::node_id::{NodeId, node_id_from_ffi};
+use crate::node_id::{NodeId, node_id_from_meta};
+use crate::num::Cast;
 use crate::render::{DirtyRegion, FrameBuffer};
 use crate::widgets::{ToastSeverity, border_spacing_from_style};
 use crate::worker::WorkerRequest;
@@ -29,7 +30,7 @@ impl HitTestMap {
     pub(crate) fn from_frame(frame: &FrameBuffer) -> Self {
         let mut out = HitTestMap::default();
         for (id, rect) in frame.owner_bounds() {
-            let wid = node_id_from_ffi(id as u64);
+            let wid = node_id_from_meta(id);
             out.bounds.insert(
                 wid,
                 Rect {
@@ -109,7 +110,7 @@ impl NodeHitTestMap {
             let resolved = resolve_node_style(tree, target, &meta);
             let line_pad = resolved.line_pad.unwrap_or(0) as usize;
             let (top, _bottom, left, _right) = border_spacing_from_style(&resolved);
-            (left.saturating_add(line_pad) as u16, top as u16)
+            (left.saturating_add(line_pad).to_u16_sat(), top.to_u16_sat())
         } else {
             (0, 0)
         };
@@ -323,8 +324,8 @@ impl DirtyRegions {
             return None;
         }
 
-        let max_x = width.saturating_sub(1) as u16;
-        let max_y = height.saturating_sub(1) as u16;
+        let max_x = width.saturating_sub(1).to_u16_sat();
+        let max_y = height.saturating_sub(1).to_u16_sat();
         let mut out = Vec::new();
         for rect in &self.regions {
             if width == 0 || height == 0 {

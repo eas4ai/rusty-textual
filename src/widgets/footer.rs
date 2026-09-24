@@ -6,6 +6,7 @@ use textual_macros::widget;
 use crate::debug::debug_message;
 use crate::event::Event;
 use crate::message::FooterBindingsUpdated;
+use crate::num::Cast;
 use crate::renderables::Styled;
 
 use super::NodeSeed;
@@ -793,7 +794,7 @@ impl Footer {
         let start = range.start.min(max_x);
         let end = range.end.saturating_sub(1).min(max_x);
         let center = start.saturating_add(end.saturating_sub(start) / 2);
-        Some((center.min(u16::MAX as usize) as u16, 0))
+        Some((center.to_u16_sat(), 0))
     }
 }
 
@@ -1021,6 +1022,7 @@ mod tests {
     use crate::event::{BindingHint, Event, EventCtx, MouseDownEvent};
     use crate::message::*;
     use crate::node_id::NodeId;
+    use crate::num::Cast;
     use crate::render::FrameBuffer;
     use crate::widgets::Widget;
 
@@ -1376,9 +1378,9 @@ mod tests {
                 footer.on_event(
                     &Event::MouseDown(MouseDownEvent {
                         target: NodeId::default(),
-                        screen_x: x as u16,
+                        screen_x: x.to_u16_sat(),
                         screen_y: 0,
-                        x: x as u16,
+                        x: x.to_u16_sat(),
                         y: 0,
                     }),
                     &mut __w,
@@ -1419,7 +1421,7 @@ mod tests {
             .into_iter()
             .find(|(_, idx)| *idx == 1)
             .expect("second grouped binding region should exist");
-        let x = usize::midpoint(second_region.0.start, second_region.0.end) as u16;
+        let x = usize::midpoint(second_region.0.start, second_region.0.end).to_u16_sat();
 
         let mut ctx = EventCtx::default();
         {
@@ -1472,7 +1474,7 @@ mod tests {
         let palette_range = footer
             .command_palette_region(64)
             .expect("palette region should exist");
-        let x = usize::midpoint(palette_range.start, palette_range.end) as u16;
+        let x = usize::midpoint(palette_range.start, palette_range.end).to_u16_sat();
 
         let mut ctx = EventCtx::default();
         {
@@ -1596,8 +1598,8 @@ mod tests {
             .expect("second binding region")
             .0
             .clone();
-        let first_mid = usize::midpoint(first.start, first.end) as u16;
-        let second_mid = usize::midpoint(second.start, second.end) as u16;
+        let first_mid = usize::midpoint(first.start, first.end).to_u16_sat();
+        let second_mid = usize::midpoint(second.start, second.end).to_u16_sat();
         assert_eq!(footer.binding_index_at_x(first_mid), Some(0));
         assert_eq!(footer.binding_index_at_x(second_mid), Some(1));
     }
@@ -1704,8 +1706,8 @@ mod tests {
         let range = footer
             .command_palette_region(64)
             .expect("command palette region should exist");
-        let sep_x = range.start as u16;
-        let key_x = (range.start + 1) as u16;
+        let sep_x = range.start.to_u16_sat();
+        let key_x = (range.start + 1).to_u16_sat();
         assert!(footer.on_mouse_move(key_x, 0), "hover should update state");
 
         let console = Console::new();
@@ -1753,13 +1755,13 @@ mod tests {
             .find(|(_, idx)| *idx == 0)
             .expect("first binding region should exist")
             .0;
-        let hover_x = usize::midpoint(first_region.start, first_region.end) as u16;
+        let hover_x = usize::midpoint(first_region.start, first_region.end).to_u16_sat();
         assert!(footer.on_mouse_move(hover_x, 0));
         let anchor = footer
             .tooltip_anchor()
             .expect("hovered binding should expose tooltip anchor");
         let expected_x = usize::midpoint(first_region.start, first_region.end.saturating_sub(1));
-        assert_eq!(anchor, (expected_x as u16, 0));
+        assert_eq!(anchor, (expected_x.to_u16_sat(), 0));
     }
 
     #[test]
@@ -1786,13 +1788,13 @@ mod tests {
         let range = footer
             .command_palette_region(80)
             .expect("command palette region should exist");
-        let hover_x = usize::midpoint(range.start, range.end) as u16;
+        let hover_x = usize::midpoint(range.start, range.end).to_u16_sat();
         assert!(footer.on_mouse_move(hover_x, 0));
         let anchor = footer
             .tooltip_anchor()
             .expect("hovered command palette should expose tooltip anchor");
         let expected_x = usize::midpoint(range.start, range.end.saturating_sub(1));
-        assert_eq!(anchor, (expected_x as u16, 0));
+        assert_eq!(anchor, (expected_x.to_u16_sat(), 0));
     }
 
     // ── check_action / enabled state tests ──────────────────────────────

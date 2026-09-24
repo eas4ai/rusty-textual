@@ -10,6 +10,7 @@ use crate::message::{
     DataTableRowLabelSelected, DataTableRowSelected, MessageEvent, ScrollbarAxis,
     ScrollbarScrollTo,
 };
+use crate::num::Cast;
 use crate::style::{Color, Style, TextAlign, parse_color_like};
 
 use crate::action::ParsedAction;
@@ -1271,7 +1272,7 @@ impl DataTable {
             self.horizontal_offset
                 .saturating_sub(delta.unsigned_abs() as usize)
         } else {
-            self.horizontal_offset.saturating_add(delta as usize)
+            self.horizontal_offset.saturating_add(delta.to_usize_sat())
         }
         .min(max_offset);
         if next == self.horizontal_offset {
@@ -1439,8 +1440,13 @@ impl DataTable {
     fn scroll_by_lines(&mut self, delta: isize) {
         let height = (self.content_height as usize).max(1);
         let visible = self.scrollable_visible_rows(height).max(1);
-        let max = self.scrollable_row_count().saturating_sub(visible) as isize;
-        self.offset = (self.offset as isize + delta).clamp(0, max.max(0)) as usize;
+        let max = self
+            .scrollable_row_count()
+            .saturating_sub(visible)
+            .to_isize_sat();
+        self.offset = (self.offset.to_isize_sat() + delta)
+            .clamp(0, max.max(0))
+            .to_usize_sat();
     }
 
     fn visible_rows(&self) -> usize {
@@ -1689,7 +1695,7 @@ impl crate::widgets::Focus for DataTable {
                         selection_changed = true;
                     }
                 } else {
-                    self.scroll_by_lines(-(visible_rows.max(1) as isize));
+                    self.scroll_by_lines(-visible_rows.max(1).to_isize_sat());
                     ctx.request_repaint();
                 }
                 true
@@ -1703,7 +1709,7 @@ impl crate::widgets::Focus for DataTable {
                         selection_changed = true;
                     }
                 } else {
-                    self.scroll_by_lines(visible_rows.max(1) as isize);
+                    self.scroll_by_lines(visible_rows.max(1).to_isize_sat());
                     ctx.request_repaint();
                 }
                 true
@@ -2034,7 +2040,9 @@ impl crate::widgets::Interactive for DataTable {
                     }
                     handled = true;
                 } else {
-                    let step = self.page_horizontal_step(self.content_width as usize) as i32;
+                    let step = self
+                        .page_horizontal_step(self.content_width as usize)
+                        .to_i32_sat();
                     if self.scroll_horizontal_by_columns(-step) {
                         handled = true;
                         ctx.request_repaint();
@@ -2050,7 +2058,9 @@ impl crate::widgets::Interactive for DataTable {
                     }
                     handled = true;
                 } else {
-                    let step = self.page_horizontal_step(self.content_width as usize) as i32;
+                    let step = self
+                        .page_horizontal_step(self.content_width as usize)
+                        .to_i32_sat();
                     if self.scroll_horizontal_by_columns(step) {
                         handled = true;
                         ctx.request_repaint();
@@ -2202,7 +2212,7 @@ impl crate::widgets::Interactive for DataTable {
         let Some(state) = self.horizontal_scrollbar_state(width) else {
             return;
         };
-        let target_pixels = payload.offset.max(0.0).round() as usize;
+        let target_pixels = payload.offset.max(0.0).round().to_usize_sat();
         let clamped_pixels = target_pixels.min(state.max_pixel_offset);
         let next = self.horizontal_offset_from_pixels(clamped_pixels);
         if next != self.horizontal_offset {
@@ -2280,7 +2290,7 @@ impl crate::widgets::Scrollable for DataTable {
 
     fn scroll_offset_f32(&self) -> (f32, f32) {
         let (x, y) = crate::widgets::Scrollable::scroll_offset(self);
-        (x as f32, y as f32)
+        (x.to_f32_lossy(), y.to_f32_lossy())
     }
 
     fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {

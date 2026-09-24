@@ -59,7 +59,9 @@ use crate::event::{ActionMap, BindingHint, Event, EventCtx, KeyBind};
 use crate::message::MessageEvent;
 use crate::node_id::NodeId;
 use crate::node_id::node_id_from_ffi;
+use crate::node_id::node_id_from_meta;
 use crate::node_id::node_id_to_ffi;
+use crate::num::Cast;
 use crate::render::FrameBuffer;
 use crate::screen::ScreenStack;
 use crate::signal::{Signal, SignalResponse};
@@ -3414,13 +3416,13 @@ impl App {
         fn min_scroll_delta(pos: usize, size: usize, current: usize, viewport: usize) -> i32 {
             if size >= viewport {
                 // Widget larger than viewport: align top-left.
-                pos as i32 - current as i32
+                pos.to_i32_sat() - current.to_i32_sat()
             } else if pos < current {
                 // Widget is above/left of current view.
-                pos as i32 - current as i32
+                pos.to_i32_sat() - current.to_i32_sat()
             } else if pos + size > current + viewport {
                 // Widget extends below/right of current view.
-                (pos + size) as i32 - (current + viewport) as i32
+                (pos + size).to_i32_sat() - (current + viewport).to_i32_sat()
             } else {
                 0
             }
@@ -3475,12 +3477,12 @@ impl App {
         // `Widget.virtual_region` is likewise scroll-independent).
         let virt_x = i64::from(widget_rect.x0)
             .saturating_sub(i64::from(anc_rect.x0))
-            .max(0) as usize;
+            .to_usize_sat();
         let virt_y = i64::from(widget_rect.y0)
             .saturating_sub(i64::from(anc_rect.y0))
-            .max(0) as usize;
-        let widget_w = widget_rect.x1.saturating_sub(widget_rect.x0) as usize;
-        let widget_h = widget_rect.y1.saturating_sub(widget_rect.y0) as usize;
+            .to_usize_sat();
+        let widget_w = widget_rect.x1.saturating_sub(widget_rect.x0).to_usize_sat();
+        let widget_h = widget_rect.y1.saturating_sub(widget_rect.y0).to_usize_sat();
 
         // Minimum delta to make [virt_x, virt_x + widget_w) fit in [offset_x, offset_x + vp_w).
         let delta_x = min_scroll_delta(virt_x, widget_w, offset_x, vp_w);
@@ -4976,7 +4978,7 @@ impl App {
         if x >= self.frame.width || y >= self.frame.height {
             return false;
         }
-        let hovered = self.widget_at_auto(x as u16, y as u16);
+        let hovered = self.widget_at_auto(x.to_u16_sat(), y.to_u16_sat());
 
         let hovered_changed = hovered != self.hovered;
         if hovered_changed {
@@ -5005,7 +5007,7 @@ impl App {
 
         // Forward updated coordinates so widgets can track intra-widget mouse position.
         let moved_changed = if let Some(id) = self.hovered {
-            let (lx, ly) = self.content_local_coords_auto(id, x as u16, y as u16);
+            let (lx, ly) = self.content_local_coords_auto(id, x.to_u16_sat(), y.to_u16_sat());
             self.call_on_mouse_move_auto(root, id, lx, ly, false)
         } else {
             // No hover target: forward through the real root widget so app
@@ -5013,7 +5015,7 @@ impl App {
             debug_input(&format!(
                 "[hover] fallback root-move via real-root screen=({x}, {y})"
             ));
-            root.on_mouse_move(x as u16, y as u16)
+            root.on_mouse_move(x.to_u16_sat(), y.to_u16_sat())
         };
 
         hovered_changed || moved_changed
@@ -5069,10 +5071,8 @@ impl App {
                 self.content_local_coords_auto(owner, screen_x, screen_y);
             let origin_x = i32::from(screen_x) - i32::from(cursor_local_x);
             let origin_y = i32::from(screen_y) - i32::from(cursor_local_y);
-            let anchor_x =
-                (origin_x + i32::from(anchor_local_x)).clamp(0, i32::from(u16::MAX)) as u16;
-            let anchor_y =
-                (origin_y + i32::from(anchor_local_y)).clamp(0, i32::from(u16::MAX)) as u16;
+            let anchor_x = (origin_x + i32::from(anchor_local_x)).to_u16_sat();
+            let anchor_y = (origin_y + i32::from(anchor_local_y)).to_u16_sat();
             return Some((anchor_x, anchor_y));
         }
 
@@ -5084,8 +5084,8 @@ impl App {
         // Anchor is a screen position; clamp the (possibly off-viewport) center
         // back into the non-negative screen coordinate space.
         Some((
-            (rect.x0 + width / 2).clamp(0, i32::from(u16::MAX)) as u16,
-            (rect.y0 + height / 2).clamp(0, i32::from(u16::MAX)) as u16,
+            (rect.x0 + width / 2).to_u16_sat(),
+            (rect.y0 + height / 2).to_u16_sat(),
         ))
     }
 
@@ -5220,7 +5220,7 @@ impl App {
             .and_then(|m| m.meta.as_ref())
             .and_then(|map| map.get("textual:widget_id"))
             .and_then(|value| match value {
-                MetaValue::Int(n) if *n >= 0 => Some(node_id_from_ffi(*n as u64)),
+                MetaValue::Int(n) if *n >= 0 => Some(node_id_from_meta(*n)),
                 _ => None,
             });
 

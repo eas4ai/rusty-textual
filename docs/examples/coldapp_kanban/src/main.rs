@@ -419,12 +419,12 @@ impl Board {
         self.set_rev(next, app.reactive_ctx());
     }
 
-    fn move_active_card(&mut self, app: &mut App, dir: i32) {
+    fn move_active_card(&mut self, app: &mut App, dir: isize) {
         let from = self.active_col;
         if self.columns[from].cards.is_empty() {
             return;
         }
-        let to = (from as i32 + dir).clamp(0, self.columns.len() as i32 - 1) as usize;
+        let to = from.saturating_add_signed(dir).min(self.columns.len() - 1);
         if to == from {
             return;
         }

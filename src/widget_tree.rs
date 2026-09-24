@@ -15,6 +15,7 @@ use slotmap::SlotMap;
 
 use crate::css::{Combinator, SelectorChain, SelectorMeta, parse_selector_list};
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::style::{Style, Visibility};
 use crate::widgets::{NodeSeed, NodeState, Widget, WidgetStyles};
 
@@ -116,12 +117,12 @@ impl Rect {
 
     /// Width of the rectangle (`x1 - x0`), clamped to be non-negative.
     pub(crate) fn width(self) -> u16 {
-        (self.x1 - self.x0).max(0) as u16
+        (self.x1 - self.x0).to_u16_sat()
     }
 
     /// Height of the rectangle (`y1 - y0`), clamped to be non-negative.
     pub(crate) fn height(self) -> u16 {
-        (self.y1 - self.y0).max(0) as u16
+        (self.y1 - self.y0).to_u16_sat()
     }
 }
 

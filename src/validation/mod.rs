@@ -11,6 +11,8 @@
 
 use std::sync::Arc;
 
+use crate::num::Cast;
+
 /// Categorizes why a validation failed.
 ///
 /// Mirrors Python Textual's `Failure` subclasses (`Number.NotANumber`,
@@ -370,8 +372,8 @@ impl Validator for Integer {
                     .with_value(value),
             );
         };
-        let below = self.minimum.is_some_and(|min| num < min as f64);
-        let above = self.maximum.is_some_and(|max| num > max as f64);
+        let below = self.minimum.is_some_and(|min| num < min.to_f64_lossy());
+        let above = self.maximum.is_some_and(|max| num > max.to_f64_lossy());
         if below || above {
             return self.failure(
                 Failure::new()

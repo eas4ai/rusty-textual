@@ -96,7 +96,10 @@ impl Widget for LayoutClickProbe {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(
                 self.id.to_string(),
-                (options.max_width as u16, options.max_height as u16),
+                (
+                    u16::try_from(options.max_width).unwrap_or(u16::MAX),
+                    u16::try_from(options.max_height).unwrap_or(u16::MAX),
+                ),
             );
         Segments::new()
     }

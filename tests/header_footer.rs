@@ -291,7 +291,7 @@ fn footer_key_hover_selector_styles_when_mouse_moves_over_binding() {
         Some(normal_color)
     );
 
-    assert!(footer.on_mouse_move(key_x as u16, 0));
+    assert!(footer.on_mouse_move(u16::try_from(key_x).expect("column fits in u16"), 0));
     let after = FrameBuffer::from_renderable(&console, &options, &footer, None);
     assert_eq!(
         after.get(key_x, 0).style.and_then(|style| style.color),
@@ -338,7 +338,7 @@ fn footer_key_hover_background_applies_across_entire_item() {
         Some(base_bg)
     );
 
-    assert!(footer.on_mouse_move(desc_x as u16, 0));
+    assert!(footer.on_mouse_move(u16::try_from(desc_x).expect("column fits in u16"), 0));
     let after = FrameBuffer::from_renderable(&console, &options, &footer, None);
     assert_eq!(
         after.get(desc_x, 0).style.and_then(|style| style.bgcolor),
@@ -383,12 +383,12 @@ fn footer_key_hover_applies_to_command_palette_item() {
             &mut __w,
         );
     };
-    footer.on_layout(width as u16, 1);
+    footer.on_layout(u16::try_from(width).expect("width fits in u16"), 1);
     let before = FrameBuffer::from_renderable(&console, &options, &footer, None);
     let line = &before.as_plain_lines()[0];
     let palette_x = line.find('^').expect("palette key should be visible");
 
-    assert!(footer.on_mouse_move(palette_x as u16, 0));
+    assert!(footer.on_mouse_move(u16::try_from(palette_x).expect("column fits in u16"), 0));
     let after = FrameBuffer::from_renderable(&console, &options, &footer, None);
     let hover_bg = Color::parse("#404040").unwrap().to_simple_opaque();
     assert_eq!(

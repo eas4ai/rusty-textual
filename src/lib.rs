@@ -23,6 +23,7 @@ pub mod layout;
 pub mod message;
 pub mod message_handlers;
 pub mod node_id;
+mod num;
 pub mod reactive;
 pub mod render;
 pub mod render_context;

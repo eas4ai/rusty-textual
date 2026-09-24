@@ -7,6 +7,7 @@ use crate::debug::DebugLayout;
 use crate::event::{Action, BindingHint, Event, WidgetCtx};
 use crate::message::MessageEvent;
 use crate::node_id::{self, NodeId};
+use crate::num::Cast;
 use crate::reactive::ReactiveWidget;
 use crate::style::{Color, HorizontalAlign, Position, Style, VerticalAlign};
 
@@ -684,7 +685,7 @@ pub trait Widget: Send + Sync + Any {
     #[doc(hidden)]
     fn scroll_offset_f32(&self) -> (f32, f32) {
         let (x, y) = self.scroll_offset();
-        (x as f32, y as f32)
+        (x.to_f32_lossy(), y.to_f32_lossy())
     }
 
     /// Return the effective visible scroll viewport size `(width, height)`.
@@ -1037,9 +1038,9 @@ pub(crate) fn debug_component_class_declared(
 }
 
 /// Tag all segments that lack a `textual:widget_id` metadata entry with the
-/// given arena `NodeId` (encoded via `node_id_to_ffi` for FFI compatibility).
+/// given arena `NodeId` (encoded via `node_id_to_meta`).
 fn tag_widget_meta(node_id: NodeId, segments: Segments) -> Segments {
-    let ffi_value = node_id::node_id_to_ffi(node_id) as i64;
+    let ffi_value = node_id::node_id_to_meta(node_id);
     tag_widget_meta_raw(ffi_value, segments)
 }
 

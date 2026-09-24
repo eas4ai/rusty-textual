@@ -5,6 +5,7 @@ use crate::event::{Action, Event};
 use crate::message::{
     MessageEvent, OptionHighlighted, OptionSelected, ScrollbarAxis, ScrollbarScrollTo,
 };
+use crate::num::Cast;
 
 #[path = "toggle_option.rs"]
 pub(crate) mod toggle_option;
@@ -59,7 +60,7 @@ fn dim_fg_toward_bg(
     let f = crate::style::color_from_simple(fg);
     let b = crate::style::color_from_simple(bg);
     let blend = |bc: u8, fc: u8| -> u8 {
-        (f64::from(bc) + (f64::from(fc) - f64::from(bc)) * dim_factor) as u8
+        (f64::from(bc) + (f64::from(fc) - f64::from(bc)) * dim_factor).to_u8_sat()
     };
     rich_rs::SimpleColor::Rgb {
         r: blend(b.r, f.r),
@@ -1031,13 +1032,13 @@ impl OptionList {
             }
             return;
         };
-        let len = self.items.len() as isize;
+        let len = self.items.len().to_isize_sat();
         let step: isize = if direction.is_negative() { -1 } else { 1 };
-        let mut index = current as isize;
+        let mut index = current.to_isize_sat();
         for _ in 0..len {
             index = (index + step).rem_euclid(len);
-            if self.items[index as usize].is_selectable() {
-                self.highlight_index(index as usize, ctx);
+            if self.items[index.to_usize_sat()].is_selectable() {
+                self.highlight_index(index.to_usize_sat(), ctx);
                 return;
             }
         }
@@ -1063,19 +1064,19 @@ impl OptionList {
             }
             return;
         }
-        let current = self.cursor.highlighted().unwrap_or(0) as isize;
-        let max = (self.items.len() - 1) as isize;
-        let mut target = (current + delta).clamp(0, max) as usize;
+        let current = self.cursor.highlighted().unwrap_or(0).to_isize_sat();
+        let max = (self.items.len() - 1).to_isize_sat();
+        let mut target = (current + delta).clamp(0, max).to_usize_sat();
 
         // Walk in the direction of delta to find the next selectable item.
         let step: isize = if delta >= 0 { 1 } else { -1 };
         while target < self.items.len() && !self.items[target].is_selectable() {
-            let next = target as isize + step;
+            let next = target.to_isize_sat() + step;
             if next < 0 || next > max {
                 // Can't move further; stay at current position.
                 return;
             }
-            target = next as usize;
+            target = next.to_usize_sat();
         }
         self.highlight_index(target, ctx);
     }
@@ -1092,7 +1093,7 @@ impl OptionList {
                 self.highlight_index(first, ctx);
             }
         } else {
-            self.move_highlight(-(self.page_step() as isize), ctx);
+            self.move_highlight(-self.page_step().to_isize_sat(), ctx);
         }
     }
 
@@ -1104,7 +1105,7 @@ impl OptionList {
                 self.highlight_index(last, ctx);
             }
         } else {
-            self.move_highlight(self.page_step() as isize, ctx);
+            self.move_highlight(self.page_step().to_isize_sat(), ctx);
         }
     }
 
@@ -1113,7 +1114,7 @@ impl OptionList {
         if delta_rows.is_negative() {
             self.offset = self.offset.saturating_sub(delta_rows.unsigned_abs());
         } else {
-            self.offset = self.offset.saturating_add(delta_rows as usize);
+            self.offset = self.offset.saturating_add(delta_rows.to_usize_sat());
         }
         self.offset = self.offset.min(self.max_offset());
         if self.offset != before {
@@ -1299,7 +1300,12 @@ impl crate::widgets::Interactive for OptionList {
         if payload.axis != ScrollbarAxis::Vertical {
             return;
         }
-        let next = (payload.offset.max(0.0).round() as usize).min(self.max_offset());
+        let next = payload
+            .offset
+            .max(0.0)
+            .round()
+            .to_usize_sat()
+            .min(self.max_offset());
         if next != self.offset {
             self.offset = next;
             ctx.request_repaint();
@@ -1336,7 +1342,7 @@ impl crate::widgets::Scrollable for OptionList {
             return;
         }
         self.scroll_by_rows(
-            delta_y.saturating_mul(self.scroll_step as i32) as isize,
+            delta_y.saturating_mul(self.scroll_step.to_i32_sat()) as isize,
             ctx,
         );
     }
@@ -1346,7 +1352,7 @@ impl crate::widgets::Scrollable for OptionList {
     }
 
     fn scroll_offset_f32(&self) -> (f32, f32) {
-        (0.0, self.offset as f32)
+        (0.0, self.offset.to_f32_lossy())
     }
 
     fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {

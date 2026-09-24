@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use rich_rs::{Console, ConsoleOptions, MetaValue, Renderable, Segment, Segments};
 
+use crate::num::Cast;
 use crate::style::Color;
 
 /// Thin horizontal bar with highlighted range.
@@ -105,7 +106,7 @@ impl Bar {
 
         let (mut start, mut end) = self.highlight_range;
         start = start.max(0.0);
-        end = end.min(width as f32);
+        end = end.min(width.to_f32_lossy());
 
         let mut segments: Vec<Segment> = Vec::new();
         if (start == 0.0 && end == 0.0) || end < 0.0 || start > end {
@@ -122,12 +123,12 @@ impl Bar {
         let half_start = (start - start.trunc()).abs() > f32::EPSILON;
         let half_end = (end - end.trunc()).abs() > f32::EPSILON;
 
-        let initial_len = (start - 0.5) as i32;
+        let initial_len = (start - 0.5).to_i32_sat();
         if initial_len > 0 {
             segments.push(Segment::styled(
                 self.background_char
                     .to_string()
-                    .repeat(initial_len as usize),
+                    .repeat(initial_len.to_usize_sat()),
                 self.background_style,
             ));
         }
@@ -139,7 +140,7 @@ impl Bar {
             ));
         }
 
-        let bar_width = (end as i32) - (start as i32);
+        let bar_width = end.to_i32_sat() - start.to_i32_sat();
         if half_start {
             let mut highlight = String::from(self.half_left_char);
             if bar_width > 1 {
@@ -147,13 +148,15 @@ impl Bar {
                     &self
                         .highlight_char
                         .to_string()
-                        .repeat((bar_width - 1) as usize),
+                        .repeat((bar_width - 1).to_usize_sat()),
                 );
             }
             segments.push(Segment::styled(highlight, self.highlight_style));
         } else if bar_width > 0 {
             segments.push(Segment::styled(
-                self.highlight_char.to_string().repeat(bar_width as usize),
+                self.highlight_char
+                    .to_string()
+                    .repeat(bar_width.to_usize_sat()),
                 self.highlight_style,
             ));
         }
@@ -165,17 +168,19 @@ impl Bar {
             ));
         }
 
-        if !half_end && (end - width as f32).abs() > f32::EPSILON {
+        if !half_end && (end - width.to_f32_lossy()).abs() > f32::EPSILON {
             segments.push(Segment::styled(
                 self.half_left_char.to_string(),
                 self.background_style,
             ));
         }
 
-        let tail_len = (width as i32) - (end as i32) - 1;
+        let tail_len = width.to_i32_sat() - end.to_i32_sat() - 1;
         if tail_len > 0 {
             segments.push(Segment::styled(
-                self.background_char.to_string().repeat(tail_len as usize),
+                self.background_char
+                    .to_string()
+                    .repeat(tail_len.to_usize_sat()),
                 self.background_style,
             ));
         }
@@ -205,7 +210,7 @@ impl Bar {
                         let t = if width <= 1 {
                             0.0
                         } else {
-                            x as f32 / (width - 1) as f32
+                            x.to_f32_lossy() / (width - 1).to_f32_lossy()
                         };
                         let c = lerp_color(start, end, t);
                         style = style.with_color(c.to_simple_opaque());
@@ -252,9 +257,15 @@ fn lerp_color(a: Color, b: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
     let inv = 1.0 - t;
     Color::rgba_f(
-        (f32::from(a.r) * inv + f32::from(b.r) * t).round() as u8,
-        (f32::from(a.g) * inv + f32::from(b.g) * t).round() as u8,
-        (f32::from(a.b) * inv + f32::from(b.b) * t).round() as u8,
+        (f32::from(a.r) * inv + f32::from(b.r) * t)
+            .round()
+            .to_u8_sat(),
+        (f32::from(a.g) * inv + f32::from(b.g) * t)
+            .round()
+            .to_u8_sat(),
+        (f32::from(a.b) * inv + f32::from(b.b) * t)
+            .round()
+            .to_u8_sat(),
         a.a * inv + b.a * t,
     )
 }

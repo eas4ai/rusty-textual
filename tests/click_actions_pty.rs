@@ -122,7 +122,7 @@ fn find_text(screen_text: &str, needle: &str) -> Option<(u16, u16)> {
     for (row, line) in screen_text.lines().enumerate() {
         if let Some(byte_col) = line.find(needle) {
             // byte_col == char col here because the demo text is ASCII.
-            return Some((row as u16, byte_col as u16));
+            return Some((u16::try_from(row).ok()?, u16::try_from(byte_col).ok()?));
         }
     }
     None

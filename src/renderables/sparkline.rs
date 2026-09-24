@@ -1,6 +1,7 @@
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 
+use crate::num::Cast;
 use crate::reactive::{ReactiveCtx, ReactiveFlags, ReactiveWidget};
 use crate::style::Color;
 use crate::widgets::{NodeSeed, adjust_line_length_no_bg};
@@ -45,7 +46,7 @@ pub fn summary_mean(data: &[f64]) -> f64 {
     if finite.is_empty() {
         return 0.0;
     }
-    finite.iter().sum::<f64>() / finite.len() as f64
+    finite.iter().sum::<f64>() / finite.len().to_f64_lossy()
 }
 
 /// A sparkline widget that renders numerical data as a bar chart using Unicode
@@ -300,13 +301,15 @@ impl crate::widgets::Render for Sparkline {
             let current_bar_part_high = (row + 1) * bar_line_segments;
 
             let mut bucket_index = 0.0_f64;
-            let step = buckets.len() as f64 / width as f64;
+            let step = buckets.len().to_f64_lossy() / width.to_f64_lossy();
             let mut line_segs: Vec<Segment> = Vec::with_capacity(width);
 
             for _ in 0..width {
-                let bi = (bucket_index as usize).min(buckets.len().saturating_sub(1));
+                let bi = bucket_index
+                    .to_usize_sat()
+                    .min(buckets.len().saturating_sub(1));
                 let height_ratio = height_ratios[bi];
-                let bar_index = (height_ratio * bar_segments as f64) as usize;
+                let bar_index = (height_ratio * bar_segments.to_f64_lossy()).to_usize_sat();
 
                 let (bar_char, with_color) = if bar_index < current_bar_part_low {
                     (' ', false)
@@ -348,11 +351,11 @@ impl ReactiveWidget for Sparkline {}
 
 /// Linear RGB blend between two colors. `t` in 0.0..=1.0.
 fn blend_rgb(a: Color, b: Color, t: f64) -> Color {
-    let t = t.clamp(0.0, 1.0) as f32;
+    let t = t.clamp(0.0, 1.0).to_f32_lossy();
     let mix = |x: u8, y: u8| -> u8 {
         let xf = f32::from(x);
         let yf = f32::from(y);
-        (xf + (yf - xf) * t).round().clamp(0.0, 255.0) as u8
+        (xf + (yf - xf) * t).round().clamp(0.0, 255.0).to_u8_sat()
     };
     Color::rgb(mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b))
 }

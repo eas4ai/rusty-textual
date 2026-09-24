@@ -6,6 +6,7 @@ use crate::message::{
     HelpPanelClearHelp, HelpPanelFocusedHelpChanged, HelpPanelFocusedHelpCleared, HelpPanelSetHelp,
     MessageEvent,
 };
+use crate::num::Cast;
 use crate::render::FrameBuffer;
 
 use super::{FooterBinding, KeyPanel, Markdown, NodeSeed, Overlay, Widget, WidgetRenderable};
@@ -126,16 +127,24 @@ impl crate::widgets::Interactive for HelpPanel {
         let width = usize::from(width).max(1);
         let height = usize::from(height).max(1);
         let (help_height, keys_height) = self.split_heights(width, height);
-        crate::widgets::Widget::on_layout(&mut self.markdown, width as u16, help_height as u16);
-        crate::widgets::Widget::on_layout(&mut self.key_panel, width as u16, keys_height as u16);
+        crate::widgets::Widget::on_layout(
+            &mut self.markdown,
+            width.to_u16_sat(),
+            help_height.to_u16_sat(),
+        );
+        crate::widgets::Widget::on_layout(
+            &mut self.key_panel,
+            width.to_u16_sat(),
+            keys_height.to_u16_sat(),
+        );
     }
 
     fn on_resize(&mut self, width: u16, height: u16) {
         let width_usize = usize::from(width).max(1);
         let height_usize = usize::from(height).max(1);
         let (help_height, keys_height) = self.split_heights(width_usize, height_usize);
-        crate::widgets::Widget::on_resize(&mut self.markdown, width, help_height as u16);
-        crate::widgets::Widget::on_resize(&mut self.key_panel, width, keys_height as u16);
+        crate::widgets::Widget::on_resize(&mut self.markdown, width, help_height.to_u16_sat());
+        crate::widgets::Widget::on_resize(&mut self.key_panel, width, keys_height.to_u16_sat());
     }
 
     fn on_mount(&mut self, ctx: &mut crate::event::WidgetCtx) {

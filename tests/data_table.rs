@@ -258,7 +258,8 @@ fn data_table_sort_average_key_over_multiple_columns() {
             .iter()
             .filter_map(|s| s.parse::<f64>().ok())
             .collect();
-        let avg = scores.iter().sum::<f64>() / scores.len() as f64;
+        let count = f64::from(u32::try_from(scores.len()).expect("a row has few scores"));
+        let avg = scores.iter().sum::<f64>() / count;
         let last = name.split_whitespace().last().unwrap_or("").to_string();
         SortKey::tuple([SortKey::number(avg), SortKey::str(last)])
     });

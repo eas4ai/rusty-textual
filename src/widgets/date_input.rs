@@ -26,6 +26,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments, Style};
 use super::core::{NodeSeed, Widget};
 use crate::event::{Event, WidgetCtx};
 use crate::message::DateChanged;
+use crate::num::Cast;
 
 /// Minimum selectable year.
 pub const YEAR_MIN: i32 = 1900;
@@ -198,8 +199,8 @@ impl DateInput {
         let wrapped = wrap_range(value, min, max);
         let changed = self.seg_value(kind) != wrapped;
         match kind {
-            SegmentKind::Day => self.day = wrapped as u8,
-            SegmentKind::Month => self.month = wrapped as u8,
+            SegmentKind::Day => self.day = wrapped.to_u8_sat(),
+            SegmentKind::Month => self.month = wrapped.to_u8_sat(),
             SegmentKind::Year => self.year = wrapped,
         }
         self.clamp_day();
@@ -282,7 +283,7 @@ impl DateInput {
     /// Move segment focus by `dir` with wrap, committing in-progress typing.
     fn move_seg(&mut self, ctx: &mut WidgetCtx, dir: i32) {
         self.commit_typing(ctx);
-        self.seg = wrap_range(self.seg as i32 + dir, 0, 2) as usize;
+        self.seg = (wrap_range(self.seg.to_i32_sat() + dir, 0, 2)).to_usize_sat();
         ctx.request_repaint();
     }
 

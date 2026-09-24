@@ -2,6 +2,8 @@
 
 use super::{Document, EditResult, Location, Selection};
 
+use crate::num::Cast;
+
 /// A single undoable replacement of text at some range within a document.
 ///
 /// Borrow shape (deviation from Python, which passes the whole `TextArea`):
@@ -105,29 +107,29 @@ impl Edit {
         let edit_result = document.replace_range(self.top(), self.bottom(), &self.text);
         let (new_edit_to_row, new_edit_to_column) = edit_result.end_location;
 
-        let column_offset = new_edit_to_column as isize - edit_bottom_column as isize;
+        let column_offset = new_edit_to_column.to_isize_sat() - edit_bottom_column.to_isize_sat();
         let target_selection_start_column = if edit_bottom_row == selection_start_row
             && edit_bottom_column <= selection_start_column
         {
-            (selection_start_column as isize + column_offset).max(0) as usize
+            (selection_start_column.to_isize_sat() + column_offset).to_usize_sat()
         } else {
             selection_start_column
         };
         let target_selection_end_column =
             if edit_bottom_row == selection_end_row && edit_bottom_column <= selection_end_column {
-                (selection_end_column as isize + column_offset).max(0) as usize
+                (selection_end_column.to_isize_sat() + column_offset).to_usize_sat()
             } else {
                 selection_end_column
             };
 
-        let row_offset = new_edit_to_row as isize - edit_bottom_row as isize;
+        let row_offset = new_edit_to_row.to_isize_sat() - edit_bottom_row.to_isize_sat();
         let target_selection_start_row = if edit_bottom_row <= selection_start_row {
-            (selection_start_row as isize + row_offset).max(0) as usize
+            (selection_start_row.to_isize_sat() + row_offset).to_usize_sat()
         } else {
             selection_start_row
         };
         let target_selection_end_row = if edit_bottom_row <= selection_end_row {
-            (selection_end_row as isize + row_offset).max(0) as usize
+            (selection_end_row.to_isize_sat() + row_offset).to_usize_sat()
         } else {
             selection_end_row
         };

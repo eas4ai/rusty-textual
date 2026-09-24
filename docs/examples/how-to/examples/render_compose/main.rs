@@ -26,6 +26,8 @@ const COLORS: &[&str] = &[
     "#00bbcc", "#0099cc", "#3366bb", "#663399",
 ];
 
+// A dozen colour stops: every index is exact in f32.
+#[allow(clippy::cast_precision_loss)]
 fn build_stops() -> Vec<(f32, Color)> {
     let n = COLORS.len();
     COLORS
@@ -86,6 +88,9 @@ impl Splash {
 
     /// Current gradient angle, derived purely from the framework tick counter
     /// (the Rust analogue of Python's `time() * 90` driven by `auto_refresh`).
+    // Exact for the first 2^24 ticks; past that the rotation steps coarsen,
+    // as Python's float `time() * 90` does over a long run.
+    #[allow(clippy::cast_precision_loss)]
     fn angle_deg(&self) -> f32 {
         self.tick as f32 * DEGREES_PER_TICK
     }

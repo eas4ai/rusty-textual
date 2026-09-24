@@ -2,6 +2,7 @@ use crate::event::{
     AnimationEase, AnimationLevel, AnimationRequest, StyleAnimationRequest, StyleValue,
 };
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::style::{Color, Scalar, Spacing, Style, Tint};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -66,7 +67,7 @@ impl Animator {
     #[must_use]
     pub fn new(frames_per_second: u32) -> Self {
         let fps = frames_per_second.max(1);
-        let frame_interval = Duration::from_secs_f32(1.0 / fps as f32);
+        let frame_interval = Duration::from_secs_f32(1.0 / fps.to_f32_lossy());
         Self {
             animations: HashMap::new(),
             style_animations: HashMap::new(),
@@ -470,7 +471,7 @@ pub fn interpolate_color(from: Color, to: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
     let lerp = |a: u8, b: u8| -> u8 {
         let v = f32::from(a) + (f32::from(b) - f32::from(a)) * t;
-        v.round().clamp(0.0, 255.0) as u8
+        v.round().clamp(0.0, 255.0).to_u8_sat()
     };
     let alpha = (from.a + (to.a - from.a) * t).clamp(0.0, 1.0);
     Color::rgba_f(
@@ -496,7 +497,7 @@ pub fn interpolate_scalar(from: &Scalar, to: &Scalar, t: f32) -> Option<Scalar> 
         (Scalar::Cells(a), Scalar::Cells(b)) => {
             let v = f32::from(*a) + (f32::from(*b) - f32::from(*a)) * t;
             Some(Scalar::Cells(
-                v.round().clamp(0.0, f32::from(u16::MAX)) as u16
+                v.round().clamp(0.0, f32::from(u16::MAX)).to_u16_sat(),
             ))
         }
         (Scalar::Percent(a), Scalar::Percent(b)) => {
@@ -523,7 +524,7 @@ pub fn interpolate_spacing(from: &Spacing, to: &Spacing, t: f32) -> Spacing {
     let t = t.clamp(0.0, 1.0);
     let lerp_u16 = |a: u16, b: u16| -> u16 {
         let v = f32::from(a) + (f32::from(b) - f32::from(a)) * t;
-        v.round().clamp(0.0, f32::from(u16::MAX)) as u16
+        v.round().clamp(0.0, f32::from(u16::MAX)).to_u16_sat()
     };
     Spacing::new(
         lerp_u16(from.top, to.top),
@@ -539,7 +540,8 @@ pub fn interpolate_tint(from: &Tint, to: &Tint, t: f32) -> Tint {
     let color = interpolate_color(from.color, to.color, t);
     let percent = interpolate_f32(f32::from(from.percent), f32::from(to.percent), t)
         .round()
-        .clamp(0.0, 100.0) as u8;
+        .clamp(0.0, 100.0)
+        .to_u8_sat();
     Tint::new(color, percent)
 }
 
@@ -613,12 +615,22 @@ pub fn interpolate_style_property(
         "opacity" => {
             let a = f32::from(from.opacity?);
             let b = f32::from(to.opacity?);
-            result.opacity = Some(interpolate_f32(a, b, t).round().clamp(0.0, 100.0) as u8);
+            result.opacity = Some(
+                interpolate_f32(a, b, t)
+                    .round()
+                    .clamp(0.0, 100.0)
+                    .to_u8_sat(),
+            );
         }
         "text_opacity" => {
             let a = f32::from(from.text_opacity?);
             let b = f32::from(to.text_opacity?);
-            result.text_opacity = Some(interpolate_f32(a, b, t).round().clamp(0.0, 100.0) as u8);
+            result.text_opacity = Some(
+                interpolate_f32(a, b, t)
+                    .round()
+                    .clamp(0.0, 100.0)
+                    .to_u8_sat(),
+            );
         }
         "width" => {
             result.width = Some(interpolate_scalar(&from.width?, &to.width?, t)?);
@@ -906,7 +918,7 @@ mod tests {
         for ease in &monotonic {
             let mut prev = apply_easing(*ease, 0.0);
             for i in 1..=steps {
-                let t = i as f32 / steps as f32;
+                let t = i.to_f32_lossy() / steps.to_f32_lossy();
                 let cur = apply_easing(*ease, t);
                 assert!(
                     cur >= prev - 1e-5,

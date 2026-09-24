@@ -12,6 +12,7 @@ use crate::message::{
     MarkdownTableOfContentsSelected, MarkdownTableOfContentsUpdated, MessageEvent,
     NavigatorUpdated, ScrollbarAxis, ScrollbarScrollTo, TreeNodeActivated,
 };
+use crate::num::Cast;
 
 use super::containers::VerticalScroll;
 use super::delegate::{delegate_renderable, delegate_widget_method};
@@ -742,7 +743,7 @@ impl MarkdownViewer {
             let scroll_duration = Some(Duration::from_millis(200));
             ctx.post_message(ScrollbarScrollTo {
                 axis: ScrollbarAxis::Vertical,
-                offset: target_line as f32,
+                offset: target_line.to_f32_lossy(),
                 animate: true,
                 scroll_duration,
             });

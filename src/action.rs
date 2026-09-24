@@ -9,6 +9,7 @@
 
 use crate::event::EventCtx;
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::widget_tree::WidgetTree;
 
 // ── Core types ───────────────────────────────────────────────────────────────
@@ -96,7 +97,7 @@ impl ActionArgument {
     pub fn as_float(&self) -> Option<f64> {
         match self {
             Self::Float(f) => Some(*f),
-            Self::Int(i) => Some(*i as f64),
+            Self::Int(i) => Some(i.to_f64_lossy()),
             _ => None,
         }
     }

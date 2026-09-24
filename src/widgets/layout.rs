@@ -9,6 +9,7 @@ use crate::event::{
     Action, BlurEvent, Event, EventCtx, FocusEvent, MouseEnterEvent, MouseLeaveEvent,
 };
 use crate::node_id::NodeId;
+use crate::num::Cast;
 
 use super::{
     LayoutConstraints, NodeSeed, Widget,
@@ -137,7 +138,7 @@ impl Row {
             let end = cursor + width;
             let xu = x as usize;
             if xu < end {
-                return Some((idx, (xu - cursor) as u16));
+                return Some((idx, (xu - cursor).to_u16_sat()));
             }
             cursor = end;
         }
@@ -947,7 +948,7 @@ impl Dock {
             DockKind::Top => {
                 style.dock = Some(StyleDock::Top);
                 if let Some(height) = item.size {
-                    style.height = Some(Scalar::Cells(height as u16));
+                    style.height = Some(Scalar::Cells(height.to_u16_sat()));
                     // Dock API sizes are absolute band sizes (including chrome).
                     style.box_sizing = Some(BoxSizing::BorderBox);
                 }
@@ -955,7 +956,7 @@ impl Dock {
             DockKind::Bottom => {
                 style.dock = Some(StyleDock::Bottom);
                 if let Some(height) = item.size {
-                    style.height = Some(Scalar::Cells(height as u16));
+                    style.height = Some(Scalar::Cells(height.to_u16_sat()));
                     // Dock API sizes are absolute band sizes (including chrome).
                     style.box_sizing = Some(BoxSizing::BorderBox);
                 }
@@ -963,7 +964,7 @@ impl Dock {
             DockKind::Left => {
                 style.dock = Some(StyleDock::Left);
                 if let Some(width) = item.size {
-                    style.width = Some(Scalar::Cells(width as u16));
+                    style.width = Some(Scalar::Cells(width.to_u16_sat()));
                     // Dock API sizes are absolute band sizes (including chrome).
                     style.box_sizing = Some(BoxSizing::BorderBox);
                 }
@@ -971,7 +972,7 @@ impl Dock {
             DockKind::Right => {
                 style.dock = Some(StyleDock::Right);
                 if let Some(width) = item.size {
-                    style.width = Some(Scalar::Cells(width as u16));
+                    style.width = Some(Scalar::Cells(width.to_u16_sat()));
                     // Dock API sizes are absolute band sizes (including chrome).
                     style.box_sizing = Some(BoxSizing::BorderBox);
                 }
@@ -988,8 +989,16 @@ impl Dock {
     fn child_at_xy(&self, x: u16, y: u16) -> Option<(usize, u16, u16, u16, u16)> {
         let mut x0 = 0u16;
         let mut y0 = 0u16;
-        let mut width = self.last_layout_width.load(Ordering::Relaxed).max(1) as u16;
-        let mut height = self.last_layout_height.load(Ordering::Relaxed).max(1) as u16;
+        let mut width = self
+            .last_layout_width
+            .load(Ordering::Relaxed)
+            .max(1)
+            .to_u16_sat();
+        let mut height = self
+            .last_layout_height
+            .load(Ordering::Relaxed)
+            .max(1)
+            .to_u16_sat();
         let mut fill_idx: Option<usize> = None;
         let mut fill_rect: Option<(u16, u16, u16, u16)> = None;
 
@@ -1001,7 +1010,8 @@ impl Dock {
                         .or_else(|| item.child.layout_height())
                         .unwrap_or(1)
                         .max(1)
-                        .min(height as usize) as u16;
+                        .min(height as usize)
+                        .to_u16_sat();
                     if x >= x0
                         && x < x0.saturating_add(width)
                         && y >= y0
@@ -1018,7 +1028,8 @@ impl Dock {
                         .or_else(|| item.child.layout_height())
                         .unwrap_or(1)
                         .max(1)
-                        .min(height as usize) as u16;
+                        .min(height as usize)
+                        .to_u16_sat();
                     let by = y0.saturating_add(height.saturating_sub(h));
                     if x >= x0
                         && x < x0.saturating_add(width)
@@ -1030,7 +1041,12 @@ impl Dock {
                     height = height.saturating_sub(h);
                 }
                 DockKind::Left => {
-                    let w = item.size.unwrap_or(1).max(1).min(width as usize) as u16;
+                    let w = item
+                        .size
+                        .unwrap_or(1)
+                        .max(1)
+                        .min(width as usize)
+                        .to_u16_sat();
                     if x >= x0
                         && x < x0.saturating_add(w)
                         && y >= y0
@@ -1042,7 +1058,12 @@ impl Dock {
                     width = width.saturating_sub(w);
                 }
                 DockKind::Right => {
-                    let w = item.size.unwrap_or(1).max(1).min(width as usize) as u16;
+                    let w = item
+                        .size
+                        .unwrap_or(1)
+                        .max(1)
+                        .min(width as usize)
+                        .to_u16_sat();
                     let bx = x0.saturating_add(width.saturating_sub(w));
                     if x >= bx
                         && x < bx.saturating_add(w)

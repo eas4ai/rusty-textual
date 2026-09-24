@@ -1,4 +1,5 @@
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::style::{BoxSizing, Scalar, Spacing, Style, resolve_scalar, resolve_scalar_exact};
 use crate::widget_tree::WidgetTree;
 
@@ -623,9 +624,9 @@ pub(crate) fn extract_child_spec(
     .filter(|exact| {
         // Box edge (margin-excluded) the resolver will receive equals floor(exact)
         // only when no min/max clamp moved it.
-        height_edge
-            .size
-            .is_some_and(|sz| sz.saturating_sub(margin.top + margin.bottom) == exact.floor() as u16)
+        height_edge.size.is_some_and(|sz| {
+            sz.saturating_sub(margin.top + margin.bottom) == exact.floor().to_u16_sat()
+        })
     });
     let frac_width = if box_sizing == BoxSizing::BorderBox && no_h_chrome {
         style.width.as_ref().and_then(|s| {
@@ -648,9 +649,9 @@ pub(crate) fn extract_child_spec(
         None
     }
     .filter(|exact| {
-        width_edge
-            .size
-            .is_some_and(|sz| sz.saturating_sub(margin.left + margin.right) == exact.floor() as u16)
+        width_edge.size.is_some_and(|sz| {
+            sz.saturating_sub(margin.left + margin.right) == exact.floor().to_u16_sat()
+        })
     });
 
     ChildSpec {
@@ -1042,7 +1043,7 @@ fn scalar_to_edge(
         },
         Some(Scalar::Fraction(f)) => Edge {
             size: None,
-            fraction: f.ceil().max(1.0) as u16,
+            fraction: f.ceil().max(1.0).to_u16_sat(),
             min_size: min_cells.saturating_add(chrome),
         },
         Some(scalar) => {

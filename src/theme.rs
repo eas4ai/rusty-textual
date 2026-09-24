@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
+use crate::num::Cast;
 use crate::style::{
     Color, blend_channels_trunc, contrast_text, darken_lab, lighten_lab, parse_color_like,
 };
@@ -260,7 +261,7 @@ fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
                 let shade_color = blend_alpha(
                     dark_background,
                     Color::rgb(255, 255, 255),
-                    (f64::from(spread) + luminosity_delta) as f32,
+                    (f64::from(spread) + luminosity_delta).to_f32_lossy(),
                     1.0,
                 )
                 .clamped();

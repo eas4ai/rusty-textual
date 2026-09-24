@@ -32,6 +32,8 @@ fn in_out_cubic(x: f32) -> f32 {
 }
 
 /// Compute `1 - ease(t)` as an opacity percentage (0-100).
+// `opacity` is in 0.0..=1.0, so the rounded percentage fits in `u8`.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn eased_opacity_pct(t: f32) -> u8 {
     let opacity = 1.0 - in_out_cubic(t);
     (opacity * 100.0).round() as u8

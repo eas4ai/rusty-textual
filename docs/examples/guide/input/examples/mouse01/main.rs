@@ -243,8 +243,12 @@ impl TextualApp for MouseApp {
             // The Ball has `border: tall` (1 row top, 1 bottom = 2 total) and
             // `padding: 0 4` (4 cols each side = 8 total), so subtracting those
             // values centres the ball on the cursor.
-            let ox = (screen_x as i16).saturating_sub(8);
-            let oy = (screen_y as i16).saturating_sub(2);
+            let ox = i16::try_from(screen_x)
+                .unwrap_or(i16::MAX)
+                .saturating_sub(8);
+            let oy = i16::try_from(screen_y)
+                .unwrap_or(i16::MAX)
+                .saturating_sub(2);
             let _ = app.query_mut("Ball").map(|q| {
                 q.set_styles(|s| {
                     s.style.offset = Some(Offset {

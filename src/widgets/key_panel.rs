@@ -8,6 +8,7 @@ use crate::keys::format_key_display;
 use crate::message::{
     KeyPanelBindingsUpdated, KeyPanelScrolled, MessageEvent, ScrollbarAxis, ScrollbarScrollTo,
 };
+use crate::num::Cast;
 use crate::style::parse_color_like;
 
 use super::footer::FooterBinding;
@@ -432,15 +433,15 @@ impl crate::widgets::Interactive for KeyPanel {
             }
             let before = self.offset_y;
             match action {
-                Action::ScrollUp => self.scroll_by(-(self.scroll_step as i32)),
-                Action::ScrollDown => self.scroll_by(self.scroll_step as i32),
+                Action::ScrollUp => self.scroll_by(-self.scroll_step.to_i32_sat()),
+                Action::ScrollDown => self.scroll_by(self.scroll_step.to_i32_sat()),
                 Action::ScrollPageUp => {
                     let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                    self.scroll_by(-(page as i32));
+                    self.scroll_by(-page.to_i32_sat());
                 }
                 Action::ScrollPageDown => {
                     let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                    self.scroll_by(page as i32);
+                    self.scroll_by(page.to_i32_sat());
                 }
                 _ => return,
             }
@@ -466,7 +467,7 @@ impl crate::widgets::Interactive for KeyPanel {
         let body_viewport = self.viewport_height.load(Ordering::Relaxed).max(1);
         let content_height = self.content_height.load(Ordering::Relaxed).max(1);
         let next = ScrollView::line_clamp_offset(
-            payload.offset.max(0.0).round() as usize,
+            payload.offset.max(0.0).round().to_usize_sat(),
             content_height,
             body_viewport,
         );
@@ -491,7 +492,7 @@ impl crate::widgets::Scrollable for KeyPanel {
             return;
         }
         let before = self.offset_y;
-        self.scroll_by(delta_y.saturating_mul(self.scroll_step as i32));
+        self.scroll_by(delta_y.saturating_mul(self.scroll_step.to_i32_sat()));
         if self.offset_y != before {
             ctx.request_repaint();
             self.emit_scroll_changed_message(ctx);
@@ -504,7 +505,7 @@ impl crate::widgets::Scrollable for KeyPanel {
     }
 
     fn scroll_offset_f32(&self) -> (f32, f32) {
-        (0.0, self.offset_y as f32)
+        (0.0, self.offset_y.to_f32_lossy())
     }
 
     fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {

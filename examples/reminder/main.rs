@@ -101,9 +101,9 @@ fn load_store(path: &std::path::Path) -> Vec<Reminder> {
             Some(Reminder {
                 id: item.get("id")?.as_u64()?,
                 title: item.get("title")?.as_str()?.to_string(),
-                year: item.get("year")?.as_i64()? as i32,
-                month: item.get("month")?.as_u64()? as u8,
-                day: item.get("day")?.as_u64()? as u8,
+                year: i32::try_from(item.get("year")?.as_i64()?).ok()?,
+                month: u8::try_from(item.get("month")?.as_u64()?).ok()?,
+                day: u8::try_from(item.get("day")?.as_u64()?).ok()?,
                 done: item.get("done")?.as_bool()?,
             })
         })

@@ -20,6 +20,8 @@ Button { width: 16; }
 ";
 
 /// `HH:MM:SS.cc` — mirrors Python `f"{hours:02,.0f}:{minutes:02.0f}:{seconds:05.2f}"`.
+// Elapsed time is never negative; `as` rounds the centiseconds toward zero.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn format_time(secs: f64) -> String {
     let cs = (secs * 100.0) as u64;
     format!(

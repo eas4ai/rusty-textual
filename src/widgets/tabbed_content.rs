@@ -2,6 +2,7 @@ use crate::action::{ActionDecl, ParsedAction};
 use crate::compose::{ChildDecl, ComposeResult};
 use crate::event::{BindingHint, Event};
 use crate::message::{TabActivated, TabsCleared};
+use crate::num::Cast;
 use crate::reactive::ReactiveCtx;
 use crate::widgets::delegate::{delegate_renderable, delegate_widget_method};
 use crate::widgets::{Container, NodeSeed, Widget};
@@ -639,7 +640,7 @@ impl crate::widgets::Render for TabbedContent {
                 },
             );
         }
-        crate::widgets::Widget::on_layout(&mut tabs, width as u16, height as u16);
+        crate::widgets::Widget::on_layout(&mut tabs, width.to_u16_sat(), height.to_u16_sat());
         let mut tab_options = options.clone();
         tab_options.size = (width, height);
         tab_options.max_width = width;

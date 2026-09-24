@@ -106,6 +106,7 @@ fn tabs_mouse_hit_testing_handles_wide_grapheme_titles() {
     tabs.on_layout(40, 5);
     let id = NodeId::default();
     let first_label_cells = rich_rs::cell_len(" 👩‍🚀 ");
+    let click_x = u16::try_from(first_label_cells).expect("label width fits in u16") + 1;
     let mut ctx = EventCtx::default();
     {
         let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
@@ -115,9 +116,9 @@ fn tabs_mouse_hit_testing_handles_wide_grapheme_titles() {
         tabs.on_event(
             &Event::MouseDown(MouseDownEvent {
                 target: id,
-                screen_x: first_label_cells as u16 + 1,
+                screen_x: click_x,
                 screen_y: 0,
-                x: first_label_cells as u16 + 1,
+                x: click_x,
                 y: 0,
             }),
             &mut __w,

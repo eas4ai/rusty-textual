@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::num::Cast;
 use crate::style::{
     Align, BorderEdge, BorderType, BoxSizing, Constrain, ContentAlign, Display, Dock, Hatch,
     HorizontalAlign, Keyline, KeylineType, Layout, Margin, Offset, OffsetValue, Overflow,
@@ -1954,9 +1955,9 @@ fn parse_opacity_percent(value: &str) -> Option<u8> {
         return Some(0);
     }
     if value > 1.0 {
-        return Some((value.round() as i32).clamp(0, 100) as u8);
+        return Some(value.round().to_i32_sat().clamp(0, 100).to_u8_sat());
     }
-    Some((value * 100.0).round().clamp(0.0, 100.0) as u8)
+    Some((value * 100.0).round().clamp(0.0, 100.0).to_u8_sat())
 }
 
 /// Parse a single transition shorthand item (backward-compat helper).

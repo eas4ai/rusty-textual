@@ -4,7 +4,8 @@ use crate::css::{
     set_app_active, set_app_runtime_pseudos, set_style_context, take_layout_affected_style_changes,
 };
 use crate::debug::{debug_layout, debug_render};
-use crate::node_id::{NodeId, node_id_to_ffi};
+use crate::node_id::{NodeId, node_id_to_meta};
+use crate::num::Cast;
 use crate::render::{DirtyRegion, FrameBuffer};
 use crate::style::{
     Color, Constrain, Hatch, KeylineType, Layout, OverlayMode, TextOverflow, TextWrap,
@@ -233,7 +234,7 @@ fn recolor_frozen_content_bg(
 ) -> Segments {
     let live_simple = live.to_simple_opaque();
     let frozen_simple = frozen.to_simple_opaque();
-    let want_id = node_id_to_ffi(node_id) as i64;
+    let want_id = node_id_to_meta(node_id);
     segments
         .into_iter()
         .map(|mut seg| {
@@ -435,7 +436,7 @@ impl App {
 
             if layout_invalidation {
                 let (w, h) = self.options.size;
-                run_layout_pass(&mut tree, (w as u16, h as u16));
+                run_layout_pass(&mut tree, (w.to_u16_sat(), h.to_u16_sat()));
                 apply_layout_info_tree_from_layout_rects(&mut tree);
                 let render_nodes = collect_render_nodes(&tree);
                 debug_render(&format!(
@@ -639,11 +640,12 @@ impl App {
             let (top, bottom, left, right) = border_spacing_from_style(&resolved);
             let full_w = rect.x1.saturating_sub(rect.x0) as usize + 1;
             let full_h = rect.y1.saturating_sub(rect.y0) as usize + 1;
-            let content_w = full_w
+            let content_w = (full_w
                 .saturating_sub(left + right)
                 .saturating_sub(line_pad.saturating_mul(2))
-                .max(1) as u16;
-            let content_h = full_h.saturating_sub(top + bottom).max(1) as u16;
+                .max(1))
+            .to_u16_sat();
+            let content_h = (full_h.saturating_sub(top + bottom).max(1)).to_u16_sat();
             root.on_layout(content_w, content_h);
         }
     }
@@ -1018,8 +1020,8 @@ fn render_tree_node(
                 let widget_clip = ClipRect {
                     x0: dest_x,
                     y0: dest_y,
-                    x1: dest_x + w as i32,
-                    y1: dest_y + h as i32,
+                    x1: dest_x + w.to_i32_sat(),
+                    y1: dest_y + h.to_i32_sat(),
                 };
                 if let Some(paint_clip) = ctx.clip.intersect(widget_clip) {
                     if bg.a >= 1.0 {
@@ -1100,7 +1102,7 @@ fn render_tree_node(
             return;
         };
         for (row_idx, line) in lines.iter().enumerate() {
-            let y = dest_y + row_idx as i32;
+            let y = dest_y + row_idx.to_i32_sat();
             if y < paint_clip.y0 {
                 continue;
             }
@@ -1108,20 +1110,20 @@ fn render_tree_node(
                 break;
             }
             let line_start = dest_x;
-            let line_end = dest_x + w as i32;
+            let line_end = dest_x + w.to_i32_sat();
             let x0 = line_start.max(paint_clip.x0);
             let x1 = line_end.min(paint_clip.x1);
             if x1 <= x0 {
                 continue;
             }
-            let crop_start = (x0 - line_start) as usize;
-            let crop_width = (x1 - x0) as usize;
+            let crop_start = (x0 - line_start).to_usize_sat();
+            let crop_width = (x1 - x0).to_usize_sat();
             let cropped = if crop_start == 0 && crop_width == w {
                 line.clone()
             } else {
                 crop_line_horizontal(line, crop_start, crop_width)
             };
-            frame.write_line_at(x0 as usize, y as usize, &cropped, false);
+            frame.write_line_at(x0.to_usize_sat(), y.to_usize_sat(), &cropped, false);
         }
 
         // Empty-Screen runtime background composite.
@@ -1218,8 +1220,8 @@ fn render_tree_node(
             let content = node_content_or_layout_rect(node);
             let hx = content.x0 + ctx.origin_x;
             let hy = content.y0 + ctx.origin_y;
-            let hw = content.x1.saturating_sub(content.x0) as usize;
-            let hh = content.y1.saturating_sub(content.y0) as usize;
+            let hw = content.x1.saturating_sub(content.x0).to_usize_sat();
+            let hh = content.y1.saturating_sub(content.y0).to_usize_sat();
             deferred_hatch = Some((*hatch, resolved.bg, hx, hy, hw, hh, ctx.clip));
         }
     }
@@ -1318,16 +1320,16 @@ fn render_tree_node(
     let (scroll_x, scroll_y) = node.widget.scroll_offset_f32();
     let base_child_ctx = child_ctx;
     let mut scrolled_child_ctx = child_ctx;
-    scrolled_child_ctx.origin_x -= scroll_x.round() as i32;
-    scrolled_child_ctx.origin_y -= scroll_y.round() as i32;
+    scrolled_child_ctx.origin_x -= scroll_x.round().to_i32_sat();
+    scrolled_child_ctx.origin_y -= scroll_y.round().to_i32_sat();
     let has_scroll_viewport =
         if let Some((viewport_w, viewport_h)) = node.widget.scroll_viewport_size() {
             let content_rect = node_content_or_layout_rect(node);
             let clip = ClipRect {
                 x0: content_rect.x0 + ctx.origin_x,
                 y0: content_rect.y0 + ctx.origin_y,
-                x1: content_rect.x0 + ctx.origin_x + viewport_w as i32,
-                y1: content_rect.y0 + ctx.origin_y + viewport_h as i32,
+                x1: content_rect.x0 + ctx.origin_x + viewport_w.to_i32_sat(),
+                y1: content_rect.y0 + ctx.origin_y + viewport_h.to_i32_sat(),
             };
             if let Some(intersection) = scrolled_child_ctx.clip.intersect(clip) {
                 scrolled_child_ctx.clip = intersection;
@@ -1490,7 +1492,7 @@ fn render_cover_widget(
         return;
     };
     for (row_idx, line) in lines.iter().enumerate() {
-        let y = dest_y + row_idx as i32;
+        let y = dest_y + row_idx.to_i32_sat();
         if y < paint_clip.y0 {
             continue;
         }
@@ -1498,20 +1500,20 @@ fn render_cover_widget(
             break;
         }
         let line_start = dest_x;
-        let line_end = dest_x + w as i32;
+        let line_end = dest_x + w.to_i32_sat();
         let x0 = line_start.max(paint_clip.x0);
         let x1 = line_end.min(paint_clip.x1);
         if x1 <= x0 {
             continue;
         }
-        let crop_start = (x0 - line_start) as usize;
-        let crop_width = (x1 - x0) as usize;
+        let crop_start = (x0 - line_start).to_usize_sat();
+        let crop_width = (x1 - x0).to_usize_sat();
         let cropped = if crop_start == 0 && crop_width == w {
             line.clone()
         } else {
             crop_line_horizontal(line, crop_start, crop_width)
         };
-        frame.write_line_at(x0 as usize, y as usize, &cropped, false);
+        frame.write_line_at(x0.to_usize_sat(), y.to_usize_sat(), &cropped, false);
     }
 }
 
@@ -1531,12 +1533,12 @@ fn paint_outline_cells(
         return;
     };
     for (col, row, ch, style) in cells {
-        let x = dest_x + *col as i32;
-        let y = dest_y + *row as i32;
+        let x = dest_x + col.to_i32_sat();
+        let y = dest_y + row.to_i32_sat();
         if x < paint_clip.x0 || x >= paint_clip.x1 || y < paint_clip.y0 || y >= paint_clip.y1 {
             continue;
         }
-        let (ux, uy) = (x as usize, y as usize);
+        let (ux, uy) = (x.to_usize_sat(), y.to_usize_sat());
         if ux >= frame.width || uy >= frame.height {
             continue;
         }
@@ -1616,13 +1618,13 @@ fn render_app_root_tree_layer(
         |(vw, vh)| ClipRect {
             x0: 0,
             y0: 0,
-            x1: vw.min(width) as i32,
-            y1: vh.min(height) as i32,
+            x1: vw.min(width).to_i32_sat(),
+            y1: vh.min(height).to_i32_sat(),
         },
     );
     let scroll_ctx = TreeRenderCtx {
-        origin_x: -(root_scroll_x.round() as i32),
-        origin_y: -(root_scroll_y.round() as i32),
+        origin_x: -root_scroll_x.round().to_i32_sat(),
+        origin_y: -root_scroll_y.round().to_i32_sat(),
         clip: scroll_clip,
         overlay_root_exempt: None,
     };
@@ -1726,13 +1728,13 @@ fn render_screen_tree_layer(
         |(vw, vh)| ClipRect {
             x0: 0,
             y0: 0,
-            x1: vw.min(width) as i32,
-            y1: vh.min(height) as i32,
+            x1: vw.min(width).to_i32_sat(),
+            y1: vh.min(height).to_i32_sat(),
         },
     );
     let scroll_ctx = TreeRenderCtx {
-        origin_x: -(root_scroll.0.round() as i32),
-        origin_y: -(root_scroll.1.round() as i32),
+        origin_x: -root_scroll.0.round().to_i32_sat(),
+        origin_y: -root_scroll.1.round().to_i32_sat(),
         clip: scroll_clip,
         overlay_root_exempt: None,
     };
@@ -1819,8 +1821,8 @@ fn clip_rect_from_tree_rect(
 
 fn fill_rect_with_background(frame: &mut FrameBuffer, clip: ClipRect, bg: Color) {
     let style = rich_rs::Style::new().with_bgcolor(bg.to_simple_opaque());
-    for y in clip.y0.max(0) as usize..clip.y1.max(0) as usize {
-        for x in clip.x0.max(0) as usize..clip.x1.max(0) as usize {
+    for y in clip.y0.to_usize_sat()..clip.y1.to_usize_sat() {
+        for x in clip.x0.to_usize_sat()..clip.x1.to_usize_sat() {
             frame.set_cell(x, y, crate::render::Cell::blank(Some(style)));
         }
     }
@@ -1837,8 +1839,8 @@ fn fill_rect_solid_fg_bg(frame: &mut FrameBuffer, clip: ClipRect, bg: Color) {
     let style = rich_rs::Style::new()
         .with_bgcolor(opaque)
         .with_color(opaque);
-    for y in clip.y0.max(0) as usize..clip.y1.max(0) as usize {
-        for x in clip.x0.max(0) as usize..clip.x1.max(0) as usize {
+    for y in clip.y0.to_usize_sat()..clip.y1.to_usize_sat() {
+        for x in clip.x0.to_usize_sat()..clip.x1.to_usize_sat() {
             frame.set_cell(x, y, crate::render::Cell::blank(Some(style)));
         }
     }
@@ -1848,8 +1850,8 @@ fn tint_rect_with_background(frame: &mut FrameBuffer, clip: ClipRect, tint: Colo
     if tint.a <= 0.0 {
         return;
     }
-    for y in clip.y0.max(0) as usize..clip.y1.max(0) as usize {
-        for x in clip.x0.max(0) as usize..clip.x1.max(0) as usize {
+    for y in clip.y0.to_usize_sat()..clip.y1.to_usize_sat() {
+        for x in clip.x0.to_usize_sat()..clip.x1.to_usize_sat() {
             let mut cell = frame.get(x, y).clone();
             let mut style = cell.style.unwrap_or_default();
             let under_bg = style
@@ -1866,9 +1868,9 @@ fn tint_rect_with_background(frame: &mut FrameBuffer, clip: ClipRect, tint: Colo
 }
 
 fn stamp_owner_meta_in_rect(frame: &mut FrameBuffer, clip: ClipRect, owner: NodeId) {
-    let owner_value = node_id_to_ffi(owner) as i64;
-    for y in clip.y0.max(0) as usize..clip.y1.max(0) as usize {
-        for x in clip.x0.max(0) as usize..clip.x1.max(0) as usize {
+    let owner_value = node_id_to_meta(owner);
+    for y in clip.y0.to_usize_sat()..clip.y1.to_usize_sat() {
+        for x in clip.x0.to_usize_sat()..clip.x1.to_usize_sat() {
             let mut cell = frame.get(x, y).clone();
             let mut map = cell
                 .meta
@@ -1989,8 +1991,8 @@ impl ClipRect {
         Self {
             x0: 0,
             y0: 0,
-            x1: frame.width as i32,
-            y1: frame.height as i32,
+            x1: frame.width.to_i32_sat(),
+            y1: frame.height.to_i32_sat(),
         }
     }
 
@@ -2030,8 +2032,8 @@ fn apply_hatch_fill(
     let frame_clip = ClipRect {
         x0: 0,
         y0: 0,
-        x1: frame.width as i32,
-        y1: frame.height as i32,
+        x1: frame.width.to_i32_sat(),
+        y1: frame.height.to_i32_sat(),
     };
     let Some(paint_clip) = clip.intersect(frame_clip) else {
         return;
@@ -2042,16 +2044,16 @@ fn apply_hatch_fill(
     // over the cell's background. The cell background itself is left unchanged.
     let fallback_bg = resolved_bg.map_or(Color::rgb(0, 0, 0), |c| Color::rgb(c.r, c.g, c.b));
     for row in 0..h {
-        let y = y0 + row as i32;
+        let y = y0 + row.to_i32_sat();
         if y < paint_clip.y0 || y >= paint_clip.y1 {
             continue;
         }
         for col in 0..w {
-            let x = x0 + col as i32;
+            let x = x0 + col.to_i32_sat();
             if x < paint_clip.x0 || x >= paint_clip.x1 {
                 continue;
             }
-            let cell = frame.get_mut(x as usize, y as usize);
+            let cell = frame.get_mut(x.to_usize_sat(), y.to_usize_sat());
             if cell.continuation {
                 continue;
             }
@@ -2318,8 +2320,8 @@ fn paint_grid_keyline_rectangles(
         right: bool,
     }
 
-    let frame_w = frame.width as i32;
-    let frame_h = frame.height as i32;
+    let frame_w = frame.width.to_i32_sat();
+    let frame_h = frame.height.to_i32_sat();
     let parent_x0 = parent_rect.x0 + ctx.origin_x;
     let parent_y0 = parent_rect.y0 + ctx.origin_y;
     let parent_x1 = (parent_rect.x1 + ctx.origin_x).saturating_sub(1);
@@ -2411,7 +2413,7 @@ fn paint_grid_keyline_rectangles(
             stroke.h_char,
             stroke.v_char,
         );
-        let cell = frame.get_mut(x as usize, y as usize);
+        let cell = frame.get_mut(x.to_usize_sat(), y.to_usize_sat());
         cell.text = ch.to_string();
         let existing_bg = cell.style.and_then(|s| s.bgcolor);
         let merged = if let Some(bg) = existing_bg {
@@ -2439,8 +2441,8 @@ fn paint_grid_keylines(
     stroke: KeylineStroke,
     precomputed: Option<(&BTreeSet<i32>, &BTreeSet<i32>)>,
 ) {
-    let frame_w = frame.width as i32;
-    let frame_h = frame.height as i32;
+    let frame_w = frame.width.to_i32_sat();
+    let frame_h = frame.height.to_i32_sat();
     let x_start = parent_rect.x0 + ctx.origin_x;
     let y_start = parent_rect.y0 + ctx.origin_y;
     let x_end = parent_rect
@@ -2517,7 +2519,7 @@ fn paint_grid_keylines(
             } else {
                 stroke.v_char
             };
-            let cell = frame.get_mut(x as usize, y as usize);
+            let cell = frame.get_mut(x.to_usize_sat(), y.to_usize_sat());
             cell.text = ch.to_string();
             // Preserve the existing cell background and overlay only the
             // keyline foreground colour.  Python renders keylines as a canvas
@@ -2639,14 +2641,14 @@ pub fn constrain_overlay_position(
             if out_x < 0 {
                 out_x = 0;
             }
-            if out_x + w as i32 > vw as i32 {
-                out_x = (vw as i32 - w as i32).max(0);
+            if out_x + w.to_i32_sat() > vw.to_i32_sat() {
+                out_x = (vw.to_i32_sat() - w.to_i32_sat()).max(0);
             }
         }
         Constrain::Inflect => {
             // If overflowing right, flip to the left side.
-            if out_x + w as i32 > vw as i32 {
-                out_x -= w as i32;
+            if out_x + w.to_i32_sat() > vw.to_i32_sat() {
+                out_x -= w.to_i32_sat();
                 if out_x < 0 {
                     out_x = 0;
                 }
@@ -2660,13 +2662,13 @@ pub fn constrain_overlay_position(
             if out_y < 0 {
                 out_y = 0;
             }
-            if out_y + h as i32 > vh as i32 {
-                out_y = (vh as i32 - h as i32).max(0);
+            if out_y + h.to_i32_sat() > vh.to_i32_sat() {
+                out_y = (vh.to_i32_sat() - h.to_i32_sat()).max(0);
             }
         }
         Constrain::Inflect => {
-            if out_y + h as i32 > vh as i32 {
-                out_y -= h as i32;
+            if out_y + h.to_i32_sat() > vh.to_i32_sat() {
+                out_y -= h.to_i32_sat();
                 if out_y < 0 {
                     out_y = 0;
                 }
@@ -2785,7 +2787,7 @@ fn render_tree_to_frame_with_debug_and_stylesheet(
         crate::css::set_focus_within(super::routing::focus_within_ids_tree(tree));
 
     // Run layout so all tree nodes get their layout_rect populated.
-    run_layout_pass(tree, (width as u16, height as u16));
+    run_layout_pass(tree, (width.to_u16_sat(), height.to_u16_sat()));
     apply_layout_info_tree_from_layout_rects(tree);
     apply_root_tree_virtual_content_size(root, tree);
 
@@ -2827,13 +2829,13 @@ fn render_tree_to_frame_with_debug_and_stylesheet(
             |(vw, vh)| ClipRect {
                 x0: 0,
                 y0: 0,
-                x1: vw.min(width) as i32,
-                y1: vh.min(height) as i32,
+                x1: vw.min(width).to_i32_sat(),
+                y1: vh.min(height).to_i32_sat(),
             },
         );
         let scroll_ctx = TreeRenderCtx {
-            origin_x: -(root_scroll_x as i32),
-            origin_y: -(root_scroll_y as i32),
+            origin_x: -root_scroll_x.to_i32_sat(),
+            origin_y: -root_scroll_y.to_i32_sat(),
             clip: scroll_clip,
             overlay_root_exempt: None,
         };
@@ -2889,8 +2891,8 @@ fn root_tree_virtual_content_size(tree: &WidgetTree) -> Option<(usize, usize)> {
         }
         saw_visible_child = true;
         let child_rect = child.layout_rect;
-        let child_extent_x = (child_rect.x1 - content_rect.x0).max(0) as usize;
-        let child_extent_y = (child_rect.y1 - content_rect.y0).max(0) as usize;
+        let child_extent_x = (child_rect.x1 - content_rect.x0).to_usize_sat();
+        let child_extent_y = (child_rect.y1 - content_rect.y0).to_usize_sat();
         virtual_w = virtual_w.max(child_extent_x);
         virtual_h = virtual_h.max(child_extent_y);
     }
@@ -3096,9 +3098,9 @@ fn host_content_extent(
     let origin_x = min_x.unwrap_or(content_rect.x0);
     let origin_y = min_y.unwrap_or(content_rect.y0);
     let virtual_w =
-        ((max_x - origin_x).max(0) + i32::from(left_dock) + i32::from(right_dock)) as usize;
+        ((max_x - origin_x).max(0) + i32::from(left_dock) + i32::from(right_dock)).to_usize_sat();
     let virtual_h =
-        ((max_y - origin_y).max(0) + i32::from(top_dock) + i32::from(bottom_dock)) as usize;
+        ((max_y - origin_y).max(0) + i32::from(top_dock) + i32::from(bottom_dock)).to_usize_sat();
     (virtual_w.max(1), virtual_h.max(1), true)
 }
 
@@ -3249,8 +3251,8 @@ fn apply_host_scrollbar_layout(tree: &mut WidgetTree, viewport: (u16, u16)) {
                 crate::layout::Region::new(
                     content_rect.x0,
                     content_rect.y0,
-                    geometry.viewport_width as u16,
-                    geometry.viewport_height as u16,
+                    geometry.viewport_width.to_u16_sat(),
+                    geometry.viewport_height.to_u16_sat(),
                 ),
                 viewport,
             );
@@ -3266,8 +3268,8 @@ fn apply_host_scrollbar_layout(tree: &mut WidgetTree, viewport: (u16, u16)) {
         let viewport_rect = crate::widget_tree::Rect {
             x0: content_rect.x0,
             y0: content_rect.y0,
-            x1: content_rect.x0 + geometry.viewport_width as i32,
-            y1: content_rect.y0 + geometry.viewport_height as i32,
+            x1: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
+            y1: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
         };
         if let Some(node) = tree.get_mut(node_id) {
             node.content_rect = viewport_rect;
@@ -3322,10 +3324,10 @@ fn apply_host_scrollbar_layout(tree: &mut WidgetTree, viewport: (u16, u16)) {
             // Gating the rect on `show` orphaned those reserved columns.
             let rect = if geometry.vertical_lane_width > 0 {
                 crate::widget_tree::Rect {
-                    x0: content_rect.x0 + geometry.viewport_width as i32,
+                    x0: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
                     y0: content_rect.y0,
                     x1: content_rect.x1,
-                    y1: content_rect.y0 + geometry.viewport_height as i32,
+                    y1: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
                 }
             } else {
                 crate::widget_tree::Rect::ZERO
@@ -3342,7 +3344,7 @@ fn apply_host_scrollbar_layout(tree: &mut WidgetTree, viewport: (u16, u16)) {
                     scrollbar.set_window_virtual_size(geometry.content_height);
                     scrollbar.set_window_size(geometry.viewport_height);
                     if !scrollbar.grabbed() {
-                        let max_offset = geometry.max_offset_y() as f32;
+                        let max_offset = geometry.max_offset_y().to_f32_lossy();
                         scrollbar.set_position(offset_y.clamp(0.0, max_offset));
                     }
                 }
@@ -3362,8 +3364,8 @@ fn apply_host_scrollbar_layout(tree: &mut WidgetTree, viewport: (u16, u16)) {
             let rect = if geometry.horizontal_lane_height > 0 {
                 crate::widget_tree::Rect {
                     x0: content_rect.x0,
-                    y0: content_rect.y0 + geometry.viewport_height as i32,
-                    x1: content_rect.x0 + geometry.viewport_width as i32,
+                    y0: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
+                    x1: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
                     y1: content_rect.y1,
                 }
             } else {
@@ -3379,7 +3381,7 @@ fn apply_host_scrollbar_layout(tree: &mut WidgetTree, viewport: (u16, u16)) {
                     scrollbar.set_window_virtual_size(geometry.content_width);
                     scrollbar.set_window_size(geometry.viewport_width);
                     if !scrollbar.grabbed() {
-                        let max_offset = geometry.max_offset_x() as f32;
+                        let max_offset = geometry.max_offset_x().to_f32_lossy();
                         scrollbar.set_position(offset_x.clamp(0.0, max_offset));
                     }
                 }
@@ -3400,8 +3402,8 @@ fn apply_host_scrollbar_layout(tree: &mut WidgetTree, viewport: (u16, u16)) {
             // matching the vertical/horizontal lane-rect policy.
             let rect = if geometry.vertical_lane_width > 0 && geometry.horizontal_lane_height > 0 {
                 crate::widget_tree::Rect {
-                    x0: content_rect.x0 + geometry.viewport_width as i32,
-                    y0: content_rect.y0 + geometry.viewport_height as i32,
+                    x0: content_rect.x0 + geometry.viewport_width.to_i32_sat(),
+                    y0: content_rect.y0 + geometry.viewport_height.to_i32_sat(),
                     x1: content_rect.x1,
                     y1: content_rect.y1,
                 }
@@ -3459,7 +3461,7 @@ fn sync_host_scrollbar_positions(tree: &mut WidgetTree) {
                 scrollbar.set_window_virtual_size(virtual_h);
                 scrollbar.set_window_size(viewport_h);
                 if !scrollbar.grabbed() {
-                    let max_offset = virtual_h.saturating_sub(viewport_h.max(1)) as f32;
+                    let max_offset = virtual_h.saturating_sub(viewport_h.max(1)).to_f32_lossy();
                     scrollbar.set_position(offset_y.clamp(0.0, max_offset));
                 }
             }
@@ -3473,7 +3475,7 @@ fn sync_host_scrollbar_positions(tree: &mut WidgetTree) {
                 scrollbar.set_window_virtual_size(virtual_w);
                 scrollbar.set_window_size(viewport_w);
                 if !scrollbar.grabbed() {
-                    let max_offset = virtual_w.saturating_sub(viewport_w.max(1)) as f32;
+                    let max_offset = virtual_w.saturating_sub(viewport_w.max(1)).to_f32_lossy();
                     scrollbar.set_position(offset_x.clamp(0.0, max_offset));
                 }
             }
@@ -3740,8 +3742,14 @@ pub(crate) fn apply_layout_info_tree_from_layout_rects(tree: &mut WidgetTree) {
                 host_content_extent(tree, node_id, content_rect, scrollbar_children);
 
             (
-                content_rect.x1.saturating_sub(content_rect.x0) as usize,
-                content_rect.y1.saturating_sub(content_rect.y0) as usize,
+                content_rect
+                    .x1
+                    .saturating_sub(content_rect.x0)
+                    .to_usize_sat(),
+                content_rect
+                    .y1
+                    .saturating_sub(content_rect.y0)
+                    .to_usize_sat(),
                 virtual_w,
                 virtual_h,
             )
@@ -3749,7 +3757,7 @@ pub(crate) fn apply_layout_info_tree_from_layout_rects(tree: &mut WidgetTree) {
 
         if let Some(node) = tree.get_mut(node_id) {
             node.widget
-                .on_layout(content_w.max(1) as u16, content_h.max(1) as u16);
+                .on_layout(content_w.max(1).to_u16_sat(), content_h.max(1).to_u16_sat());
             node.widget
                 .set_virtual_content_size(virtual_content_w, virtual_content_h);
         }

@@ -16,6 +16,8 @@
 use super::graphemes::{cell_len_prefix, prev_grapheme_boundary};
 use super::{Document, Location, WrappedDocument};
 
+use crate::num::Cast;
+
 /// Wrap-aware movement over a [`WrappedDocument`].
 #[derive(Debug, Clone, Default)]
 pub struct DocumentNavigator {
@@ -217,7 +219,7 @@ impl DocumentNavigator {
                 document,
                 line_index,
                 target_offset,
-                section_index as isize - 1,
+                section_index.to_isize_sat() - 1,
             );
             (line_index, target_column)
         }
@@ -264,7 +266,7 @@ impl DocumentNavigator {
                 document,
                 line_index,
                 target_offset,
-                section_index as isize + 1,
+                section_index.to_isize_sat() + 1,
             );
             (line_index, target_column)
         }
@@ -344,8 +346,8 @@ impl DocumentNavigator {
         let (x_offset, y_offset) = wrapped.location_to_offset(document, location);
         wrapped.offset_to_location(
             document,
-            x_offset as isize,
-            y_offset as isize + vertical_offset,
+            x_offset.to_isize_sat(),
+            y_offset.to_isize_sat() + vertical_offset,
         )
     }
 

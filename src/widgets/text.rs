@@ -8,6 +8,7 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::event::Event;
 use crate::message::ActionDispatchRequested;
+use crate::num::Cast;
 use crate::widgets::markdown_model::{
     MarkdownBlock, parse_markdown_blocks, parse_markdown_headings,
 };
@@ -719,7 +720,7 @@ impl InlineTextDoc {
                     "@click".to_string(),
                     rich_rs::MetaValue::str(format_markdown_link_action(href)),
                 );
-                text.apply_meta(link_meta, start as isize, Some(end as isize));
+                text.apply_meta(link_meta, start.to_isize_sat(), Some(end.to_isize_sat()));
             }
         }
         text.render(console, options)
@@ -1897,7 +1898,7 @@ impl crate::widgets::HasTooltip for MarkdownTableCell {
     fn tooltip_anchor(&self) -> Option<(u16, u16)> {
         // Keep tooltip placement pinned to this cell's local center so runtime
         // can convert through scroll-aware content-local coordinates.
-        let x = (self.layout_width.max(1) / 2).min(u16::MAX as usize) as u16;
+        let x = (self.layout_width.max(1) / 2).to_u16_sat();
         Some((x, 0))
     }
 }
@@ -1963,7 +1964,7 @@ fn compute_markdown_table_column_fractions(
             // handing the auto widths as fraction weights reproduces Python's
             // expand path bit-for-bit (both use exact rationals + cumulative
             // floor over gutter-interleaved offsets).
-            crate::style::Scalar::Fraction(max_content.saturating_add(2) as f32)
+            crate::style::Scalar::Fraction(max_content.saturating_add(2).to_f32_lossy())
         })
         .collect()
 }
@@ -2003,11 +2004,11 @@ fn compute_markdown_table_column_widths(
                 minimal = minimal.max(table_cell_minimal_width(cell));
             }
         }
-        widths.push(max_content.saturating_add(2) as f64);
-        minimums.push(minimal.saturating_add(2) as f64);
+        widths.push(max_content.saturating_add(2).to_f64_lossy());
+        minimums.push(minimal.saturating_add(2).to_f64_lossy());
     }
 
-    let total_space = table_width.saturating_sub(total_gutter) as f64;
+    let total_space = table_width.saturating_sub(total_gutter).to_f64_lossy();
     let mut used_space: f64 = widths.iter().sum();
 
     // Python `_resolve.py:74-81` (expand): grow proportionally to fill.
@@ -2047,10 +2048,10 @@ fn compute_markdown_table_column_widths(
     let mut prev_offset = 0i64;
     for width in &widths {
         acc += width;
-        let offset = acc.floor() as i64;
-        result.push((offset - prev_offset).max(0) as usize);
-        acc += gutter as f64;
-        prev_offset = acc.floor() as i64;
+        let offset = acc.floor().to_i64_sat();
+        result.push((offset - prev_offset).to_usize_sat());
+        acc += gutter.to_f64_lossy();
+        prev_offset = acc.floor().to_i64_sat();
     }
     result
 }
@@ -2124,7 +2125,7 @@ impl MarkdownTableContentBlock {
         rows: Vec<Vec<String>>,
         row_markups: Vec<Vec<String>>,
     ) -> Self {
-        let column_count = headers.len().max(1) as u16;
+        let column_count = headers.len().max(1).to_u16_sat();
         let mut effective_header_markups = Vec::with_capacity(headers.len());
         for (index, header) in headers.iter().enumerate() {
             effective_header_markups.push(
@@ -2180,7 +2181,7 @@ impl MarkdownTableContentBlock {
         }
         let mut seed = NodeSeed::default();
         seed.styles.style.grid_size_columns = Some(column_count);
-        seed.styles.style.grid_size_rows = Some(row_count as u16);
+        seed.styles.style.grid_size_rows = Some(row_count.to_u16_sat());
         seed.styles.style.grid_columns = Some(column_fractions);
         Self {
             column_count: column_count as usize,
@@ -2221,7 +2222,7 @@ impl crate::widgets::Interactive for MarkdownTableContentBlock {
         self.grid_rows = Some(
             row_heights
                 .into_iter()
-                .map(|height| crate::style::Scalar::Cells(height.min(u16::MAX as usize) as u16))
+                .map(|height| crate::style::Scalar::Cells(height.to_u16_sat()))
                 .collect(),
         );
     }
@@ -2530,7 +2531,7 @@ impl Markdown {
         let parent_style = crate::css::resolve_style(self, &parent_meta);
         crate::css::push_style_context(parent_meta, parent_style);
 
-        let layout_width = width.min(u16::MAX as usize) as u16;
+        let layout_width = width.to_u16_sat();
         let mut total = 0usize;
         let mut prev_bottom = 0usize;
         for (idx, child) in children.iter_mut().enumerate() {
@@ -2551,7 +2552,7 @@ impl Markdown {
             let child_content_width = (layout_width as usize)
                 .saturating_sub(horizontal_inset)
                 .max(1)
-                .min(u16::MAX as usize) as u16;
+                .to_u16_sat();
             child.on_layout(child_content_width, 1);
             // Mirror `extract_child_spec` box heights: an explicit cells height
             // is border-box; auto/unset heights are PURE content from

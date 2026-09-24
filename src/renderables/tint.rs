@@ -1,5 +1,6 @@
 use rich_rs::{Console, ConsoleOptions, Renderable, Segments};
 
+use crate::num::Cast;
 use crate::style::{Color, color_from_simple};
 
 /// Renderable that applies a tint color over foreground/background colors.
@@ -58,7 +59,7 @@ impl<R> Tint<R> {
 
     #[must_use]
     pub fn percent_from_alpha(color: Color) -> u8 {
-        (color.a * 100.0).round() as u8
+        (color.a * 100.0).round().to_u8_sat()
     }
 }
 

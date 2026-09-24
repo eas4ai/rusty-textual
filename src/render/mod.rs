@@ -15,6 +15,8 @@ use rich_rs::{
 };
 use unicode_width::UnicodeWidthChar;
 
+use crate::num::Cast;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
     pub text: String,
@@ -121,8 +123,8 @@ impl FrameBuffer {
                 let Some(owner_id) = self.owner_ids[self.idx(x, y)] else {
                     continue;
                 };
-                let xu = x as u16;
-                let yu = y as u16;
+                let xu = x.to_u16_sat();
+                let yu = y.to_u16_sat();
                 out.entry(owner_id)
                     .and_modify(|r: &mut OwnerRect| {
                         r.x0 = r.x0.min(xu);
@@ -230,7 +232,7 @@ impl FrameBuffer {
     /// default 0.66); see [`FrameBuffer::preblend_dim_with`] for the
     /// testable seam.
     pub(crate) fn preblend_dim(&mut self) {
-        self.preblend_dim_with(crate::style::dim_factor() as f32);
+        self.preblend_dim_with(crate::style::dim_factor().to_f32_lossy());
     }
 
     /// [`FrameBuffer::preblend_dim`] with an explicit factor (unit-test seam;
@@ -257,7 +259,7 @@ impl FrameBuffer {
                 continue;
             };
             let blend = |b: u8, f: u8| -> u8 {
-                (f32::from(b) + (f32::from(f) - f32::from(b)) * dim_factor) as u8
+                (f32::from(b) + (f32::from(f) - f32::from(b)) * dim_factor).to_u8_sat()
             };
             style.color = Some(rich_rs::SimpleColor::Rgb {
                 r: blend(bg.0, fg.0),
@@ -470,8 +472,8 @@ impl FrameBuffer {
                 }
 
                 out.push(Segment::control(rich_rs::ControlType::MoveTo {
-                    x: x as u16,
-                    y: y as u16,
+                    x: x.to_u16_sat(),
+                    y: y.to_u16_sat(),
                 }));
 
                 let mut run_x = x;

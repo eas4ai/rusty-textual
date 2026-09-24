@@ -43,6 +43,8 @@ const POMODORO_SECS: f64 = 1500.0;
 /// The countdown ticks 4×/second.
 const TICK: Duration = Duration::from_millis(250);
 
+// Clamped to 0 and rounded, so `as` only drops the (empty) fraction.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn format_mmss(secs: f64) -> String {
     let s = secs.max(0.0).round() as u64;
     format!("{:02}:{:02}", s / 60, s % 60)

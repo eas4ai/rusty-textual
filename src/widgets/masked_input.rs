@@ -9,6 +9,7 @@ use crate::message::{
     InputChanged, InputSubmitted, MessageEvent, TextEditClipboardCopyRequested,
     TextEditClipboardPaste, TextEditClipboardPasteRequested,
 };
+use crate::num::Cast;
 use crate::validation::{Failure, ValidationResult, ValidatorRef};
 
 use super::{
@@ -387,12 +388,14 @@ impl Template {
             }
         }
 
-        let mut pos = cursor as i32 + delta;
-        while pos >= 0 && (pos as usize) < self.defs.len() && self.defs[pos as usize].is_separator()
+        let mut pos = cursor.to_i32_sat() + delta;
+        while pos >= 0
+            && pos.to_usize_sat() < self.defs.len()
+            && self.defs[pos.to_usize_sat()].is_separator()
         {
             pos += delta;
         }
-        (pos.max(0) as usize).min(self.defs.len())
+        pos.to_usize_sat().min(self.defs.len())
     }
 
     // --- delete at position ------------------------------------------------
@@ -730,7 +733,7 @@ impl MaskedInput {
     fn action_home(&mut self) {
         self.cursor = self
             .template
-            .move_cursor(self.cursor, -(self.template.len() as i32));
+            .move_cursor(self.cursor, -self.template.len().to_i32_sat());
         // If position 0 is a separator, skip forward to first editable slot.
         if self.cursor < self.template.len() && self.template.at_separator(self.cursor) {
             self.cursor = self.template.move_cursor(self.cursor, 1);

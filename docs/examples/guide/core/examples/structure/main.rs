@@ -57,7 +57,7 @@ fn format_datetime(secs: u64) -> String {
     let wday = ((days + 4) % 7) as usize;
 
     // Civil date from days since epoch (Howard Hinnant algorithm).
-    let z = days as i64 + 719_468;
+    let z = i64::try_from(days).expect("days since 1970 fit in i64") + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = z - era * 146_097;
     let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
@@ -71,7 +71,7 @@ fn format_datetime(secs: u64) -> String {
     format!(
         "{} {} {:2} {:02}:{:02}:{:02} {}",
         WDAY[wday],
-        MON[(m - 1) as usize],
+        MON[usize::try_from(m - 1).expect("month is 1..=12")],
         d,
         hh,
         mm,

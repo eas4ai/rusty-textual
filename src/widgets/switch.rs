@@ -6,6 +6,7 @@ use textual_macros::widget;
 
 use crate::event::{Action, AnimationLevel, AnimationRequest, Event};
 use crate::message::SwitchChanged;
+use crate::num::Cast;
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
 
 use super::scrollbar::ScrollBarRender;
@@ -322,7 +323,7 @@ impl Render for Switch {
         let renderer = ScrollBarRender {
             virtual_size: SWITCH_VIRTUAL_SIZE,
             window_size: SWITCH_WINDOW_SIZE,
-            position: self.slider_pos * SWITCH_WINDOW_SIZE as f32,
+            position: self.slider_pos * SWITCH_WINDOW_SIZE.to_f32_lossy(),
             thickness: 1,
             vertical: false,
         };

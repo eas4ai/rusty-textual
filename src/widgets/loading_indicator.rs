@@ -2,6 +2,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 
 use crate::event::Event;
+use crate::num::Cast;
 use crate::style::{Color, parse_color_like};
 
 use super::{Focus, Interactive, Layout, NodeSeed, Render, helpers::adjust_line_length_no_bg};
@@ -127,7 +128,7 @@ impl Render for LoadingIndicator {
         // Animation: each dot cycles through a gradient from dim to bright.
         // speed controls how fast the cycle moves (ticks → phase).
         let speed = 0.08; // ticks to phase multiplier
-        let elapsed = self.tick as f64 * speed;
+        let elapsed = self.tick.to_f64_lossy() * speed;
 
         let mut text = String::new();
         let mut styles: Vec<(usize, rich_rs::Style)> = Vec::new();
@@ -234,11 +235,11 @@ fn render_static_loading(width: usize, height: usize, style: rich_rs::Style) -> 
 
 /// Linear RGB blend between two colors. `t` in 0.0..=1.0.
 fn blend_rgb(a: Color, b: Color, t: f64) -> Color {
-    let t = t.clamp(0.0, 1.0) as f32;
+    let t = t.clamp(0.0, 1.0).to_f32_lossy();
     let mix = |x: u8, y: u8| -> u8 {
         let xf = f32::from(x);
         let yf = f32::from(y);
-        (xf + (yf - xf) * t).round().clamp(0.0, 255.0) as u8
+        (xf + (yf - xf) * t).round().clamp(0.0, 255.0).to_u8_sat()
     };
     Color::rgb(mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b))
 }

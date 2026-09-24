@@ -13,6 +13,7 @@ use crate::event::{
 use crate::message::{
     Message, TabActivated, TabClicked, TabDisabled, TabEnabled, TabHidden, TabShown, TabsCleared,
 };
+use crate::num::Cast;
 use crate::style::{Dock, TransitionTiming};
 
 use crate::content::Content;
@@ -1041,8 +1042,8 @@ impl Tabs {
         let target = match active_idx {
             Some(active) => match candidates.iter().position(|index| *index == active) {
                 Some(position) => {
-                    let len = candidates.len() as i32;
-                    let next = (position as i32 + direction).rem_euclid(len) as usize;
+                    let len = candidates.len().to_i32_sat();
+                    let next = (position.to_i32_sat() + direction).rem_euclid(len) as usize;
                     candidates[next]
                 }
                 None => {
@@ -1104,14 +1105,14 @@ impl Tabs {
             .max(1);
         let span_width = end.saturating_sub(start);
         if span_width <= label_width {
-            return Some((start as f32, end as f32));
+            return Some((start.to_f32_lossy(), end.to_f32_lossy()));
         }
         let total_inset = span_width.saturating_sub(label_width);
         let left_inset = total_inset / 2;
         let right_inset = total_inset.saturating_sub(left_inset);
         Some((
-            start.saturating_add(left_inset) as f32,
-            end.saturating_sub(right_inset) as f32,
+            start.saturating_add(left_inset).to_f32_lossy(),
+            end.saturating_sub(right_inset).to_f32_lossy(),
         ))
     }
 
@@ -1654,14 +1655,23 @@ mod tests {
             .with_tab("Paul");
         tabs.on_layout(80, 2);
         let (start, end) = tabs.current_underline_range();
-        assert_eq!((end - start).round() as usize, rich_rs::cell_len("Leto"));
+        assert_eq!(
+            (end - start).round().to_usize_sat(),
+            rich_rs::cell_len("Leto")
+        );
 
         assert!(tabs.activate(1, None));
         let (start, end) = tabs.current_underline_range();
-        assert_eq!((end - start).round() as usize, rich_rs::cell_len("Jessica"));
+        assert_eq!(
+            (end - start).round().to_usize_sat(),
+            rich_rs::cell_len("Jessica")
+        );
 
         assert!(tabs.activate(2, None));
         let (start, end) = tabs.current_underline_range();
-        assert_eq!((end - start).round() as usize, rich_rs::cell_len("Paul"));
+        assert_eq!(
+            (end - start).round().to_usize_sat(),
+            rich_rs::cell_len("Paul")
+        );
     }
 }

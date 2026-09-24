@@ -104,7 +104,10 @@ impl TextualApp for TableApp {
                         let avg = if scores.is_empty() {
                             0.0
                         } else {
-                            scores.iter().sum::<f64>() / scores.len() as f64
+                            scores.iter().sum::<f64>()
+                                / f64::from(
+                                    u32::try_from(scores.len()).expect("a row has few scores"),
+                                )
                         };
                         let last = name.split_whitespace().last().unwrap_or("").to_string();
                         SortKey::tuple([SortKey::number(avg), SortKey::str(last)])

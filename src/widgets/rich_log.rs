@@ -9,6 +9,7 @@ use textual_macros::widget;
 
 use crate::event::{Action, Event};
 use crate::message::{MessageEvent, RichLogScrolled, ScrollbarAxis, ScrollbarScrollTo};
+use crate::num::Cast;
 
 use super::helpers::adjust_line_length_no_bg;
 
@@ -807,15 +808,15 @@ impl crate::widgets::Interactive for RichLog {
         if let Event::Action(action) = event {
             let before = self.offset_y;
             match action {
-                Action::ScrollUp => self.scroll_by(-(self.scroll_step as i32)),
-                Action::ScrollDown => self.scroll_by(self.scroll_step as i32),
+                Action::ScrollUp => self.scroll_by(-self.scroll_step.to_i32_sat()),
+                Action::ScrollDown => self.scroll_by(self.scroll_step.to_i32_sat()),
                 Action::ScrollPageUp => {
                     let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                    self.scroll_by(-(page as i32));
+                    self.scroll_by(-page.to_i32_sat());
                 }
                 Action::ScrollPageDown => {
                     let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                    self.scroll_by(page as i32);
+                    self.scroll_by(page.to_i32_sat());
                 }
                 _ => return,
             }
@@ -841,7 +842,7 @@ impl crate::widgets::Interactive for RichLog {
         let viewport_h = self.viewport_height.load(Ordering::Relaxed).max(1);
         let content_h = self.content_height.load(Ordering::Relaxed).max(1);
         let next = ScrollView::line_clamp_offset(
-            payload.offset.max(0.0).round() as usize,
+            payload.offset.max(0.0).round().to_usize_sat(),
             content_h,
             viewport_h,
         );
@@ -860,7 +861,7 @@ impl crate::widgets::Scrollable for RichLog {
             return;
         }
         let before = self.offset_y;
-        self.scroll_by(delta_y.saturating_mul(self.scroll_step as i32));
+        self.scroll_by(delta_y.saturating_mul(self.scroll_step.to_i32_sat()));
         if self.offset_y != before {
             ctx.request_repaint();
             self.emit_scroll_changed_message(ctx);
@@ -873,7 +874,7 @@ impl crate::widgets::Scrollable for RichLog {
     }
 
     fn scroll_offset_f32(&self) -> (f32, f32) {
-        (0.0, self.offset_y as f32)
+        (0.0, self.offset_y.to_f32_lossy())
     }
 
     fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {

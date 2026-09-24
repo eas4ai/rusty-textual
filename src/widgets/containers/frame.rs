@@ -4,6 +4,7 @@ use textual_macros::widget;
 use crate::debug::DebugLayout;
 use crate::event::Event;
 use crate::message::MessageEvent;
+use crate::num::Cast;
 
 use crate::widgets::{NodeSeed, Spacer, Widget, helpers::apply_debug_box};
 
@@ -89,7 +90,7 @@ impl crate::widgets::Interactive for Frame {
             .saturating_sub(border_width.saturating_mul(2) + total_padding)
             .max(1);
         self.child
-            .on_layout(inner_width as u16, inner_height as u16);
+            .on_layout(inner_width.to_u16_sat(), inner_height.to_u16_sat());
     }
 
     fn on_event_capture(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {

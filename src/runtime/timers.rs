@@ -22,6 +22,7 @@
 use crate::event::EventCtx;
 use crate::message::{MessageEvent, TimerCancelled, TimerFired};
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -108,7 +109,7 @@ struct RunningTimer {
 impl RunningTimer {
     /// Wall-clock time at which the timer's next fire is due.
     fn next_due(&self) -> Instant {
-        self.start + self.interval * ((self.count + 1) as u32)
+        self.start + self.interval * (self.count + 1).to_u32_sat()
     }
 
     /// Whether the timer has exhausted its repeat budget and should be removed.

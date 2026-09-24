@@ -8,6 +8,7 @@ use crate::event::{
 };
 use crate::keys::KeyEventData;
 use crate::message::MessageEvent;
+use crate::num::Cast;
 use crate::worker::{WorkerRegistry, WorkerRequest, process_worker_requests};
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
@@ -1490,7 +1491,7 @@ fn rule_matches_snapshot_chain(
     }
 
     let combinators = chain.combinators();
-    let mut idx = ancestors.len() as isize - 1;
+    let mut idx = ancestors.len().to_isize_sat() - 1;
     if idx < 0 {
         return false;
     }
@@ -1498,7 +1499,11 @@ fn rule_matches_snapshot_chain(
         let combinator = combinators[combinators.len() - 1 - part_index];
         match combinator {
             crate::css::Combinator::Child => {
-                let meta = &ancestors[idx as usize];
+                // A chain can need more ancestors than exist (`A > B > C`
+                // when B is the top ancestor); it cannot match then.
+                let Some(meta) = usize::try_from(idx).ok().and_then(|i| ancestors.get(i)) else {
+                    return false;
+                };
                 if !selector_matches_snapshot(selector, meta) {
                     return false;
                 }
@@ -1508,7 +1513,7 @@ fn rule_matches_snapshot_chain(
                 let mut found = false;
                 let mut current_idx = idx;
                 while current_idx >= 0 {
-                    let meta = &ancestors[current_idx as usize];
+                    let meta = &ancestors[current_idx.to_usize_sat()];
                     if selector_matches_snapshot(selector, meta) {
                         found = true;
                         idx = current_idx - 1;
@@ -1841,10 +1846,10 @@ fn apply_style_value_to_property(
         // per-tick computed opacity would be silently dropped and the rendered
         // frame would never change.
         ("opacity", StyleValue::Float(v)) => {
-            style.opacity = Some(v.round().clamp(0.0, 100.0) as u8);
+            style.opacity = Some(v.round().clamp(0.0, 100.0).to_u8_sat());
         }
         ("text_opacity", StyleValue::Float(v)) => {
-            style.text_opacity = Some(v.round().clamp(0.0, 100.0) as u8);
+            style.text_opacity = Some(v.round().clamp(0.0, 100.0).to_u8_sat());
         }
         _ => {}
     }
@@ -7272,9 +7277,9 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::{
-        ClipboardBackend, collect_clipboard_runtime_messages_with_backend,
+        ClipboardBackend, SelectorSnapshot, collect_clipboard_runtime_messages_with_backend,
         collect_stylesheet_affected_widgets_root, focused_help_message, parse_simulated_key,
-        set_overlay_modal_display_tree, should_dispatch_binding_hints,
+        rule_matches_snapshot_chain, set_overlay_modal_display_tree, should_dispatch_binding_hints,
         should_dispatch_focused_help, transition_requests_for_style_change,
     };
     use crate::App;
@@ -7284,6 +7289,7 @@ mod tests {
     use crate::keys::KeyEventData;
     use crate::message::MessageEvent;
     use crate::node_id::{NodeId, node_id_from_ffi};
+    use crate::num::Cast;
     use crate::reactive::{
         ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget, enqueue_runtime_reactive_entry,
         take_runtime_reactive_entries,
@@ -7297,6 +7303,40 @@ mod tests {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
+
+    fn snapshot_named(type_name: &str) -> SelectorSnapshot {
+        SelectorSnapshot {
+            type_name: type_name.to_string(),
+            style_id: None,
+            classes: Vec::new(),
+            disabled: false,
+            focused: false,
+            hovered: false,
+            active: false,
+            inline: false,
+            ansi: false,
+            nocolor: false,
+        }
+    }
+
+    #[test]
+    fn snapshot_child_chain_matches_only_when_every_ancestor_is_present() {
+        let sheet = StyleSheet::parse("Root > Mid > Leaf { color: red; }");
+        let rule = &sheet.rules()[0];
+        let leaf = snapshot_named("Leaf");
+        assert!(rule_matches_snapshot_chain(
+            rule,
+            &leaf,
+            &[snapshot_named("Root"), snapshot_named("Mid")]
+        ));
+        // `Mid` matches the only ancestor; `Root` then has no ancestor left
+        // to match, so the rule does not apply.
+        assert!(!rule_matches_snapshot_chain(
+            rule,
+            &leaf,
+            &[snapshot_named("Mid")]
+        ));
+    }
 
     #[test]
     fn parse_simulated_key_ctrl_chord() {
@@ -9556,7 +9596,7 @@ mod tests {
         let observed_cb = Arc::clone(&observed);
         app.watch_reactive(target, "value", move |_app, value| {
             if let Some(v) = value.downcast_ref::<i32>() {
-                observed_cb.store(*v as usize, Ordering::SeqCst);
+                observed_cb.store(v.to_usize_sat(), Ordering::SeqCst);
             }
         });
 

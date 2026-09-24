@@ -15,6 +15,7 @@ use textual_macros::widget;
 use crate::event::Event;
 use crate::message::MessageEvent;
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::runtime::dispatch_ctx::set_dispatch_recipient;
 
 use super::{Input, NodeSeed, NodeState, Widget, helpers::adjust_line_length_no_bg};
@@ -168,11 +169,12 @@ impl FuzzyMatcher {
             return 0.0;
         }
         let first_letters = Self::first_letter_positions(candidate);
-        let offset_count = positions.len() as f64;
+        let offset_count = positions.len().to_f64_lossy();
         let first_letter_hits = positions
             .iter()
             .filter(|offset| first_letters.contains(offset))
-            .count() as f64;
+            .count()
+            .to_f64_lossy();
 
         let mut groups = 1usize;
         let mut last = positions[0];
@@ -182,7 +184,8 @@ impl FuzzyMatcher {
             }
             last = offset;
         }
-        let normalized_groups = (offset_count - (groups.saturating_sub(1) as f64)) / offset_count;
+        let normalized_groups =
+            (offset_count - groups.saturating_sub(1).to_f64_lossy()) / offset_count;
         (offset_count + first_letter_hits) * (1.0 + normalized_groups * normalized_groups)
     }
 

@@ -163,11 +163,11 @@ fn filled_count(cells: &Cells) -> usize {
     cells.iter().flatten().filter(|&&c| c).count()
 }
 
-/// Navigate cursor by (dr, dc) with wrapping.
-fn wrap_navigate(cur: (usize, usize), dr: i32, dc: i32) -> (usize, usize) {
-    let nr = ((cur.0 as i32 + dr).rem_euclid(SIZE as i32)) as usize;
-    let nc = ((cur.1 as i32 + dc).rem_euclid(SIZE as i32)) as usize;
-    (nr, nc)
+/// Navigate cursor by (dr, dc) with wrapping. Each step is -1, 0 or 1.
+fn wrap_navigate(cur: (usize, usize), dr: isize, dc: isize) -> (usize, usize) {
+    // Adding SIZE first keeps the sum non-negative for a step of -1.
+    let step = |pos: usize, delta: isize| (pos + SIZE).saturating_add_signed(delta) % SIZE;
+    (step(cur.0, dr), step(cur.1, dc))
 }
 
 fn plural(n: usize) -> &'static str {

@@ -9,6 +9,7 @@
 //! - Top-level dispatch ([`resolve_layout`])
 
 use crate::node_id::NodeId;
+use crate::num::Cast;
 #[cfg(test)]
 use crate::style::Dock;
 use crate::style::{Align, Display, HorizontalAlign, Layout, VerticalAlign};
@@ -82,11 +83,11 @@ fn apply_flow_offsets(tree: &mut WidgetTree, children: &[NodeId], _viewport: (u1
         let (w, h) = (node.layout_rect.width(), node.layout_rect.height());
         let dx = match off.x {
             OffsetValue::Cells(c) => i32::from(c),
-            OffsetValue::Percent(p) => (f32::from(w) * p / 100.0).round() as i32,
+            OffsetValue::Percent(p) => (f32::from(w) * p / 100.0).round().to_i32_sat(),
         };
         let dy = match off.y {
             OffsetValue::Cells(c) => i32::from(c),
-            OffsetValue::Percent(p) => (f32::from(h) * p / 100.0).round() as i32,
+            OffsetValue::Percent(p) => (f32::from(h) * p / 100.0).round().to_i32_sat(),
         };
         if dx == 0 && dy == 0 {
             continue;
@@ -149,8 +150,8 @@ fn apply_parent_align(
     if min_x == i32::MAX {
         return;
     }
-    let used_w = (max_x - min_x).max(0) as u16;
-    let used_h = (max_y - min_y).max(0) as u16;
+    let used_w = (max_x - min_x).to_u16_sat();
+    let used_h = (max_y - min_y).to_u16_sat();
 
     let dx = match align.horizontal {
         HorizontalAlign::Left => 0i32,
@@ -536,7 +537,7 @@ pub fn inspect_node_rects(
     tree: &WidgetTree,
     node: NodeId,
 ) -> Option<((u16, u16, u16, u16), (u16, u16, u16, u16))> {
-    let clamp = |v: i32| v.max(0) as u16;
+    let clamp = |v: i32| v.to_u16_sat();
     tree.get(node).map(|n| {
         (
             (

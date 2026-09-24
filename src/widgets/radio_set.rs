@@ -2,6 +2,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 
 use crate::message::{MessageEvent, RadioButtonChanged, RadioSetChanged};
+use crate::num::Cast;
 
 use super::{
     NodeSeed, Widget, option_list::toggle_option::OptionCursorState, radio_button::RadioButton,
@@ -182,15 +183,15 @@ impl RadioSet {
             .highlighted()
             .and_then(|idx| enabled_indices.iter().position(|&enabled| enabled == idx));
         let next_pos = if let Some(pos) = current_pos {
-            let len = enabled_indices.len() as isize;
-            ((pos as isize + if delta.is_negative() { -1 } else { 1 }) % len + len) % len
+            let len = enabled_indices.len().to_isize_sat();
+            ((pos.to_isize_sat() + if delta.is_negative() { -1 } else { 1 }) % len + len) % len
         } else if delta.is_negative() {
-            enabled_indices.len() as isize - 1
+            enabled_indices.len().to_isize_sat() - 1
         } else {
             0
         };
         self.cursor
-            .set_highlighted(Some(enabled_indices[next_pos as usize]));
+            .set_highlighted(Some(enabled_indices[next_pos.to_usize_sat()]));
     }
 
     /// Toggle the currently selected button. Enforces mutual exclusion:

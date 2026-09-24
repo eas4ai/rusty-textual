@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use crate::num::Cast;
+
 /// An RGBA color. `r`/`g`/`b` are 8-bit channels; `a` (alpha) is a float in
 /// `[0.0, 1.0]`, mirroring Python Textual's `Color` where alpha is a float.
 ///
@@ -63,7 +65,7 @@ impl Color {
     /// boundary; internal blends should consume the float `a` directly.
     #[must_use]
     pub fn alpha_u8(self) -> u8 {
-        (self.a.clamp(0.0, 1.0) * 255.0).round() as u8
+        (self.a.clamp(0.0, 1.0) * 255.0).round().to_u8_sat()
     }
 
     #[must_use]
@@ -161,7 +163,9 @@ impl Color {
     pub fn blend_over_float(self, under: Color, factor: f32) -> Color {
         let factor = factor.clamp(0.0, 1.0);
         let mix = |o: u8, u: u8| -> u8 {
-            (f32::from(u) + (f32::from(o) - f32::from(u)) * factor).clamp(0.0, 255.0) as u8
+            (f32::from(u) + (f32::from(o) - f32::from(u)) * factor)
+                .clamp(0.0, 255.0)
+                .to_u8_sat()
         };
         Color::rgb(
             mix(self.r, under.r),
@@ -215,7 +219,7 @@ impl Color {
         }
         // f64 multiply (round-to-nearest) then truncate, exactly like CPython's
         // `int(a * 255)` (e.g. 0.6 → 153, 0.3 → 76, 0.04 → 10).
-        let byte = (f64::from(self.a) * 255.0) as u8;
+        let byte = (f64::from(self.a) * 255.0).to_u8_sat();
         Color::rgba_f(self.r, self.g, self.b, f32::from(byte) / 255.0)
     }
 }
@@ -227,7 +231,7 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
     let s = s.clamp(0.0, 1.0);
     let l = l.clamp(0.0, 1.0);
     if s == 0.0 {
-        let v = (l * 255.0).round() as u8;
+        let v = (l * 255.0).round().to_u8_sat();
         return (v, v, v);
     }
     let q = if l < 0.5 {
@@ -254,9 +258,9 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
         }
     };
     (
-        (hue(h + 1.0 / 3.0) * 255.0).round() as u8,
-        (hue(h) * 255.0).round() as u8,
-        (hue(h - 1.0 / 3.0) * 255.0).round() as u8,
+        (hue(h + 1.0 / 3.0) * 255.0).round().to_u8_sat(),
+        (hue(h) * 255.0).round().to_u8_sat(),
+        (hue(h - 1.0 / 3.0) * 255.0).round().to_u8_sat(),
     )
 }
 
@@ -866,7 +870,7 @@ fn blend(a: Color, b: Color, t: f32) -> Color {
     let mix = |x: u8, y: u8| -> u8 {
         let xf = f32::from(x);
         let yf = f32::from(y);
-        (xf + (yf - xf) * t).clamp(0.0, 255.0) as u8
+        (xf + (yf - xf) * t).clamp(0.0, 255.0).to_u8_sat()
     };
     let alpha = (aa + (ba - aa) * t).clamp(0.0, 1.0);
     Color::rgba_f(mix(ar, br), mix(ag, bg), mix(ab, bb), alpha)
@@ -996,7 +1000,7 @@ fn lab_to_rgb(l: f64, a: f64, b: f64, alpha: f32) -> Color {
     // Python: Color(int(r*255), int(g*255), int(b*255), alpha). `int()` truncates
     // toward zero; Rust's saturating f64->u8 cast matches after truncation for the
     // in-gamut range, and out-of-range values are corrected by the caller's `.clamped()`.
-    let to_byte = |v: f64| -> u8 { v.trunc().clamp(0.0, 255.0) as u8 };
+    let to_byte = |v: f64| -> u8 { v.trunc().clamp(0.0, 255.0).to_u8_sat() };
     Color::rgba_f(
         to_byte(r * 255.0),
         to_byte(g * 255.0),
@@ -1013,7 +1017,9 @@ pub(crate) fn blend_colors(a: Color, b: Color, percent: u8) -> Color {
 /// computed in float and TRUNCATED, matching `Color.blend`/`tint`).
 pub(crate) fn blend_channels_trunc(a: u8, b: u8, t: f32) -> u8 {
     let t = t.clamp(0.0, 1.0);
-    (f32::from(a) + (f32::from(b) - f32::from(a)) * t).clamp(0.0, 255.0) as u8
+    (f32::from(a) + (f32::from(b) - f32::from(a)) * t)
+        .clamp(0.0, 255.0)
+        .to_u8_sat()
 }
 
 /// Python `DIM_FACTOR` (`textual/constants.py`): how much of the foreground
@@ -1034,7 +1040,7 @@ pub(crate) fn parse_dim_factor(raw: Option<&str>) -> f64 {
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or(66)
         .clamp(0, 100);
-    percent as f64 / 100.0
+    percent.to_f64_lossy() / 100.0
 }
 
 // ---------------------------------------------------------------------------
@@ -1133,18 +1139,22 @@ pub fn resolve_scalar(
     match scalar {
         Scalar::Auto => 0,
         Scalar::Cells(n) => *n,
-        Scalar::Percent(p) => (f32::from(parent_size) * p / 100.0).floor() as u16,
+        Scalar::Percent(p) => (f32::from(parent_size) * p / 100.0).floor().to_u16_sat(),
         Scalar::Fraction(f) => {
             if siblings_fr_total > 0.0 {
-                (f32::from(available) * f / siblings_fr_total).floor() as u16
+                (f32::from(available) * f / siblings_fr_total)
+                    .floor()
+                    .to_u16_sat()
             } else {
                 0
             }
         }
-        Scalar::Width(p) => (f32::from(parent_width) * p / 100.0).floor() as u16,
-        Scalar::Height(p) => (f32::from(parent_height) * p / 100.0).floor() as u16,
-        Scalar::ViewWidth(p) => (f32::from(viewport_width) * p / 100.0).floor() as u16,
-        Scalar::ViewHeight(p) => (f32::from(viewport_height) * p / 100.0).floor() as u16,
+        Scalar::Width(p) => (f32::from(parent_width) * p / 100.0).floor().to_u16_sat(),
+        Scalar::Height(p) => (f32::from(parent_height) * p / 100.0).floor().to_u16_sat(),
+        Scalar::ViewWidth(p) => (f32::from(viewport_width) * p / 100.0).floor().to_u16_sat(),
+        Scalar::ViewHeight(p) => (f32::from(viewport_height) * p / 100.0)
+            .floor()
+            .to_u16_sat(),
     }
 }
 
@@ -2112,7 +2122,7 @@ impl Style {
     /// Does NOT affect the box model (not included in `effective_padding()`).
     #[must_use]
     pub fn line_pad(mut self, value: usize) -> Self {
-        self.line_pad = Some(value as u16);
+        self.line_pad = Some(value.to_u16_sat());
         self
     }
 
@@ -4138,7 +4148,7 @@ mod tests {
         for (name, byte) in cases {
             let c = parse_color_like(&format!("${name}"))
                 .unwrap_or_else(|| panic!("token ${name} did not resolve"));
-            let a_byte = (f64::from(c.a) * 255.0) as u8;
+            let a_byte = (f64::from(c.a) * 255.0).to_u8_sat();
             assert_eq!(a_byte, *byte, "token ${name} alpha byte");
             assert!(
                 (c.a - f32::from(*byte) / 255.0).abs() < 1e-6,
@@ -4190,12 +4200,15 @@ mod tests {
         let mut cum = 0.0_f64;
         let mut sizes = Vec::new();
         for e in exact {
-            let disp = ((cum + e).floor() - cum.floor()) as u16;
+            let disp = ((cum + e).floor() - cum.floor()).to_u16_sat();
             sizes.push(disp);
             cum += e;
         }
         assert_eq!(sizes, vec![3, 4, 4, 4]);
-        assert_eq!(sizes.iter().sum::<u16>(), (4.0 * 3.75_f64).floor() as u16);
+        assert_eq!(
+            sizes.iter().sum::<u16>(),
+            (4.0 * 3.75_f64).floor().to_u16_sat()
+        );
         // Independent truncation would have summed to only 4*3 = 12.
         assert!(sizes.iter().sum::<u16>() > 4 * 3);
     }

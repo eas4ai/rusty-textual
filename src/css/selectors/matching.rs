@@ -1,6 +1,8 @@
 use super::ast::{Combinator, SelectorMeta, StyleRule, StyleSelector};
 use super::context::SELECTOR_STACK;
 
+use crate::num::Cast;
+
 /// CSS specificity as an `(ids, classes + pseudos, types)` triple, compared
 /// lexicographically — Python's `_total_specificity` (`parse.py`,
 /// `model.py`). Never flattened to a scalar: flattening misorders (e.g. ten
@@ -98,7 +100,7 @@ impl StyleSelector {
     pub(super) fn specificity(&self) -> Specificity {
         Specificity(
             u32::from(self.id.is_some()),
-            self.classes.len() as u32 + self.pseudos.len() as u32,
+            self.classes.len().to_u32_sat() + self.pseudos.len().to_u32_sat(),
             u32::from(self.type_name.is_some()),
         )
     }
@@ -119,7 +121,7 @@ pub(super) fn rule_specificity(rule: &StyleRule, meta: &SelectorMeta) -> Option<
     let stack_snapshot = SELECTOR_STACK.with(|stack| stack.borrow().clone());
     // Selector stack contains ancestors only (the current widget meta is not pushed until after
     // style resolution). For child combinators we need to start matching from the immediate parent.
-    let mut idx = stack_snapshot.len() as isize - 1;
+    let mut idx = stack_snapshot.len().to_isize_sat() - 1;
     if idx < 0 {
         return None;
     }
@@ -129,7 +131,11 @@ pub(super) fn rule_specificity(rule: &StyleRule, meta: &SelectorMeta) -> Option<
         let comb = combinators[combinators.len() - 1 - part_index];
         match comb {
             Combinator::Child => {
-                let meta = &stack_snapshot[idx as usize];
+                // A chain can need more ancestors than exist (`A > B > C`
+                // when B is the top ancestor); it cannot match then.
+                let meta = usize::try_from(idx)
+                    .ok()
+                    .and_then(|i| stack_snapshot.get(i))?;
                 if !selector.matches(meta) {
                     return None;
                 }
@@ -139,7 +145,7 @@ pub(super) fn rule_specificity(rule: &StyleRule, meta: &SelectorMeta) -> Option<
                 let mut found = false;
                 let mut current = idx;
                 while current >= 0 {
-                    let meta = &stack_snapshot[current as usize];
+                    let meta = &stack_snapshot[current.to_usize_sat()];
                     if selector.matches(meta) {
                         found = true;
                         idx = current - 1;
@@ -168,8 +174,9 @@ pub(super) fn rule_specificity(rule: &StyleRule, meta: &SelectorMeta) -> Option<
 
 #[cfg(test)]
 mod tests {
-    use super::super::ast::{PseudoClass, SelectorMeta, SelectorStates, StyleSelector};
-    use super::Specificity;
+    use super::super::ast::{PseudoClass, SelectorMeta, SelectorStates, StyleSelector, StyleSheet};
+    use super::super::context::SELECTOR_STACK;
+    use super::{Specificity, rule_specificity};
 
     fn meta_with_states(states: SelectorStates) -> SelectorMeta {
         SelectorMeta {
@@ -180,6 +187,37 @@ mod tests {
             states,
             component_phantom: false,
         }
+    }
+
+    fn meta_named(type_name: &str) -> SelectorMeta {
+        SelectorMeta {
+            type_name: type_name.to_string(),
+            ..meta_with_states(SelectorStates::default())
+        }
+    }
+
+    /// Specificity of the sheet's only rule for a `Leaf` whose ancestors,
+    /// outermost first, are `ancestors`.
+    fn leaf_specificity(css: &str, ancestors: &[&str]) -> Option<Specificity> {
+        let sheet = StyleSheet::parse(css);
+        SELECTOR_STACK.with(|stack| {
+            *stack.borrow_mut() = ancestors.iter().map(|name| meta_named(name)).collect();
+        });
+        let result = rule_specificity(&sheet.rules[0], &meta_named("Leaf"));
+        SELECTOR_STACK.with(|stack| stack.borrow_mut().clear());
+        result
+    }
+
+    #[test]
+    fn child_chain_matches_when_every_ancestor_is_present() {
+        assert!(leaf_specificity("Root > Mid > Leaf { color: red; }", &["Root", "Mid"]).is_some());
+    }
+
+    #[test]
+    fn child_chain_longer_than_the_ancestors_does_not_match() {
+        // `Mid` matches the only ancestor; `Root` then has no ancestor left
+        // to match, so the rule does not apply.
+        assert!(leaf_specificity("Root > Mid > Leaf { color: red; }", &["Mid"]).is_none());
     }
 
     #[test]

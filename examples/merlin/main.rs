@@ -156,7 +156,10 @@ impl MerlinApp {
         // xorshift64 seeded from wall-clock (no rand dependency for example).
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_or(0x9E37_79B9_7F4A_7C15, |d| d.as_nanos() as u64)
+            // Nanoseconds since the epoch fit in u64 until the year 2554.
+            .map_or(0x9E37_79B9_7F4A_7C15, |d| {
+                u64::try_from(d.as_nanos()).unwrap_or(u64::MAX)
+            })
             .max(1);
         Self {
             start: None,
@@ -291,8 +294,12 @@ impl TextualApp for MerlinApp {
         // Python `on_key`: digit keys flip the matching switch.
         if key.key.len() == 1 {
             if let Some(ch) = key.key.chars().next() {
-                if let Some(n) = ch.to_digit(10).filter(|&d| (1..=9).contains(&d)) {
-                    self.flip_switch(app, ctx, n as u8);
+                if let Some(n) = ch
+                    .to_digit(10)
+                    .filter(|&d| (1..=9).contains(&d))
+                    .and_then(|d| u8::try_from(d).ok())
+                {
+                    self.flip_switch(app, ctx, n);
                 }
             }
         }

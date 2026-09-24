@@ -6,6 +6,7 @@ use crate::message::{
     TreeNodeActivated, TreeNodeCollapsed, TreeNodeExpanded, TreeNodeHighlighted, TreeNodeSelected,
     TreeNodeToggled,
 };
+use crate::num::Cast;
 
 use crate::action::ParsedAction;
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
@@ -975,16 +976,16 @@ impl Tree {
         if total == 0 || self.selectable_count() == 0 {
             return;
         }
-        let current = self.selected_line_in(&nodes) as isize;
-        let max = (total - 1) as isize;
-        let mut next = (current + delta).clamp(0, max) as usize;
+        let current = self.selected_line_in(&nodes).to_isize_sat();
+        let max = (total - 1).to_isize_sat();
+        let mut next = (current + delta).clamp(0, max).to_usize_sat();
         let step = if delta >= 0 { 1 } else { -1 };
         while next < total && nodes[next].disabled {
-            let probe = next as isize + step;
+            let probe = next.to_isize_sat() + step;
             if probe < 0 || probe > max {
                 return;
             }
-            next = probe as usize;
+            next = probe.to_usize_sat();
         }
         self.select_index(next, ctx);
     }
@@ -1271,7 +1272,7 @@ impl Tree {
         let before = self.offset;
         self.offset = ScrollView::line_scroll_by(
             self.offset,
-            delta_rows as i32,
+            delta_rows.to_i32_sat(),
             self.visible_count(),
             self.viewport_height.max(1),
         );
@@ -1290,18 +1291,18 @@ impl Tree {
         if nodes.is_empty() {
             return None;
         }
-        let max = nodes.len().saturating_sub(1) as isize;
-        let mut idx = (index as isize).clamp(0, max) as usize;
+        let max = nodes.len().saturating_sub(1).to_isize_sat();
+        let mut idx = index.to_isize_sat().clamp(0, max).to_usize_sat();
         if !nodes[idx].disabled {
             return Some(idx);
         }
         let step = if direction >= 0 { 1 } else { -1 };
         loop {
-            let next = idx as isize + step;
+            let next = idx.to_isize_sat() + step;
             if next < 0 || next > max {
                 return None;
             }
-            idx = next as usize;
+            idx = next.to_usize_sat();
             if !nodes[idx].disabled {
                 return Some(idx);
             }
@@ -1372,12 +1373,12 @@ impl crate::widgets::Focus for Tree {
                 true
             }
             "scroll_up" => {
-                self.move_selection(-(self.page_step() as isize), ctx);
+                self.move_selection(-self.page_step().to_isize_sat(), ctx);
                 ctx.set_handled();
                 true
             }
             "scroll_down" => {
-                self.move_selection(self.page_step() as isize, ctx);
+                self.move_selection(self.page_step().to_isize_sat(), ctx);
                 ctx.set_handled();
                 true
             }
@@ -1510,11 +1511,11 @@ impl crate::widgets::Interactive for Tree {
                     ctx.set_handled();
                 }
                 Action::ScrollPageUp => {
-                    self.move_selection(-(self.page_step() as isize), ctx);
+                    self.move_selection(-self.page_step().to_isize_sat(), ctx);
                     ctx.set_handled();
                 }
                 Action::ScrollPageDown => {
-                    self.move_selection(self.page_step() as isize, ctx);
+                    self.move_selection(self.page_step().to_isize_sat(), ctx);
                     ctx.set_handled();
                 }
                 Action::Toggle => {
@@ -1561,11 +1562,11 @@ impl crate::widgets::Interactive for Tree {
                             ctx.set_handled();
                         }
                         KeyCode::PageUp => {
-                            self.move_selection(-(self.page_step() as isize), ctx);
+                            self.move_selection(-self.page_step().to_isize_sat(), ctx);
                             ctx.set_handled();
                         }
                         KeyCode::PageDown => {
-                            self.move_selection(self.page_step() as isize, ctx);
+                            self.move_selection(self.page_step().to_isize_sat(), ctx);
                             ctx.set_handled();
                         }
                         KeyCode::Home => {
@@ -1658,7 +1659,7 @@ impl crate::widgets::Scrollable for Tree {
             return;
         }
         self.scroll_offset(
-            delta_y.saturating_mul(self.scroll_step as i32) as isize,
+            delta_y.saturating_mul(self.scroll_step.to_i32_sat()) as isize,
             ctx,
         );
     }

@@ -4,6 +4,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 
 use crate::event::{AnimationLevel, WidgetCtx};
+use crate::num::Cast;
 use crate::renderables::{Bar as BarRenderable, LinearGradient};
 #[cfg(test)]
 use crate::style::Color;
@@ -120,7 +121,7 @@ impl Eta {
         let time_since_sample = (time - recent_time).min(self.max_extrapolate);
         let extrapolated = speed * time_since_sample;
         let eta = ((remaining - extrapolated) / speed).max(1.0);
-        Some(eta.ceil() as u64)
+        Some(eta.ceil().to_u64_sat())
     }
 }
 
@@ -132,7 +133,7 @@ impl Eta {
 /// the right alignment comes from the widget's `content-align-horizontal`).
 fn format_percentage(pct: Option<f64>) -> String {
     match pct {
-        Some(p) => format!("{}%", (p * 100.0).round() as u64),
+        Some(p) => format!("{}%", (p * 100.0).round().to_u64_sat()),
         None => "--%".to_string(),
     }
 }
@@ -249,7 +250,9 @@ impl Bar {
         // Python passes the FRACTIONAL highlight extent (`size.width * percentage`)
         // to the Bar renderable, which rounds to the nearest half-cell (`╸`/`╺`).
         // Pre-rounding to an integer here would drop that half-cell precision.
-        let highlight_end = (pct * width as f64).min(width as f64) as f32;
+        let highlight_end = (pct * width.to_f64_lossy())
+            .min(width.to_f64_lossy())
+            .to_f32_lossy();
         let segments: Vec<Segment> =
             BarRenderable::new((0.0, highlight_end), highlight_style, background_style)
                 .width(width)
@@ -273,16 +276,16 @@ impl Bar {
 
         let mut start;
         let end;
-        let highlighted_bar_width = (0.25 * width as f32).max(1.0);
-        let total_imaginary_width = width as f32 + highlighted_bar_width;
+        let highlighted_bar_width = (0.25 * width.to_f32_lossy()).max(1.0);
+        let total_imaginary_width = width.to_f32_lossy() + highlighted_bar_width;
         if self.animation_level == AnimationLevel::None {
             start = 0.0;
-            end = width as f32;
+            end = width.to_f32_lossy();
         } else {
             // Match Python Textual: time-based movement at 30 cells/sec.
             let speed = 30.0_f32;
             start = if total_imaginary_width > 0.0 {
-                (speed * self.elapsed_secs() as f32) % (2.0 * total_imaginary_width)
+                (speed * self.elapsed_secs().to_f32_lossy()) % (2.0 * total_imaginary_width)
             } else {
                 0.0
             };
@@ -294,7 +297,7 @@ impl Bar {
         }
 
         let (highlight_style, background_style) = self.component_bar_styles(component);
-        let range = (start.max(0.0), end.min(width as f32));
+        let range = (start.max(0.0), end.min(width.to_f32_lossy()));
         let segments: Vec<Segment> = BarRenderable::new(range, highlight_style, background_style)
             .width(width)
             .render_for_width(width)
@@ -331,8 +334,8 @@ fn apply_gradient(
 ) -> Vec<Segment> {
     // Mirror the renderable's half-cell quantization to count highlighted
     // cells: full cells plus one half-cell boundary glyph when present.
-    let end = (highlight_end.clamp(0.0, width as f32) * 2.0).round() / 2.0;
-    let full_cells = end.trunc() as usize;
+    let end = (highlight_end.clamp(0.0, width.to_f32_lossy()) * 2.0).round() / 2.0;
+    let full_cells = end.trunc().to_usize_sat();
     let has_half = (end - end.trunc()).abs() > f32::EPSILON;
     let highlighted_count = full_cells + usize::from(has_half);
     let max_width = width.saturating_sub(1);
@@ -351,7 +354,7 @@ fn apply_gradient(
                 let t = if max_width == 0 {
                     0.0
                 } else {
-                    bar_offset as f32 / max_width as f32
+                    bar_offset.to_f32_lossy() / max_width.to_f32_lossy()
                 };
                 let color = gradient.get_color(t);
                 out.push(Segment::styled(

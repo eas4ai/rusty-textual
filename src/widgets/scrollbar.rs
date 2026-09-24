@@ -3,6 +3,7 @@ use textual_macros::widget;
 
 use crate::event::{Event, MouseDownEvent, MouseMoveEvent};
 use crate::message::ScrollbarScrollTo;
+use crate::num::Cast;
 use crate::style::{Color, Overflow, ScrollbarGutter, ScrollbarVisibility, Style};
 use crate::widgets::{NodeSeed, Widget};
 
@@ -47,22 +48,25 @@ impl ScrollBarRender {
             return (0, track_len);
         }
 
-        let bar_ratio = virtual_size as f32 / track_len as f32;
-        let thumb_size = (window_size as f32 / bar_ratio).max(1.0);
-        let thumb_len = thumb_size.ceil().clamp(1.0, track_len as f32) as usize;
+        let bar_ratio = virtual_size.to_f32_lossy() / track_len.to_f32_lossy();
+        let thumb_size = (window_size.to_f32_lossy() / bar_ratio).max(1.0);
+        let thumb_len = thumb_size
+            .ceil()
+            .clamp(1.0, track_len.to_f32_lossy())
+            .to_usize_sat();
 
-        let max_position = (virtual_size.saturating_sub(window_size)) as f32;
+        let max_position = (virtual_size.saturating_sub(window_size)).to_f32_lossy();
         let clamped_position = position.clamp(0.0, max_position);
         let ratio = if max_position > 0.0 {
             clamped_position / max_position
         } else {
             0.0
         };
-        let travel = (track_len as f32 - thumb_size).max(0.0);
+        let travel = (track_len.to_f32_lossy() - thumb_size).max(0.0);
         let thumb_start = (travel * ratio)
             .floor()
-            .clamp(0.0, (track_len.saturating_sub(thumb_len)) as f32)
-            as usize;
+            .clamp(0.0, (track_len.saturating_sub(thumb_len)).to_f32_lossy())
+            .to_usize_sat();
         (thumb_start, thumb_len)
     }
 
@@ -129,20 +133,30 @@ impl ScrollBarRender {
 
         let mut segments: Vec<Vec<Segment>> = if scrollable {
             // Python `render_bar` (lines 128-186), shared for both axes.
-            let bar_ratio = self.virtual_size as f32 / track_len as f32;
-            let thumb_size = (self.window_size as f32 / bar_ratio).max(1.0);
-            let max_position = self.virtual_size.saturating_sub(self.window_size) as f32;
+            let bar_ratio = self.virtual_size.to_f32_lossy() / track_len.to_f32_lossy();
+            let thumb_size = (self.window_size.to_f32_lossy() / bar_ratio).max(1.0);
+            let max_position = self
+                .virtual_size
+                .saturating_sub(self.window_size)
+                .to_f32_lossy();
             let clamped_position = self.position.clamp(0.0, max_position);
             let position_ratio = if max_position > 0.0 {
                 clamped_position / max_position
             } else {
                 0.0
             };
-            let position = (track_len as f32 - thumb_size).max(0.0) * position_ratio;
+            let position = (track_len.to_f32_lossy() - thumb_size).max(0.0) * position_ratio;
 
             // start = int(position * len_bars); end = start + ceil(thumb_size * len_bars)
-            let start = (position * FRACTION_BARS as f32).max(0.0).floor() as usize;
-            let end = start.saturating_add((thumb_size * FRACTION_BARS as f32).ceil() as usize);
+            let start = (position * FRACTION_BARS.to_f32_lossy())
+                .max(0.0)
+                .floor()
+                .to_usize_sat();
+            let end = start.saturating_add(
+                (thumb_size * FRACTION_BARS.to_f32_lossy())
+                    .ceil()
+                    .to_usize_sat(),
+            );
 
             // start_index, start_bar = divmod(max(0, start), len_bars)
             let start_index = start / FRACTION_BARS;
@@ -621,7 +635,7 @@ pub fn scroll_by(offset: usize, delta: i32, content_len: usize, viewport_len: us
     let next = if delta.is_negative() {
         offset.saturating_sub(delta.unsigned_abs() as usize)
     } else {
-        offset.saturating_add(delta as usize)
+        offset.saturating_add(delta.to_usize_sat())
     };
     clamp_offset(next, content_len, viewport_len)
 }
@@ -638,7 +652,7 @@ pub fn thumb_range(
     viewport_len: usize,
     offset: usize,
 ) -> (usize, usize) {
-    ScrollBarRender::thumb_range(track_len, content_len, viewport_len, offset as f32)
+    ScrollBarRender::thumb_range(track_len, content_len, viewport_len, offset.to_f32_lossy())
 }
 
 #[must_use]
@@ -660,10 +674,11 @@ pub fn drag_to_offset(
         return 0;
     }
     let thumb_origin = pointer.saturating_sub(grab_offset).min(thumb_travel);
-    let ratio = (thumb_origin as f64) / (thumb_travel as f64);
-    (ratio * (max_offset as f64))
+    let ratio = thumb_origin.to_f64_lossy() / thumb_travel.to_f64_lossy();
+    (ratio * max_offset.to_f64_lossy())
         .round()
-        .clamp(0.0, max_offset as f64) as usize
+        .clamp(0.0, max_offset.to_f64_lossy())
+        .to_usize_sat()
 }
 
 #[widget(Focus, Interactive)]
@@ -785,7 +800,7 @@ impl crate::widgets::Interactive for ScrollBar {
                     *screen_x as usize
                 };
                 let track_len = self.track_len.max(1);
-                let current_offset = self.position.max(0.0).round() as usize;
+                let current_offset = self.position.max(0.0).round().to_usize_sat();
                 let (thumb_start, thumb_len) = thumb_range(
                     track_len,
                     self.window_virtual_size,
@@ -808,10 +823,10 @@ impl crate::widgets::Interactive for ScrollBar {
                     }
                     let clamped =
                         clamp_offset(next, self.window_virtual_size, self.window_size.max(1));
-                    self.position = clamped as f32;
+                    self.position = clamped.to_f32_lossy();
                     ctx.post_message(ScrollbarScrollTo {
                         axis: self.axis(),
-                        offset: clamped as f32,
+                        offset: clamped.to_f32_lossy(),
                         animate: true,
                         scroll_duration: None,
                     });
@@ -836,9 +851,11 @@ impl crate::widgets::Interactive for ScrollBar {
                 } else {
                     *x as usize
                 };
-                let max_pos = max_offset(self.window_virtual_size, self.window_size.max(1)) as f32;
-                let scale = self.window_virtual_size as f32 / self.window_size.max(1) as f32;
-                let delta = screen_pointer as f32 - self.grab_anchor_screen as f32;
+                let max_pos =
+                    max_offset(self.window_virtual_size, self.window_size.max(1)).to_f32_lossy();
+                let scale = self.window_virtual_size.to_f32_lossy()
+                    / self.window_size.max(1).to_f32_lossy();
+                let delta = screen_pointer.to_f32_lossy() - self.grab_anchor_screen.to_f32_lossy();
                 let gain = THUMB_DRAG_GAIN_FIXED;
                 let mut next_pos =
                     quantize_drag_position(self.grabbed_position + delta * scale * gain)

@@ -1,4 +1,5 @@
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::style::{BoxSizing, OffsetValue, Scalar};
 use crate::widget_tree::WidgetTree;
 
@@ -323,8 +324,8 @@ pub(crate) fn arrange_split(
     // Split partitions the screen into non-negative regions (no offset), so the
     // edge-carving bounds are unsigned. The signed `available.x/y` (which is
     // non-negative for a split container) is converted at the boundary.
-    let mut x0 = available.x.max(0) as u16;
-    let mut y0 = available.y.max(0) as u16;
+    let mut x0 = available.x.to_u16_sat();
+    let mut y0 = available.y.to_u16_sat();
     let mut x1 = x0.saturating_add(available.width);
     let mut y1 = y0.saturating_add(available.height);
 
@@ -488,14 +489,14 @@ pub(crate) fn layout_absolute(
         let layout_x = {
             let dx = match offset.x {
                 OffsetValue::Cells(c) => i32::from(c),
-                OffsetValue::Percent(p) => (f32::from(layout_w) * p / 100.0).round() as i32,
+                OffsetValue::Percent(p) => (f32::from(layout_w) * p / 100.0).round().to_i32_sat(),
             };
             base_x + dx
         };
         let layout_y = {
             let dy = match offset.y {
                 OffsetValue::Cells(c) => i32::from(c),
-                OffsetValue::Percent(p) => (f32::from(layout_h) * p / 100.0).round() as i32,
+                OffsetValue::Percent(p) => (f32::from(layout_h) * p / 100.0).round().to_i32_sat(),
             };
             base_y + dy
         };
