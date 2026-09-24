@@ -933,6 +933,554 @@ impl TextArea {
         map.get(prefix)
     }
 
+    /// Cursor blink on a frame tick while focused and the app is active.
+    fn on_blink_tick(&mut self, ctx: &mut crate::event::WidgetCtx) {
+        if !self.node_state().focused || !self.app_active {
+            return;
+        }
+        let Some(next_at) = self.cursor_blink_next_at else {
+            return;
+        };
+        let now = Instant::now();
+        if now >= next_at {
+            self.cursor_visible = !self.cursor_visible;
+            self.cursor_blink_next_at = now.checked_add(Self::CURSOR_BLINK_PERIOD).or(Some(now));
+            ctx.request_repaint();
+        }
+    }
+
+    /// A key press: backspace, then the edit command the key maps to.
+    fn on_key_event(&mut self, key: &crate::keys::KeyEventData, ctx: &mut crate::event::WidgetCtx) {
+        if !self.read_only && matches!(key.code, KeyCode::Char('\u{7f}' | '\u{08}')) {
+            self.backspace();
+            self.post_changed(ctx);
+            self.record_cursor_width();
+            self.adjust_scroll_to_cursor();
+            self.reset_blink();
+            ctx.request_repaint();
+            ctx.set_handled();
+            return;
+        }
+
+        let Some(cmd) = edit_command_from_key(key, true) else {
+            return;
+        };
+
+        // Determine if this is a mutating command.
+        let is_mutation = matches!(
+            cmd,
+            EditCommand::InsertChar(_)
+                | EditCommand::InsertNewline
+                | EditCommand::Backspace { .. }
+                | EditCommand::Delete { .. }
+                | EditCommand::DeleteToStart
+                | EditCommand::DeleteToEnd
+                | EditCommand::DeleteLine
+                | EditCommand::Cut
+                | EditCommand::Paste
+        );
+
+        // Block mutations in read-only mode.
+        if self.read_only && is_mutation {
+            ctx.set_handled();
+            return;
+        }
+
+        let old_selection = self.selection;
+        let effect = self
+            .apply_text_edit(cmd)
+            .or_else(|| self.apply_cursor_command(cmd))
+            .or_else(|| self.apply_clipboard_command(cmd, ctx))
+            .unwrap_or(EditEffect::NONE);
+
+        if effect.value_changed {
+            self.post_changed(ctx);
+        }
+        if self.selection != old_selection {
+            self.post_selection_changed(ctx);
+        }
+        if effect.changed || effect.value_changed {
+            if effect.record_width {
+                self.record_cursor_width();
+            }
+            self.adjust_scroll_to_cursor();
+            self.reset_blink();
+            ctx.request_repaint();
+        }
+        ctx.set_handled();
+    }
+
+    /// Text-changing commands (insert, delete). `None` for other commands.
+    fn apply_text_edit(&mut self, cmd: EditCommand) -> Option<EditEffect> {
+        let mut changed = false;
+        let mut value_changed = false;
+        match cmd {
+            EditCommand::InsertChar(ch) => {
+                if ch != '\t' {
+                    // Replace the selection with the typed character
+                    // as a single edit (Python `_replace_via_keyboard`).
+                    self.edit(Edit::new(
+                        ch.to_string(),
+                        self.selection.start.location(),
+                        self.selection.end.location(),
+                        false,
+                    ));
+                    changed = true;
+                    value_changed = true;
+                }
+            }
+            EditCommand::InsertNewline => {
+                self.edit(Edit::new(
+                    "\n",
+                    self.selection.start.location(),
+                    self.selection.end.location(),
+                    false,
+                ));
+                changed = true;
+                value_changed = true;
+            }
+            EditCommand::Backspace { unit } => {
+                let before = self.text();
+                match unit {
+                    MoveUnit::Grapheme => self.backspace(),
+                    MoveUnit::Word => self.backspace_word(),
+                }
+                changed = before != self.text();
+                value_changed = changed;
+            }
+            EditCommand::Delete { unit } => {
+                let before = self.text();
+                match unit {
+                    MoveUnit::Grapheme => self.delete_right(),
+                    MoveUnit::Word => self.delete_word(),
+                }
+                changed = before != self.text();
+                value_changed = changed;
+            }
+            EditCommand::DeleteToStart => {
+                let before = self.text();
+                self.delete_to_start_of_line();
+                changed = before != self.text();
+                value_changed = changed;
+            }
+            EditCommand::DeleteToEnd => {
+                let before = self.text();
+                self.delete_to_end_of_line();
+                changed = before != self.text();
+                value_changed = changed;
+            }
+            EditCommand::DeleteLine => {
+                self.delete_current_line();
+                changed = true;
+                value_changed = true;
+            }
+            _ => return None,
+        }
+        Some(EditEffect {
+            changed,
+            value_changed,
+            record_width: true,
+        })
+    }
+
+    /// Cursor movement and selection commands. `None` for other commands.
+    fn apply_cursor_command(&mut self, cmd: EditCommand) -> Option<EditEffect> {
+        let changed;
+        // Python `move_cursor(record_width=...)`: vertical moves keep
+        // the remembered visual x; everything else records it.
+        let mut record_width = true;
+        match cmd {
+            EditCommand::SelectAll => {
+                changed = self.select_all();
+            }
+            EditCommand::SelectLine => {
+                changed = self.select_line();
+            }
+            EditCommand::MoveLeft { select, unit } => {
+                let next = match unit {
+                    MoveUnit::Grapheme => self.cursor_left_pos(self.cursor),
+                    MoveUnit::Word => self.cursor_word_left_pos(self.cursor),
+                };
+                changed = self.move_cursor_with_selection(next, select);
+            }
+            EditCommand::MoveRight { select, unit } => {
+                let next = match unit {
+                    MoveUnit::Grapheme => self.cursor_right_pos(self.cursor),
+                    MoveUnit::Word => self.cursor_word_right_pos(self.cursor),
+                };
+                changed = self.move_cursor_with_selection(next, select);
+            }
+            EditCommand::MoveUp { select } => {
+                // Wrap-aware movement (Python `get_location_above`):
+                // Up on the first wrapped line moves to (0, 0).
+                let next = self.navigator.get_location_above(
+                    &self.document,
+                    &self.wrapped,
+                    self.cursor.location(),
+                );
+                changed = self.move_cursor_with_selection(next.into(), select);
+                record_width = false;
+            }
+            EditCommand::MoveDown { select } => {
+                // Wrap-aware movement (Python `get_location_below`):
+                // Down on the last wrapped line moves to the line end.
+                let next = self.navigator.get_location_below(
+                    &self.document,
+                    &self.wrapped,
+                    self.cursor.location(),
+                );
+                changed = self.move_cursor_with_selection(next.into(), select);
+                record_width = false;
+            }
+            EditCommand::MoveHome { select } => {
+                // Home moves to the previous wrap offset when the
+                // line is wrapped, else column 0.
+                let next = self.navigator.get_location_home(
+                    &self.document,
+                    &self.wrapped,
+                    self.cursor.location(),
+                    false,
+                );
+                changed = self.move_cursor_with_selection(next.into(), select);
+            }
+            EditCommand::MoveEnd { select } => {
+                // End moves to the end of the current wrapped
+                // section, else the line end.
+                let next = self.navigator.get_location_end(
+                    &self.document,
+                    &self.wrapped,
+                    self.cursor.location(),
+                );
+                changed = self.move_cursor_with_selection(next.into(), select);
+            }
+            _ => return None,
+        }
+        Some(EditEffect {
+            changed,
+            value_changed: false,
+            record_width,
+        })
+    }
+
+    /// Clipboard commands (copy, cut, paste). `None` for other commands.
+    fn apply_clipboard_command(
+        &mut self,
+        cmd: EditCommand,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> Option<EditEffect> {
+        let mut changed = false;
+        let mut value_changed = false;
+        match cmd {
+            EditCommand::Copy => {
+                if let Some(text) = self.selected_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
+                }
+            }
+            EditCommand::Cut => {
+                if let Some(text) = self.selected_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
+                    if self.delete_selection_if_any() {
+                        changed = true;
+                        value_changed = true;
+                    }
+                } else {
+                    let text = self.cut_current_line();
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
+                    changed = true;
+                    value_changed = true;
+                }
+            }
+            EditCommand::Paste => {
+                ctx.post_message(TextEditClipboardPasteRequested {
+                    target: self.node_id(),
+                });
+            }
+            _ => return None,
+        }
+        Some(EditEffect {
+            changed,
+            value_changed,
+            record_width: true,
+        })
+    }
+
+    /// Resolve the component styles (theme overrides first) for one render.
+    fn render_styles(&self) -> TextAreaStyles {
+        let base_meta = crate::css::selector_meta_generic(self);
+        let base_style = crate::css::resolve_style(self, &base_meta);
+        let fallback_bg = parse_color_like("$background").unwrap_or(Color::rgb(0, 0, 0));
+        let base_bg = base_style.bg.unwrap_or(fallback_bg);
+
+        let theme = self.active_theme();
+        let resolve_component_style = |class: &str| -> Style {
+            if let Some(theme) = theme {
+                let override_style = match class {
+                    "text-area--cursor" => theme.cursor_style.clone(),
+                    "text-area--cursor-line" => theme.cursor_line_style.clone(),
+                    "text-area--selection" => theme.selection_style.clone(),
+                    "text-area--gutter" => theme.gutter_style.clone(),
+                    "text-area--gutter-active" => theme.gutter_active_style.clone(),
+                    _ => Style::default(),
+                };
+                if !override_style.is_empty() {
+                    return override_style;
+                }
+            }
+            // TextAreaTheme override (above) wins when non-empty; otherwise the
+            // canonical typeless-phantom CSS resolution applies (the previous
+            // self-typed phantom leaked `TextArea { ... }` type rules into the
+            // component parts).
+            crate::css::resolve_component_style(self, &[class])
+        };
+
+        let cursor_style = resolve_component_style("text-area--cursor");
+        let selection_style = resolve_component_style("text-area--selection");
+        let gutter_style = resolve_component_style("text-area--gutter");
+        let gutter_active_style = resolve_component_style("text-area--gutter-active");
+        let cursor_line_style = resolve_component_style("text-area--cursor-line");
+
+        let placeholder_style = resolve_component_style("text-area--placeholder");
+        let cursor_rich = compose_rich(&cursor_style, base_bg);
+        let selection_rich = compose_rich(&selection_style, base_bg);
+        let gutter_rich = compose_rich(&gutter_style, base_bg);
+        let gutter_active_rich = compose_rich(&gutter_active_style, base_bg);
+        let placeholder_rich = compose_rich(&placeholder_style, base_bg);
+        TextAreaStyles {
+            base_bg,
+            cursor: cursor_rich,
+            selection: selection_rich,
+            gutter: gutter_rich,
+            gutter_active: gutter_active_rich,
+            placeholder: placeholder_rich,
+            cursor_line: cursor_line_style,
+        }
+    }
+
+    /// The placeholder text on the first row of an otherwise blank area.
+    fn render_placeholder(
+        &self,
+        styles: &TextAreaStyles,
+        (gutter_w, text_w): (usize, usize),
+        height: usize,
+    ) -> Segments {
+        let mut out = Segments::new();
+        for y in 0..height {
+            if gutter_w > 0 {
+                out.push(Segment::new(" ".repeat(gutter_w)));
+            }
+            if y == 0 {
+                let line = rich_rs::set_cell_size(&self.placeholder, text_w);
+                out.push(Segment::styled(line, styles.placeholder));
+            } else {
+                out.push(Segment::new(" ".repeat(text_w)));
+            }
+            if y + 1 < height {
+                out.push(Segment::line());
+            }
+        }
+        out
+    }
+
+    /// Render one visual row (gutter, text section, end-of-line cursor and
+    /// padding) into `out`.
+    fn render_row(&self, rows: &RowRender<'_>, visual_row: usize, out: &mut Segments) {
+        let line_info = rows.wrapped.offset_line_info(visual_row);
+        let row_for_style = line_info.map(|(row, _)| row);
+        let is_cursor_line =
+            self.node_state().focused && self.app_active && row_for_style == Some(self.cursor.row);
+        let line_bg_style = if is_cursor_line {
+            Some(rows.styles.cursor_line.clone())
+        } else {
+            None
+        };
+        if rows.gutter_w > 0 {
+            out.push(self.gutter_segment(rows, line_info));
+        }
+
+        let Some((row, section_index)) = line_info else {
+            out.push(Segment::new(" ".repeat(rows.text_w)));
+            return;
+        };
+        let line = self.document.line(row);
+        let offsets: &[usize] = rows.wrapped.get_offsets(row).unwrap_or(&[]);
+        let section_start = if section_index == 0 {
+            0
+        } else {
+            offsets[section_index - 1]
+        };
+        let section_end = offsets.get(section_index).copied().unwrap_or(line.len());
+        let is_last_section = section_index == offsets.len();
+        let section = &line[section_start..section_end];
+
+        let eol_in_sel = is_last_section
+            && !self.selection.is_empty()
+            && cursor_le(
+                rows.selection.0,
+                Cursor {
+                    row,
+                    col: line.len(),
+                },
+            )
+            && cursor_lt(
+                Cursor {
+                    row,
+                    col: line.len(),
+                },
+                rows.selection.1,
+            );
+        let line_abs_offset = rows.syntax.line_offsets.get(row).copied().unwrap_or(0);
+        // Horizontal scrolling applies only when unwrapped.
+        let start_cell = if rows.wrap_width == 0 {
+            self.scroll_col
+        } else {
+            0
+        };
+        let mut cell_x = self.paint_section(
+            rows,
+            (row, section, section_start),
+            (start_cell, line_abs_offset),
+            line_bg_style.as_ref(),
+            out,
+        );
+        // Cursor at end of line: paint a single cell with cursor style
+        // (the cursor rests past the end only on the final section).
+        if is_last_section
+            && self.node_state().focused
+            && self.cursor_visible
+            && row == self.cursor.row
+        {
+            let end_cell = grapheme_cell_len_prefix(section, section.len());
+            if self.cursor.col == line.len() && end_cell >= start_cell && cell_x < rows.text_w {
+                out.push(Segment::styled(" ".to_string(), rows.styles.cursor));
+                cell_x += 1;
+            }
+        }
+
+        if cell_x < rows.text_w {
+            let pad = " ".repeat(rows.text_w - cell_x);
+            if eol_in_sel {
+                out.push(Segment::styled(pad, rows.styles.selection));
+            } else if let Some(bg) = line_bg_style {
+                if bg.is_empty() {
+                    out.push(Segment::new(pad));
+                } else {
+                    out.push(Segment::styled(pad, compose_rich(&bg, rows.styles.base_bg)));
+                }
+            } else {
+                out.push(Segment::new(pad));
+            }
+        }
+    }
+
+    /// The gutter cell for a visual row: the line number on a line's first
+    /// section, else blank.
+    fn gutter_segment(&self, rows: &RowRender<'_>, line_info: Option<(usize, usize)>) -> Segment {
+        let gutter_w = rows.gutter_w;
+        let row_for_style = line_info.map(|(row, _)| row);
+        // Line numbers appear on the FIRST section of a line only;
+        // continuation sections and padding rows get a blank gutter.
+        let gutter_text = match line_info {
+            Some((row, 0)) => {
+                let line_no = row.saturating_add(1);
+                let digits = gutter_w.saturating_sub(2).max(1);
+                format!("{line_no:>digits$}  ")
+            }
+            _ => " ".repeat(gutter_w),
+        };
+        let style = if self.node_state().focused && row_for_style == Some(self.cursor.row) {
+            rows.styles.gutter_active
+        } else {
+            rows.styles.gutter
+        };
+        Segment::styled(rich_rs::set_cell_size(&gutter_text, gutter_w), style)
+    }
+
+    /// Paint the graphemes of one wrapped section, grouping runs of the same
+    /// style. Returns the cells painted.
+    fn paint_section(
+        &self,
+        rows: &RowRender<'_>,
+        (row, section, section_start): (usize, &str, usize),
+        (start_cell, line_abs_offset): (usize, usize),
+        line_bg_style: Option<&Style>,
+        out: &mut Segments,
+    ) -> usize {
+        let (sel_a, sel_b) = rows.selection;
+        let text_w = rows.text_w;
+        let mut cell_x = 0usize;
+        let mut pending_style: Option<rich_rs::Style> = None;
+        let mut pending_text = String::new();
+
+        for (section_byte_idx, grapheme) in section.grapheme_indices(true) {
+            // Document-space byte position (cursor/selection/syntax all
+            // key off document space, agnostic to the visual break).
+            let byte_idx = section_start + section_byte_idx;
+            let w = grapheme_width(grapheme);
+            let ch_cell_start = grapheme_cell_len_prefix(section, section_byte_idx);
+            let ch_cell_end = ch_cell_start + w;
+
+            if ch_cell_end <= start_cell {
+                continue;
+            }
+            if cell_x >= text_w {
+                break;
+            }
+
+            let is_cursor = self.node_state().focused
+                && self.cursor_visible
+                && row == self.cursor.row
+                && byte_idx == self.cursor.col;
+            let in_sel = !self.selection.is_empty()
+                && cursor_le(sel_a, Cursor { row, col: byte_idx })
+                && cursor_lt(Cursor { row, col: byte_idx }, sel_b);
+            let style = if is_cursor {
+                Some(rows.styles.cursor)
+            } else if in_sel {
+                Some(rows.styles.selection)
+            } else {
+                let abs = line_abs_offset.saturating_add(byte_idx);
+                let mut syntax: Option<Style> = None;
+                for span in &rows.syntax.spans {
+                    if abs >= span.start && abs < span.end {
+                        syntax = Some(span.style.clone());
+                    }
+                }
+                let mut merged = syntax.unwrap_or_default();
+                if let Some(bg) = line_bg_style {
+                    if merged.bg.is_none() {
+                        merged.bg = bg.bg;
+                    }
+                }
+                if merged.is_empty() {
+                    None
+                } else {
+                    Some(compose_rich(&merged, rows.styles.base_bg))
+                }
+            };
+
+            let style_changed = match (&pending_style, &style) {
+                (None, None) => false,
+                (Some(a), Some(b)) => a != b,
+                _ => true,
+            };
+            if style_changed {
+                flush_run(out, &mut pending_style, &mut pending_text);
+                pending_style = style;
+            }
+
+            // If we scrolled into the middle of a wide char, drop it for now.
+            if ch_cell_start < start_cell {
+                continue;
+            }
+
+            pending_text.push_str(grapheme);
+            cell_x += w;
+        }
+        flush_run(out, &mut pending_style, &mut pending_text);
+        flush_run(out, &mut pending_style, &mut pending_text);
+        cell_x
+    }
+
     fn recompute_syntax_cache(&self, cache: &mut SyntaxCache) {
         cache.revision = self.doc_revision;
         cache.spans.clear();
@@ -1486,21 +2034,7 @@ impl crate::widgets::Interactive for TextArea {
                 }
                 ctx.request_repaint();
             }
-            Event::Tick(_tick) => {
-                if !self.node_state().focused || !self.app_active {
-                    return;
-                }
-                let Some(next_at) = self.cursor_blink_next_at else {
-                    return;
-                };
-                let now = Instant::now();
-                if now >= next_at {
-                    self.cursor_visible = !self.cursor_visible;
-                    self.cursor_blink_next_at =
-                        now.checked_add(Self::CURSOR_BLINK_PERIOD).or(Some(now));
-                    ctx.request_repaint();
-                }
-            }
+            Event::Tick(_tick) => self.on_blink_tick(ctx),
             Event::MouseDown(mouse) if mouse.target == self.node_id() => {
                 self.cursor = self.hit_test_location(mouse.x, mouse.y);
                 self.selection = Selection::cursor(self.cursor);
@@ -1518,215 +2052,7 @@ impl crate::widgets::Interactive for TextArea {
                 self.mouse_down = false;
                 ctx.request_repaint();
             }
-            Event::Key(key) if self.node_state().focused => {
-                if !self.read_only && matches!(key.code, KeyCode::Char('\u{7f}' | '\u{08}')) {
-                    self.backspace();
-                    self.post_changed(ctx);
-                    self.record_cursor_width();
-                    self.adjust_scroll_to_cursor();
-                    self.reset_blink();
-                    ctx.request_repaint();
-                    ctx.set_handled();
-                    return;
-                }
-
-                let Some(cmd) = edit_command_from_key(key, true) else {
-                    return;
-                };
-
-                // Determine if this is a mutating command.
-                let is_mutation = matches!(
-                    cmd,
-                    EditCommand::InsertChar(_)
-                        | EditCommand::InsertNewline
-                        | EditCommand::Backspace { .. }
-                        | EditCommand::Delete { .. }
-                        | EditCommand::DeleteToStart
-                        | EditCommand::DeleteToEnd
-                        | EditCommand::DeleteLine
-                        | EditCommand::Cut
-                        | EditCommand::Paste
-                );
-
-                // Block mutations in read-only mode.
-                if self.read_only && is_mutation {
-                    ctx.set_handled();
-                    return;
-                }
-
-                let old_selection = self.selection;
-                let mut changed = false;
-                let mut value_changed = false;
-                // Python `move_cursor(record_width=...)`: vertical moves keep
-                // the remembered visual x; everything else records it.
-                let mut record_width = true;
-
-                match cmd {
-                    EditCommand::InsertChar(ch) => {
-                        if ch != '\t' {
-                            // Replace the selection with the typed character
-                            // as a single edit (Python `_replace_via_keyboard`).
-                            self.edit(Edit::new(
-                                ch.to_string(),
-                                self.selection.start.location(),
-                                self.selection.end.location(),
-                                false,
-                            ));
-                            changed = true;
-                            value_changed = true;
-                        }
-                    }
-                    EditCommand::InsertNewline => {
-                        self.edit(Edit::new(
-                            "\n",
-                            self.selection.start.location(),
-                            self.selection.end.location(),
-                            false,
-                        ));
-                        changed = true;
-                        value_changed = true;
-                    }
-                    EditCommand::Backspace { unit } => {
-                        let before = self.text();
-                        match unit {
-                            MoveUnit::Grapheme => self.backspace(),
-                            MoveUnit::Word => self.backspace_word(),
-                        }
-                        changed = before != self.text();
-                        value_changed = changed;
-                    }
-                    EditCommand::Delete { unit } => {
-                        let before = self.text();
-                        match unit {
-                            MoveUnit::Grapheme => self.delete_right(),
-                            MoveUnit::Word => self.delete_word(),
-                        }
-                        changed = before != self.text();
-                        value_changed = changed;
-                    }
-                    EditCommand::DeleteToStart => {
-                        let before = self.text();
-                        self.delete_to_start_of_line();
-                        changed = before != self.text();
-                        value_changed = changed;
-                    }
-                    EditCommand::DeleteToEnd => {
-                        let before = self.text();
-                        self.delete_to_end_of_line();
-                        changed = before != self.text();
-                        value_changed = changed;
-                    }
-                    EditCommand::DeleteLine => {
-                        self.delete_current_line();
-                        changed = true;
-                        value_changed = true;
-                    }
-                    EditCommand::SelectAll => {
-                        changed = self.select_all();
-                    }
-                    EditCommand::SelectLine => {
-                        changed = self.select_line();
-                    }
-                    EditCommand::MoveLeft { select, unit } => {
-                        let next = match unit {
-                            MoveUnit::Grapheme => self.cursor_left_pos(self.cursor),
-                            MoveUnit::Word => self.cursor_word_left_pos(self.cursor),
-                        };
-                        changed = self.move_cursor_with_selection(next, select);
-                    }
-                    EditCommand::MoveRight { select, unit } => {
-                        let next = match unit {
-                            MoveUnit::Grapheme => self.cursor_right_pos(self.cursor),
-                            MoveUnit::Word => self.cursor_word_right_pos(self.cursor),
-                        };
-                        changed = self.move_cursor_with_selection(next, select);
-                    }
-                    EditCommand::MoveUp { select } => {
-                        // Wrap-aware movement (Python `get_location_above`):
-                        // Up on the first wrapped line moves to (0, 0).
-                        let next = self.navigator.get_location_above(
-                            &self.document,
-                            &self.wrapped,
-                            self.cursor.location(),
-                        );
-                        changed = self.move_cursor_with_selection(next.into(), select);
-                        record_width = false;
-                    }
-                    EditCommand::MoveDown { select } => {
-                        // Wrap-aware movement (Python `get_location_below`):
-                        // Down on the last wrapped line moves to the line end.
-                        let next = self.navigator.get_location_below(
-                            &self.document,
-                            &self.wrapped,
-                            self.cursor.location(),
-                        );
-                        changed = self.move_cursor_with_selection(next.into(), select);
-                        record_width = false;
-                    }
-                    EditCommand::MoveHome { select } => {
-                        // Home moves to the previous wrap offset when the
-                        // line is wrapped, else column 0.
-                        let next = self.navigator.get_location_home(
-                            &self.document,
-                            &self.wrapped,
-                            self.cursor.location(),
-                            false,
-                        );
-                        changed = self.move_cursor_with_selection(next.into(), select);
-                    }
-                    EditCommand::MoveEnd { select } => {
-                        // End moves to the end of the current wrapped
-                        // section, else the line end.
-                        let next = self.navigator.get_location_end(
-                            &self.document,
-                            &self.wrapped,
-                            self.cursor.location(),
-                        );
-                        changed = self.move_cursor_with_selection(next.into(), select);
-                    }
-                    EditCommand::Copy => {
-                        if let Some(text) = self.selected_text() {
-                            ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
-                        }
-                    }
-                    EditCommand::Cut => {
-                        if let Some(text) = self.selected_text() {
-                            ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
-                            if self.delete_selection_if_any() {
-                                changed = true;
-                                value_changed = true;
-                            }
-                        } else {
-                            let text = self.cut_current_line();
-                            ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
-                            changed = true;
-                            value_changed = true;
-                        }
-                    }
-                    EditCommand::Paste => {
-                        ctx.post_message(TextEditClipboardPasteRequested {
-                            target: self.node_id(),
-                        });
-                    }
-                    EditCommand::Submit => {}
-                }
-
-                if value_changed {
-                    self.post_changed(ctx);
-                }
-                if self.selection != old_selection {
-                    self.post_selection_changed(ctx);
-                }
-                if changed || value_changed {
-                    if record_width {
-                        self.record_cursor_width();
-                    }
-                    self.adjust_scroll_to_cursor();
-                    self.reset_blink();
-                    ctx.request_repaint();
-                }
-                ctx.set_handled();
-            }
+            Event::Key(key) if self.node_state().focused => self.on_key_event(key, ctx),
             _ => {}
         }
     }
@@ -1779,66 +2105,12 @@ impl crate::widgets::Render for TextArea {
         let height = options.size.1.max(1);
         let gutter_w = self.line_number_gutter_width();
         let text_w = width.saturating_sub(gutter_w).max(1);
-
-        let base_meta = crate::css::selector_meta_generic(self);
-        let base_style = crate::css::resolve_style(self, &base_meta);
-        let fallback_bg = parse_color_like("$background").unwrap_or(Color::rgb(0, 0, 0));
-        let base_bg = base_style.bg.unwrap_or(fallback_bg);
-
-        let theme = self.active_theme();
-        let resolve_component_style = |class: &str| -> Style {
-            if let Some(theme) = theme {
-                let override_style = match class {
-                    "text-area--cursor" => theme.cursor_style.clone(),
-                    "text-area--cursor-line" => theme.cursor_line_style.clone(),
-                    "text-area--selection" => theme.selection_style.clone(),
-                    "text-area--gutter" => theme.gutter_style.clone(),
-                    "text-area--gutter-active" => theme.gutter_active_style.clone(),
-                    _ => Style::default(),
-                };
-                if !override_style.is_empty() {
-                    return override_style;
-                }
-            }
-            // TextAreaTheme override (above) wins when non-empty; otherwise the
-            // canonical typeless-phantom CSS resolution applies (the previous
-            // self-typed phantom leaked `TextArea { ... }` type rules into the
-            // component parts).
-            crate::css::resolve_component_style(self, &[class])
-        };
-
-        let cursor_style = resolve_component_style("text-area--cursor");
-        let selection_style = resolve_component_style("text-area--selection");
-        let gutter_style = resolve_component_style("text-area--gutter");
-        let gutter_active_style = resolve_component_style("text-area--gutter-active");
-        let cursor_line_style = resolve_component_style("text-area--cursor-line");
-
-        let placeholder_style = resolve_component_style("text-area--placeholder");
-        let cursor_rich = compose_rich(&cursor_style, base_bg);
-        let selection_rich = compose_rich(&selection_style, base_bg);
-        let gutter_rich = compose_rich(&gutter_style, base_bg);
-        let gutter_active_rich = compose_rich(&gutter_active_style, base_bg);
-        let placeholder_rich = compose_rich(&placeholder_style, base_bg);
+        let styles = self.render_styles();
 
         // Show placeholder when empty.
         let is_empty = self.document.line_count() == 1 && self.document.line(0).is_empty();
         if is_empty && !self.placeholder.is_empty() {
-            let mut out = Segments::new();
-            for y in 0..height {
-                if gutter_w > 0 {
-                    out.push(Segment::new(" ".repeat(gutter_w)));
-                }
-                if y == 0 {
-                    let line = rich_rs::set_cell_size(&self.placeholder, text_w);
-                    out.push(Segment::styled(line, placeholder_rich));
-                } else {
-                    out.push(Segment::new(" ".repeat(text_w)));
-                }
-                if y + 1 < height {
-                    out.push(Segment::line());
-                }
-            }
-            return out;
+            return self.render_placeholder(&styles, (gutter_w, text_w), height);
         }
 
         let syntax_cache = {
@@ -1872,200 +2144,78 @@ impl crate::widgets::Render for TextArea {
 
         let (sel_a, sel_b) = normalized_selection(self.selection);
 
+        let rows = RowRender {
+            wrapped,
+            syntax: &syntax_cache,
+            styles: &styles,
+            selection: (sel_a, sel_b),
+            gutter_w,
+            text_w,
+            wrap_width: render_wrap_width,
+        };
         let mut out = Segments::new();
         for y in 0..height {
-            let visual_row = self.scroll_row + y;
-            let line_info = wrapped.offset_line_info(visual_row);
-            let row_for_style = line_info.map(|(row, _)| row);
-            let is_cursor_line = self.node_state().focused
-                && self.app_active
-                && row_for_style == Some(self.cursor.row);
-            let line_bg_style = if is_cursor_line {
-                Some(cursor_line_style.clone())
-            } else {
-                None
-            };
-            if gutter_w > 0 {
-                // Line numbers appear on the FIRST section of a line only;
-                // continuation sections and padding rows get a blank gutter.
-                let gutter_text = match line_info {
-                    Some((row, 0)) => {
-                        let line_no = row.saturating_add(1);
-                        let digits = gutter_w.saturating_sub(2).max(1);
-                        format!("{line_no:>digits$}  ")
-                    }
-                    _ => " ".repeat(gutter_w),
-                };
-                let style = if self.node_state().focused && row_for_style == Some(self.cursor.row) {
-                    gutter_active_rich
-                } else {
-                    gutter_rich
-                };
-                out.push(Segment::styled(
-                    rich_rs::set_cell_size(&gutter_text, gutter_w),
-                    style,
-                ));
-            }
-
-            let Some((row, section_index)) = line_info else {
-                out.push(Segment::new(" ".repeat(text_w)));
-                if y + 1 < height {
-                    out.push(Segment::line());
-                }
-                continue;
-            };
-
-            let line = self.document.line(row);
-            let offsets: &[usize] = wrapped.get_offsets(row).unwrap_or(&[]);
-            let section_start = if section_index == 0 {
-                0
-            } else {
-                offsets[section_index - 1]
-            };
-            let section_end = offsets.get(section_index).copied().unwrap_or(line.len());
-            let is_last_section = section_index == offsets.len();
-            let section = &line[section_start..section_end];
-
-            let eol_in_sel = is_last_section
-                && !self.selection.is_empty()
-                && cursor_le(
-                    sel_a,
-                    Cursor {
-                        row,
-                        col: line.len(),
-                    },
-                )
-                && cursor_lt(
-                    Cursor {
-                        row,
-                        col: line.len(),
-                    },
-                    sel_b,
-                );
-            let line_abs_offset = syntax_cache.line_offsets.get(row).copied().unwrap_or(0);
-            // Horizontal scrolling applies only when unwrapped.
-            let start_cell = if render_wrap_width == 0 {
-                self.scroll_col
-            } else {
-                0
-            };
-            let mut cell_x = 0usize;
-            let mut pending_style: Option<rich_rs::Style> = None;
-            let mut pending_text = String::new();
-
-            let flush = |out: &mut Segments,
-                         pending_style: &mut Option<rich_rs::Style>,
-                         pending_text: &mut String| {
-                if pending_text.is_empty() {
-                    return;
-                }
-                let style = pending_style.take().unwrap_or_default();
-                out.push(Segment::styled(std::mem::take(pending_text), style));
-            };
-
-            for (section_byte_idx, grapheme) in section.grapheme_indices(true) {
-                // Document-space byte position (cursor/selection/syntax all
-                // key off document space, agnostic to the visual break).
-                let byte_idx = section_start + section_byte_idx;
-                let w = grapheme_width(grapheme);
-                let ch_cell_start = grapheme_cell_len_prefix(section, section_byte_idx);
-                let ch_cell_end = ch_cell_start + w;
-
-                if ch_cell_end <= start_cell {
-                    continue;
-                }
-                if cell_x >= text_w {
-                    break;
-                }
-
-                let is_cursor = self.node_state().focused
-                    && self.cursor_visible
-                    && row == self.cursor.row
-                    && byte_idx == self.cursor.col;
-                let in_sel = !self.selection.is_empty()
-                    && cursor_le(sel_a, Cursor { row, col: byte_idx })
-                    && cursor_lt(Cursor { row, col: byte_idx }, sel_b);
-                let style = if is_cursor {
-                    Some(cursor_rich)
-                } else if in_sel {
-                    Some(selection_rich)
-                } else {
-                    let abs = line_abs_offset.saturating_add(byte_idx);
-                    let mut syntax: Option<Style> = None;
-                    for span in &syntax_cache.spans {
-                        if abs >= span.start && abs < span.end {
-                            syntax = Some(span.style.clone());
-                        }
-                    }
-                    let mut merged = syntax.unwrap_or_default();
-                    if let Some(ref bg) = line_bg_style {
-                        if merged.bg.is_none() {
-                            merged.bg = bg.bg;
-                        }
-                    }
-                    if merged.is_empty() {
-                        None
-                    } else {
-                        Some(compose_rich(&merged, base_bg))
-                    }
-                };
-
-                let style_changed = match (&pending_style, &style) {
-                    (None, None) => false,
-                    (Some(a), Some(b)) => a != b,
-                    _ => true,
-                };
-                if style_changed {
-                    flush(&mut out, &mut pending_style, &mut pending_text);
-                    pending_style = style;
-                }
-
-                // If we scrolled into the middle of a wide char, drop it for now.
-                if ch_cell_start < start_cell {
-                    continue;
-                }
-
-                pending_text.push_str(grapheme);
-                cell_x += w;
-            }
-            flush(&mut out, &mut pending_style, &mut pending_text);
-
-            // Cursor at end of line: paint a single cell with cursor style
-            // (the cursor rests past the end only on the final section).
-            if is_last_section
-                && self.node_state().focused
-                && self.cursor_visible
-                && row == self.cursor.row
-            {
-                let end_cell = grapheme_cell_len_prefix(section, section.len());
-                if self.cursor.col == line.len() && end_cell >= start_cell && cell_x < text_w {
-                    out.push(Segment::styled(" ".to_string(), cursor_rich));
-                    cell_x += 1;
-                }
-            }
-
-            if cell_x < text_w {
-                let pad = " ".repeat(text_w - cell_x);
-                if eol_in_sel {
-                    out.push(Segment::styled(pad, selection_rich));
-                } else if let Some(bg) = line_bg_style {
-                    if bg.is_empty() {
-                        out.push(Segment::new(pad));
-                    } else {
-                        out.push(Segment::styled(pad, compose_rich(&bg, base_bg)));
-                    }
-                } else {
-                    out.push(Segment::new(pad));
-                }
-            }
-
+            self.render_row(&rows, self.scroll_row + y, &mut out);
             if y + 1 < height {
                 out.push(Segment::line());
             }
         }
-
         out
     }
+}
+
+/// What an edit command changed.
+#[derive(Debug, Clone, Copy)]
+struct EditEffect {
+    changed: bool,
+    value_changed: bool,
+    /// Record the cursor's visual x (false for vertical moves).
+    record_width: bool,
+}
+
+impl EditEffect {
+    /// Nothing changed.
+    const NONE: Self = Self {
+        changed: false,
+        value_changed: false,
+        record_width: true,
+    };
+}
+
+/// Resolved styles for one render.
+struct TextAreaStyles {
+    base_bg: Color,
+    cursor: rich_rs::Style,
+    selection: rich_rs::Style,
+    gutter: rich_rs::Style,
+    gutter_active: rich_rs::Style,
+    placeholder: rich_rs::Style,
+    cursor_line: Style,
+}
+
+/// Inputs shared by every row of one render.
+struct RowRender<'a> {
+    wrapped: &'a WrappedDocument,
+    syntax: &'a SyntaxCache,
+    styles: &'a TextAreaStyles,
+    selection: (Cursor, Cursor),
+    gutter_w: usize,
+    text_w: usize,
+    /// Soft-wrap width (0 when unwrapped).
+    wrap_width: usize,
+}
+
+/// Push the pending text run (if any) with its style.
+fn flush_run(
+    out: &mut Segments,
+    pending_style: &mut Option<rich_rs::Style>,
+    pending_text: &mut String,
+) {
+    if pending_text.is_empty() {
+        return;
+    }
+    let style = pending_style.take().unwrap_or_default();
+    out.push(Segment::styled(std::mem::take(pending_text), style));
 }
 
 fn compose_rich(style: &Style, base_bg: Color) -> rich_rs::Style {
