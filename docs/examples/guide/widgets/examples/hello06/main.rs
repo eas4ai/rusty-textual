@@ -21,7 +21,7 @@
 ///   is provided as a keyboard fallback.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -34,7 +34,7 @@ Screen {
     border: $secondary tall;
     content-align: center middle;
 }
-"##;
+";
 
 const HELLOS: &[&str] = &[
     "Hola",

@@ -15,7 +15,7 @@
 use textual::action::parse_action;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Bar {
     height: 5;
     content-align: center middle;
@@ -39,7 +39,7 @@ Bar {
 #bars {
     height: 1fr;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // Bar widget — mirrors Python `class Bar(Static): pass`

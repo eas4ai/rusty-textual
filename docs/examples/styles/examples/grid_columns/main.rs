@@ -7,7 +7,7 @@
 /// may not be fully supported in textual-rs yet.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Grid {
     grid-size: 5 2;
     grid-columns: 1fr 16 2fr;
@@ -19,7 +19,7 @@ Label {
     width: 100%;
     height: 100%;
 }
-"##;
+";
 
 struct MyApp;
 

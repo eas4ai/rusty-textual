@@ -6,7 +6,7 @@
 /// Python structure:
 ///   - TooltipApp(App) — single `Button("Click me", variant="success")`
 ///   - Screen aligned center middle
-///   - on_mount: sets `self.query_one(Button).tooltip = TEXT`
+///   - `on_mount`: sets `self.query_one(Button).tooltip = TEXT`
 ///
 /// Rust differences:
 ///   - Python sets `.tooltip` as a property on an existing widget after composition.
@@ -33,11 +33,11 @@ I will face my fear.";
 // CSS
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // TooltipButton — thin wrapper that adds a tooltip to any Button

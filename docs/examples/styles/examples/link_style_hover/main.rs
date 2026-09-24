@@ -7,7 +7,7 @@
 /// in textual-rs yet.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #lbl1, #lbl2 {
     link-style-hover: bold italic;
 }
@@ -19,7 +19,7 @@ const CSS: &str = r##"
 #lbl4 {
     link-style-hover: bold;
 }
-"##;
+";
 
 struct LinkHoverStyleApp;
 

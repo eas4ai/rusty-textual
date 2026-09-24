@@ -4,7 +4,7 @@
 /// foreground color based on the background.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Label {
     color: auto 80%;
     content-align: center middle;
@@ -31,7 +31,7 @@ Label {
 #lbl5 {
     background: green 80%;
 }
-"##;
+";
 
 struct ColorApp;
 

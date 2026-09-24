@@ -4,12 +4,12 @@
 /// (Python sets these via `on_mount` dynamic style assignment on `self.screen`).
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     background: darkblue;
     border: heavy white;
 }
-"##;
+";
 
 struct ScreenApp;
 

@@ -46,7 +46,7 @@ textual::impl_message!(BitChanged);
 // CSS
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 BitSwitch {
     layout: vertical;
     width: auto;
@@ -81,7 +81,7 @@ ByteEditor > Container.top {
 ByteEditor Input {
     width: 16;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // BitSwitch widget
@@ -351,8 +351,7 @@ impl TextualApp for ByteInputApp {
             let byte_val: u32 = text
                 .trim()
                 .parse::<i64>()
-                .map(|v| v.clamp(0, 255) as u32)
-                .unwrap_or(0);
+                .map_or(0, |v| v.clamp(0, 255) as u32);
 
             // Suppress feedback while we set switches programmatically —
             // Python: `with switch.prevent(BitSwitch.BitChanged):`. The scope

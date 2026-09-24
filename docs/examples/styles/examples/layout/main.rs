@@ -3,7 +3,7 @@
 /// Demonstrates vertical and horizontal layout on two Container widgets.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #vertical-layout {
     layout: vertical;
     background: darkmagenta;
@@ -22,7 +22,7 @@ Label {
     color: black;
     background: yellowgreen;
 }
-"##;
+";
 
 struct LayoutApp;
 

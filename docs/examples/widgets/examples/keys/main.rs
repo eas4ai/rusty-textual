@@ -84,9 +84,7 @@ fn write_key_line(log: &mut RichLog, key_name: &str, character: Option<char>, is
         .with_color(Color::parse("#b73763").unwrap().to_simple_opaque())
         .with_italic(true);
 
-    let character = character
-        .map(|ch| format!("'{ch}'"))
-        .unwrap_or_else(|| "None".to_string());
+    let character = character.map_or_else(|| "None".to_string(), |ch| format!("'{ch}'"));
     let printable = if is_printable { "True" } else { "False" };
 
     log.write_segments(vec![

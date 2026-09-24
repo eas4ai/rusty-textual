@@ -55,7 +55,7 @@ fn parse_hex_color(s: &str) -> Color {
 /// framework tick rather than wall-clock time.
 const DEGREES_PER_TICK: f32 = 1.44;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Splash {
     align: center middle;
 }
@@ -63,7 +63,7 @@ Static {
     width: 40;
     padding: 2 4;
 }
-"#;
+";
 
 struct Splash {
     container: Container,

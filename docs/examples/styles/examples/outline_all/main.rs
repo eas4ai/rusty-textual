@@ -3,7 +3,7 @@
 /// Demonstrates all available `outline` style variants on a 3x5 grid of Labels.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #ascii {
     outline: ascii $accent;
 }
@@ -75,7 +75,7 @@ Label {
     height: 3;
     content-align: center middle;
 }
-"##;
+";
 
 struct AllOutlinesApp;
 

@@ -9,7 +9,7 @@ use textual::prelude::*;
 ///   class Name(Widget):
 ///       who = reactive("name", recompose=True)   # (1)
 ///       def compose(self): yield Label(f"Hello, {self.who}!")   # (2)
-///   on_input_changed: self.query_one(Name).who = event.value
+///   `on_input_changed`: `self.query_one(Name).who` = event.value
 ///
 /// Rust port (faithful): `Name` derives `Reactive` with `#[reactive(recompose)] who`
 /// and composes a `Label`. The generated `set_who(value, ctx)` records a change
@@ -19,7 +19,7 @@ use textual::prelude::*;
 /// for the runtime reactive phase.
 use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Input {
     dock: top;
     margin-top: 1;
@@ -30,7 +30,7 @@ Name {
     height: auto;
     border: heavy $secondary;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // Name: custom widget with a recompose reactive `who`

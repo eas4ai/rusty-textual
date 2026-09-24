@@ -10,7 +10,7 @@ use textual::prelude::*;
 ///   class Name(Widget):
 ///       who = reactive("name", layout=True)   # (1)
 ///       def render(self) -> str: return f"Hello, {self.who}!"
-///   on_input_changed: self.query_one(Name).who = event.value
+///   `on_input_changed`: `self.query_one(Name).who` = event.value
 ///
 /// Rust port (faithful): `Name` derives `Reactive` with `#[reactive(layout)] who`.
 /// The generated `set_who(value, ctx)` records a layout+repaint change; the
@@ -19,7 +19,7 @@ use textual::prelude::*;
 /// sets `who`, and enqueues the change for the runtime reactive phase.
 use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Input {
     dock: top;
     margin-top: 1;
@@ -30,7 +30,7 @@ Name {
     height: auto;
     border: heavy $secondary;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // Name widget — `who = reactive("name", layout=True)`

@@ -8,7 +8,7 @@
 /// Rust:   `ListView::from_list_items(vec![ListItem::new(Label::new("One")), ...])`
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -22,7 +22,7 @@ ListView {
 Label {
     padding: 1 2;
 }
-"#;
+";
 
 struct ListViewApp;
 

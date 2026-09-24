@@ -7,7 +7,7 @@
 /// included verbatim per port rules.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #lbl1, #lbl2 {
     link-background: red;
 }
@@ -19,7 +19,7 @@ const CSS: &str = r##"
 #lbl4 {
     link-background: $accent;
 }
-"##;
+";
 
 struct LinkBackgroundApp;
 

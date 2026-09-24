@@ -7,7 +7,7 @@
 /// supported in textual-rs yet.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #lbl1, #lbl2 {
     link-color-hover: red;
 }
@@ -19,7 +19,7 @@ const CSS: &str = r##"
 #lbl4 {
     link-color-hover: black;
 }
-"##;
+";
 
 struct LinkHoverColorApp;
 

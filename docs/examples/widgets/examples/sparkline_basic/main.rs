@@ -5,7 +5,7 @@
 /// sparkline has a width of 3 columns and a 2-cell margin.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -14,7 +14,7 @@ Sparkline {
     width: 3;
     margin: 2;
 }
-"#;
+";
 
 const DATA: &[f64] = &[1.0, 2.0, 2.0, 1.0, 1.0, 4.0, 3.0, 1.0, 1.0, 8.0, 8.0, 2.0];
 

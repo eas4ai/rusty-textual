@@ -15,7 +15,7 @@
 use textual::action::ParsedAction;
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Counter {
     height: auto;
     background: $panel-darken-1;
@@ -29,7 +29,7 @@ Counter:focus {
     text-style: bold;
     outline-left: thick $accent;
 }
-"##;
+";
 
 // ---------------------------------------------------------------------------
 // Counter widget
@@ -66,7 +66,7 @@ impl Widget for Counter {
         let text = format!("Count: {}", self.count);
         // Pad to widget width so the background fills the whole row.
         let width = options.size.0;
-        let padded = format!("{:<width$}", text, width = width);
+        let padded = format!("{text:<width$}");
         Segments::from(vec![Segment::new(padded)])
     }
 

@@ -6,7 +6,7 @@
 /// Note: `scrollbar-gutter` CSS property may be a framework gap in textual-rs.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     scrollbar-gutter: stable;
 }
@@ -15,7 +15,7 @@ Screen {
     color: floralwhite;
     background: darkmagenta;
 }
-"##;
+";
 
 const TEXT: &str = "I must not fear.
 Fear is the mind-killer.

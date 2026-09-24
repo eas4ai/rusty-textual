@@ -4,7 +4,7 @@
 /// Each Container uses a different `align` value with a Label child.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #left-top {
     /* align: left top; this is the default value and is implied. */
 }
@@ -58,7 +58,7 @@ Label {
     height: 1;
     background: $accent;
 }
-"##;
+";
 
 struct AlignAllApp;
 

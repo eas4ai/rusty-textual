@@ -29,7 +29,7 @@ const TEXT: &str = "
 [@click=set_background('yellow')]Yellow[/]
 ";
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 1;
@@ -41,7 +41,7 @@ ColorSwitcher {
     height: 100%;
     margin: 2 4;
 }
-"#;
+";
 
 /// `ColorSwitcher` — a `Static` subclass that owns a `set_background` action
 /// changing only *its own* background.  Mirrors Python's

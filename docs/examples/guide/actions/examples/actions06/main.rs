@@ -13,7 +13,7 @@ use textual::prelude::*;
 
 const PAGES_COUNT: usize = 5;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 #page-container {
     scrollbar-size: 0 0;
 }
@@ -21,7 +21,7 @@ const CSS: &str = r#"
 Placeholder {
     width: 100vw;
 }
-"#;
+";
 
 struct PagesApp {
     page_no: usize,
@@ -49,9 +49,8 @@ impl TextualApp for PagesApp {
     fn compose(&mut self) -> AppRoot {
         let mut page_container = HorizontalScroll::new();
         for page_no in 0..PAGES_COUNT {
-            page_container.push(
-                Placeholder::new(format!("Page {}", page_no)).id(format!("page-{}", page_no)),
-            );
+            page_container
+                .push(Placeholder::new(format!("Page {page_no}")).id(format!("page-{page_no}")));
         }
         AppRoot::new()
             .with_child(page_container.id("page-container"))

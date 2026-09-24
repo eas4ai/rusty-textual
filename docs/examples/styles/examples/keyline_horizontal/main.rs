@@ -6,7 +6,7 @@
 /// Note: `keyline` is not yet implemented in textual-rs (framework gap).
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Placeholder {
     margin: 1;
     width: 1fr;
@@ -15,7 +15,7 @@ Placeholder {
 Horizontal {
     keyline: thin $secondary;
 }
-"##;
+";
 
 struct KeylineApp;
 

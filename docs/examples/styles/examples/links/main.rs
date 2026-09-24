@@ -11,13 +11,13 @@ use textual::prelude::*;
 
 const TEXT: &str = "Here is a [@click='app.bell']link[/] which you can click!\n";
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #custom {
     link-color: black 90%;
     link-background: dodgerblue;
     link-style: bold italic underline;
 }
-"##;
+";
 
 struct LinksApp;
 

@@ -7,7 +7,7 @@
 /// in textual-rs.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #p1 {
     row-span: 4;
 }
@@ -38,7 +38,7 @@ Grid {
 Placeholder {
     height: 100%;
 }
-"##;
+";
 
 struct MyApp;
 

@@ -24,7 +24,7 @@ you will lose any unsaved information in all open applications.
 Error: 0E : 016F : BFF9B3D4
 ";
 
-const CSS: &str = r#"
+const CSS: &str = r"
 BSOD {
     align: center middle;
     background: blue;
@@ -43,7 +43,7 @@ BSOD > Static {
 #any-key {
     content-align-horizontal: center;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // BSOD screen root widget
@@ -80,7 +80,7 @@ impl Widget for BSODRoot {
 struct BSODScreen;
 
 impl Screen for BSODScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "bsod"
     }
 

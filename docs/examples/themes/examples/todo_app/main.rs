@@ -12,7 +12,7 @@
 /// `$error-muted`, `$primary-muted`, …) from the active theme.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
     hatch: right $foreground 10%;
@@ -59,7 +59,7 @@ Screen {
     background: $primary-muted;
     color: $text-primary;
 }
-"#;
+";
 
 /// The named themes cycled by Ctrl+T (exact Python `THEMES` list).
 const THEME_CYCLE: &[&str] = &[

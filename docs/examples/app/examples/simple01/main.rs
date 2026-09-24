@@ -7,7 +7,7 @@
 ///         pass
 ///
 /// This renders the default Textual UI (dark theme, empty content area)
-/// with the app title defaulting to the class name "MyApp".
+/// with the app title defaulting to the class name "`MyApp`".
 use textual::prelude::*;
 
 struct MyApp;

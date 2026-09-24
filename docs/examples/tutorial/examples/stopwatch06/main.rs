@@ -1,11 +1,11 @@
 //! Port of Python Textual `docs/examples/tutorial/stopwatch06.py`, on the
-//! WidgetCtx surface. Imports are ONLY `std` + `textual::prelude::*` — ZERO
+//! `WidgetCtx` surface. Imports are ONLY `std` + `textual::prelude::*` — ZERO
 //! runtime internals. Each `TimeDisplay` owns its 1/60s interval, so
 //! `Pilot::advance_clock` drives the clock deterministically.
 use std::time::Duration;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Stopwatch { background: $boost; height: 5; margin: 1; min-width: 50; padding: 1; }
 TimeDisplay { text-align: center; color: $foreground-muted; height: 3; }
 Button { width: 16; }
@@ -17,7 +17,7 @@ Button { width: 16; }
 .started #start { display: none; }
 .started #stop { display: block; }
 .started #reset { visibility: hidden; }
-"#;
+";
 
 /// `HH:MM:SS.cc` — mirrors Python `f"{hours:02,.0f}:{minutes:02.0f}:{seconds:05.2f}"`.
 fn format_time(secs: f64) -> String {
@@ -111,7 +111,7 @@ impl Stopwatch {
                 td.update_via(ctx, |d, _| d.stop());
                 ctx.remove_class("started");
             }
-            Some("reset") => td.update_via(ctx, |d, c| d.reset(c)),
+            Some("reset") => td.update_via(ctx, TimeDisplay::reset),
             _ => {}
         }
     }

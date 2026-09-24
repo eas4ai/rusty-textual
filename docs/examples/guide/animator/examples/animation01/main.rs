@@ -6,13 +6,13 @@ use std::time::Duration;
 use textual::event::{AnimationEase, StyleValue};
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #box {
     background: red;
     color: black;
     padding: 1 2;
 }
-"##;
+";
 
 struct AnimationApp;
 

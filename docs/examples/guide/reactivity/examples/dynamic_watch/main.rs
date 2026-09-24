@@ -9,29 +9,29 @@ use textual::prelude::*;
 /// Python:
 ///   class Counter(Widget):
 ///       counter = reactive(0)   # (1)
-///       def compose(self): yield Label(); yield Button("+10")
-///       def on_button_pressed(self): self.counter += 10
-///       def watch_counter(self, v): self.query_one(Label).update(str(v))
+///       def compose(self): yield `Label()`; yield Button("+10")
+///       def `on_button_pressed(self)`: self.counter += 10
+///       def `watch_counter(self`, v): `self.query_one(Label).update(str(v))`
 ///   class WatchApp(App):
-///       def compose(self): yield Counter(); yield ProgressBar(total=100, show_eta=False)
-///       def on_mount(self):
-///           def update_progress(v): self.query_one(ProgressBar).update(progress=v)  # (2)
-///           self.watch(self.query_one(Counter), "counter", update_progress)  # (3)
+///       def compose(self): yield `Counter()`; yield ProgressBar(total=100, `show_eta=False`)
+///       def `on_mount(self)`:
+///           def `update_progress(v)`: `self.query_one(ProgressBar).update(progress=v)`  # (2)
+///           `self.watch(self.query_one(Counter)`, "counter", `update_progress`)  # (3)
 ///
 /// Rust port (faithful): `Counter` derives `Reactive` with
 /// `#[reactive(watch_with_app)] counter`; `watch_counter` updates its Label. The
 /// app's `on_mount_with_app` registers a DYNAMIC watcher via
 /// `App::watch_reactive(counter_node, "counter", cb)` — Rust's equivalent of
-/// `self.watch(...)` — whose callback updates the ProgressBar. Pressing "+10"
+/// `self.watch(...)` — whose callback updates the `ProgressBar`. Pressing "+10"
 /// sets the Counter's reactive (via the widget-level reactive phase), which fires
 /// both watchers.
 use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Counter {
     height: auto;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // Counter widget: reactive counter + Label + Button("+10")

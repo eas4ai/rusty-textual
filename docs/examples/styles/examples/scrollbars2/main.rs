@@ -7,7 +7,7 @@
 /// are not yet visually implemented in textual-rs (framework gap).
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     scrollbar-background: blue;
     scrollbar-background-active: red;
@@ -16,7 +16,7 @@ Screen {
     scrollbar-color-active: yellow;
     scrollbar-color-hover: pink;
 }
-"##;
+";
 
 const TEXT: &str = "I must not fear.\nFear is the mind-killer.\nFear is the little-death that brings total obliteration.\nI will face my fear.\nI will permit it to pass over me and through me.\nAnd when it has gone past, I will turn the inner eye to see its path.\nWhere the fear has gone there will be nothing. Only I will remain.\n";
 

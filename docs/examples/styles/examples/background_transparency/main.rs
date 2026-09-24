@@ -4,7 +4,7 @@
 /// `background: red N%` across ten Static widgets.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #t10 {
     background: red 10%;
 }
@@ -54,7 +54,7 @@ Static {
     width: 1fr;
     content-align: center middle;
 }
-"##;
+";
 
 struct BackgroundTransparencyApp;
 

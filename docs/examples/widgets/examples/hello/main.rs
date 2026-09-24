@@ -1,7 +1,7 @@
 use textual::compose;
 use textual::prelude::*;
 
-const EVENTS_MD: &str = r#"## Recent Events
+const EVENTS_MD: &str = r"## Recent Events
 
 | Time  | Event            | Status  |
 |-------|------------------|---------|
@@ -9,7 +9,7 @@ const EVENTS_MD: &str = r#"## Recent Events
 | 14:15 | Health check     | OK      |
 | 14:02 | Config reload    | Success |
 | 13:58 | Backup started   | Running |
-"#;
+";
 
 struct MissionControl;
 

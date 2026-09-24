@@ -5,9 +5,9 @@
 ///
 /// Python:
 ///   class Stopwatch(HorizontalGroup):
-///       def on_button_pressed(self, event):
-///           if event.button.id == "start": self.add_class("started")
-///           elif event.button.id == "stop": self.remove_class("started")
+///       def `on_button_pressed(self`, event):
+///           if event.button.id == "start": `self.add_class("started`")
+///           elif event.button.id == "stop": `self.remove_class("started`")
 ///
 /// In Rust, `add_class`/`remove_class` on a widget are done via `ReactiveCtx`
 /// from within the widget's own event handler. Since `Stopwatch` here is a
@@ -17,7 +17,7 @@
 use textual::compose;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Stopwatch {
     background: $boost;
     height: 5;
@@ -69,7 +69,7 @@ Button {
 .started #reset {
     visibility: hidden;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // TimeDisplay widget
@@ -92,7 +92,7 @@ impl Widget for TimeDisplay {
         "TimeDisplay"
     }
 
-    /// Python's `class TimeDisplay(Digits)` inherits `Digits` DEFAULT_CSS via the
+    /// Python's `class TimeDisplay(Digits)` inherits `Digits` `DEFAULT_CSS` via the
     /// MRO (notably `width: 1fr`). Declare `Digits` as a style-type alias so the
     /// framework applies the base widget's default CSS to this wrapper, matching
     /// Python's resolved styles.

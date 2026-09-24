@@ -8,9 +8,9 @@
 ///   def compose(self):
 ///       yield Input(placeholder="Give me a name")
 ///       for name in self.names: yield Label(f"Hello, {name}")
-///   def on_input_submitted(self, event):
+///   def `on_input_submitted(self`, event):
 ///       self.names.append(event.value)
-///       self.mutate_reactive(MultiGreet.names)   # (2)
+///       `self.mutate_reactive(MultiGreet.names)`   # (2)
 ///
 /// Rust port (faithful): the app derives `Reactive` with
 /// `#[reactive(recompose)] names: Vec<String>`. On submit, the name is pushed in

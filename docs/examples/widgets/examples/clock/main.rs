@@ -9,8 +9,8 @@
 /// output for this single-widget app.
 ///
 /// Python:
-///   on_ready: self.update_clock(); self.set_interval(1, self.update_clock)
-///   update_clock: self.query_one(Digits).update(f"{clock:%T}")
+///   `on_ready`: `self.update_clock()`; `self.set_interval(1`, `self.update_clock`)
+///   `update_clock`: `self.query_one(Digits).update(f"{clock:%T`}")
 ///
 /// Rust port (faithful): `on_mount_with_app` registers `app.set_interval(1s, ...)`.
 /// The timer callback queries the `Digits` widget and updates it — exactly Python's
@@ -22,14 +22,14 @@
 use chrono::Timelike;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
 Digits {
     width: auto;
 }
-"#;
+";
 
 /// Compute current LOCAL time as "HH:MM:SS".
 ///

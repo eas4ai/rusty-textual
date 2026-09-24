@@ -41,7 +41,7 @@
 use rich_rs::{Console, ConsoleOptions, Renderable, Segments, Table};
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -52,12 +52,12 @@ FizzBuzz {
     background: $primary;
     color: $text;
 }
-"##;
+";
 
 /// The fixed content width mirrors Python `get_content_width` returning 50.
 const FIZZBUZZ_CONTENT_WIDTH: usize = 50;
 
-/// Build the FizzBuzz table (mirrors Python `on_mount`).
+/// Build the `FizzBuzz` table (mirrors Python `on_mount`).
 fn build_table() -> Table {
     let mut table = Table::new().with_expand(true);
     table.add_column_str("Number");

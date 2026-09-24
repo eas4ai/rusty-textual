@@ -3,7 +3,7 @@
 /// Demonstrates absolute and relative `position` CSS properties with `offset`.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -23,7 +23,7 @@ Label#label2 {
     position: relative;
     offset: 2 1;
 }
-"##;
+";
 
 struct PositionApp;
 

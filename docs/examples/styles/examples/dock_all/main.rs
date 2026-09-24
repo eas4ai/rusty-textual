@@ -3,7 +3,7 @@
 /// Demonstrates docking containers to all four sides of the screen.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #left {
     dock: left;
     height: 100%;
@@ -38,7 +38,7 @@ Screen {
     height: 75%;
     border: round white;
 }
-"##;
+";
 
 struct DockAllApp;
 

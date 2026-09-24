@@ -3,7 +3,7 @@
 /// Demonstrates compound widgets with custom messages:
 /// - `BitSwitch`: a Switch with a numeric label, posts `BitChanged` when toggled.
 /// - `ByteInput`: 8 `BitSwitch` widgets arranged horizontally (bits 7..=0).
-/// - `ByteEditor`: Input (shows byte value as decimal) + ByteInput.
+/// - `ByteEditor`: Input (shows byte value as decimal) + `ByteInput`.
 ///
 /// When a switch is toggled, `BitChanged` bubbles to the app. The app reads all
 /// 8 switch values (by id `switch-0`..`switch-7`), computes the byte value, and
@@ -27,7 +27,7 @@ textual::impl_message!(BitChanged);
 // CSS
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 BitSwitch {
     layout: vertical;
     width: auto;
@@ -62,7 +62,7 @@ ByteEditor > Container.top {
 ByteEditor Input {
     width: 16;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // BitSwitch widget

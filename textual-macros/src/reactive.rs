@@ -188,7 +188,9 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                     path,
                                     format!(
                                         "unknown var attribute `{}`; expected `watch`, `watch1`, `watch0`, `watch_async`, `watch_with_app`, `validate`, `always_update`, `private_watch`, `private_validate`, `bindings`, `toggle_class = \"...\"`, or `init = false` (note: `recompose` is only valid on `#[reactive]`, not `#[var]`)",
-                                        path.get_ident().map(|i| i.to_string()).unwrap_or_default()
+                                        path.get_ident()
+                                            .map(std::string::ToString::to_string)
+                                            .unwrap_or_default()
                                     ),
                                 ));
                             }
@@ -200,7 +202,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                         toggle_classes = lit_str
                                             .value()
                                             .split_whitespace()
-                                            .map(|s| s.to_string())
+                                            .map(std::string::ToString::to_string)
                                             .collect();
                                     } else {
                                         return Err(syn::Error::new_spanned(
@@ -239,7 +241,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                         "unknown var attribute `{}`; expected `toggle_class = \"...\"` or `init`",
                                         nv.path
                                             .get_ident()
-                                            .map(|i| i.to_string())
+                                            .map(std::string::ToString::to_string)
                                             .unwrap_or_default()
                                     ),
                                 ));
@@ -362,11 +364,11 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                 ty,
                 depends_on,
                 watch,
+                watch_with_app,
+                private_watch,
                 watch1,
                 watch0,
-                watch_with_app,
                 watch_async,
-                private_watch,
             })));
         }
 
@@ -426,7 +428,9 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                     path,
                                     format!(
                                         "unknown reactive attribute `{}`; expected `layout`, `watch`, `watch1`, `watch0`, `watch_async`, `watch_with_app`, `recompose`, `validate`, `always_update`, `private_watch`, `private_validate`, `bindings`, `toggle_class = \"...\"`, or `init = false`",
-                                        path.get_ident().map(|i| i.to_string()).unwrap_or_default()
+                                        path.get_ident()
+                                            .map(std::string::ToString::to_string)
+                                            .unwrap_or_default()
                                     ),
                                 ));
                             }
@@ -439,7 +443,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                         toggle_classes = lit_str
                                             .value()
                                             .split_whitespace()
-                                            .map(|s| s.to_string())
+                                            .map(std::string::ToString::to_string)
                                             .collect();
                                     } else {
                                         return Err(syn::Error::new_spanned(
@@ -480,7 +484,7 @@ fn parse_field_annotation(field: &syn::Field) -> Result<Option<FieldAnnotation>,
                                         "unknown reactive attribute `{}`; expected `toggle_class = \"...\"` or `init`",
                                         nv.path
                                             .get_ident()
-                                            .map(|i| i.to_string())
+                                            .map(std::string::ToString::to_string)
                                             .unwrap_or_default()
                                     ),
                                 ));
@@ -784,7 +788,11 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
         let field_ident = &cf.ident;
         let _field_ty = &cf.ty;
         let compute_fn = format_ident!("compute_{}", field_ident);
-        let dep_strs: Vec<&str> = cf.depends_on.iter().map(|s| s.as_str()).collect();
+        let dep_strs: Vec<&str> = cf
+            .depends_on
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         let field_name_str = field_ident.to_string();
 
         computed_recompute_stmts.push(quote! {
@@ -1017,7 +1025,9 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
         })
         .collect();
 
-    let record_init_impl = if !init_fields.is_empty() {
+    let record_init_impl = if init_fields.is_empty() {
+        quote! {}
+    } else {
         let record_stmts: Vec<TokenStream> = init_fields
             .iter()
             .map(|field| {
@@ -1045,8 +1055,6 @@ pub fn derive_reactive_impl(input: TokenStream) -> TokenStream {
                 #(#record_stmts)*
             }
         }
-    } else {
-        quote! {}
     };
 
     // Generate the list of reactive field descriptors for `reactive_field_descriptors()`.

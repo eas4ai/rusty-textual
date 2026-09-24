@@ -10,7 +10,7 @@
 /// until full compositing is implemented.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Label {
     height: 3;
     width: 100%;
@@ -31,7 +31,7 @@ Label {
 #tint80 { tint: green 80%; }
 #tint90 { tint: green 90%; }
 #tint100 { tint: green 100%; }
-"##;
+";
 
 struct TintApp;
 

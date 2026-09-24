@@ -3,7 +3,7 @@
 /// Demonstrates a Twitter-like layout:
 /// - Header (Placeholder, docked top, height 3)
 /// - Footer (Placeholder, docked bottom, height 3)
-/// - HorizontalScroll containing 4 Column widgets (VerticalScroll)
+/// - `HorizontalScroll` containing 4 Column widgets (`VerticalScroll`)
 /// - Each Column contains 19 Tweet placeholders (height 5, width 1fr, tall border)
 ///
 /// Python uses subclass type selectors (Header, Footer, Tweet, Column).
@@ -11,7 +11,7 @@
 /// custom type selectors for user-defined structs are not supported.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 .header {
     height: 3;
     dock: top;
@@ -33,7 +33,7 @@ const CSS: &str = r#"
     width: 32;
     margin: 0 2;
 }
-"#;
+";
 
 struct LayoutApp;
 
@@ -53,7 +53,7 @@ impl TextualApp for LayoutApp {
             for tweet_no in 1..=19 {
                 column.push(
                     Placeholder::new("")
-                        .id(format!("Tweet{}", tweet_no))
+                        .id(format!("Tweet{tweet_no}"))
                         .class("tweet"),
                 );
             }

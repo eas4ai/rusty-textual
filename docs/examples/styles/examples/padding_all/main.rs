@@ -5,7 +5,7 @@
 /// `padding-left` using a 4-column Grid of Placeholder widgets.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     background: $background;
 }
@@ -51,7 +51,7 @@ Placeholder {
 #p8 {
     padding-left: 3;
 }
-"##;
+";
 
 struct PaddingAllApp;
 

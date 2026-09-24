@@ -1,6 +1,6 @@
 /// Port of Python Textual `docs/examples/styles/scrollbar_size.py`.
 ///
-/// Demonstrates `scrollbar-size` CSS property on a ScrollableContainer.
+/// Demonstrates `scrollbar-size` CSS property on a `ScrollableContainer`.
 /// Note: `scrollbar-size` and `color: blue 80%` (color with alpha) are CSS
 /// properties that may not be fully implemented in textual-rs yet
 /// (framework-gap flags).
@@ -15,7 +15,7 @@ And when it has gone past, I will turn the inner eye to see its path.
 Where the fear has gone there will be nothing. Only I will remain.
 ";
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     background: white;
     color: blue 80%;
@@ -31,7 +31,7 @@ Label {
     scrollbar-size: 10 4;
     padding: 1 2;
 }
-"##;
+";
 
 struct ScrollbarApp;
 

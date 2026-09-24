@@ -3,13 +3,13 @@
 //! which the `Widget::render` signature forces on any custom widget). No runtime,
 //! reactive, or css internals are reached into.
 //!
-//! Exercises: `#[widget(base = ...)]` delegation compounds (TaskCard, Column,
-//! AutoSaveIndicator, ControlBar), `#[derive(Reactive)]` recompose + watch, a
+//! Exercises: `#[widget(base = ...)]` delegation compounds (`TaskCard`, Column,
+//! `AutoSaveIndicator`, `ControlBar`), `#[derive(Reactive)]` recompose + watch, a
 //! widget-owned timer via `WidgetCtx::set_interval`, widget-scoped self-mutation
 //! via `WidgetCtx::query_one_id` + `update_via` + `add_class`, a custom message
 //! bubbling from a card to the board (`CardClicked`), a modal add-task screen that
 //! dismisses with a typed result, toast notifications, and a `Link` tooltip. It
-//! exercises the rebuilt overlay widgets (modal screen, ToastRack, Tooltip).
+//! exercises the rebuilt overlay widgets (modal screen, `ToastRack`, Tooltip).
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -287,7 +287,7 @@ impl AddTaskScreen {
 }
 
 impl Screen for AddTaskScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "AddTaskScreen"
     }
 
@@ -340,13 +340,13 @@ impl Screen for AddTaskScreen {
             Some("p-high") => Priority::High,
             _ => Priority::Medium,
         };
-        if !self.title.is_empty() {
+        if self.title.is_empty() {
+            ctx.dismiss_none();
+        } else {
             ctx.dismiss(NewTask {
                 title: self.title.clone(),
                 priority,
             });
-        } else {
-            ctx.dismiss_none();
         }
     }
 }
@@ -532,7 +532,7 @@ impl Board {
     }
 }
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen { layout: vertical; background: $surface; }
 
 #topbar {
@@ -576,7 +576,7 @@ ControlBar.busy #ctrl-hint { color: $warning; }
 #ctrl-hint { margin: 0 0 0 2; width: auto; }
 
 AutoSave { width: auto; color: $text-muted; }
-"#;
+";
 
 impl TextualApp for Board {
     fn configure(&mut self, app: &mut App) -> textual::Result<()> {
@@ -926,7 +926,7 @@ mod tests {
         .unwrap();
     }
 
-    /// Clicking the ControlBar's "Add task" button runs its `#[on(ButtonPressed)]`
+    /// Clicking the `ControlBar`'s "Add task" button runs its `#[on(ButtonPressed)]`
     /// handler, which self-mutates (`query_one_id` + `update_via` + `add_class`)
     /// and bubbles `AddTaskRequested` up to the board — which opens the modal.
     #[test]
@@ -944,7 +944,7 @@ mod tests {
         .unwrap();
     }
 
-    /// The AutoSaveIndicator owns a 2s interval; advancing the clock fires it,
+    /// The `AutoSaveIndicator` owns a 2s interval; advancing the clock fires it,
     /// bumping its reactive `ticks`, whose watcher rewrites the indicator text —
     /// proving the widget-owned timer + widget-level reactive watch are live.
     #[test]
@@ -964,7 +964,7 @@ mod tests {
     }
 
     /// Clicking a card posts `CardClicked`, which bubbles to the board and makes
-    /// that card active (post_up round-trip).
+    /// that card active (`post_up` round-trip).
     #[test]
     fn clicking_a_card_selects_it() {
         run_test(Board::new(), |pilot| {

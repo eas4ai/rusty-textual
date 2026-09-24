@@ -11,7 +11,7 @@
 /// Plain-text snapshot comparison cannot verify parity for live animation.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Bar > .bar--indeterminate {
     color: $primary;
     background: $secondary;
@@ -34,7 +34,7 @@ PercentageStatus {
 ETAStatus {
     text-style: underline;
 }
-"#;
+";
 
 #[derive(Default)]
 struct StyledProgressBar {
@@ -115,7 +115,7 @@ impl TextualApp for StyledProgressBar {
             if let Ok(handle) = app.query_one_typed::<ProgressBar>("ProgressBar") {
                 let done = handle.update(app, |bar, rctx| {
                     bar.advance(1.0, rctx);
-                    bar.percentage().map(|p| p >= 1.0).unwrap_or(false)
+                    bar.percentage().is_some_and(|p| p >= 1.0)
                 });
                 stop = done.unwrap_or(false);
             }

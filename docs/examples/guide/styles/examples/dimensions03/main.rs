@@ -3,17 +3,17 @@
 /// Demonstrates setting widget dimensions and background via inline styles
 /// applied at mount time: background=purple, width=50%, height=80%.
 ///
-/// Note: Python applies styles via on_mount(). In Rust we apply them via
+/// Note: Python applies styles via `on_mount()`. In Rust we apply them via
 /// inline CSS on the widget directly, which is the idiomatic equivalent.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Static {
     background: purple;
     width: 50%;
     height: 80%;
 }
-"##;
+";
 
 const TEXT: &str = "I must not fear.\n\
 Fear is the mind-killer.\n\

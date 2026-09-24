@@ -4,7 +4,7 @@
 /// Six Static widgets with class `box` are placed in the grid.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 3;
@@ -16,7 +16,7 @@ Screen {
     background: darkmagenta;
     height: 100%;
 }
-"##;
+";
 
 struct GridLayoutExample;
 

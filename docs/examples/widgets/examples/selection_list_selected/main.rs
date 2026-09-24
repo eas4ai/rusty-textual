@@ -11,7 +11,7 @@
 /// which collects `selected_values()` and calls `Pretty::update()`.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -31,7 +31,7 @@ Pretty {
     width: 1fr;
     border: solid $accent;
 }
-"#;
+";
 
 struct SelectionListApp;
 
@@ -42,7 +42,7 @@ fn refresh_pretty(app: &mut App) {
         .with_query_one_mut_as::<SelectionList<String>, _>("SelectionList", |sl| {
             sl.selected_values()
                 .iter()
-                .map(|v| v.to_string())
+                .map(|v| (*v).clone())
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();

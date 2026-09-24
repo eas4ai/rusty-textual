@@ -4,7 +4,7 @@
 /// When a button is pressed the app exits and prints which button was pressed.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 2;
@@ -23,7 +23,7 @@ Screen {
 Button {
     width: 100%;
 }
-"#;
+";
 
 struct QuestionApp {
     answer: Option<String>,

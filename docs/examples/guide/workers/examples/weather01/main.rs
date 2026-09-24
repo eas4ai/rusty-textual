@@ -16,7 +16,7 @@
 /// HTTP request to wttr.in.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Input {
     dock: top;
     width: 100%;
@@ -33,7 +33,7 @@ Static {
     width: auto;
     height: auto;
 }
-"#;
+";
 
 struct WeatherApp;
 

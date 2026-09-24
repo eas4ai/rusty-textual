@@ -7,7 +7,7 @@
 /// supported in textual-rs yet.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #zero-opacity {
     text-opacity: 0%;
 }
@@ -34,7 +34,7 @@ Label {
     text-align: center;
     text-style: bold;
 }
-"##;
+";
 
 struct TextOpacityApp;
 

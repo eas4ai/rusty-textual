@@ -1,13 +1,13 @@
 /// Port of Python Textual `docs/examples/styles/border_sub_title_align_all.py`.
 ///
 /// Demonstrates border-title-align and border-subtitle-align on a 3x3 grid of
-/// labeled containers. Each label has a border_title and border_subtitle set,
+/// labeled containers. Each label has a `border_title` and `border_subtitle` set,
 /// using Rich markup (`[b red]`, `[reverse]`, `[u][r]…[/]`) which is styled
 /// through the Content markup pipeline, and long titles are ellipsis-truncated
 /// to the border width — matching Python `_border.render_border_label`.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Grid {
     grid-size: 3 3;
     align: center middle;
@@ -72,7 +72,7 @@ Container {
     border-bottom: solid $error;
     border-title-align: right;
 }
-"##;
+";
 
 struct BorderSubTitleAlignAll;
 

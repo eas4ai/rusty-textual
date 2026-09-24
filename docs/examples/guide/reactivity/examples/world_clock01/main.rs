@@ -10,12 +10,12 @@
 /// Python:
 ///   class WorldClock(Widget):
 ///       time: reactive[datetime] = reactive(datetime.now)
-///       def watch_time(self, time): self.query_one(Digits).update(localized)
+///       def `watch_time(self`, time): `self.query_one(Digits).update(localized)`
 ///   class WorldClockApp(App):
 ///       time: reactive[datetime] = reactive(datetime.now)
-///       def watch_time(self, time):
-///           for world_clock in self.query(WorldClock): world_clock.time = time  # (1)
-///       on_mount: self.update_time(); self.set_interval(1, self.update_time)
+///       def `watch_time(self`, time):
+///           for `world_clock` in self.query(WorldClock): `world_clock.time` = time  # (1)
+///       `on_mount`: `self.update_time()`; `self.set_interval(1`, `self.update_time`)
 ///
 /// Rust port (faithful): both the app and `WorldClock` derive `Reactive` with a
 /// `#[reactive(watch_with_app)] time` (seconds-since-epoch stands in for
@@ -30,7 +30,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use textual::prelude::*;
 use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -47,7 +47,7 @@ WorldClock Digits {
     width: auto;
     color: $secondary;
 }
-"#;
+";
 
 fn now_secs() -> u64 {
     SystemTime::now()
@@ -152,7 +152,7 @@ impl WorldClockApp {
         self.set_time(now_secs(), ctx);
     }
 
-    /// Python `watch_time`: push the timestamp to each WorldClock's reactive.
+    /// Python `watch_time`: push the timestamp to each `WorldClock`'s reactive.
     fn watch_time(&mut self, app: &mut App, _old: &u64, new: &u64, _ctx: &mut ReactiveCtx) {
         let time = *new;
         let clock_ids = app

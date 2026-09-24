@@ -1,12 +1,12 @@
 /// Port of Python Textual `docs/examples/guide/styles/colors01.py`.
 ///
 /// Demonstrates setting background and foreground colors on widgets.
-/// Python uses on_mount to set styles imperatively; here we use CSS id rules
+/// Python uses `on_mount` to set styles imperatively; here we use CSS id rules
 /// to reproduce the same colors (equivalent visual result).
 /// Colors: #9932CC (purple), hsl(150,42.9%,49.4%) green, rgb(191,78,96) rose.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #widget1 {
     background: #9932CC;
 }
@@ -19,7 +19,7 @@ const CSS: &str = r##"
 #widget3 {
     background: rgb(191, 78, 96);
 }
-"##;
+";
 
 struct ColorApp;
 

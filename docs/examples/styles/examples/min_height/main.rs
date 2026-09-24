@@ -4,7 +4,7 @@
 /// inside a Horizontal container, each having a different min-height value.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Horizontal {
     height: 100%;
     width: 100%;
@@ -31,7 +31,7 @@ Placeholder {
 #p4 {
     min-height: 40w;
 }
-"##;
+";
 
 struct MinHeightApp;
 

@@ -7,11 +7,11 @@
 ///
 /// CSS is ported from `selection_list.tcss`:
 /// - Screen is center-middle aligned
-/// - SelectionList occupies 80% width × 80% height with solid accent border
+/// - `SelectionList` occupies 80% width × 80% height with solid accent border
 ///   and 1-cell padding
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -22,7 +22,7 @@ SelectionList {
     width: 80%;
     height: 80%;
 }
-"#;
+";
 
 struct SelectionListApp;
 

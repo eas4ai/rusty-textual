@@ -4,7 +4,7 @@
 /// on three Label widgets.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #label1 {
     background: red 20%;
     color: red;
@@ -35,7 +35,7 @@ Screen > Label {
     margin: 1;
     box-sizing: border-box;
 }
-"##;
+";
 
 struct BorderApp;
 

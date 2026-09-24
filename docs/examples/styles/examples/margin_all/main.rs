@@ -10,7 +10,7 @@
 /// on Node wrappers around each Placeholder.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     background: $background;
 }
@@ -65,7 +65,7 @@ Container {
 #p8 {
     margin-left: 3;
 }
-"##;
+";
 
 struct MarginAllApp;
 

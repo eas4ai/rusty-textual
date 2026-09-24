@@ -16,7 +16,7 @@ use textual::style::{Offset, OffsetValue};
 // CSS (mirrors mouse01.tcss)
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layers: log ball;
 }
@@ -36,7 +36,7 @@ Ball {
     text-style: bold;
     padding: 0 4;
 }
-"##;
+";
 
 // ---------------------------------------------------------------------------
 // Custom message: carries the screen coordinates of each MouseMove event.

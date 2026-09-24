@@ -3,14 +3,14 @@
 /// Demonstrates semantic muted-background color tokens with text-color tokens.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 .text-primary   { padding: 0 1; color: $text-primary;   background: $primary-muted; }
 .text-secondary { padding: 0 1; color: $text-secondary; background: $secondary-muted; }
 .text-accent    { padding: 0 1; color: $text-accent;    background: $accent-muted; }
 .text-warning   { padding: 0 1; color: $text-warning;   background: $warning-muted; }
 .text-error     { padding: 0 1; color: $text-error;     background: $error-muted; }
 .text-success   { padding: 0 1; color: $text-success;   background: $success-muted; }
-"#;
+";
 
 struct MutedBackgrounds;
 

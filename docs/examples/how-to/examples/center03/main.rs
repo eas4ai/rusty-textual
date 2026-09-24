@@ -5,7 +5,7 @@
 /// shrinks to fit its content and is centered in both axes.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -15,7 +15,7 @@ Screen {
     border: wide white;
     width: auto;
 }
-"#;
+";
 
 struct CenterApp;
 

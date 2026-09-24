@@ -5,7 +5,7 @@
 /// - Pressing `s` sets total=100 and starts advancing the bar by 1 step per tick.
 /// - Keys `f`, `t`, `u` are test helpers for freezing to known states.
 ///
-/// Layout: Center > Middle > ProgressBar, Footer at bottom.
+/// Layout: Center > Middle > `ProgressBar`, Footer at bottom.
 use textual::prelude::*;
 
 struct IndeterminateProgressBar {

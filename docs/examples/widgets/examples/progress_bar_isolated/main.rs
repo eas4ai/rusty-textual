@@ -6,18 +6,18 @@
 ///   tick.
 ///
 /// Python:
-///   def on_mount(self):
-///       self.progress_timer = self.set_interval(1 / 10, self.make_progress, pause=True)
-///   def make_progress(self): self.query_one(ProgressBar).advance(1)
-///   def action_start(self):
-///       self.query_one(ProgressBar).update(total=100)
-///       self.progress_timer.resume()
+///   def `on_mount(self)`:
+///       `self.progress_timer` = `self.set_interval(1` / 10, `self.make_progress`, pause=True)
+///   def `make_progress(self)`: `self.query_one(ProgressBar).advance(1)`
+///   def `action_start(self)`:
+///       `self.query_one(ProgressBar).update(total=100)`
+///       `self.progress_timer.resume()`
 ///
 /// Rust faithful mapping: register a PAUSED `set_interval(1/10)` at mount whose
 /// callback advances the bar by 1; the `start` action sets total=100 and
 /// `resume()`s that timer. No per-frame `on_tick` push.
 ///
-/// Layout: Center > Middle > ProgressBar, Footer at bottom.
+/// Layout: Center > Middle > `ProgressBar`, Footer at bottom.
 use std::time::Duration;
 use textual::prelude::*;
 

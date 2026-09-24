@@ -1,7 +1,7 @@
 /// Port of Python Textual `docs/examples/widgets/loading_indicator.py`.
 ///
 /// Demonstrates the `LoadingIndicator` widget:
-/// - A single LoadingIndicator filling the entire screen
+/// - A single `LoadingIndicator` filling the entire screen
 use textual::prelude::*;
 
 struct LoadingApp;

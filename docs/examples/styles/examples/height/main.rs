@@ -12,14 +12,14 @@
 /// `Widget` is a trait, not a concrete widget type).
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen > Label {
     background: green;
     width: 1fr;
     height: 50%;
     color: white;
 }
-"##;
+";
 
 struct HeightApp;
 

@@ -11,7 +11,7 @@
 /// `style_type()` so CSS type selectors work correctly.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 BitSwitch {
     layout: vertical;
     width: auto;
@@ -46,7 +46,7 @@ ByteEditor > Container.top {
 ByteEditor Input {
     width: 16;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // BitSwitch: vertical layout — Label (bit number) above Switch

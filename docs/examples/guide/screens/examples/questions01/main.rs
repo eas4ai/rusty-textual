@@ -72,7 +72,7 @@ impl QuestionScreen {
 }
 
 impl Screen for QuestionScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "QuestionScreen"
     }
 

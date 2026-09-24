@@ -4,7 +4,7 @@
 /// large fixed value (999), percentage (50%), and fixed cells (10).
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Horizontal {
     height: 100%;
     width: 100%;
@@ -30,7 +30,7 @@ Placeholder {
 #p4 {
     max-height: 10;
 }
-"##;
+";
 
 struct MaxHeightApp;
 

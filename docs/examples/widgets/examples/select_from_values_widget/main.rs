@@ -16,7 +16,7 @@ const LINES: &[&str] = &[
     "I will permit it to pass over me and through me.",
 ];
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center top;
 }
@@ -25,7 +25,7 @@ Select {
     width: 60;
     margin: 2;
 }
-"#;
+";
 
 struct SelectApp;
 

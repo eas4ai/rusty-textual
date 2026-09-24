@@ -5,7 +5,7 @@
 /// be fully implemented in textual-rs yet (framework-gap flags).
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 3;
@@ -21,7 +21,7 @@ Screen {
     height: 100%;
     border: solid green;
 }
-"##;
+";
 
 struct GridLayoutExample;
 

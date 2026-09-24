@@ -32,7 +32,7 @@ impl Widget for QuitDialogRoot {
 struct QuitScreen;
 
 impl Screen for QuitScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "QuitScreen"
     }
 

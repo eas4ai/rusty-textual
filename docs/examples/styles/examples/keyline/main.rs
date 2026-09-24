@@ -6,7 +6,7 @@
 /// implemented in textual-rs.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Grid {
     grid-size: 3 3;
     grid-gutter: 1;
@@ -28,7 +28,7 @@ Placeholder {
 #baz {
     column-span:3;
 }
-"##;
+";
 
 struct KeylineApp;
 

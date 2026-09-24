@@ -5,7 +5,7 @@
 /// the `#hello` Static widget.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -14,7 +14,7 @@ Screen {
     background: blue 50%;
     border: wide white;
 }
-"#;
+";
 
 struct CenterApp;
 

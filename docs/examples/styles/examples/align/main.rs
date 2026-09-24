@@ -3,7 +3,7 @@
 /// Demonstrates the `align` CSS property: two Label boxes centered on the screen.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -17,7 +17,7 @@ Screen {
     color: white 90%;
     border: heavy white;
 }
-"##;
+";
 
 struct AlignApp;
 

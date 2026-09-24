@@ -19,7 +19,7 @@ Tags will be left in the output.
 
 ";
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     Static {
         height: 1fr;
@@ -27,7 +27,7 @@ Screen {
     #text1 { background: $primary-muted; }
     #text2 { background: $error-muted; }
 }
-"##;
+";
 
 struct ContentApp;
 

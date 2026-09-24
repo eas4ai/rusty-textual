@@ -16,7 +16,7 @@
 use rich_rs::Table;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -25,7 +25,7 @@ OptionList {
     width: 70%;
     height: 80%;
 }
-"#;
+";
 
 const COLONIES: &[(&str, &str, &str, &str)] = &[
     ("Aerilon", "Demeter", "1.2 Billion", "Gaoth"),

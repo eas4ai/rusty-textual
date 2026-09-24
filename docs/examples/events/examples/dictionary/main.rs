@@ -14,7 +14,7 @@
 use std::sync::{Arc, Mutex};
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     background: $panel;
 }
@@ -38,7 +38,7 @@ Input {
     margin: 1 2;
     height: 100%;
 }
-"#;
+";
 
 struct DictionaryApp {
     result: Arc<Mutex<Option<String>>>,

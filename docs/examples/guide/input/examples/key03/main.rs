@@ -12,7 +12,7 @@
 use rich_rs::{Segment, Style as RichStyle};
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 2 2;
@@ -30,7 +30,7 @@ KeyLogger:hover {
 KeyLogger:focus {
     border: wide $accent;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // KeyLogger widget — a RichLog that logs every key event it receives.

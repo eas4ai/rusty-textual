@@ -7,7 +7,7 @@
 /// not yet be fully supported in textual-rs.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #lbl1, #lbl2 {
     link-background-hover: red;
 }
@@ -19,7 +19,7 @@ const CSS: &str = r##"
 #lbl4 {
     /* Empty to show the default hover background */
 }
-"##;
+";
 
 struct LinkHoverBackgroundApp;
 

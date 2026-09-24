@@ -6,7 +6,7 @@
 /// textual-rs (link rendering/click handling). Included verbatim per port policy.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #lbl1, #lbl2 {
     link-style: bold italic;
 }
@@ -18,7 +18,7 @@ const CSS: &str = r##"
 #lbl4 {
     link-style: bold;
 }
-"##;
+";
 
 struct LinkStyleApp;
 

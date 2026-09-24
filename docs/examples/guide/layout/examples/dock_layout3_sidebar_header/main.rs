@@ -11,7 +11,7 @@ Docked widgets will not scroll out of view, making them ideal for sticky headers
 
 ";
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #sidebar {
     dock: left;
     width: 15;
@@ -19,7 +19,7 @@ const CSS: &str = r##"
     color: #0f2b41;
     background: dodgerblue;
 }
-"##;
+";
 
 struct DockLayoutExample;
 

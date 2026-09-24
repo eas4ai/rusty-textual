@@ -3,7 +3,7 @@
 /// Demonstrates using Horizontal and Vertical containers with column classes.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Static {
     content-align: center middle;
     background: crimson;
@@ -14,7 +14,7 @@ Static {
 .column {
     width: 1fr;
 }
-"##;
+";
 
 struct UtilityContainersExample;
 

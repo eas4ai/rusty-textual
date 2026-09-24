@@ -28,7 +28,7 @@ const GREETINGS: &[&str] = &[
     "Hello",
 ];
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -42,7 +42,7 @@ Greeter {
 Greeter Label {
     margin: 0 1;
 }
-"##;
+";
 
 // ---------------------------------------------------------------------------
 // Greeter: custom widget with reactive greeting/who

@@ -6,10 +6,10 @@
 ///
 /// Python:
 ///   color = reactive(Color.parse("transparent"))
-///   def watch_color(self, old_color, new_color):
-///       self.query_one("#old").styles.background = old_color
-///       self.query_one("#new").styles.background = new_color
-///   def on_input_submitted(self, event): self.color = Color.parse(event.value)
+///   def `watch_color(self`, `old_color`, `new_color)`:
+///       `self.query_one("#old").styles.background` = `old_color`
+///       `self.query_one("#new").styles.background` = `new_color`
+///   def `on_input_submitted(self`, event): self.color = Color.parse(event.value)
 ///
 /// Rust port (faithful): the app derives `Reactive` with
 /// `#[reactive(watch_with_app)] color`. The generated `set_color(value, ctx)`
@@ -20,7 +20,7 @@
 use textual::prelude::*;
 use textual::style::parse_color_like;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Input {
     dock: top;
     margin-top: 1;
@@ -42,7 +42,7 @@ Input {
     height: 100%;
     border: wide $secondary;
 }
-"#;
+";
 
 #[derive(Reactive)]
 struct WatchApp {

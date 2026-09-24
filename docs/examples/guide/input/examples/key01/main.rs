@@ -1,6 +1,6 @@
 /// Port of Python Textual `docs/examples/guide/input/key01.py`.
 ///
-/// Displays a RichLog that writes key event info on each key press.
+/// Displays a `RichLog` that writes key event info on each key press.
 use textual::keys::KeyEventData;
 use textual::prelude::*;
 
@@ -28,9 +28,7 @@ impl TextualApp for InputApp {
             // colours, mapped to the terminal theme at paint time). Mirror that
             // by writing the repr string through the same highlighter path —
             // no hardcoded colours.
-            let char_display = character
-                .map(|ch| format!("'{ch}'"))
-                .unwrap_or_else(|| "None".to_string());
+            let char_display = character.map_or_else(|| "None".to_string(), |ch| format!("'{ch}'"));
             let printable_display = if is_printable { "True" } else { "False" };
             log.write_pretty(format!(
                 "Key(key='{key_name}', character={char_display}, name='{key_name}', \

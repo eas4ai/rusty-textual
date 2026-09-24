@@ -4,7 +4,7 @@
 /// Two `Static` widgets with class `words` are centered on the screen.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -14,7 +14,7 @@ Screen {
     border: wide white;
     width: auto;
 }
-"#;
+";
 
 struct CenterApp;
 

@@ -4,7 +4,7 @@
 /// using two Static widgets with matching padding, border, margin, and height.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #static1 {
     box-sizing: border-box;
 }
@@ -25,7 +25,7 @@ App Static {
     padding: 1;
     border: wide black;
 }
-"##;
+";
 
 struct BoxSizingApp;
 

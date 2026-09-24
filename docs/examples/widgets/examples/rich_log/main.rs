@@ -29,9 +29,7 @@ const SWIM_ROWS: &[&[&str]] = &[
 ];
 
 fn write_key_line(log: &mut RichLog, key_name: &str, character: Option<char>, is_printable: bool) {
-    let character = character
-        .map(|ch| format!("'{ch}'"))
-        .unwrap_or_else(|| "None".to_string());
+    let character = character.map_or_else(|| "None".to_string(), |ch| format!("'{ch}'"));
     let printable = if is_printable { "True" } else { "False" };
     // Python: `RichLog.write(event)` wraps the Key event in `Pretty`, coloured
     // by rich's `ReprHighlighter` (ANSI-standard colours mapped to the terminal

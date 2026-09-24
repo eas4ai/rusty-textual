@@ -1,7 +1,7 @@
 use textual::message::ButtonPressed;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 2;
@@ -18,7 +18,7 @@ Screen {
 Button {
     width: 100%;
 }
-"#;
+";
 
 struct MyApp {
     exit_value: Option<String>,
@@ -75,8 +75,8 @@ impl TextualApp for MyApp {
         _ctx: &mut textual::event::WidgetCtx,
     ) {
         let key_name = key.name().to_string();
-        app.set_title(key_name.to_string());
-        app.set_sub_title(format!("You just pressed {}!", key_name));
+        app.set_title(key_name.clone());
+        app.set_sub_title(format!("You just pressed {key_name}!"));
     }
 
     fn take_exit_output(&mut self) -> Option<String> {

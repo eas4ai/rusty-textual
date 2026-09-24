@@ -3,7 +3,7 @@ use textual::compose;
 use textual::prelude::*;
 
 // CSS translated from Python's screen01.tcss
-const CSS: &str = r##"
+const CSS: &str = r"
 BSOD {
     align: center middle;
     background: blue;
@@ -22,7 +22,7 @@ BSOD > Static {
 #any-key {
     content-align-horizontal: center;
 }
-"##;
+";
 
 const ERROR_TEXT: &str = "
 An error has occurred. To continue:
@@ -70,7 +70,7 @@ impl Widget for BsodRoot {
 struct BsodScreen;
 
 impl Screen for BsodScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "BsodScreen"
     }
 

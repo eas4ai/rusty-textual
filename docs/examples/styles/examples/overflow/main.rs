@@ -1,6 +1,6 @@
 /// Port of Python Textual `docs/examples/styles/overflow.py`.
 ///
-/// Demonstrates `overflow-y` CSS property: two VerticalScroll panels side
+/// Demonstrates `overflow-y` CSS property: two `VerticalScroll` panels side
 /// by side, each containing three Static widgets with the Dune litany text.
 /// The left panel (#left) uses the default auto scroll, while the right
 /// (#right) has `overflow-y: hidden` set via CSS.
@@ -14,7 +14,7 @@ I will permit it to pass over me and through me.
 And when it has gone past, I will turn the inner eye to see its path.
 Where the fear has gone there will be nothing. Only I will remain.";
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     background: $background;
     color: black;
@@ -35,7 +35,7 @@ Static {
 #right {
     overflow-y: hidden;
 }
-"##;
+";
 
 struct OverflowApp;
 

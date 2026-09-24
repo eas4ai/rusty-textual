@@ -57,11 +57,11 @@ impl PythonFileCommandsProvider {
         }
         let mut paths: Vec<String> = std::fs::read_dir(".")
             .into_iter()
-            .flat_map(|entries| entries.flatten())
+            .flat_map(std::iter::Iterator::flatten)
             .filter_map(|entry| {
                 let path = entry.path();
                 if path.extension().and_then(|e| e.to_str()) == Some("py") {
-                    path.to_str().map(|s| s.to_string())
+                    path.to_str().map(std::string::ToString::to_string)
                 } else {
                     None
                 }

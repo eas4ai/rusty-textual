@@ -5,7 +5,7 @@
 /// arranged in a 4x4 Grid.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #ascii {
     border: ascii $accent;
 }
@@ -81,7 +81,7 @@ Label {
     height: 3;
     content-align: center middle;
 }
-"##;
+";
 
 struct AllBordersApp;
 

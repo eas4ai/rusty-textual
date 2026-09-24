@@ -3,15 +3,15 @@
 /// Demonstrates setting background and border styles on a Static widget.
 /// Python sets these via `on_mount` using inline style mutation;
 /// here we use CSS to achieve the same visual result (framework gap: no runtime
-/// inline-style mutation API exposed to TextualApp).
+/// inline-style mutation API exposed to `TextualApp`).
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #textual {
     background: darkblue;
     border: heavy white;
 }
-"##;
+";
 
 struct WidgetApp;
 

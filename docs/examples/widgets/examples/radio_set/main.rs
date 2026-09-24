@@ -14,7 +14,7 @@
 /// renders this as plain text without emoji substitution.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -27,7 +27,7 @@ Horizontal {
 RadioSet {
     width: 45%;
 }
-"#;
+";
 
 struct RadioChoicesApp;
 

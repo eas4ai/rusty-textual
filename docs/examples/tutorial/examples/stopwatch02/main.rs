@@ -1,6 +1,6 @@
 /// Port of Python Textual `docs/examples/tutorial/stopwatch02.py`.
 ///
-/// Adds the `Stopwatch` (HorizontalGroup) and `TimeDisplay` (Digits) widgets.
+/// Adds the `Stopwatch` (`HorizontalGroup`) and `TimeDisplay` (Digits) widgets.
 /// Three stopwatches in a `VerticalScroll`. No custom CSS yet.
 ///
 /// Python defines:
@@ -8,11 +8,11 @@
 ///   class Stopwatch(HorizontalGroup):
 ///       def compose(self): yield Button(...), Button(...), Button(...), TimeDisplay("00:00:00.00")
 ///
-/// In Rust, HorizontalGroup is used directly for Stopwatch since there is no
-/// behavior yet (no button handlers, no timer). Digits is used for TimeDisplay.
+/// In Rust, `HorizontalGroup` is used directly for Stopwatch since there is no
+/// behavior yet (no button handlers, no timer). Digits is used for `TimeDisplay`.
 ///
 /// NON-PROMOTABLE (timer-driven): Python auto-starts a timer on mount for
-/// TimeDisplay; Rust shows a static "00:00:00.00".
+/// `TimeDisplay`; Rust shows a static "00:00:00.00".
 use textual::compose;
 use textual::prelude::*;
 

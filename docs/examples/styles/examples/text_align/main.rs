@@ -8,7 +8,7 @@ const TEXT: &str = "I must not fear. Fear is the mind-killer. Fear is the little
 brings total obliteration. I will face my fear. I will permit it to pass over \
 me and through me.";
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #one {
     text-align: left;
     background: lightblue;
@@ -38,7 +38,7 @@ Label {
 Grid {
     grid-size: 2 2;
 }
-"##;
+";
 
 struct TextAlign;
 

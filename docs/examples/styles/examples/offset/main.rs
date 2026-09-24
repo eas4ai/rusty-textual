@@ -4,7 +4,7 @@
 /// Note: `offset` support in textual-rs may be partial (framework-gap flag).
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     background: white;
     color: black;
@@ -36,7 +36,7 @@ Label {
     border: outer blue;
     color: blue;
 }
-"##;
+";
 
 struct OffsetApp;
 

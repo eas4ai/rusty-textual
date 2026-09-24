@@ -4,7 +4,7 @@
 /// arranged in a 3x3 grid layout.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #left-top {
     /* content-align: left top; this is the default implied value. */
 }
@@ -44,7 +44,7 @@ Label {
     height: 100%;
     background: $primary;
 }
-"##;
+";
 
 struct AllContentAlignApp;
 

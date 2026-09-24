@@ -2,13 +2,13 @@
 ///
 /// Demonstrates background color with varying alpha levels using Color(191, 78, 96, a=N).
 /// Python sets these via `on_mount` with dynamic style mutation (widget.styles.background).
-/// Ported using CSS with equivalent rgba() color values (framework gap: no runtime
-/// inline-style mutation API exposed to TextualApp).
+/// Ported using CSS with equivalent `rgba()` color values (framework gap: no runtime
+/// inline-style mutation API exposed to `TextualApp`).
 ///
-/// Framework gap: on_mount dynamic style mutation not supported; styles baked into CSS.
+/// Framework gap: `on_mount` dynamic style mutation not supported; styles baked into CSS.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #w1  { background: rgba(191, 78, 96, 0.1); }
 #w2  { background: rgba(191, 78, 96, 0.2); }
 #w3  { background: rgba(191, 78, 96, 0.3); }
@@ -19,7 +19,7 @@ const CSS: &str = r##"
 #w8  { background: rgba(191, 78, 96, 0.8); }
 #w9  { background: rgba(191, 78, 96, 0.9); }
 #w10 { background: rgba(191, 78, 96, 1.0); }
-"##;
+";
 
 struct ColorApp;
 

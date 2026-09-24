@@ -6,7 +6,7 @@
 use rich_rs::{Console, ConsoleOptions, Renderable, Segments, Table};
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -17,7 +17,7 @@ FizzBuzz {
     background: $primary;
     color: $text;
 }
-"##;
+";
 
 /// Mirrors Python's `FizzBuzz(Static)` widget.
 ///

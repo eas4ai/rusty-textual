@@ -2,19 +2,19 @@
 ///
 /// Demonstrates `ProgressBar` with a funding tracker:
 /// - Header with title "Funding tracking"
-/// - ProgressBar (total=100, show_eta=False)
+/// - `ProgressBar` (total=100, `show_eta=False`)
 /// - Input for donation amounts and a "Donate" button
 /// - A history log below showing past donations
 ///
 /// Donate by entering an integer amount and pressing Enter or clicking "Donate".
 /// The progress bar advances by the entered amount.
 ///
-/// NOTE: Dynamic mounting of Labels under VerticalScroll is not available via
+/// NOTE: Dynamic mounting of Labels under `VerticalScroll` is not available via
 /// the public `App` API (no `mount_at(parent, widget)`). History is tracked
 /// using `ListView::append` which provides equivalent scrollable history.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Container {
     overflow: hidden hidden;
     height: auto;
@@ -37,7 +37,7 @@ Input {
 ListView {
     height: auto;
 }
-"#;
+";
 
 struct FundingProgressApp;
 

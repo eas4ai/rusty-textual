@@ -40,7 +40,7 @@ use textual::prelude::*;
 // CSS — mirrors Python DEFAULT_CSS (component-class colours) + sizing.
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 CheckerBoard > .checkerboard--white-square {
     background: #A5BAC9;
 }
@@ -50,7 +50,7 @@ CheckerBoard > .checkerboard--black-square {
 CheckerBoard > .checkerboard--cursor-square {
     background: darkred;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // CheckerBoard widget

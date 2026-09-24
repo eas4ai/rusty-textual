@@ -6,7 +6,7 @@
 /// - The `.with-border` class applies a heavy green border.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Placeholder {
     width: 16;
     height: 8;
@@ -15,7 +15,7 @@ Placeholder {
 .with-border {
     border: heavy green;
 }
-"#;
+";
 
 struct ContainerApp;
 

@@ -25,7 +25,7 @@ const NAMES: &[&str] = &[
     "Silgar",
 ];
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Tabs {
     dock: top;
 }
@@ -46,7 +46,7 @@ Label {
 Label.hidden {
     display: none;
 }
-"#;
+";
 
 struct TabsApp {
     /// Index into NAMES for the next "add" action.

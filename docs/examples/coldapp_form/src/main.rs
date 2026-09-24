@@ -40,7 +40,7 @@ fn parse_age(value: &str) -> Option<i64> {
         .filter(|n| (18..=120).contains(n))
 }
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen { align: center middle; }
 
 #card {
@@ -68,7 +68,7 @@ Select { width: 100%; }
 #status { margin: 1 0 0 0; width: 100%; text-align: center; }
 #status.ok { color: $success; text-style: bold; }
 #status.err { color: $error; text-style: bold; }
-"#;
+";
 
 struct FormApp {
     /// Count of successful submissions (test signal).

@@ -14,7 +14,7 @@ use textual::prelude::*;
 
 const TEXT: &str = "I must not fear. Fear is the mind-killer. Fear is the little-death that brings total obliteration. I will face my fear.";
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Static {
     height: 1fr;
     text-wrap: nowrap;
@@ -32,7 +32,7 @@ Static {
     text-overflow: ellipsis;
     background: blue 20%;
 }
-"##;
+";
 
 struct WrapApp;
 

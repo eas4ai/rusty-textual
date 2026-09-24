@@ -13,7 +13,7 @@
 ///   - Right container (with-border) containing Box 3
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 .box {
     width: 16;
     height: 5;
@@ -22,7 +22,7 @@ const CSS: &str = r#"
 .with-border {
     border: heavy green;
 }
-"#;
+";
 
 struct ContainerApp;
 

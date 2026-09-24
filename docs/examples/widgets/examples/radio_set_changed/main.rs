@@ -5,7 +5,7 @@
 ///
 /// Layout:
 /// - `VerticalScroll` (centered)
-///   - `Horizontal` containing a `RadioSet` (id="focus_me") with 9 buttons
+///   - `Horizontal` containing a `RadioSet` (`id="focus_me`") with 9 buttons
 ///   - `Horizontal` containing a `Label` (id="pressed") for the button label
 ///   - `Horizontal` containing a `Label` (id="index") for the button index
 ///
@@ -13,7 +13,7 @@
 /// labels update via `on_radio_set_changed` (mapped to `on_message_with_app`).
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 VerticalScroll {
     align: center middle;
 }
@@ -26,7 +26,7 @@ Horizontal {
 RadioSet {
     width: 45%;
 }
-"#;
+";
 
 struct RadioSetChangedApp;
 
@@ -89,8 +89,8 @@ impl TextualApp for RadioSetChangedApp {
                 })
                 .unwrap_or_default();
 
-            let pressed_text = format!("Pressed button label: {}", label_text);
-            let index_text = format!("Pressed button index: {}", index);
+            let pressed_text = format!("Pressed button label: {label_text}");
+            let index_text = format!("Pressed button index: {index}");
 
             let _ = app.with_query_one_mut_as::<Label, _>("#pressed", |label| {
                 label.set_text(pressed_text);

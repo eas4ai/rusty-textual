@@ -9,7 +9,7 @@
 /// In Rust we achieve the same layout using CSS id selectors.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 #Header {
     height: 3;
     dock: top;
@@ -19,7 +19,7 @@ const CSS: &str = r#"
     height: 3;
     dock: bottom;
 }
-"#;
+";
 
 struct LayoutApp;
 

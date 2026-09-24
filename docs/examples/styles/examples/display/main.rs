@@ -4,7 +4,7 @@
 /// Three Static widgets are shown; the middle one (class "remove") has display:none.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     background: green;
 }
@@ -19,7 +19,7 @@ Static {
 Static.remove {
     display: none;
 }
-"##;
+";
 
 struct DisplayApp;
 

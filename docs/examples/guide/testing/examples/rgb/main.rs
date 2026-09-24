@@ -12,7 +12,7 @@
 ///   as the colour name.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -20,7 +20,7 @@ Horizontal {
     width: auto;
     height: auto;
 }
-"#;
+";
 
 struct RGBApp;
 

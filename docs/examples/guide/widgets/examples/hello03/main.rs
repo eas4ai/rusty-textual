@@ -6,7 +6,7 @@
 /// updating the displayed text — exactly as in the Python original.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -19,7 +19,7 @@ Hello {
     border: $secondary tall;
     content-align: center middle;
 }
-"##;
+";
 
 const HELLOS: &[&str] = &[
     "Hola",

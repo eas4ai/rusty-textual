@@ -5,7 +5,7 @@
 /// may not be fully supported yet.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 3 4;
@@ -26,7 +26,7 @@ Static {
     row-span: 3;
     column-span: 2;
 }
-"##;
+";
 
 struct GridApp;
 

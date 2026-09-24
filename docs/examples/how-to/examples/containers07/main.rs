@@ -1,6 +1,6 @@
 /// Port of Python Textual `docs/examples/how-to/containers07.py`.
 ///
-/// Demonstrates a HorizontalScroll container with 10 Box (Placeholder) widgets,
+/// Demonstrates a `HorizontalScroll` container with 10 Box (Placeholder) widgets,
 /// each 16 wide x 8 tall, inside a heavy green border.
 ///
 /// Python defines a `Box` subclass of `Placeholder` with fixed dimensions.
@@ -8,7 +8,7 @@
 /// same sizing, since Rust does not support custom widget type selectors.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 .box {
     width: 16;
     height: 8;
@@ -17,7 +17,7 @@ const CSS: &str = r#"
 .with-border {
     border: heavy green;
 }
-"#;
+";
 
 struct ContainerApp;
 

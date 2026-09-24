@@ -1,6 +1,6 @@
 /// Port of Python Textual `docs/examples/app/question_title01.py`.
 ///
-/// Demonstrates App TITLE and SUB_TITLE with a question-and-buttons layout:
+/// Demonstrates App TITLE and `SUB_TITLE` with a question-and-buttons layout:
 /// - Header shows the app title and sub-title.
 /// - A label asks "Do you love Textual?".
 /// - Two buttons ("Yes" / "No") exit the app with the pressed button's id.
@@ -10,7 +10,7 @@ use textual::compose;
 use textual::message::ButtonPressed;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 2;
@@ -29,7 +29,7 @@ Screen {
 Button {
     width: 100%;
 }
-"#;
+";
 
 struct MyApp {
     reply: Option<String>,

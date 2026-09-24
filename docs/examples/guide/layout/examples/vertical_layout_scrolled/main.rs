@@ -4,7 +4,7 @@
 /// (each 14 rows) that cause the screen to scroll.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layout: vertical;
 }
@@ -13,7 +13,7 @@ Screen {
     height: 14;
     border: solid green;
 }
-"##;
+";
 
 struct VerticalLayoutScrolledExample;
 

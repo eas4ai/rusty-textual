@@ -4,7 +4,7 @@
 /// behavior: renders a count, styled differently when focused.
 ///
 /// Python structure:
-///   - Counter(Static, can_focus=True) — shows "Count: N"; reactive count field
+///   - Counter(Static, `can_focus=True`) — shows "Count: N"; reactive count field
 ///   - CounterApp(App) — three Counter widgets + Footer
 ///
 /// Rust differences:
@@ -18,7 +18,7 @@ use textual::prelude::*;
 // CSS (mirrors counter.tcss)
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Counter {
     height: auto;
     background: $panel-darken-1;
@@ -32,7 +32,7 @@ Counter:focus {
     text-style: bold;
     outline-left: thick $accent;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // Counter widget

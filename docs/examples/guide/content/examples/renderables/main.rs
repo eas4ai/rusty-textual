@@ -17,11 +17,11 @@ use textual::prelude::*;
 /// Source code of this file (read at compile time, mirrors Python's `open(__file__)`).
 const SOURCE: &str = include_str!("main.rs");
 
-const CSS: &str = r#"
+const CSS: &str = r"
 CodeView {
     height: auto;
 }
-"#;
+";
 
 struct CodeApp;
 

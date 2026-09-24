@@ -4,7 +4,7 @@
 /// widths and background colors, plus a scrollable body of text.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #another-sidebar {
     dock: left;
     width: 30;
@@ -19,7 +19,7 @@ const CSS: &str = r##"
     color: #0f2b41;
     background: dodgerblue;
 }
-"##;
+";
 
 const TEXT: &str = "Docking a widget removes it from the layout and fixes its position, aligned to either the top, right, bottom, or left edges of a container.\n\nDocked widgets will not scroll out of view, making them ideal for sticky headers, footers, and sidebars.\n\n";
 

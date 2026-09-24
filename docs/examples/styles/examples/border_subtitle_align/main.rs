@@ -5,7 +5,7 @@
 /// text aligned differently.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #label1 {
     border: solid $secondary;
     border-subtitle-align: left;
@@ -29,7 +29,7 @@ Screen > Label {
     margin: 1;
     box-sizing: border-box;
 }
-"##;
+";
 
 struct BorderSubtitleAlignApp;
 

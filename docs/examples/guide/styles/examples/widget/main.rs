@@ -1,19 +1,19 @@
 /// Port of Python Textual `docs/examples/guide/styles/widget.py`.
 ///
-/// Demonstrates setting background and border styles via on_mount.
-/// Note: Python uses on_mount to set styles imperatively; here we approximate
-/// with CSS since Rust does not yet expose on_mount style mutation API.
+/// Demonstrates setting background and border styles via `on_mount`.
+/// Note: Python uses `on_mount` to set styles imperatively; here we approximate
+/// with CSS since Rust does not yet expose `on_mount` style mutation API.
 ///
-/// Framework gap: runtime style mutation (on_mount widget.styles.background /
+/// Framework gap: runtime style mutation (`on_mount` widget.styles.background /
 /// widget.styles.border) not yet supported — CSS approximation used.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Static {
     background: darkblue;
     border: heavy white;
 }
-"##;
+";
 
 struct WidgetApp;
 

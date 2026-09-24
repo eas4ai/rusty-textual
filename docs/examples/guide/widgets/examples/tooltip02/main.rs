@@ -15,7 +15,7 @@ Fear is the mind-killer.
 Fear is the little-death that brings total obliteration.
 I will face my fear.";
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -24,7 +24,7 @@ Tooltip {
     background: $primary;
     color: auto 90%;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // TooltipButton — thin wrapper that adds a tooltip to a Button

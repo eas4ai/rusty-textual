@@ -13,7 +13,7 @@ use textual::prelude::*;
 // CSS (mirrors compound01.py exactly)
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -34,7 +34,7 @@ InputWithLabel Label {
 InputWithLabel Input {
     width: 1fr;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // InputWithLabel — compound widget

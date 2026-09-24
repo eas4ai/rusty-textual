@@ -5,7 +5,7 @@
 use textual::message::ButtonPressed;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 2;
@@ -22,7 +22,7 @@ Screen {
 Button {
     width: 100%;
 }
-"#;
+";
 
 struct QuestionApp {
     answer: Option<String>,

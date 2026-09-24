@@ -6,7 +6,7 @@
 /// `static.border_title = hatch`.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r#"
 .hatch {
     height: 1fr;
     border: solid $secondary;
@@ -27,7 +27,7 @@ const CSS: &str = r##"
         hatch: right $success 20%;
     }
 }
-"##;
+"#;
 
 struct HatchApp;
 

@@ -3,7 +3,7 @@
 /// Demonstrates a grid layout with `auto` column sizing alongside `1fr` columns.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 3;
@@ -15,7 +15,7 @@ Screen {
     height: 100%;
     border: solid green;
 }
-"##;
+";
 
 struct GridLayoutExample;
 

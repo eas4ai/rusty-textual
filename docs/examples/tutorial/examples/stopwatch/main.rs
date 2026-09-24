@@ -11,8 +11,8 @@
 /// Python structure:
 ///   - TimeDisplay(Digits) — live clock, `set_interval(1/60, update_time, pause=True)`,
 ///     reactive `time`/`total`, and `start()`/`stop()`/`reset()`.
-///   - Stopwatch(HorizontalGroup) — Start/Stop/Reset buttons + a TimeDisplay;
-///     `on_button_pressed` calls the matching TimeDisplay method + toggles `started`.
+///   - Stopwatch(HorizontalGroup) — Start/Stop/Reset buttons + a `TimeDisplay`;
+///     `on_button_pressed` calls the matching `TimeDisplay` method + toggles `started`.
 ///   - StopwatchApp(App) — Header, Footer, VerticalScroll(#timers) with three
 ///     Stopwatches; `a`/`r` mount/remove a Stopwatch.
 ///
@@ -20,11 +20,11 @@
 ///   - `TimeDisplay` is a `#[derive(Reactive)]` widget wrapping `Digits` with
 ///     `time`/`total` reactives + a `running` flag and start/stop/reset methods.
 ///   - The app owns ONE `set_interval(1/60)` driving `update_time` on every
-///     TimeDisplay (each only advances while `running`). Newly mounted stopwatches
+///     `TimeDisplay` (each only advances while `running`). Newly mounted stopwatches
 ///     are picked up automatically because the interval re-queries `TimeDisplay`.
 ///   - `Stopwatch::on_message` toggles `started` and posts a `TimeDisplayCmd`;
 ///     the app's `on_message_with_app` applies start/stop/reset to the addressed
-///     TimeDisplay node.
+///     `TimeDisplay` node.
 ///   - Dynamic add/remove uses `app.mount_under` / `app.remove_node`.
 ///
 /// NON-PROMOTABLE as a full golden: the running clock digits are timer-driven and
@@ -38,7 +38,7 @@ use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
 // CSS (mirrors stopwatch.tcss exactly)
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Stopwatch {
     layout: horizontal;
     background: $boost;
@@ -91,7 +91,7 @@ Button {
 .started #reset {
     visibility: hidden;
 }
-"#;
+";
 
 /// Format elapsed seconds as `HH:MM:SS.cc` — mirrors Python's
 /// `f"{hours:02,.0f}:{minutes:02.0f}:{seconds:05.2f}"`.

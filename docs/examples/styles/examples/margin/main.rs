@@ -11,7 +11,7 @@ I will permit it to pass over me and through me.
 And when it has gone past, I will turn the inner eye to see its path.
 Where the fear has gone there will be nothing. Only I will remain.";
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     background: white;
     color: black;
@@ -23,7 +23,7 @@ Label {
     border: blue wide;
     width: 100%;
 }
-"##;
+";
 
 struct MarginApp;
 

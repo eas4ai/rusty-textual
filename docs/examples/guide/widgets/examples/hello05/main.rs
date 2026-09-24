@@ -15,7 +15,7 @@
 ///   - `CSS_PATH = "hello05.tcss"` → `const CSS` loaded via `configure`
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -28,7 +28,7 @@ Hello {
     border: $secondary tall;
     content-align: center middle;
 }
-"##;
+";
 
 const HELLOS: &[&str] = &[
     "Hola",

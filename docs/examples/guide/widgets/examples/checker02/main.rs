@@ -16,14 +16,14 @@ use textual::prelude::*;
 // Mirrors Python's DEFAULT_CSS: the two component-class rules drive the square
 // colours, resolved at render time via `get_component_rich_style`.
 
-const CSS: &str = r#"
+const CSS: &str = r"
 CheckerBoard .checkerboard--white-square {
     background: #A5BAC9;
 }
 CheckerBoard .checkerboard--black-square {
     background: #004578;
 }
-"#;
+";
 
 // ── CheckerBoard widget ───────────────────────────────────────────────────────
 
@@ -80,11 +80,11 @@ impl Widget for CheckerBoard {
     /// Render a single visual line at row `y` (widget-local coordinates).
     ///
     /// Mirrors Python:
-    ///   row_index = y // 4        # four terminal lines per logical square row
-    ///   is_odd    = row_index % 2
+    ///   `row_index` = y // 4        # four terminal lines per logical square row
+    ///   `is_odd`    = `row_index` % 2
     ///   white     = self.get_component_rich_style("checkerboard--white-square")
     ///   black     = self.get_component_rich_style("checkerboard--black-square")
-    ///   segments  = [Segment(" " * 8, black if (col + is_odd) % 2 else white)
+    ///   segments  = [Segment(" " * 8, black if (col + `is_odd`) % 2 else white)
     ///                for col in range(8)]
     fn render_line(&self, y: usize, _console: &Console, options: &ConsoleOptions) -> Segments {
         let width = options.size.0.max(1);

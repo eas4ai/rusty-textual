@@ -1,8 +1,8 @@
 /// Port of Python Textual `docs/examples/widgets/data_table_cursors.py`.
 ///
-/// Demonstrates DataTable cursor types:
-/// - zebra_stripes is enabled on mount
-/// - cursor_type starts at "column" (first element of the cycle) on mount
+/// Demonstrates `DataTable` cursor types:
+/// - `zebra_stripes` is enabled on mount
+/// - `cursor_type` starts at "column" (first element of the cycle) on mount
 /// - pressing 'c' cycles through column → row → cell → none → column → ...
 ///
 /// Python uses `itertools.cycle(["column", "row", "cell", "none"])` with

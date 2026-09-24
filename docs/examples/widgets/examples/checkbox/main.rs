@@ -1,12 +1,12 @@
 /// Port of Python Textual `docs/examples/widgets/checkbox.py`.
 ///
 /// Demonstrates the `Checkbox` widget:
-/// - Eight checkboxes inside a VerticalScroll
+/// - Eight checkboxes inside a `VerticalScroll`
 /// - Two start checked ("Grumman" and "Novebruns")
 /// - "Kaitain" receives initial focus on mount
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -17,7 +17,7 @@ VerticalScroll {
     background: $boost;
     padding: 2;
 }
-"#;
+";
 
 struct CheckboxApp;
 

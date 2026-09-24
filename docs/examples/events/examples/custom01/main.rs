@@ -100,7 +100,7 @@ impl Widget for ColorButton {
 // App
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     layout: vertical;
 }
@@ -111,7 +111,7 @@ ColorButton {
     height: auto;
     background: #ffffff33;
 }
-"#;
+";
 
 struct ColorApp;
 

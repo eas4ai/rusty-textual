@@ -9,7 +9,7 @@
 /// `Vertical(Label("0%"), id="tint1")` where one node owns both rules.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Vertical {
     background: $panel;
     color: auto 90%;
@@ -19,7 +19,7 @@ Vertical {
 #tint3 { background-tint: $foreground 50%; }
 #tint4 { background-tint: $foreground 75% }
 #tint5 { background-tint: $foreground 100% }
-"##;
+";
 
 struct BackgroundTintApp;
 

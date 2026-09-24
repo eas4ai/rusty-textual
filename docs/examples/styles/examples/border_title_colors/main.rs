@@ -5,7 +5,7 @@
 /// properties on a Label.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -22,7 +22,7 @@ Label {
     border-subtitle-background: yellow;
     border-subtitle-style: italic;
 }
-"##;
+";
 
 struct BorderTitleApp;
 

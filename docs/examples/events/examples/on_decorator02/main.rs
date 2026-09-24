@@ -2,8 +2,8 @@
 ///
 /// Demonstrates the `@on` decorator pattern (selector-based per-button handlers).
 /// Python uses three separate handlers, one per button:
-///   @on(Button.Pressed, "#bell")   def play_bell(...)
-///   @on(Button.Pressed, ".toggle.dark") def toggle_dark(...)
+///   @on(Button.Pressed, "#bell")   def `play_bell`(...)
+///   @on(Button.Pressed, ".toggle.dark") def `toggle_dark`(...)
 ///   @on(Button.Pressed, "#quit")   def quit(...)
 ///
 /// Rust mirrors this with [`MessageRouter`] — the declarative `@on(Message,
@@ -16,7 +16,7 @@
 /// CSS is ported from `on_decorator.tcss`.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
     layout: horizontal;
@@ -25,7 +25,7 @@ Screen {
 Button {
     margin: 2 4;
 }
-"#;
+";
 
 struct OnDecoratorApp {
     /// Declarative `@on(Button.Pressed, selector)` routing table.

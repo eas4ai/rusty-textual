@@ -9,7 +9,7 @@
 /// `OptionItem::disabled_with_id`, and `OptionItem::Separator`.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -18,7 +18,7 @@ OptionList {
     width: 70%;
     height: 80%;
 }
-"#;
+";
 
 struct OptionListApp;
 

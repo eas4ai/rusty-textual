@@ -4,7 +4,7 @@ use textual::compose;
 use textual::prelude::*;
 
 /// Mirrors Python Textual's `docs/examples/widgets/input_validation.py`.
-const CSS: &str = r#"
+const CSS: &str = r"
 Input.-valid {
     border: tall $success 60%;
 }
@@ -20,7 +20,7 @@ Label {
 Pretty {
     margin: 1 2;
 }
-"#;
+";
 
 struct InputValidationApp {
     pretty_str: Arc<Mutex<String>>,
@@ -67,7 +67,10 @@ impl TextualApp for InputValidationApp {
         } else {
             validation.failure_descriptions()
         };
-        *self.pretty_str.lock().unwrap_or_else(|e| e.into_inner()) = format!("{:?}", next);
+        *self
+            .pretty_str
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = format!("{next:?}");
         // Python's `Pretty.update()` refreshes with `layout=True` — the new repr
         // changes the widget's intrinsic size, so a repaint alone would render
         // the new content inside the STALE `[]`-sized rect (clipped to "[").

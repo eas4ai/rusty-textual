@@ -6,7 +6,7 @@
 ///
 /// Python layout:
 ///   class Box(Placeholder):
-///       DEFAULT_CSS = "Box { width: 16; height: 5; }"
+///       `DEFAULT_CSS` = "Box { width: 16; height: 5; }"
 ///
 ///   class ContainerApp(App):
 ///       CSS = ".with-border { border: heavy green; }"
@@ -18,7 +18,7 @@
 ///               yield Box("Box 3.")
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 .box {
     width: 16;
     height: 5;
@@ -27,7 +27,7 @@ const CSS: &str = r#"
 .with-border {
     border: heavy green;
 }
-"#;
+";
 
 struct ContainerApp;
 

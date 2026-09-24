@@ -2,16 +2,16 @@
 ///
 /// Demonstrates the `Placeholder` widget with various variants and layout:
 /// - Default variant shows a label or auto-generated identifier.
-/// - Size variant shows the widget's WxH dimensions.
+/// - Size variant shows the widget's `WxH` dimensions.
 /// - Text variant shows Lorem Ipsum text.
 /// - Clicking a placeholder cycles through variants.
 ///
-/// Layout mirrors the Python original: a VerticalScroll containing two
+/// Layout mirrors the Python original: a `VerticalScroll` containing two
 /// Containers — `#bot` (8×8 grid) and `#top` (2×2 grid).
 use textual::compose;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Placeholder {
     height: 100%;
 }
@@ -63,7 +63,7 @@ Placeholder {
     row-span: 1;
     column-span: 2;
 }
-"#;
+";
 
 struct PlaceholderApp;
 

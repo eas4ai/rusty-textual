@@ -1,7 +1,7 @@
 /// Port of Python Textual `docs/examples/widgets/select_widget_no_blank.py`.
 ///
 /// Demonstrates `Select<String>` with `allow_blank=false`:
-/// - A `Select` widget populated with lines from a poem (allow_blank=false).
+/// - A `Select` widget populated with lines from a poem (`allow_blank=false`).
 /// - When a selection changes, the app title is updated.
 /// - Pressing `s` swaps the options with alternate lines.
 ///
@@ -29,7 +29,7 @@ const ALTERNATE_LINES: &[&str] = &[
     "How I wonder what you are!",
 ];
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center top;
 }
@@ -38,7 +38,7 @@ Select {
     width: 60;
     margin: 2;
 }
-"#;
+";
 
 struct SelectApp;
 

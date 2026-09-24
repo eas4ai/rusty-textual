@@ -28,8 +28,7 @@ use textual::prelude::*;
 fn no_dotfiles(path: &std::path::Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
-        .map(|name| !name.starts_with('.'))
-        .unwrap_or(true)
+        .is_none_or(|name| !name.starts_with('.'))
 }
 
 // ---------------------------------------------------------------------------

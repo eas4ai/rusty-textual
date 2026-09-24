@@ -25,17 +25,17 @@
 /// - The `Content.spans` list is shown in the `#spans` `Pretty` panel.
 ///
 /// ## Remaining smaller gaps (not core to this feature)
-/// - `TextArea` border_title: `TextArea` has no `with_border_title` /
+/// - `TextArea` `border_title`: `TextArea` has no `with_border_title` /
 ///   `set_border_title`, so the editor's 'Markup' and variables' 'Variables (JSON)'
 ///   titles are not reproduced yet.
-/// - `@on(Message, "#selector")` declarative routing: Rust stores NodeIds at mount
+/// - `@on(Message, "#selector")` declarative routing: Rust stores `NodeIds` at mount
 ///   time and compares `message.sender`. Functional but not declarative.
 use std::collections::HashMap;
 
 use textual::content::{Content, SpanStyle};
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layout: vertical;
 }
@@ -96,14 +96,14 @@ Screen {
 HorizontalGroup {
     height: 1fr;
 }
-"##;
+";
 
 struct PlaygroundApp {
     show_variables: bool,
     show_spans: bool,
-    /// NodeId of the #editor TextArea, resolved at mount time.
+    /// `NodeId` of the #editor `TextArea`, resolved at mount time.
     editor_id: Option<NodeId>,
-    /// NodeId of the #variables TextArea, resolved at mount time.
+    /// `NodeId` of the #variables `TextArea`, resolved at mount time.
     variables_id: Option<NodeId>,
     /// Current template variables (last successfully-parsed JSON object).
     /// Mirrors Python `MarkupPlayground.variables` (a reactive dict).
@@ -303,20 +303,17 @@ impl TextualApp for PlaygroundApp {
                     .ok()
                     .unwrap_or_default();
 
-                match Self::parse_variables(&vars_text) {
-                    Ok(vars) => {
-                        if let Ok(q) = app.query_mut("#variables") {
-                            q.remove_class("-bad-json");
-                        }
-                        self.variables = vars;
+                if let Ok(vars) = Self::parse_variables(&vars_text) {
+                    if let Ok(q) = app.query_mut("#variables") {
+                        q.remove_class("-bad-json");
                     }
-                    Err(()) => {
-                        if let Ok(q) = app.query_mut("#variables") {
-                            q.add_class("-bad-json");
-                        }
-                        // Python sets `self.variables = {}` on bad JSON.
-                        self.variables = HashMap::new();
+                    self.variables = vars;
+                } else {
+                    if let Ok(q) = app.query_mut("#variables") {
+                        q.add_class("-bad-json");
                     }
+                    // Python sets `self.variables = {}` on bad JSON.
+                    self.variables = HashMap::new();
                 }
 
                 let vars = self.variables.clone();

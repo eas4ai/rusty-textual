@@ -1,7 +1,7 @@
 /// Port of Python Textual `docs/examples/guide/actions/actions07.py`.
 ///
 /// Demonstrates dynamic action checking with `check_action` returning `None`:
-/// - 'n' / 'p' navigate between 5 pages in a HorizontalScroll.
+/// - 'n' / 'p' navigate between 5 pages in a `HorizontalScroll`.
 /// - `check_action` returns `None` (disabled+hidden) at the first/last page,
 ///   dimming the corresponding footer hint.
 ///
@@ -11,7 +11,7 @@ use textual::prelude::*;
 
 const PAGES_COUNT: i32 = 5;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #page-container {
     scrollbar-size: 0 0;
 }
@@ -20,7 +20,7 @@ Placeholder {
     width: 100vw;
     height: 100%;
 }
-"##;
+";
 
 struct PagesApp {
     page_no: i32,
@@ -41,8 +41,8 @@ impl TextualApp for PagesApp {
     fn compose(&mut self) -> AppRoot {
         let mut container = HorizontalScroll::new().id("page-container");
         for i in 0..PAGES_COUNT {
-            container = container
-                .with_child(Placeholder::new(format!("Page {}", i)).id(format!("page-{}", i)));
+            container =
+                container.with_child(Placeholder::new(format!("Page {i}")).id(format!("page-{i}")));
         }
         AppRoot::new()
             .with_child(container)

@@ -4,7 +4,7 @@
 /// border titles are left-, center-, and right-aligned.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #label1 {
     border: solid $secondary;
     border-title-align: left;
@@ -28,7 +28,7 @@ Screen > Label {
     margin: 1;
     box-sizing: border-box;
 }
-"##;
+";
 
 struct BorderTitleAlignApp;
 

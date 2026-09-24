@@ -4,7 +4,7 @@
 /// `invisible` and is hidden but still occupies space in the layout.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     background: green;
 }
@@ -20,7 +20,7 @@ Label {
 Label.invisible {
     visibility: hidden;
 }
-"##;
+";
 
 struct VisibilityApp;
 

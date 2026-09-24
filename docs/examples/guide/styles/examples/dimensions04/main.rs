@@ -3,8 +3,8 @@
 /// Demonstrates fractional height sizing: two Static widgets where widget1
 /// gets 2fr of height and widget2 gets 1fr, with different background colors.
 ///
-/// Note: Python sets these styles via on_mount (runtime style mutation).
-/// Rust uses inline CSS since runtime style mutation via on_mount is not yet
+/// Note: Python sets these styles via `on_mount` (runtime style mutation).
+/// Rust uses inline CSS since runtime style mutation via `on_mount` is not yet
 /// supported in textual-rs.
 use textual::prelude::*;
 
@@ -16,7 +16,7 @@ I will permit it to pass over me and through me.
 And when it has gone past, I will turn the inner eye to see its path.
 Where the fear has gone there will be nothing. Only I will remain.";
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #widget1 {
     background: purple;
     height: 2fr;
@@ -26,7 +26,7 @@ const CSS: &str = r##"
     background: darkgreen;
     height: 1fr;
 }
-"##;
+";
 
 struct DimensionsApp;
 

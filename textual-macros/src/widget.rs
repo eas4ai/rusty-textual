@@ -866,8 +866,11 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
             .to_compile_error();
         }
     }
-    let overrides: std::collections::HashSet<String> =
-        args.overrides.iter().map(|i| i.to_string()).collect();
+    let overrides: std::collections::HashSet<String> = args
+        .overrides
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
 
     // `on(..)` wires the generated `on_message`; `override(on_message)` replaces
     // it. Both at once is contradictory.
@@ -884,7 +887,7 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let field_exists = item_struct
         .fields
         .iter()
-        .any(|f| f.ident.as_ref().map(|id| id == field).unwrap_or(false));
+        .any(|f| f.ident.as_ref().is_some_and(|id| id == field));
     if !field_exists {
         return syn::Error::new_spanned(
             field,
@@ -1049,12 +1052,15 @@ fn own_widget_impl(
         .to_compile_error();
     }
 
-    let enabled: std::collections::HashSet<String> =
-        args.capabilities.iter().map(|i| i.to_string()).collect();
+    let enabled: std::collections::HashSet<String> = args
+        .capabilities
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     let has_seed_field = item_struct
         .fields
         .iter()
-        .any(|f| f.ident.as_ref().map(|id| id == "seed").unwrap_or(false));
+        .any(|f| f.ident.as_ref().is_some_and(|id| id == "seed"));
 
     let mut methods: Vec<TokenStream> = Vec::new();
     for spec in table {
@@ -1159,7 +1165,11 @@ mod tests {
         assert_eq!(args.field.to_string(), "inner");
         assert_eq!(args.style_type.as_deref(), Some("Card"));
         assert!(args.reactive);
-        let ov: Vec<String> = args.overrides.iter().map(|i| i.to_string()).collect();
+        let ov: Vec<String> = args
+            .overrides
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         assert_eq!(ov, vec!["render".to_string(), "on_message".to_string()]);
     }
 
@@ -1167,7 +1177,11 @@ mod tests {
     fn parse_on_handler_list() {
         let args: WidgetArgs =
             parse2(quote! { base = Vertical, on(on_button, on_checkbox) }).unwrap();
-        let on: Vec<String> = args.on_handlers.iter().map(|i| i.to_string()).collect();
+        let on: Vec<String> = args
+            .on_handlers
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         assert_eq!(on, vec!["on_button".to_string(), "on_checkbox".to_string()]);
     }
 
@@ -1211,7 +1225,11 @@ mod tests {
     fn own_mode_parses_capabilities() {
         let args: WidgetArgs = parse2(quote! { Layout, Interactive }).unwrap();
         assert!(args._base.is_none());
-        let caps: Vec<String> = args.capabilities.iter().map(|i| i.to_string()).collect();
+        let caps: Vec<String> = args
+            .capabilities
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         assert_eq!(caps, vec!["Layout".to_string(), "Interactive".to_string()]);
     }
 

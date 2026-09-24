@@ -8,12 +8,12 @@
 ///   - `ColumnsContainer(Placeholder)` — fills remaining space with a solid
 ///     white border
 ///
-/// Python source uses DEFAULT_CSS on each subclass.  Here those styles are
+/// Python source uses `DEFAULT_CSS` on each subclass.  Here those styles are
 /// expressed as CSS id-selectors (matching the Python compose IDs "Header",
 /// "Footer", "Columns") loaded via `app.load_stylesheet`.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 #Header {
     height: 3;
     dock: top;
@@ -29,7 +29,7 @@ const CSS: &str = r#"
     height: 1fr;
     border: solid white;
 }
-"#;
+";
 
 struct LayoutApp;
 

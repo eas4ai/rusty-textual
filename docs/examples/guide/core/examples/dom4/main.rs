@@ -11,7 +11,7 @@ use textual::prelude::*;
 
 const QUESTION: &str = "Do you want to learn about Textual CSS?";
 
-const CSS: &str = r##"
+const CSS: &str = r"
 /* The top level dialog (a Container) */
 #dialog {
     height: 100%;
@@ -41,7 +41,7 @@ Button {
     dock: bottom;
     layout: horizontal;
 }
-"##;
+";
 
 struct Dom4App;
 

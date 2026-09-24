@@ -7,9 +7,9 @@
 ///
 /// Python source:
 ///     class WelcomeApp(App):
-///         async def on_key(self) -> None:
+///         async def `on_key(self)` -> None:
 ///             await self.mount(Welcome())
-///             self.query_one(Button).label = "YES!"
+///             `self.query_one(Button).label` = "YES!"
 use textual::prelude::*;
 
 struct WelcomeApp {

@@ -3,7 +3,7 @@
 /// Demonstrates vertical layout with three boxes sharing equal height.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layout: vertical;
 }
@@ -12,7 +12,7 @@ Screen {
     height: 1fr;
     border: solid green;
 }
-"##;
+";
 
 struct VerticalLayoutExample;
 

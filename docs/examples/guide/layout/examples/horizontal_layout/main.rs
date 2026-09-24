@@ -4,7 +4,7 @@
 /// each taking equal width via `1fr`.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layout: horizontal;
 }
@@ -14,7 +14,7 @@ Screen {
     width: 1fr;
     border: solid green;
 }
-"##;
+";
 
 struct HorizontalLayoutExample;
 

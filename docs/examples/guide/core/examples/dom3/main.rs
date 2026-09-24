@@ -6,7 +6,7 @@ use textual::prelude::*;
 
 const QUESTION: &str = "Do you want to learn about Textual CSS?";
 
-const CSS: &str = r##""##;
+const CSS: &str = r"";
 
 struct ExampleApp;
 

@@ -35,7 +35,7 @@
 ///   is displayed as-is.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Input {
     dock: top;
     width: 100%;
@@ -52,7 +52,7 @@ Input {
     width: auto;
     height: auto;
 }
-"#;
+";
 
 struct WeatherApp;
 

@@ -30,7 +30,7 @@
 //! still handed a DOM-blind `&mut ReactiveCtx`, so the Python idiom of
 //! refreshing a child from `watch_remaining` is not available. Here the refresh
 //! rides the `WidgetCtx` handlers that CAN reach the subtree (the countdown tick
-//! and the buttons). See `sync_digits`. A 1.x "watch handlers get a WidgetCtx"
+//! and the buttons). See `sync_digits`. A 1.x "watch handlers get a `WidgetCtx`"
 //! change would let the refresh move into the watch and remove the two explicit
 //! `sync_digits` calls.
 
@@ -172,7 +172,7 @@ impl PomodoroCard {
 // PomodoroApp — owns the completed counter + dark-mode toggle
 // ===========================================================================
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen { layout: vertical; background: $surface; }
 
 #done {
@@ -201,7 +201,7 @@ PomodoroCard.running Digits { color: $success; }
 
 PomodoroCard VerticalGroup { height: auto; width: auto; }
 PomodoroCard Button { margin: 1 0 0 0; }
-"#;
+";
 
 #[derive(textual::Reactive)]
 struct PomodoroApp {

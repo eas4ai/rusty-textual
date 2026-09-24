@@ -5,7 +5,7 @@
 /// fully supported yet.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #lbl1, #lbl2 {
     link-color: red;
 }
@@ -17,7 +17,7 @@ const CSS: &str = r##"
 #lbl4 {
     link-color: $accent;
 }
-"##;
+";
 
 struct LinkColorApp;
 

@@ -1,28 +1,28 @@
 /// Port of Python Textual `docs/examples/guide/reactivity/validate01.py`.
 ///
 /// Demonstrates reactive validation: a counter clamped between 0 and 10.
-/// Two buttons (+1 / -1) adjust the counter; a RichLog displays each new value.
+/// Two buttons (+1 / -1) adjust the counter; a `RichLog` displays each new value.
 /// The `validate_count` hook ensures the value never goes below 0 or above 10.
 ///
 /// Python structure:
 ///   count = reactive(0)
-///   def validate_count(self, count: int) -> int: ...   # clamp [0, 10]
-///   def on_button_pressed(self, event): self.count += 1 (or -1); log self.count
+///   def `validate_count(self`, count: int) -> int: ...   # clamp [0, 10]
+///   def `on_button_pressed(self`, event): self.count += 1 (or -1); log self.count
 ///
 /// Rust port (faithful): the app derives `Reactive` and declares
 /// `#[reactive(validate)] count`. The generated `set_count(value, ctx)` runs
 /// `validate_count(value)` BEFORE storing — exactly like Python's `_set`. The
 /// button handler calls `set_count(self.count() + 1, app.reactive_ctx())`, then
-/// reads back the (clamped) `self.count()` to write the RichLog line.
+/// reads back the (clamped) `self.count()` to write the `RichLog` line.
 use textual::message::ButtonPressed;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 #buttons {
     dock: top;
     height: auto;
 }
-"#;
+";
 
 #[derive(Reactive)]
 struct ValidateApp {

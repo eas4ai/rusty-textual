@@ -3,14 +3,14 @@
 /// Demonstrates a scrollable checkerboard rendered via component-class CSS colors.
 ///
 /// Python structure:
-///   - `CheckerBoard(ScrollView)` — custom widget with COMPONENT_CLASSES for
+///   - `CheckerBoard(ScrollView)` — custom widget with `COMPONENT_CLASSES` for
 ///     "checkerboard--white-square" and "checkerboard--black-square", renders via
-///     `render_line(y)` honouring `scroll_offset`, virtual_size = (board*8, board*4)
+///     `render_line(y)` honouring `scroll_offset`, `virtual_size` = (board*8, board*4)
 ///   - `BoardApp(App)` — single `CheckerBoard(100)` filling the screen
 ///
 /// Rust mapping:
 ///   - `CheckerBoardContent` — custom `Widget` that renders the full board
-///     content and exposes content_width / layout_height for ScrollView sizing.
+///     content and exposes `content_width` / `layout_height` for `ScrollView` sizing.
 ///     Colors come from the CSS component-class rules below, resolved at render
 ///     time via `get_component_rich_style` (Python parity, no hardcoding).
 ///   - Wrapped in `ScrollView::new(CheckerBoardContent::new(100))` in the app's
@@ -21,7 +21,7 @@
 ///     inheritance, so composition via `ScrollView::new(CheckerBoardContent)`
 ///     is used instead.
 ///   - `render_line(y, console, options)` in Rust already receives the
-///     widget-local `y` within the full content area (ScrollView handles the
+///     widget-local `y` within the full content area (`ScrollView` handles the
 ///     offset), so no explicit `scroll_offset` adjustment is needed.
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual::prelude::*;
@@ -30,14 +30,14 @@ use textual::prelude::*;
 // CSS — mirrors Python DEFAULT_CSS + component-class color declarations
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 CheckerBoardContent .checkerboard--white-square {
     background: #A5BAC9;
 }
 CheckerBoardContent .checkerboard--black-square {
     background: #004578;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // CheckerBoardContent — renders the full virtual checker surface
@@ -77,7 +77,7 @@ impl Widget for CheckerBoardContent {
 
     /// Render one visual row of the board.
     ///
-    /// `y` is the absolute row index within the full content (0 … board_size*4-1).
+    /// `y` is the absolute row index within the full content (0 … `board_size`*4-1).
     /// The `ScrollView` owner passes only the rows it wants rendered, already
     /// accounting for the scroll offset — no manual `scroll_y` arithmetic needed.
     fn render_line(&self, y: usize, _console: &Console, options: &ConsoleOptions) -> Segments {

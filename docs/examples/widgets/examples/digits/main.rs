@@ -8,7 +8,7 @@
 /// produces identical visual output for this single-widget app.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -16,7 +16,7 @@ Digits {
     border: double green;
     width: auto;
 }
-"#;
+";
 
 struct DigitApp;
 

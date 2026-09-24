@@ -5,11 +5,11 @@
 ///
 /// Python:
 ///   class StopwatchApp(App):
-///       BINDINGS = [("d", "toggle_dark", "Toggle dark mode")]
+///       BINDINGS = [("d", "`toggle_dark`", "Toggle dark mode")]
 ///       def compose(self):
-///           yield Header()
-///           yield Footer()
-///       def action_toggle_dark(self):
+///           yield `Header()`
+///           yield `Footer()`
+///       def `action_toggle_dark(self)`:
 ///           self.theme = "textual-dark" if ... else "textual-light"
 use textual::prelude::*;
 

@@ -11,7 +11,7 @@ use textual::prelude::*;
 // CSS — mirrors Hello.DEFAULT_CSS + hello04.tcss
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -24,7 +24,7 @@ Hello {
     border: tall $secondary;
     content-align: center middle;
 }
-"##;
+";
 
 // ---------------------------------------------------------------------------
 // Greeting list — mirrors Python's `hellos` cycle.

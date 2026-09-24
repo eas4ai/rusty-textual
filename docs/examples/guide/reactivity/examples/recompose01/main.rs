@@ -6,9 +6,9 @@
 /// Python:
 ///   time: reactive[datetime] = reactive(datetime.now, init=False)
 ///   def compose(self): yield Digits(f"{self.time:%X}")
-///   def watch_time(self): self.query_one(Digits).update(f"{self.time:%X}")   # (1)
-///   def update_time(self): self.time = datetime.now()
-///   on_mount: self.set_interval(1, self.update_time)   # (2)
+///   def `watch_time(self)`: `self.query_one(Digits).update(f"{self.time:%X`}")   # (1)
+///   def `update_time(self)`: self.time = `datetime.now()`
+///   `on_mount`: `self.set_interval(1`, `self.update_time`)   # (2)
 ///
 /// Rust port (faithful): the app derives `Reactive` with
 /// `#[reactive(watch_with_app, init = false)] time` (seconds-since-epoch stands in
@@ -19,14 +19,14 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
 Digits {
     width: auto;
 }
-"#;
+";
 
 fn now_secs() -> u64 {
     SystemTime::now()

@@ -13,15 +13,15 @@
 /// - Inline style changes at runtime are done via `app.query_mut(selector).set_styles(...)`.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #box {
     background: red;
     color: black;
     padding: 1 2;
 }
-"##;
+";
 
-/// Apply the in-out-cubic easing function (Python Textual's DEFAULT_EASING).
+/// Apply the in-out-cubic easing function (Python Textual's `DEFAULT_EASING`).
 fn in_out_cubic(x: f32) -> f32 {
     if x < 0.5 {
         4.0 * x * x * x

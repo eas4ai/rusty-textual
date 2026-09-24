@@ -7,7 +7,7 @@
 /// included verbatim per port rules.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #zero-opacity {
     opacity: 0%;
 }
@@ -40,7 +40,7 @@ Label {
     content-align: center middle;
     text-style: bold;
 }
-"##;
+";
 
 struct OpacityApp;
 

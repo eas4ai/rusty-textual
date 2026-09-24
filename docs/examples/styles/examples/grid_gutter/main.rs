@@ -6,7 +6,7 @@
 /// Framework gap: `grid-gutter` rendering support may vary.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Grid {
     grid-size: 2 4;
     grid-gutter: 1 2;
@@ -18,7 +18,7 @@ Label {
     width: 100%;
     height: 100%;
 }
-"##;
+";
 
 struct MyApp;
 

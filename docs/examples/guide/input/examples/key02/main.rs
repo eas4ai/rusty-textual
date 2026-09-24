@@ -1,7 +1,7 @@
 /// Port of Python Textual's `docs/examples/guide/input/key02.py`.
 ///
-/// Displays key events in a RichLog. Each key press writes the event details
-/// (key, character, name, is_printable) to the log. The space key also rings
+/// Displays key events in a `RichLog`. Each key press writes the event details
+/// (key, character, name, `is_printable`) to the log. The space key also rings
 /// the terminal bell.
 use textual::keys::KeyEventData;
 use textual::prelude::*;
@@ -15,8 +15,7 @@ fn write_key_event(log: &mut RichLog, key: &KeyEventData) {
     let name_str = key.identifier();
     let character = key
         .character
-        .map(|ch| format!("'{ch}'"))
-        .unwrap_or_else(|| "None".to_string());
+        .map_or_else(|| "None".to_string(), |ch| format!("'{ch}'"));
     let printable = if key.is_printable { "True" } else { "False" };
 
     // Python's Key.__rich_repr__ yields: key, character, name, is_printable, aliases.

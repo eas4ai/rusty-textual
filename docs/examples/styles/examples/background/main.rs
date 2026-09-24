@@ -3,7 +3,7 @@
 /// Demonstrates background color with various CSS color formats.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Label {
     width: 100%;
     height: 1fr;
@@ -22,7 +22,7 @@ Label {
 #static3 {
     background: hsl(240, 100%, 50%);
 }
-"##;
+";
 
 struct BackgroundApp;
 

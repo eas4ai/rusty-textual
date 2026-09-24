@@ -13,7 +13,7 @@
 /// `id="toggle-dark"` to that button instead.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
     layout: horizontal;
@@ -22,7 +22,7 @@ Screen {
 Button {
     margin: 2 4;
 }
-"#;
+";
 
 struct OnDecoratorApp;
 

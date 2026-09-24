@@ -4,7 +4,7 @@
 /// Each row uses a different sizing: 1fr, fixed (6), percentage (25%).
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Grid {
     grid-size: 2 5;
     grid-rows: 1fr 6 25%;
@@ -16,7 +16,7 @@ Label {
     width: 100%;
     height: 100%;
 }
-"##;
+";
 
 struct MyApp;
 

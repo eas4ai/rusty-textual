@@ -4,7 +4,7 @@
 /// percentage, cells, and viewport-relative (h) units.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 VerticalScroll {
     height: 100%;
     width: 100%;
@@ -31,7 +31,7 @@ Placeholder {
 #p4 {
     min-width: 400h;
 }
-"##;
+";
 
 struct MinWidthApp;
 

@@ -4,7 +4,7 @@
 /// Five labels are arranged in a 2-column grid (3 rows × 2 cols).
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Grid {
     grid-size: 2;
 }
@@ -15,7 +15,7 @@ Label {
     width: 100%;
     height: 100%;
 }
-"##;
+";
 
 struct MyApp;
 

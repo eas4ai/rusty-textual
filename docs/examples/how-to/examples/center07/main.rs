@@ -9,7 +9,7 @@ use textual::prelude::*;
 const QUOTE: &str =
     "Could not find you in Seattle and no terminal is in operation at your classified address.";
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -22,7 +22,7 @@ Screen {
     text-align: center;
     content-align: center middle;
 }
-"#;
+";
 
 struct CenterApp;
 

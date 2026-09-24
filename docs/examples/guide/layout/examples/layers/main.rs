@@ -5,7 +5,7 @@
 /// box2 is on the "below" layer, offset so they partially overlap.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     align: center middle;
     layers: below above;
@@ -28,7 +28,7 @@ Static {
     background: orange;
     offset: 12 6;
 }
-"##;
+";
 
 struct LayersExample;
 

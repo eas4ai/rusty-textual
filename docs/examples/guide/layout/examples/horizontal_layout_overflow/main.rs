@@ -4,7 +4,7 @@
 /// horizontally when they exceed the screen width.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layout: horizontal;
     overflow-x: auto;
@@ -14,7 +14,7 @@ Screen {
     height: 100%;
     border: solid green;
 }
-"##;
+";
 
 struct HorizontalLayoutExample;
 

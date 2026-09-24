@@ -8,7 +8,7 @@ use textual::prelude::*;
 struct DashboardScreen;
 
 impl Screen for DashboardScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "DashboardScreen"
     }
 
@@ -27,7 +27,7 @@ impl Screen for DashboardScreen {
 struct SettingsScreen;
 
 impl Screen for SettingsScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "SettingsScreen"
     }
 
@@ -46,7 +46,7 @@ impl Screen for SettingsScreen {
 struct HelpScreen;
 
 impl Screen for HelpScreen {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "HelpScreen"
     }
 

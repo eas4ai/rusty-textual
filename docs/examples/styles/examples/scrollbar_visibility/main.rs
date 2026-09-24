@@ -9,7 +9,7 @@ use textual::prelude::*;
 
 const TEXT: &str = "I must not fear.\nFear is the mind-killer.\nFear is the little-death that brings total obliteration.\nI will face my fear.\nI will permit it to pass over me and through me.\nAnd when it has gone past, I will turn the inner eye to see its path.\nWhere the fear has gone there will be nothing. Only I will remain.\n";
 
-const CSS: &str = r##"
+const CSS: &str = r"
 VerticalScroll {
     width: 1fr;
 }
@@ -21,7 +21,7 @@ VerticalScroll {
 .right {
     scrollbar-visibility: hidden;
 }
-"##;
+";
 
 struct ScrollbarApp;
 

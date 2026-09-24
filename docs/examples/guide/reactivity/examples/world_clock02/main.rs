@@ -1,6 +1,6 @@
 /// Port of Python Textual `docs/examples/guide/reactivity/world_clock02.py`.
 ///
-/// Same three world clocks as world_clock01, but the App fans its `time`
+/// Same three world clocks as `world_clock01`, but the App fans its `time`
 /// reactive out to each child via **`data_bind`** instead of an explicit
 /// `watch_time` loop:
 ///
@@ -29,7 +29,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -47,7 +47,7 @@ WorldClock Digits {
     width: auto;
     color: $secondary;
 }
-"#;
+";
 
 fn now_secs() -> u64 {
     SystemTime::now()

@@ -6,11 +6,11 @@ use textual::prelude::*;
 ///
 /// Python:
 ///   def __init__(self, greeting="Hello", who="World!"):
-///       super().__init__()
-///       self.set_reactive(Greeter.greeting, greeting)   # (1) no watcher
-///       self.set_reactive(Greeter.who, who)
+///       `super()`.__init__()
+///       `self.set_reactive(Greeter.greeting`, greeting)   # (1) no watcher
+///       `self.set_reactive(Greeter.who`, who)
 ///   greeting/who watchers update the child Labels.
-///   The app cycles query_one(Greeter).greeting on Space.
+///   The app cycles `query_one(Greeter).greeting` on Space.
 ///
 /// Rust port (faithful): `set_reactive(field, value)` maps to TWO things in the
 /// derive system: (a) assign the field DIRECTLY in `new()` (not via `set_<field>`,
@@ -29,7 +29,7 @@ const GREETINGS: &[&str] = &[
     "Hello",
 ];
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -43,7 +43,7 @@ Greeter {
 Greeter Label {
     margin: 0 1;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // Greeter: reactive greeting/who with `init = false` (set_reactive semantics)

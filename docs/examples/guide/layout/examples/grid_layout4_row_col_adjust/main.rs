@@ -4,7 +4,7 @@
 /// 3 columns (2fr 1fr 1fr) and 2 rows (25% 75%), with 6 Static boxes.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 3;
@@ -16,7 +16,7 @@ Screen {
     height: 100%;
     border: solid green;
 }
-"##;
+";
 
 struct GridLayoutExample;
 

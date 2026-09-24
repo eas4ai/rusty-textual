@@ -4,7 +4,7 @@
 use textual::compose;
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Horizontal {
     height: 100%;
     width: 100%;
@@ -30,7 +30,7 @@ Placeholder {
 #p4 {
     max-width: 30;
 }
-"##;
+";
 
 struct MaxWidthApp;
 

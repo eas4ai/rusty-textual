@@ -6,7 +6,7 @@
 /// Note: `visibility` CSS property support in textual-rs may be a framework gap.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Horizontal {
     padding: 1 2;
     background: white;
@@ -30,7 +30,7 @@ Horizontal {
 Placeholder {
     width: 1fr;
 }
-"##;
+";
 
 struct VisibilityContainersApp;
 

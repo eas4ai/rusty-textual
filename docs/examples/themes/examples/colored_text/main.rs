@@ -4,14 +4,14 @@
 /// dynamically and yields one Label per color class.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 .text-primary   { color: $text-primary; }
 .text-secondary { color: $text-secondary; }
 .text-accent    { color: $text-accent; }
 .text-warning   { color: $text-warning; }
 .text-error     { color: $text-error; }
 .text-success   { color: $text-success; }
-"#;
+";
 
 struct ColoredText;
 

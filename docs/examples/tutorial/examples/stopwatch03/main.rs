@@ -8,13 +8,13 @@
 ///   class TimeDisplay(Digits): ...
 ///   class Stopwatch(HorizontalGroup):
 ///       def compose(self): yield ...
-///   CSS_PATH = "stopwatch03.tcss"
+///   `CSS_PATH` = "stopwatch03.tcss"
 ///
 /// NON-PROMOTABLE (timer-driven).
 use textual::compose;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Stopwatch {
     background: $boost;
     height: 5;
@@ -45,7 +45,7 @@ Button {
 #reset {
     dock: right;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // TimeDisplay: thin wrapper around Digits with its own style_type
@@ -68,7 +68,7 @@ impl Widget for TimeDisplay {
         "TimeDisplay"
     }
 
-    /// Python's `class TimeDisplay(Digits)` inherits `Digits` DEFAULT_CSS via the
+    /// Python's `class TimeDisplay(Digits)` inherits `Digits` `DEFAULT_CSS` via the
     /// MRO (notably `width: 1fr`). Declare `Digits` as a style-type alias so the
     /// framework applies the base widget's default CSS to this wrapper, matching
     /// Python's resolved styles.

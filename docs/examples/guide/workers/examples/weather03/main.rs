@@ -20,7 +20,7 @@
 use std::sync::{Arc, Mutex};
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Input {
     dock: top;
     width: 100%;
@@ -36,7 +36,7 @@ Static {
     width: auto;
     height: auto;
 }
-"#;
+";
 
 struct WeatherApp {
     /// Shared result buffer between the app and the background worker thread.
@@ -62,12 +62,16 @@ impl WeatherApp {
     ) {
         ctx.request_exclusive_worker_task("update_weather", Some("weather"), move |token| {
             if city.is_empty() {
-                *result_holder.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                *result_holder
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
                 return Ok(());
             }
 
             let weather = fetch_weather(&city, &token)?;
-            *result_holder.lock().unwrap_or_else(|e| e.into_inner()) = Some(weather);
+            *result_holder
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(weather);
             Ok(())
         });
     }
@@ -111,7 +115,7 @@ impl TextualApp for WeatherApp {
                 let mut guard = self
                     .weather_result
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner());
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 guard.take()
             };
             let _ = app.with_query_one_mut_as::<Static, _>("Static", |widget| match weather {

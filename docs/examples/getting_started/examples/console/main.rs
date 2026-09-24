@@ -7,7 +7,7 @@
 /// This port renders a plain `Static` label that reproduces the header text
 /// that `DevConsoleHeader` displays: "Textual Development Console".
 ///
-/// NON-PROMOTABLE: color-only differences expected (DevConsoleHeader uses
+/// NON-PROMOTABLE: color-only differences expected (`DevConsoleHeader` uses
 /// custom styling that textual-rs doesn't replicate identically).
 use textual::prelude::*;
 

@@ -6,9 +6,9 @@
 ///
 /// Python:
 ///   red/green/blue = reactive(0); color = reactive(Color.parse("transparent"))
-///   def compute_color(self) -> Color: return Color(self.red, self.green, self.blue).clamped
-///   def watch_color(self, color: Color): self.query_one("#color").styles.background = color
-///   on_input_changed: set self.red/green/blue from the input value
+///   def `compute_color(self)` -> Color: return Color(self.red, self.green, self.blue).clamped
+///   def `watch_color(self`, color: Color): `self.query_one("#color").styles.background` = color
+///   `on_input_changed`: set self.red/green/blue from the input value
 ///
 /// Rust port (faithful): the app derives `Reactive` with `#[reactive] red/green/blue`
 /// and a `#[computed(depends_on = "red, green, blue", watch_with_app)] color`.
@@ -19,7 +19,7 @@
 use textual::message::InputChanged;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 #color-inputs {
     dock: top;
     height: auto;
@@ -33,7 +33,7 @@ Input {
     height: 100%;
     border: tall $secondary;
 }
-"#;
+";
 
 #[derive(Reactive)]
 struct ComputedApp {

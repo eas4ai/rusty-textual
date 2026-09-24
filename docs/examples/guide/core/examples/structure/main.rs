@@ -16,7 +16,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r#"
 /* Python: Clock { content-align: center middle; }
    Rust uses Label with id="clock" to fill the screen and center its content. */
 #clock {
@@ -24,7 +24,7 @@ const CSS: &str = r##"
     height: 100%;
     content-align: center middle;
 }
-"##;
+"#;
 
 /// Days-of-week abbreviations (Sun=0 … Sat=6).
 const WDAY: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -44,8 +44,8 @@ fn epoch_secs() -> u64 {
 /// Format epoch seconds as a `%c`-equivalent string:
 /// "Www Mmm DD HH:MM:SS YYYY"  (e.g. "Mon Jun 17 14:05:03 2024").
 ///
-/// Uses the proleptic Gregorian calendar algorithm from civil_from_days
-/// (Howard Hinnant, http://howardhinnant.github.io/date_algorithms.html).
+/// Uses the proleptic Gregorian calendar algorithm from `civil_from_days`
+/// (Howard Hinnant, <http://howardhinnant.github.io/date_algorithms.html>).
 fn format_datetime(secs: u64) -> String {
     let days = secs / 86_400;
     let time_of_day = secs % 86_400;

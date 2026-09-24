@@ -4,7 +4,7 @@
 /// Framework gap: `column-span` CSS property may not be fully implemented.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #p1 {
     column-span: 4;
 }
@@ -35,7 +35,7 @@ Grid {
 Placeholder {
     height: 100%;
 }
-"##;
+";
 
 struct MyApp;
 

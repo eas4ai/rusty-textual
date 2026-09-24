@@ -9,7 +9,7 @@ use rich_rs::Segments;
 use textual::compose;
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #cells {
     width: 9;
 }
@@ -49,7 +49,7 @@ Ruler {
     height: 1;
     background: $accent;
 }
-"##;
+";
 
 struct Ruler;
 

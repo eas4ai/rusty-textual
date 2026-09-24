@@ -3,7 +3,7 @@
 /// Demonstrates the `MaskedInput` widget for credit card number entry.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 MaskedInput.-valid {
     border: tall $success 60%;
 }
@@ -16,7 +16,7 @@ MaskedInput {
 Label {
     margin: 1 2;
 }
-"#;
+";
 
 struct MaskedInputApp;
 

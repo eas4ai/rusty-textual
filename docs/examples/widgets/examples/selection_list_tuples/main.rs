@@ -7,11 +7,11 @@
 /// Python uses `SelectionList[int](("Falken's Maze", 0, True), ...)` and
 /// sets `border_title = "Shall we play some games?"` in `on_mount`.
 ///
-/// CSS is ported from `selection_list.tcss`: screen centered, SelectionList
+/// CSS is ported from `selection_list.tcss`: screen centered, `SelectionList`
 /// at 80% width / 80% height with padding=1 and solid $accent border.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -22,7 +22,7 @@ SelectionList {
     width: 80%;
     height: 80%;
 }
-"#;
+";
 
 struct SelectionListApp;
 

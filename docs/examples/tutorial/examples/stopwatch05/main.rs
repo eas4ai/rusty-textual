@@ -6,15 +6,15 @@
 ///
 /// Python (stopwatch05.py):
 ///   class TimeDisplay(Digits):
-///       start_time = reactive(monotonic)
+///       `start_time` = reactive(monotonic)
 ///       time = reactive(0.0)
-///       def on_mount(self): self.set_interval(1 / 60, self.update_time)
-///       def update_time(self): self.time = monotonic() - self.start_time
-///       def watch_time(self, time): self.update(format(time))
+///       def `on_mount(self)`: `self.set_interval(1` / 60, `self.update_time`)
+///       def `update_time(self)`: self.time = `monotonic()` - `self.start_time`
+///       def `watch_time(self`, time): self.update(format(time))
 ///   class Stopwatch(HorizontalGroup):
-///       def on_button_pressed(self, event):
-///           if event.button.id == "start": self.add_class("started")
-///           elif event.button.id == "stop": self.remove_class("started")
+///       def `on_button_pressed(self`, event):
+///           if event.button.id == "start": `self.add_class("started`")
+///           elif event.button.id == "stop": `self.remove_class("started`")
 ///
 /// Notes:
 ///   - The clock ticks from MOUNT, unconditionally (exactly like Python). The
@@ -35,7 +35,7 @@ use std::time::{Duration, Instant};
 use textual::prelude::*;
 use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Stopwatch {
     background: $boost;
     height: 5;
@@ -87,7 +87,7 @@ Button {
 .started #reset {
     visibility: hidden;
 }
-"#;
+";
 
 /// Format elapsed seconds as `HH:MM:SS.cc` — mirrors Python's
 /// `f"{hours:02,.0f}:{minutes:02.0f}:{seconds:05.2f}"`.

@@ -1,8 +1,8 @@
 /// Port of Python Textual `docs/examples/guide/widgets/loading01.py`.
 ///
 /// Demonstrates the `loading` state on widgets:
-/// - Four DataTables laid out in a 2-column grid.
-/// - On mount, each table is set to `loading = true` (shows LoadingIndicator
+/// - Four `DataTables` laid out in a 2-column grid.
+/// - On mount, each table is set to `loading = true` (shows `LoadingIndicator`
 ///   overlay) and a delayed load is scheduled to simulate a slow data fetch.
 /// - When each delay elapses, the matching table is populated and its loading
 ///   state cleared.
@@ -18,7 +18,7 @@
 /// table index stands in for `randint(2, 10)`.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 2;
@@ -26,7 +26,7 @@ Screen {
 DataTable {
     height: 1fr;
 }
-"#;
+";
 
 const HEADERS: &[&str] = &["lane", "swimmer", "country", "time"];
 
@@ -42,7 +42,7 @@ const ROWS: &[&[&str]] = &[
     &["10", "Darren Burns", "Scotland", "51.84"],
 ];
 
-/// Populate `selector`'s DataTable with the swimming data and clear its loading
+/// Populate `selector`'s `DataTable` with the swimming data and clear its loading
 /// state — the body of Python's `load_data` after the `await sleep(...)`.
 fn finish_load(app: &mut App, selector: &str) {
     let rows: Vec<Vec<String>> = ROWS

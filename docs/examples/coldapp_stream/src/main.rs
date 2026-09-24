@@ -27,7 +27,7 @@ use textual::prelude::*;
 /// One feed tick.
 const TICK: Duration = Duration::from_millis(250);
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen { layout: vertical; }
 
 #header {
@@ -46,14 +46,14 @@ Screen { layout: vertical; }
 #log .line { width: 100%; }
 #log .ok { color: $success; }
 #log .warn { color: $warning; }
-"#;
+";
 
 /// Shared feed state — mutated from the app interval closure (which only gets
 /// `&mut App`, not `&mut StreamApp`), so it lives behind an `Arc<Mutex<…>>`.
 struct Feed {
     count: u64,
     paused: bool,
-    /// NodeIds of the mounted line widgets, so `clear` can remove them.
+    /// `NodeIds` of the mounted line widgets, so `clear` can remove them.
     lines: Vec<NodeId>,
 }
 
@@ -135,7 +135,9 @@ impl TextualApp for StreamApp {
             None,
             false,
             Box::new(move |app, _ctx| {
-                let mut f = feed.lock().unwrap_or_else(|e| e.into_inner());
+                let mut f = feed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if f.paused {
                     return;
                 }
@@ -150,7 +152,7 @@ impl TextualApp for StreamApp {
                 // Follow the tail: scrolling to `count` rows always lands at the
                 // bottom (VerticalScroll clamps the offset; it has no scroll_end).
                 let _ = app.with_query_one_mut_as::<VerticalScroll, _>("#log", |s| {
-                    s.scroll_to(count as usize)
+                    s.scroll_to(count as usize);
                 });
                 let _ = app.with_query_one_mut_as::<Label, _>("#header", |l| {
                     l.set_text(StreamApp::header_text(count, false));
@@ -160,7 +162,10 @@ impl TextualApp for StreamApp {
     }
 
     fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut WidgetCtx) {
-        let mut f = self.feed.lock().unwrap_or_else(|e| e.into_inner());
+        let mut f = self
+            .feed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         match action {
             "pause" => {
                 f.paused = !f.paused;
@@ -203,8 +208,7 @@ mod tests {
         pilot
             .app()
             .query("#log Label")
-            .map(|q| q.into_ids().len())
-            .unwrap_or(0)
+            .map_or(0, |q| q.into_ids().len())
     }
 
     #[test]

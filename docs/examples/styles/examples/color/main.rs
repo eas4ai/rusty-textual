@@ -1,10 +1,10 @@
 /// Port of Python Textual `docs/examples/styles/color.py`.
 ///
-/// Demonstrates the `color` CSS property using named color, rgb(), and hsl()
+/// Demonstrates the `color` CSS property using named color, `rgb()`, and `hsl()`
 /// across three Label widgets with 1fr height each.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Label {
     height: 1fr;
     content-align: center middle;
@@ -22,7 +22,7 @@ Label {
 #label3 {
     color: hsl(240, 100%, 50%);
 }
-"##;
+";
 
 struct ColorApp;
 

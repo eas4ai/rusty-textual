@@ -1,18 +1,18 @@
 /// Port of Python Textual `docs/examples/guide/styles/border_title.py`.
 ///
-/// Demonstrates border_title and border_subtitle on a Static.
+/// Demonstrates `border_title` and `border_subtitle` on a Static.
 /// Python sets `background`/`width`/`border`/`border_title_align` at runtime in
-/// on_mount; the Rust port expresses those via CSS (equivalent static result).
+/// `on_mount`; the Rust port expresses those via CSS (equivalent static result).
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Static {
     background: darkblue;
     width: 50%;
     border: heavy yellow;
     border-title-align: center;
 }
-"##;
+";
 
 const TEXT: &str = "I must not fear.
 Fear is the mind-killer.

@@ -4,7 +4,7 @@
 /// fractional units: 2fr 1fr 1fr.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 Screen {
     layout: grid;
     grid-size: 3;
@@ -15,7 +15,7 @@ Screen {
     height: 100%;
     border: solid green;
 }
-"##;
+";
 
 struct GridLayoutExample;
 

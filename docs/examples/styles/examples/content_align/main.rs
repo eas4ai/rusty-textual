@@ -4,7 +4,7 @@
 /// `content-align-vertical` CSS properties on Label widgets.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #box1 {
     content-align: left top;
     background: red;
@@ -27,7 +27,7 @@ Label {
     padding: 1;
     color: white;
 }
-"##;
+";
 
 struct ContentAlignApp;
 

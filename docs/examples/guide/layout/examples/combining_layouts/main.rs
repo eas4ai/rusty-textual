@@ -7,7 +7,7 @@
 /// fully rendered yet.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 #app-grid {
     layout: grid;
     grid-size: 2;  /* two columns */
@@ -62,7 +62,7 @@ const CSS: &str = r##"
     height: 100%;
     background: $boost;
 }
-"##;
+";
 
 struct CombiningLayoutsExample;
 

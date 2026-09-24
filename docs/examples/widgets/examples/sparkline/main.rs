@@ -9,15 +9,15 @@
 /// at 73, pre-computed to match Python's `random.expovariate(1/3)` output.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Sparkline {
     width: 100%;
     margin: 2;
 }
-"#;
+";
 
 /// Pre-computed data: `random.seed(73); [random.expovariate(1/3) for _ in range(1000)]`
-/// in CPython (Mersenne Twister). Values match the Python reference exactly.
+/// in `CPython` (Mersenne Twister). Values match the Python reference exactly.
 const DATA: &[f64] = &[
     0.9847434393_f64,
     2.0923117711_f64,

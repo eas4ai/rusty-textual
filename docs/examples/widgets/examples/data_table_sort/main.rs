@@ -1,6 +1,6 @@
 /// Port of Python Textual `docs/examples/widgets/data_table_sort.py`.
 ///
-/// Demonstrates DataTable sorting with real key functions + multi-column sort,
+/// Demonstrates `DataTable` sorting with real key functions + multi-column sort,
 /// faithful to Python (no approximations):
 /// - `a` sort by average of the two time columns, then last name (custom key over
 ///   the `swimmer`, `time 1`, `time 2` columns) — `sort_by([1,3,4], …)`

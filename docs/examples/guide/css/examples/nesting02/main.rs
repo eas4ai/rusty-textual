@@ -5,7 +5,7 @@
 /// with classes `button affirmative` and `button negative`.
 use textual::prelude::*;
 
-const CSS: &str = r##"
+const CSS: &str = r"
 /* Style the container */
 #questions {
     border: heavy $primary;
@@ -30,7 +30,7 @@ const CSS: &str = r##"
         }
     }
 }
-"##;
+";
 
 struct NestingDemo;
 
