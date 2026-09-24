@@ -116,7 +116,11 @@ impl Widget for Hello {
         HELLO_ACTIONS
     }
 
-    fn execute_action(&mut self, action: &ParsedAction, ctx: &mut textual::event::WidgetCtx) -> bool {
+    fn execute_action(
+        &mut self,
+        action: &ParsedAction,
+        ctx: &mut textual::event::WidgetCtx,
+    ) -> bool {
         if action.name == "next_word" {
             self.action_next_word();
             ctx.request_repaint();

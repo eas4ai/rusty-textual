@@ -111,9 +111,7 @@ struct ViewerApp {
 impl TextualApp for ViewerApp {
     fn compose(&mut self) -> AppRoot {
         AppRoot::new().with_child(
-            VerticalScroll::new().with_child(
-                Static::new("").with_expand(true).id("code"),
-            ),
+            VerticalScroll::new().with_child(Static::new("").with_expand(true).id("code")),
         )
     }
 
@@ -125,7 +123,12 @@ impl TextualApp for ViewerApp {
         vec![Box::new(provider)]
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(OpenFile { path }) = message.downcast_ref::<OpenFile>() {
             let path = path.clone();
             // Load and syntax-highlight the file, then update the #code Static widget.
@@ -191,8 +194,11 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).expect("create fixture dir");
         let fixture = dir.join("example.py");
-        std::fs::write(&fixture, "def greet(name):\n    return f\"Hello, {name}!\"\n")
-            .expect("write fixture");
+        std::fs::write(
+            &fixture,
+            "def greet(name):\n    return f\"Hello, {name}!\"\n",
+        )
+        .expect("write fixture");
         let fixture_path = fixture.to_str().expect("utf-8 path").to_string();
 
         let app = ViewerApp {

@@ -60,15 +60,16 @@ impl TextualApp for StyledProgressBar {
 
     fn compose(&mut self) -> AppRoot {
         AppRoot::new()
-            .with_child(
-                Center::new().with_child(
-                    Middle::new().with_child(ProgressBar::new(None)),
-                ),
-            )
+            .with_child(Center::new().with_child(Middle::new().with_child(ProgressBar::new(None))))
             .with_child(Footer::new())
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if action == "start" {
             // Set total=100 and start advancing progress.
             if let Ok(handle) = app.query_one_typed::<ProgressBar>("ProgressBar") {
@@ -83,7 +84,12 @@ impl TextualApp for StyledProgressBar {
         }
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if key.key.as_str() == "u" {
             // Jump to 100% complete.
             if let Ok(handle) = app.query_one_typed::<ProgressBar>("ProgressBar") {

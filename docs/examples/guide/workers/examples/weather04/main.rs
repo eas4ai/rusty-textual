@@ -53,11 +53,9 @@ impl WeatherApp {
         ctx.request_exclusive_worker_task("update_weather", Some("weather"), move |token| {
             if city.is_empty() {
                 if !token.is_cancelled() {
-                    let _ =
-                        App::call_from_thread(|app| {
-                            let _ = app
-                                .with_query_one_mut_as::<Static, _>("Static", |w| w.clear());
-                        });
+                    let _ = App::call_from_thread(|app| {
+                        let _ = app.with_query_one_mut_as::<Static, _>("Static", |w| w.clear());
+                    });
                 }
                 return Ok(());
             }
@@ -98,7 +96,12 @@ impl TextualApp for WeatherApp {
         ctx.request_repaint();
     }
 
-    fn on_message_with_app(&mut self, _app: &mut App, message: &MessageEvent, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        _app: &mut App,
+        message: &MessageEvent,
+        _ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(w) = message.downcast_ref::<WorkerStateChanged>() {
             // Mirror Python's `on_worker_state_changed`: log the event.
             // Python calls `self.log(event)`; Rust logs to stderr (no console sink yet).

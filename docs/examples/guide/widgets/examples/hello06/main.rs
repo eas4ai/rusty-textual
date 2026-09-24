@@ -97,7 +97,12 @@ impl TextualApp for HelloApp {
         ctx.request_repaint();
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if action == "next_word" {
             self.hello_idx = (self.hello_idx + 1) % HELLOS.len();
             let markup = self.current_markup();

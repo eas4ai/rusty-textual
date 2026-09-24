@@ -45,9 +45,7 @@ impl TextualApp for RadioSetChangedApp {
             .with_button(RadioButton::new("Star Trek: The Motion Picture"))
             .with_button(RadioButton::new("Star Wars: A New Hope"))
             .with_button(RadioButton::new("The Last Starfighter"))
-            .with_button(RadioButton::new(
-                "Total Recall \u{1F449} \u{1F534}",
-            ))
+            .with_button(RadioButton::new("Total Recall \u{1F449} \u{1F534}"))
             .with_button(RadioButton::new("Wing Commander"));
 
         let radio_set_with_id = ChildDecl::from(radio_set).with_id("focus_me");
@@ -137,12 +135,14 @@ mod tests {
             .with_button(RadioButton::new("Star Trek: The Motion Picture"))
             .with_button(RadioButton::new("Star Wars: A New Hope"))
             .with_button(RadioButton::new("The Last Starfighter"))
-            .with_button(RadioButton::new(
-                "Total Recall \u{1F449} \u{1F534}",
-            ))
+            .with_button(RadioButton::new("Total Recall \u{1F449} \u{1F534}"))
             .with_button(RadioButton::new("Wing Commander"));
 
-        assert_eq!(set.pressed_index(), Some(3), "Serenity should be at index 3");
+        assert_eq!(
+            set.pressed_index(),
+            Some(3),
+            "Serenity should be at index 3"
+        );
         assert_eq!(set.len(), 9);
     }
 

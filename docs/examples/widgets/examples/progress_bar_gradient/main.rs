@@ -49,9 +49,7 @@ impl TextualApp for ProgressApp {
     fn compose(&mut self) -> AppRoot {
         let bar = ProgressBar::new(Some(100.0)).with_gradient(rainbow_gradient());
 
-        AppRoot::new().with_child(
-            Center::new().with_child(Middle::new().with_child(bar)),
-        )
+        AppRoot::new().with_child(Center::new().with_child(Middle::new().with_child(bar)))
     }
 
     fn on_mount_with_app(&mut self, app: &mut App, ctx: &mut textual::event::WidgetCtx) {

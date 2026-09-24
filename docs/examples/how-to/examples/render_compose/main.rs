@@ -22,18 +22,8 @@ use textual::renderables::LinearGradient;
 use textual::style::Color;
 
 const COLORS: &[&str] = &[
-    "#881177",
-    "#aa3355",
-    "#cc6666",
-    "#ee9944",
-    "#eedd00",
-    "#99dd55",
-    "#44dd88",
-    "#22ccbb",
-    "#00bbcc",
-    "#0099cc",
-    "#3366bb",
-    "#663399",
+    "#881177", "#aa3355", "#cc6666", "#ee9944", "#eedd00", "#99dd55", "#44dd88", "#22ccbb",
+    "#00bbcc", "#0099cc", "#3366bb", "#663399",
 ];
 
 fn build_stops() -> Vec<(f32, Color)> {

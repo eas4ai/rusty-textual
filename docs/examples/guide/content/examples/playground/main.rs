@@ -180,7 +180,11 @@ impl PlaygroundApp {
     /// Mirrors Python `MarkupPlayground.update_markup`:
     /// `content = Content.from_markup(editor.text, **self.variables)` then
     /// `results.update(content)` and `spans.update(content.spans)`.
-    fn update_results(app: &mut App, ctx: &mut textual::event::WidgetCtx, variables: &HashMap<String, String>) {
+    fn update_results(
+        app: &mut App,
+        ctx: &mut textual::event::WidgetCtx,
+        variables: &HashMap<String, String>,
+    ) {
         let text = app
             .with_query_one_mut_as::<TextArea, _>("#editor", |ta| ta.text())
             .ok()
@@ -233,18 +237,17 @@ impl TextualApp for PlaygroundApp {
             .with_child(TextArea::new("").with_language("json").id("variables"));
 
         // Bottom row: results + spans.
-        let results_scroll = 
-            VerticalScroll::new()
-                .with_child(Static::new("").with_border_title("Output").id("results"))
-        .id("results-container");
+        let results_scroll = VerticalScroll::new()
+            .with_child(Static::new("").with_border_title("Output").id("results"))
+            .id("results-container");
 
-        let spans_scroll = 
-            VerticalScroll::new().with_child(
+        let spans_scroll = VerticalScroll::new()
+            .with_child(
                 Pretty::from_debug_str("[]")
                     .with_border_title("Spans")
                     .id("spans"),
             )
-        .id("spans-container");
+            .id("spans-container");
 
         let bottom_row = HorizontalGroup::new()
             .with_child(results_scroll)
@@ -279,7 +282,12 @@ impl TextualApp for PlaygroundApp {
         Self::update_results(app, ctx, &vars);
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if message.downcast_ref::<TextAreaChanged>().is_some() {
             let sender = message.sender;
 
@@ -317,7 +325,12 @@ impl TextualApp for PlaygroundApp {
         }
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         match action {
             "toggle_variables" => {
                 self.show_variables = !self.show_variables;

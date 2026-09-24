@@ -91,7 +91,12 @@ impl TextualApp for ModalApp {
 
     /// `action_request_quit`: push the modal QuitScreen with a callback that
     /// records the dismiss result, exactly like Python's `check_quit`.
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if action != "request_quit" {
             return;
         }
@@ -104,16 +109,22 @@ impl TextualApp for ModalApp {
                     // Python: def check_quit(quit): if quit: self.exit()
                     if let ScreenResult::Value(value) = result
                         && let Ok(quit) = value.downcast::<bool>()
-                            && *quit {
-                                should_quit.store(true, Ordering::SeqCst);
-                            }
+                        && *quit
+                    {
+                        should_quit.store(true, Ordering::SeqCst);
+                    }
                 }),
             );
         }
         ctx.set_handled();
     }
 
-    fn on_tick_with_app(&mut self, _app: &mut App, _tick: u64, ctx: &mut textual::event::WidgetCtx) {
+    fn on_tick_with_app(
+        &mut self,
+        _app: &mut App,
+        _tick: u64,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if self.should_quit.load(Ordering::SeqCst) {
             ctx.request_stop();
         }
@@ -150,7 +161,10 @@ mod tests {
     fn modal03_quit_button_dismisses_with_true() {
         match press("quit") {
             Some(ScreenResult::Value(v)) => assert!(*v.downcast::<bool>().unwrap()),
-            other => panic!("expected Value(true), got dismissed/none: {}", other.is_none()),
+            other => panic!(
+                "expected Value(true), got dismissed/none: {}",
+                other.is_none()
+            ),
         }
     }
 
@@ -232,9 +246,16 @@ mod tests {
             assert_ne!(before, pushed, "pushing the modal must change the frame");
 
             pilot.click("#cancel")?;
-            assert_eq!(pilot.app().screen_count(), 0, "cancel must dismiss the modal");
+            assert_eq!(
+                pilot.app().screen_count(),
+                0,
+                "cancel must dismiss the modal"
+            );
             let dismissed = pilot.app().frame_fingerprint();
-            assert_ne!(pushed, dismissed, "dismissing the modal must change the frame");
+            assert_ne!(
+                pushed, dismissed,
+                "dismissing the modal must change the frame"
+            );
             Ok(())
         })
         .expect("modal03 push/dismiss harness should run");

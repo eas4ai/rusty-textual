@@ -62,7 +62,13 @@ Screen {
 "#;
 
 /// The named themes cycled by Ctrl+T (exact Python `THEMES` list).
-const THEME_CYCLE: &[&str] = &["nord", "gruvbox", "tokyo-night", "textual-dark", "solarized-light"];
+const THEME_CYCLE: &[&str] = &[
+    "nord",
+    "gruvbox",
+    "tokyo-night",
+    "textual-dark",
+    "solarized-light",
+];
 
 struct TodoList;
 
@@ -103,9 +109,10 @@ impl TextualApp for TodoList {
         .with_id("todo-list");
 
         // Build input footer
-        let footer_row =
-            ChildDecl::from(Horizontal::new().with_child(Input::new().with_placeholder("Add a task")))
-                .with_id("footer");
+        let footer_row = ChildDecl::from(
+            Horizontal::new().with_child(Input::new().with_placeholder("Add a task")),
+        )
+        .with_id("footer");
 
         // Build history header
         let history_header = ChildDecl::from(Horizontal::new().with_compose(vec![
@@ -115,9 +122,12 @@ impl TextualApp for TodoList {
         .with_id("history-header");
 
         // Main content container
-        let content = ChildDecl::from(
-            Vertical::new().with_compose(vec![header_row, todo_list, footer_row, history_header]),
-        )
+        let content = ChildDecl::from(Vertical::new().with_compose(vec![
+            header_row,
+            todo_list,
+            footer_row,
+            history_header,
+        ]))
         .with_id("content");
 
         AppRoot::new().with_compose(vec![
@@ -147,7 +157,9 @@ mod tests {
         let app = TodoList;
         let bindings = app.bindings();
         assert!(
-            bindings.iter().any(|b| b.key == "ctrl+t" && b.action == "cycle_theme"),
+            bindings
+                .iter()
+                .any(|b| b.key == "ctrl+t" && b.action == "cycle_theme"),
             "ctrl+t -> cycle_theme binding missing"
         );
     }
@@ -182,11 +194,19 @@ mod tests {
     #[test]
     fn todo_app_ctrl_t_cycles_theme_is_live() {
         run_test(TodoList, |pilot| {
-            assert_eq!(pilot.app().theme_name(), "nord", "mount applies the first theme (nord)");
+            assert_eq!(
+                pilot.app().theme_name(),
+                "nord",
+                "mount applies the first theme (nord)"
+            );
             let nord_frame = pilot.app().frame_fingerprint();
 
             pilot.press(&["ctrl+t"])?; // cycle_theme -> gruvbox
-            assert_eq!(pilot.app().theme_name(), "gruvbox", "ctrl+t must advance the theme");
+            assert_eq!(
+                pilot.app().theme_name(),
+                "gruvbox",
+                "ctrl+t must advance the theme"
+            );
             assert_ne!(
                 nord_frame,
                 pilot.app().frame_fingerprint(),
@@ -194,7 +214,11 @@ mod tests {
             );
 
             pilot.press(&["ctrl+t"])?; // -> tokyo-night
-            assert_eq!(pilot.app().theme_name(), "tokyo-night", "ctrl+t must keep advancing the theme");
+            assert_eq!(
+                pilot.app().theme_name(),
+                "tokyo-night",
+                "ctrl+t must keep advancing the theme"
+            );
 
             // Restore the default so global theme state does not leak across tests.
             pilot.app_mut().set_theme_by_name("textual-dark");

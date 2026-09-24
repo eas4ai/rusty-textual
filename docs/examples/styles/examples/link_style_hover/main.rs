@@ -42,11 +42,9 @@ impl TextualApp for LinkHoverStyleApp {
                     .with_id("lbl2"),
             )
             .with_child(
-                Label::new(
-                    "You can also click [@click=app.bell]here[/] for the bell sound.",
-                )
-                .with_markup(true)
-                .with_id("lbl3"),
+                Label::new("You can also click [@click=app.bell]here[/] for the bell sound.")
+                    .with_markup(true)
+                    .with_id("lbl3"),
             )
             .with_child(
                 Label::new("[@click=app.quit]Exit this application.[/]")

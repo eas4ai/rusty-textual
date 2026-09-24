@@ -63,9 +63,7 @@ impl TextualApp for DictionaryApp {
     fn compose(&mut self) -> AppRoot {
         AppRoot::new()
             .with_child(Input::new().with_placeholder("Search for a word"))
-            .with_child(
-                VerticalScroll::new().with_child(Static::new("")),
-            )
+            .with_child(VerticalScroll::new().with_child(Static::new("")))
     }
 
     fn on_input_changed(
@@ -107,19 +105,18 @@ impl TextualApp for DictionaryApp {
         ctx: &mut textual::event::WidgetCtx,
     ) {
         if let Some(w) = message.downcast_ref::<WorkerStateChanged>()
-            && matches!(w.state, WorkerState::Success) {
-                let text = {
-                    let mut guard = self.result.lock().unwrap();
-                    guard.take()
-                };
-                let _ = app.with_query_one_mut_as::<Static, _>("Static", |s| {
-                    match text {
-                        Some(t) => s.update(t),
-                        None => s.clear(),
-                    }
-                });
-                ctx.request_repaint();
-            }
+            && matches!(w.state, WorkerState::Success)
+        {
+            let text = {
+                let mut guard = self.result.lock().unwrap();
+                guard.take()
+            };
+            let _ = app.with_query_one_mut_as::<Static, _>("Static", |s| match text {
+                Some(t) => s.update(t),
+                None => s.clear(),
+            });
+            ctx.request_repaint();
+        }
     }
 }
 
@@ -165,11 +162,23 @@ mod tests {
         let word = app.current_word.clone();
         run_test(app, |pilot| {
             pilot.click("Input")?; // focus
-            assert_eq!(input_value(pilot.app()).as_deref(), Some(""), "input starts empty");
+            assert_eq!(
+                input_value(pilot.app()).as_deref(),
+                Some(""),
+                "input starts empty"
+            );
             pilot.press(&["c", "a", "t"])?;
-            assert_eq!(input_value(pilot.app()).as_deref(), Some("cat"), "typing must echo into the input");
+            assert_eq!(
+                input_value(pilot.app()).as_deref(),
+                Some("cat"),
+                "typing must echo into the input"
+            );
             // on_input_changed recorded the current word -> the lookup trigger fired.
-            assert_eq!(word.lock().unwrap().as_str(), "cat", "on_input_changed must record the searched word");
+            assert_eq!(
+                word.lock().unwrap().as_str(),
+                "cat",
+                "on_input_changed must record the searched word"
+            );
             Ok(())
         })
         .expect("dictionary input harness should run");
@@ -190,7 +199,11 @@ mod tests {
             let before = pilot.app().frame_fingerprint();
             pilot.press(&["c", "a", "t"])?;
             pilot.pause()?; // would let the worker lookup land + render results
-            assert_ne!(before, pilot.app().frame_fingerprint(), "the lookup result must render");
+            assert_ne!(
+                before,
+                pilot.app().frame_fingerprint(),
+                "the lookup result must render"
+            );
             Ok(())
         })
         .expect("dictionary lookup harness should run");

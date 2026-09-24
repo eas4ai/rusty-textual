@@ -109,7 +109,12 @@ impl TextualApp for BindingApp {
             .with_child(VerticalScroll::new().id("bars"))
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         // Parse "add_bar('red')" → name="add_bar", arguments=[Str("red")]
         let Ok(parsed) = parse_action(action) else {
             return;
@@ -186,7 +191,10 @@ mod tests {
                 .query("Bar")
                 .map(|q| q.into_ids().len())
                 .unwrap_or(0);
-            assert_eq!(before_bars, 0, "expected no Bar widgets before any keypress");
+            assert_eq!(
+                before_bars, 0,
+                "expected no Bar widgets before any keypress"
+            );
             let before_frame = pilot.app().frame_fingerprint();
 
             pilot.press(&["r"])?;

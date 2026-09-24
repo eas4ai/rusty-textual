@@ -1,3 +1,4 @@
+use textual::prelude::*;
 /// Port of Python Textual `docs/examples/guide/reactivity/refresh03.py`.
 ///
 /// Demonstrates WIDGET-LEVEL reactive recompose: a custom `Name` widget renders
@@ -17,7 +18,6 @@
 /// The app handler queries the `Name` node, sets `who`, and enqueues the change
 /// for the runtime reactive phase.
 use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
-use textual::prelude::*;
 
 const CSS: &str = r#"
 Input {
@@ -94,7 +94,12 @@ impl TextualApp for WatchApp {
             .with_child(Name::new("name"))
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(m) = message.downcast_ref::<InputChanged>() {
             let value = m.value.clone();
             // Python: self.query_one(Name).who = value. Setting the recompose
@@ -142,7 +147,10 @@ mod tests {
         name.set_who("Alice".to_string(), &mut ctx);
         assert_eq!(name.who().as_str(), "Alice");
         assert!(ctx.has_changes());
-        assert!(ctx.needs_recompose(), "recompose reactive must request recompose");
+        assert!(
+            ctx.needs_recompose(),
+            "recompose reactive must request recompose"
+        );
     }
 
     /// LIVENESS PROBE — typing into the Input must drive the `Name` widget's

@@ -65,7 +65,12 @@ impl TextualApp for SelectApp {
         AppRoot::new().with_child(Header::new()).with_child(select)
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if key.name() == "s" {
             let new_options: Vec<(String, String)> = ALTERNATE_LINES
                 .iter()
@@ -153,7 +158,10 @@ mod tests {
                 let before = pilot.app().frame_fingerprint();
                 pilot.press(&["s"])?;
                 let after = pilot.app().frame_fingerprint();
-                assert_ne!(before, after, "pressing `s` must swap options (frame changes)");
+                assert_ne!(
+                    before, after,
+                    "pressing `s` must swap options (frame changes)"
+                );
                 // Confirm the underlying value snapped to a new first line.
                 let app = pilot.app();
                 let value = app

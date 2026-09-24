@@ -58,7 +58,12 @@ impl TextualApp for CollapsibleApp {
             )
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         let collapse = match action {
             "collapse_or_expand_true" => true,
             "collapse_or_expand_false" => false,

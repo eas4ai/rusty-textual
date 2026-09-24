@@ -95,10 +95,7 @@ mod tests {
         options.max_width = 64;
         let board = CheckerBoard;
         let segs = board.render(&console, &options);
-        let newlines: usize = segs
-            .iter()
-            .filter(|s| s.text.contains('\n'))
-            .count();
+        let newlines: usize = segs.iter().filter(|s| s.text.contains('\n')).count();
         assert_eq!(newlines, 32);
     }
 }

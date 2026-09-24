@@ -68,7 +68,12 @@ impl TextualApp for MyApp {
         }
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        _ctx: &mut textual::event::WidgetCtx,
+    ) {
         let key_name = key.name().to_string();
         app.set_title(key_name.to_string());
         app.set_sub_title(format!("You just pressed {}!", key_name));
@@ -106,7 +111,11 @@ mod tests {
                 pilot.app().frame_fingerprint(),
                 "pressing a key must retitle the header (rendered frame changes)"
             );
-            assert_eq!(pilot.app().title(), "a", "key press must update the app title");
+            assert_eq!(
+                pilot.app().title(),
+                "a",
+                "key press must update the app title"
+            );
             assert_eq!(
                 pilot.app().sub_title(),
                 Some("You just pressed a!"),
@@ -123,7 +132,10 @@ mod tests {
     #[test]
     fn question_title02_button_press_exits_is_live() {
         run_test(MyApp::new(), |pilot| {
-            assert!(!pilot.app().headless_stop_requested(), "no stop before interaction");
+            assert!(
+                !pilot.app().headless_stop_requested(),
+                "no stop before interaction"
+            );
             pilot.click("#yes")?;
             assert!(
                 pilot.app().headless_stop_requested(),

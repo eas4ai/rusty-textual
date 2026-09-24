@@ -79,19 +79,17 @@ impl TextualApp for HeightComparisonApp {
 
     fn compose(&mut self) -> AppRoot {
         AppRoot::new()
-            .with_child(
-                VerticalScroll::new().with_compose(compose![
-                    Placeholder::new("").id("cells"),
-                    Placeholder::new("").id("percent"),
-                    Placeholder::new("").id("w"),
-                    Placeholder::new("").id("h"),
-                    Placeholder::new("").id("vw"),
-                    Placeholder::new("").id("vh"),
-                    Placeholder::new("").id("auto"),
-                    Placeholder::new("").id("fr1"),
-                    Placeholder::new("").id("fr2"),
-                ]),
-            )
+            .with_child(VerticalScroll::new().with_compose(compose![
+                Placeholder::new("").id("cells"),
+                Placeholder::new("").id("percent"),
+                Placeholder::new("").id("w"),
+                Placeholder::new("").id("h"),
+                Placeholder::new("").id("vw"),
+                Placeholder::new("").id("vh"),
+                Placeholder::new("").id("auto"),
+                Placeholder::new("").id("fr1"),
+                Placeholder::new("").id("fr2"),
+            ]))
             .with_child(Ruler)
     }
 }

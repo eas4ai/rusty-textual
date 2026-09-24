@@ -29,14 +29,10 @@ impl TextualApp for CenterApp {
     }
 
     fn compose(&mut self) -> AppRoot {
-        let center1 = Center::new()
-            .with_child(Static::new("How about a nice game").class("words"));
-        let center2 = Center::new()
-            .with_child(Static::new("of chess?").class("words"));
+        let center1 = Center::new().with_child(Static::new("How about a nice game").class("words"));
+        let center2 = Center::new().with_child(Static::new("of chess?").class("words"));
 
-        AppRoot::new()
-            .with_child(center1)
-            .with_child(center2)
+        AppRoot::new().with_child(center1).with_child(center2)
     }
 }
 

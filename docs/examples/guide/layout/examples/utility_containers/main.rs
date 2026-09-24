@@ -28,18 +28,16 @@ impl TextualApp for UtilityContainersExample {
         AppRoot::new().with_child(
             Horizontal::new()
                 .with_child(
-                    
-                        Vertical::new()
-                            .with_child(Static::new("One"))
-                            .with_child(Static::new("Two"))
-                    .class("column"),
+                    Vertical::new()
+                        .with_child(Static::new("One"))
+                        .with_child(Static::new("Two"))
+                        .class("column"),
                 )
                 .with_child(
-                    
-                        Vertical::new()
-                            .with_child(Static::new("Three"))
-                            .with_child(Static::new("Four"))
-                    .class("column"),
+                    Vertical::new()
+                        .with_child(Static::new("Three"))
+                        .with_child(Static::new("Four"))
+                        .class("column"),
                 ),
         )
     }

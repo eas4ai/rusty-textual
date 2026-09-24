@@ -39,11 +39,7 @@ impl TextualApp for OutlineBorderApp {
         AppRoot::new()
             .with_child(Label::new(TEXT).class("outline"))
             .with_child(Label::new(TEXT).class("border"))
-            .with_child(
-                Label::new(TEXT)
-                    .class("outline")
-                    .class("border"),
-            )
+            .with_child(Label::new(TEXT).class("outline").class("border"))
     }
 }
 

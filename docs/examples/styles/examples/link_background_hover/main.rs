@@ -35,9 +35,7 @@ impl TextualApp for LinkHoverBackgroundApp {
                 Label::new("Visit the [link='https://textualize.io']Textualize[/link] website.")
                     .id("lbl1"),
             )
-            .with_child(
-                Label::new("Click [@click=app.bell]here[/] for the bell sound.").id("lbl2"),
-            )
+            .with_child(Label::new("Click [@click=app.bell]here[/] for the bell sound.").id("lbl2"))
             .with_child(
                 Label::new("You can also click [@click=app.bell]here[/] for the bell sound.")
                     .id("lbl3"),

@@ -41,14 +41,12 @@ impl TextualApp for MaxWidthApp {
     }
 
     fn compose(&mut self) -> AppRoot {
-        AppRoot::new().with_child(
-            VerticalScroll::new().with_compose(compose![
-                Placeholder::new("max-width: 50h").id("p1"),
-                Placeholder::new("max-width: 999").id("p2"),
-                Placeholder::new("max-width: 50%").id("p3"),
-                Placeholder::new("max-width: 30").id("p4"),
-            ]),
-        )
+        AppRoot::new().with_child(VerticalScroll::new().with_compose(compose![
+            Placeholder::new("max-width: 50h").id("p1"),
+            Placeholder::new("max-width: 999").id("p2"),
+            Placeholder::new("max-width: 50%").id("p3"),
+            Placeholder::new("max-width: 30").id("p4"),
+        ]))
     }
 }
 

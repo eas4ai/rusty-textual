@@ -114,7 +114,10 @@ mod tests {
         let mut ctx = ReactiveCtx::new(textual::node_id::NodeId::default());
         app.set_time(*app.time() + 1, &mut ctx);
         assert!(ctx.has_changes());
-        assert!(ctx.needs_recompose(), "recompose reactive must request recompose");
+        assert!(
+            ctx.needs_recompose(),
+            "recompose reactive must request recompose"
+        );
     }
 
     /// LIVENESS PROBE — the 1-second `set_interval` must fire under the manual

@@ -1,3 +1,4 @@
+use textual::prelude::*;
 /// Port of Python Textual `docs/examples/guide/reactivity/dynamic_watch.py`.
 ///
 /// Demonstrates DYNAMIC watch (`self.watch(obj, attribute, callback)`): a
@@ -25,7 +26,6 @@
 /// sets the Counter's reactive (via the widget-level reactive phase), which fires
 /// both watchers.
 use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
-use textual::prelude::*;
 
 const CSS: &str = r#"
 Counter {
@@ -88,15 +88,16 @@ impl Widget for Counter {
     // Python `on_button_pressed`: self.counter += 10.
     fn on_message(&mut self, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
         if let Some(bp) = message.downcast_ref::<ButtonPressed>()
-            && bp.button_id.as_deref() == Some("plus-btn") {
-                let node_id = self.node_id();
-                let mut rctx = ReactiveCtx::new(node_id);
-                self.set_counter(self.counter + 10, &mut rctx);
-                if rctx.has_changes() {
-                    enqueue_runtime_reactive_entry(RuntimeReactiveEntry::new(node_id, rctx));
-                }
-                ctx.set_handled();
+            && bp.button_id.as_deref() == Some("plus-btn")
+        {
+            let node_id = self.node_id();
+            let mut rctx = ReactiveCtx::new(node_id);
+            self.set_counter(self.counter + 10, &mut rctx);
+            if rctx.has_changes() {
+                enqueue_runtime_reactive_entry(RuntimeReactiveEntry::new(node_id, rctx));
             }
+            ctx.set_handled();
+        }
     }
 }
 

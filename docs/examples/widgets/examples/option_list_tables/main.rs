@@ -120,7 +120,10 @@ mod tests {
         let text: String = segs.iter().map(|s| s.text.as_ref()).collect();
         assert!(text.contains("Patron God"), "missing 'Patron God' header");
         assert!(text.contains("Population"), "missing 'Population' header");
-        assert!(text.contains("Capital City"), "missing 'Capital City' header");
+        assert!(
+            text.contains("Capital City"),
+            "missing 'Capital City' header"
+        );
     }
 
     #[test]

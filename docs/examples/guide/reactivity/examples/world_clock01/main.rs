@@ -27,8 +27,8 @@
 /// conversion uses fixed UTC offsets (no pytz/DST), as `std` has no tz database.
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
 use textual::prelude::*;
+use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
 
 const CSS: &str = r#"
 Screen {
@@ -155,7 +155,10 @@ impl WorldClockApp {
     /// Python `watch_time`: push the timestamp to each WorldClock's reactive.
     fn watch_time(&mut self, app: &mut App, _old: &u64, new: &u64, _ctx: &mut ReactiveCtx) {
         let time = *new;
-        let clock_ids = app.query("WorldClock").map(|q| q.into_ids()).unwrap_or_default();
+        let clock_ids = app
+            .query("WorldClock")
+            .map(|q| q.into_ids())
+            .unwrap_or_default();
         for node_id in clock_ids {
             let mut rctx = ReactiveCtx::new(node_id);
             app.with_widget_mut_as::<WorldClock, _>(node_id, |clock| {

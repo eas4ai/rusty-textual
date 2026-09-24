@@ -73,48 +73,46 @@ impl TextualApp for CombiningLayoutsExample {
     }
 
     fn compose(&mut self) -> AppRoot {
-        AppRoot::new()
-            .with_child(Header::new())
-            .with_child(
-                Container::new()
-                    .with_child(
-                        VerticalScroll::new()
-                            .with_child(Static::new("Vertical layout, child 0"))
-                            .with_child(Static::new("Vertical layout, child 1"))
-                            .with_child(Static::new("Vertical layout, child 2"))
-                            .with_child(Static::new("Vertical layout, child 3"))
-                            .with_child(Static::new("Vertical layout, child 4"))
-                            .with_child(Static::new("Vertical layout, child 5"))
-                            .with_child(Static::new("Vertical layout, child 6"))
-                            .with_child(Static::new("Vertical layout, child 7"))
-                            .with_child(Static::new("Vertical layout, child 8"))
-                            .with_child(Static::new("Vertical layout, child 9"))
-                            .with_child(Static::new("Vertical layout, child 10"))
-                            .with_child(Static::new("Vertical layout, child 11"))
-                            .with_child(Static::new("Vertical layout, child 12"))
-                            .with_child(Static::new("Vertical layout, child 13"))
-                            .with_child(Static::new("Vertical layout, child 14"))
+        AppRoot::new().with_child(Header::new()).with_child(
+            Container::new()
+                .with_child(
+                    VerticalScroll::new()
+                        .with_child(Static::new("Vertical layout, child 0"))
+                        .with_child(Static::new("Vertical layout, child 1"))
+                        .with_child(Static::new("Vertical layout, child 2"))
+                        .with_child(Static::new("Vertical layout, child 3"))
+                        .with_child(Static::new("Vertical layout, child 4"))
+                        .with_child(Static::new("Vertical layout, child 5"))
+                        .with_child(Static::new("Vertical layout, child 6"))
+                        .with_child(Static::new("Vertical layout, child 7"))
+                        .with_child(Static::new("Vertical layout, child 8"))
+                        .with_child(Static::new("Vertical layout, child 9"))
+                        .with_child(Static::new("Vertical layout, child 10"))
+                        .with_child(Static::new("Vertical layout, child 11"))
+                        .with_child(Static::new("Vertical layout, child 12"))
+                        .with_child(Static::new("Vertical layout, child 13"))
+                        .with_child(Static::new("Vertical layout, child 14"))
                         .id("left-pane"),
-                    )
-                    .with_child(
-                        Horizontal::new()
-                            .with_child(Static::new("Horizontally"))
-                            .with_child(Static::new("Positioned"))
-                            .with_child(Static::new("Children"))
-                            .with_child(Static::new("Here"))
+                )
+                .with_child(
+                    Horizontal::new()
+                        .with_child(Static::new("Horizontally"))
+                        .with_child(Static::new("Positioned"))
+                        .with_child(Static::new("Children"))
+                        .with_child(Static::new("Here"))
                         .id("top-right"),
-                    )
-                    .with_child(
-                        Container::new()
-                            .with_child(Static::new("This"))
-                            .with_child(Static::new("panel"))
-                            .with_child(Static::new("is"))
-                            .with_child(Static::new("using"))
-                            .with_child(Static::new("grid layout!").id("bottom-right-final"))
+                )
+                .with_child(
+                    Container::new()
+                        .with_child(Static::new("This"))
+                        .with_child(Static::new("panel"))
+                        .with_child(Static::new("is"))
+                        .with_child(Static::new("using"))
+                        .with_child(Static::new("grid layout!").id("bottom-right-final"))
                         .id("bottom-right"),
-                    )
+                )
                 .id("app-grid"),
-            )
+        )
     }
 }
 

@@ -59,7 +59,12 @@ impl TextualApp for MyApp {
         ])
     }
 
-    fn on_message_with_app(&mut self, _app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        _app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(ev) = message.downcast_ref::<ButtonPressed>() {
             self.reply = ev.button_id.clone();
             ctx.request_stop();
@@ -103,7 +108,10 @@ mod tests {
     #[test]
     fn question_title01_button_press_exits_is_live() {
         run_test(MyApp { reply: None }, |pilot| {
-            assert!(!pilot.app().headless_stop_requested(), "no stop before interaction");
+            assert!(
+                !pilot.app().headless_stop_requested(),
+                "no stop before interaction"
+            );
             pilot.click("#yes")?;
             assert!(
                 pilot.app().headless_stop_requested(),

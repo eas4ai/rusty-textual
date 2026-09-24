@@ -60,7 +60,11 @@ impl Widget for Hello {
         "Hello"
     }
 
-    fn render(&self, console: &rich_rs::Console, options: &rich_rs::ConsoleOptions) -> rich_rs::Segments {
+    fn render(
+        &self,
+        console: &rich_rs::Console,
+        options: &rich_rs::ConsoleOptions,
+    ) -> rich_rs::Segments {
         self.inner.render(console, options)
     }
 

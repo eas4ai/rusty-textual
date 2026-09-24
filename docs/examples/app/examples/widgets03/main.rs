@@ -12,7 +12,12 @@ impl TextualApp for WelcomeApp {
         AppRoot::new()
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, _key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        _key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         let _ = app.mount(Welcome::new());
         // Python: `self.query_one(Button).label = "YES!"`
         // Welcome's Button is in the arena tree — update it by querying "#close".
@@ -44,7 +49,10 @@ mod tests {
     #[test]
     fn widgets03_keypress_mounts_welcome_node() {
         run_test(WelcomeApp, |pilot| {
-            assert!(pilot.app().query_one("Welcome").is_err(), "no Welcome before a key");
+            assert!(
+                pilot.app().query_one("Welcome").is_err(),
+                "no Welcome before a key"
+            );
             pilot.press(&["x"])?;
             assert!(
                 pilot.app().query_one("Welcome").is_ok(),
@@ -65,7 +73,10 @@ mod tests {
     fn widgets03_keypress_mounts_welcome_is_live() {
         run_test(WelcomeApp, |pilot| {
             let empty = pilot.app().frame_fingerprint();
-            assert!(pilot.app().query_one("#close").is_err(), "Welcome not mounted yet");
+            assert!(
+                pilot.app().query_one("#close").is_err(),
+                "Welcome not mounted yet"
+            );
 
             pilot.press(&["x"])?;
             assert_ne!(
@@ -73,7 +84,10 @@ mod tests {
                 pilot.app().frame_fingerprint(),
                 "pressing a key must mount Welcome (rendered frame changes)"
             );
-            assert!(pilot.app().query_one("#close").is_ok(), "Welcome must be mounted after a key");
+            assert!(
+                pilot.app().query_one("#close").is_ok(),
+                "Welcome must be mounted after a key"
+            );
             Ok(())
         })
         .expect("widgets03 mount-on-key harness should run");

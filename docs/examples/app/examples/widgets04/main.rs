@@ -33,7 +33,12 @@ impl TextualApp for WelcomeApp {
         AppRoot::new()
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, _key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        _key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if !self.welcome_mounted {
             self.welcome_mounted = true;
             let _ = app.mount(Welcome::new());
@@ -61,7 +66,10 @@ mod tests {
     #[test]
     fn widgets04_keypress_mounts_welcome_node() {
         run_test(WelcomeApp::new(), |pilot| {
-            assert!(pilot.app().query_one("Welcome").is_err(), "no Welcome before a key");
+            assert!(
+                pilot.app().query_one("Welcome").is_err(),
+                "no Welcome before a key"
+            );
             pilot.press(&["k"])?;
             assert!(
                 pilot.app().query_one("Welcome").is_ok(),
@@ -85,7 +93,10 @@ mod tests {
     fn widgets04_keypress_mounts_and_relabels_is_live() {
         run_test(WelcomeApp::new(), |pilot| {
             let empty = pilot.app().frame_fingerprint();
-            assert!(pilot.app().query_one("#close").is_err(), "Welcome not mounted yet");
+            assert!(
+                pilot.app().query_one("#close").is_err(),
+                "Welcome not mounted yet"
+            );
 
             pilot.press(&["k"])?;
             assert_ne!(

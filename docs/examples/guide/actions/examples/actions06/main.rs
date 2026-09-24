@@ -50,10 +50,7 @@ impl TextualApp for PagesApp {
         let mut page_container = HorizontalScroll::new();
         for page_no in 0..PAGES_COUNT {
             page_container.push(
-                Placeholder::new(format!("Page {}", page_no)).id(format!(
-                    "page-{}",
-                    page_no
-                )),
+                Placeholder::new(format!("Page {}", page_no)).id(format!("page-{}", page_no)),
             );
         }
         AppRoot::new()
@@ -75,16 +72,19 @@ impl TextualApp for PagesApp {
         Some(true)
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         match action {
-            "next"
-                if self.page_no < PAGES_COUNT - 1 => {
-                    self.page_no += 1;
-                }
-            "previous"
-                if self.page_no > 0 => {
-                    self.page_no -= 1;
-                }
+            "next" if self.page_no < PAGES_COUNT - 1 => {
+                self.page_no += 1;
+            }
+            "previous" if self.page_no > 0 => {
+                self.page_no -= 1;
+            }
             _ => return,
         }
 

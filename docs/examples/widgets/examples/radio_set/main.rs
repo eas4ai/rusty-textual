@@ -48,9 +48,7 @@ impl TextualApp for RadioChoicesApp {
             .with_button(RadioButton::new("Star Trek: The Motion Picture"))
             .with_button(RadioButton::new("Star Wars: A New Hope"))
             .with_button(RadioButton::new("The Last Starfighter"))
-            .with_button(RadioButton::new(
-                "Total Recall \u{1F449} \u{1F534}",
-            ))
+            .with_button(RadioButton::new("Total Recall \u{1F449} \u{1F534}"))
             .with_button(RadioButton::new("Wing Commander"));
 
         // Second RadioSet: built from a collection of string labels.

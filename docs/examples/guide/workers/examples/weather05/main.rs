@@ -76,8 +76,7 @@ impl WeatherApp {
                 // Python: `if not worker.is_cancelled: self.call_from_thread(widget.update, "")`
                 if !token.is_cancelled() {
                     let _ = App::call_from_thread(|app| {
-                        let _ = app
-                            .with_query_one_mut_as::<Static, _>("#weather", |w| w.clear());
+                        let _ = app.with_query_one_mut_as::<Static, _>("#weather", |w| w.clear());
                     });
                 }
                 return Ok(());
@@ -141,7 +140,12 @@ impl TextualApp for WeatherApp {
     /// the alternate-screen buffer, so that raw text corrupted the rendered frame
     /// (Python's `self.log` never does this). Dropping the screen write restores
     /// parity with Python.
-    fn on_message_with_app(&mut self, _app: &mut App, _message: &MessageEvent, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        _app: &mut App,
+        _message: &MessageEvent,
+        _ctx: &mut textual::event::WidgetCtx,
+    ) {
     }
 }
 
@@ -160,7 +164,10 @@ fn fetch_weather(city: &str, token: &CancellationToken) -> std::result::Result<S
         .header("User-Agent", "CURL")
         .call()
         .map_err(|e| e.to_string())?;
-    let body = resp.body_mut().read_to_string().map_err(|e| e.to_string())?;
+    let body = resp
+        .body_mut()
+        .read_to_string()
+        .map_err(|e| e.to_string())?;
     if token.is_cancelled() {
         return Ok(String::new());
     }

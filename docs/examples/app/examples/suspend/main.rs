@@ -60,7 +60,11 @@ mod tests {
     #[test]
     fn suspend_button_click_is_live() {
         run_test(SuspendingApp, |pilot| {
-            assert_eq!(pilot.app().headless_suspend_count(), 0, "no suspend before click");
+            assert_eq!(
+                pilot.app().headless_suspend_count(),
+                0,
+                "no suspend before click"
+            );
             pilot.click("#edit")?;
             assert_eq!(
                 pilot.app().headless_suspend_count(),

@@ -101,7 +101,12 @@ impl TextualApp for WatchApp {
             )
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(m) = message.downcast_ref::<InputSubmitted>() {
             let value = m.value.trim().to_string();
             if let Some(new_color) = parse_color_like(&value) {

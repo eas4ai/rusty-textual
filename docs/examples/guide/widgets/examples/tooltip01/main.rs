@@ -184,7 +184,11 @@ impl Widget for TooltipButton {
         self.inner.binding_hints()
     }
 
-    fn execute_action(&mut self, action: &ParsedAction, ctx: &mut textual::event::WidgetCtx) -> bool {
+    fn execute_action(
+        &mut self,
+        action: &ParsedAction,
+        ctx: &mut textual::event::WidgetCtx,
+    ) -> bool {
         self.inner.execute_action(action, ctx)
     }
 

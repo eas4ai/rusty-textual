@@ -57,7 +57,11 @@ impl Widget for Counter {
         true
     }
 
-    fn render(&self, _console: &rich_rs::Console, options: &rich_rs::ConsoleOptions) -> rich_rs::Segments {
+    fn render(
+        &self,
+        _console: &rich_rs::Console,
+        options: &rich_rs::ConsoleOptions,
+    ) -> rich_rs::Segments {
         use rich_rs::{Segment, Segments};
         let text = format!("Count: {}", self.count);
         // Pad to widget width so the background fills the whole row.
@@ -73,7 +77,11 @@ impl Widget for Counter {
         ]
     }
 
-    fn execute_action(&mut self, action: &ParsedAction, ctx: &mut textual::event::WidgetCtx) -> bool {
+    fn execute_action(
+        &mut self,
+        action: &ParsedAction,
+        ctx: &mut textual::event::WidgetCtx,
+    ) -> bool {
         if action.name != "change_count" {
             return false;
         }

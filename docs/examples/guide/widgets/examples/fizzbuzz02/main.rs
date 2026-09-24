@@ -179,7 +179,10 @@ mod tests {
         let h = fb.layout_height().unwrap_or(0);
         // The table header (3 lines) + 15 data rows + 1 bottom border = 19.
         assert!(h > 0, "layout_height should be positive, got {h}");
-        assert_eq!(h, 19, "expected 19 lines: header box + header text + separator + 15 rows + bottom = 19");
+        assert_eq!(
+            h, 19,
+            "expected 19 lines: header box + header text + separator + 15 rows + bottom = 19"
+        );
     }
 
     #[test]

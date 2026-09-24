@@ -38,8 +38,7 @@ impl TextualApp for ScrollbarApp {
         AppRoot::new().with_child(
             Horizontal::new()
                 .with_child(
-                    ScrollableContainer::new()
-                        .with_child(Label::new(repeated_text.clone())),
+                    ScrollableContainer::new().with_child(Label::new(repeated_text.clone())),
                 )
                 .with_child(
                     // Python puts `classes="right"` on the ScrollableContainer

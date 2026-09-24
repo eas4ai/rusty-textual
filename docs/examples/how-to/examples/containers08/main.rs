@@ -36,16 +36,14 @@ impl TextualApp for ContainerApp {
         AppRoot::new()
             .with_child(Placeholder::new("Box 1").class("box"))
             .with_child(
-                
-                    Center::new()
-                        .with_child(Placeholder::new("Box 2").class("box"))
-                .class("with-border"),
+                Center::new()
+                    .with_child(Placeholder::new("Box 2").class("box"))
+                    .class("with-border"),
             )
             .with_child(
-                
-                    Right::new()
-                        .with_child(Placeholder::new("Box 3").class("box"))
-                .class("with-border"),
+                Right::new()
+                    .with_child(Placeholder::new("Box 3").class("box"))
+                    .class("with-border"),
             )
     }
 }

@@ -29,11 +29,7 @@ impl TextualApp for ScrollbarCornerColorApp {
     }
 
     fn compose(&mut self) -> AppRoot {
-        let long_text = format!(
-            "{}\n{}",
-            TEXT.replace('\n', " "),
-            TEXT.repeat(10)
-        );
+        let long_text = format!("{}\n{}", TEXT.replace('\n', " "), TEXT.repeat(10));
         AppRoot::new().with_child(Label::new(long_text))
     }
 }

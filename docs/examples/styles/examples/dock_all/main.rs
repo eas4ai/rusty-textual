@@ -55,7 +55,11 @@ impl TextualApp for DockAllApp {
                 .with_child(Container::new().id("left").with_child(Label::new("left")))
                 .with_child(Container::new().id("top").with_child(Label::new("top")))
                 .with_child(Container::new().id("right").with_child(Label::new("right")))
-                .with_child(Container::new().id("bottom").with_child(Label::new("bottom"))),
+                .with_child(
+                    Container::new()
+                        .id("bottom")
+                        .with_child(Label::new("bottom")),
+                ),
         )
     }
 }

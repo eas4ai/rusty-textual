@@ -76,9 +76,7 @@ impl TextualApp for StyledProgressBar {
         let bar = ChildDecl::from(ProgressBar::new(None)).with_id("progress_bar");
         let middle = Middle::new().with_compose(vec![bar]);
         let center = Center::new().with_child(middle);
-        AppRoot::new()
-            .with_child(center)
-            .with_child(Footer::new())
+        AppRoot::new().with_child(center).with_child(Footer::new())
     }
 
     fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut textual::event::WidgetCtx) {
@@ -95,7 +93,12 @@ impl TextualApp for StyledProgressBar {
         ));
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if action == "start" {
             // Python action_start: query_one(ProgressBar).update(total=100); timer.resume().
             if let Ok(handle) = app.query_one_typed::<ProgressBar>("#progress_bar") {
@@ -149,7 +152,10 @@ mod tests {
                 }
             }),
         );
-        assert!(app.timer_is_active(handle), "interval is registered at mount");
+        assert!(
+            app.timer_is_active(handle),
+            "interval is registered at mount"
+        );
 
         app.resume_timer(handle);
         assert!(app.timer_is_active(handle));

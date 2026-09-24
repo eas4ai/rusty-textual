@@ -141,7 +141,10 @@ mod tests {
     #[test]
     fn on_decorator02_router_quit_is_live() {
         run_test(OnDecoratorApp::new(), |pilot| {
-            assert!(!pilot.app().headless_stop_requested(), "no stop before Quit");
+            assert!(
+                !pilot.app().headless_stop_requested(),
+                "no stop before Quit"
+            );
             pilot.click("#quit")?;
             assert!(
                 pilot.app().headless_stop_requested(),

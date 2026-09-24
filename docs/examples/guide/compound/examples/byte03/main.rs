@@ -394,7 +394,10 @@ mod tests {
 
     #[test]
     fn bit_changed_message_fields() {
-        let m = BitChanged { bit: 3, value: true };
+        let m = BitChanged {
+            bit: 3,
+            value: true,
+        };
         assert_eq!(m.bit, 3);
         assert!(m.value);
     }

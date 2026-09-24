@@ -245,7 +245,10 @@ mod tests {
                 "answering Yes must dismiss the QuestionScreen"
             );
             let dismissed = pilot.app().frame_fingerprint();
-            assert_ne!(pushed, dismissed, "dismissing the question screen must change the frame");
+            assert_ne!(
+                pushed, dismissed,
+                "dismissing the question screen must change the frame"
+            );
             Ok(())
         })
         .expect("questions01 worker push/dismiss harness should run");

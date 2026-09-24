@@ -85,7 +85,10 @@ mod tests {
     #[test]
     fn question03_button_press_exits_is_live() {
         run_test(QuestionApp::new(), |pilot| {
-            assert!(!pilot.app().headless_stop_requested(), "no stop before interaction");
+            assert!(
+                !pilot.app().headless_stop_requested(),
+                "no stop before interaction"
+            );
             pilot.click("#yes")?;
             assert!(
                 pilot.app().headless_stop_requested(),

@@ -7,16 +7,7 @@
 use textual::prelude::*;
 
 const COLORS: &[&str] = &[
-    "white",
-    "maroon",
-    "red",
-    "purple",
-    "fuchsia",
-    "olive",
-    "yellow",
-    "navy",
-    "teal",
-    "aqua",
+    "white", "maroon", "red", "purple", "fuchsia", "olive", "yellow", "navy", "teal", "aqua",
 ];
 
 struct EventApp;
@@ -32,26 +23,33 @@ impl TextualApp for EventApp {
 
     fn on_mount_with_app(&mut self, app: &mut App, ctx: &mut textual::event::WidgetCtx) {
         if let Some(color) = color_for_name("darkblue")
-            && let Ok(q) = app.query_mut("Screen") {
-                q.set_styles(|styles| styles.set_bg(color));
-            }
+            && let Ok(q) = app.query_mut("Screen")
+        {
+            q.set_styles(|styles| styles.set_bg(color));
+        }
         ctx.request_repaint();
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         let name = key.name();
         if name.len() == 1 {
             let ch = name.chars().next().unwrap();
             if ch.is_ascii_digit() {
                 let idx = (ch as u8 - b'0') as usize;
                 if idx < COLORS.len()
-                    && let Some(color) = color_for_name(COLORS[idx]) {
-                        if let Ok(q) = app.query_mut("Screen") {
-                            q.set_styles(|styles| styles.set_bg(color));
-                        }
-                        ctx.set_handled();
-                        ctx.request_repaint();
+                    && let Some(color) = color_for_name(COLORS[idx])
+                {
+                    if let Ok(q) = app.query_mut("Screen") {
+                        q.set_styles(|styles| styles.set_bg(color));
                     }
+                    ctx.set_handled();
+                    ctx.request_repaint();
+                }
             }
         }
     }
@@ -97,7 +95,9 @@ mod tests {
     #[test]
     fn event01_digit_keys_change_background_is_live() {
         fn screen_bg(app: &App) -> Option<Color> {
-            app.query_one("Screen").ok().and_then(|n| app.node_explicit_bg(n))
+            app.query_one("Screen")
+                .ok()
+                .and_then(|n| app.node_explicit_bg(n))
         }
         run_test(EventApp, |pilot| {
             assert_eq!(
@@ -107,15 +107,27 @@ mod tests {
             );
 
             pilot.press(&["2"])?; // COLORS[2] = "red"
-            assert_eq!(screen_bg(pilot.app()), color_for_name("red"), "'2' must set the bg to red");
+            assert_eq!(
+                screen_bg(pilot.app()),
+                color_for_name("red"),
+                "'2' must set the bg to red"
+            );
 
             pilot.press(&["7"])?; // COLORS[7] = "navy"
-            assert_eq!(screen_bg(pilot.app()), color_for_name("navy"), "'7' must set the bg to navy");
+            assert_eq!(
+                screen_bg(pilot.app()),
+                color_for_name("navy"),
+                "'7' must set the bg to navy"
+            );
 
             // A non-digit key must not change the background.
             let before = screen_bg(pilot.app());
             pilot.press(&["z"])?;
-            assert_eq!(screen_bg(pilot.app()), before, "'z' must not change the background");
+            assert_eq!(
+                screen_bg(pilot.app()),
+                before,
+                "'z' must not change the background"
+            );
             Ok(())
         })
         .expect("event01 digit-key harness should run");

@@ -33,7 +33,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use textual::prelude::*;
-use textual::reactive::{enqueue_runtime_reactive_entry, RuntimeReactiveEntry};
+use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
 
 const CSS: &str = r#"
 Stopwatch {
@@ -365,7 +365,10 @@ mod tests {
         // Step 1: the timer drives `update_time`, which bumps the `time` reactive.
         let mut ctx = ReactiveCtx::new(textual::node_id::NodeId::default());
         td.update_time(&mut ctx);
-        assert!(ctx.has_changes(), "update_time must change the time reactive");
+        assert!(
+            ctx.has_changes(),
+            "update_time must change the time reactive"
+        );
         // The `time` reactive advanced past 5s.
         assert!(*td.time() >= 5.0, "elapsed time advanced: {}", td.time());
 
@@ -381,8 +384,7 @@ mod tests {
             "displayed time advanced from zero"
         );
         assert!(
-            td.inner.value().starts_with("00:00:05")
-                || td.inner.value().starts_with("00:00:06"),
+            td.inner.value().starts_with("00:00:05") || td.inner.value().starts_with("00:00:06"),
             "displayed ~5s: {}",
             td.inner.value()
         );

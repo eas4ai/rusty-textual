@@ -187,7 +187,9 @@ mod tests {
     #[test]
     fn custom01_color_button_click_sets_background_is_live() {
         fn screen_bg(app: &App) -> Option<Color> {
-            app.query_one("Screen").ok().and_then(|n| app.node_explicit_bg(n))
+            app.query_one("Screen")
+                .ok()
+                .and_then(|n| app.node_explicit_bg(n))
         }
         run_test(ColorApp, |pilot| {
             let before = screen_bg(pilot.app());
@@ -196,7 +198,10 @@ mod tests {
             // Let the 0.5s bg animation run to completion on the test clock.
             pilot.advance_clock(Duration::from_millis(700))?;
             let after = screen_bg(pilot.app());
-            assert_ne!(before, after, "clicking a ColorButton must change the screen background");
+            assert_ne!(
+                before, after,
+                "clicking a ColorButton must change the screen background"
+            );
             assert_eq!(
                 after,
                 parse_color_like("#008080"),

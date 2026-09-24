@@ -99,10 +99,10 @@ impl Widget for KeyLogger {
                 .with_color(Color::parse("#f4005f").unwrap().to_simple_opaque())
                 .with_bold(true);
             let paren = RichStyle::new().with_bold(true);
-            let attrib = RichStyle::new()
-                .with_color(Color::parse("#fd971f").unwrap().to_simple_opaque());
-            let string = RichStyle::new()
-                .with_color(Color::parse("#98e024").unwrap().to_simple_opaque());
+            let attrib =
+                RichStyle::new().with_color(Color::parse("#fd971f").unwrap().to_simple_opaque());
+            let string =
+                RichStyle::new().with_color(Color::parse("#98e024").unwrap().to_simple_opaque());
             let bool_true = string.with_italic(true);
             let magenta_italic = RichStyle::new()
                 .with_color(Color::parse("#f4005f").unwrap().to_simple_opaque())

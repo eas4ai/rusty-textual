@@ -1,3 +1,4 @@
+use textual::prelude::*;
 /// Port of Python Textual `docs/examples/guide/reactivity/set_reactive02.py`.
 ///
 /// Demonstrates `set_reactive` — initialising a reactive WITHOUT firing its
@@ -18,7 +19,6 @@
 /// `set_reactive`: the initial value is present but the watcher is skipped, while
 /// later `set_greeting(...)` calls DO fire the watcher.
 use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
-use textual::prelude::*;
 
 const GREETINGS: &[&str] = &[
     "Bonjour",
@@ -69,7 +69,13 @@ impl Greeter {
 
     // `&String` is framework-dictated: the derive passes `&FieldTy` directly.
     #[allow(clippy::ptr_arg)]
-    fn watch_greeting(&mut self, app: &mut App, _old: &String, new: &String, ctx: &mut ReactiveCtx) {
+    fn watch_greeting(
+        &mut self,
+        app: &mut App,
+        _old: &String,
+        new: &String,
+        ctx: &mut ReactiveCtx,
+    ) {
         let new = new.clone();
         let _ = app.with_query_one_mut_as::<Label, _>("#greeting", |label| {
             label.set_text(new);
@@ -149,7 +155,12 @@ impl TextualApp for NameApp {
         AppRoot::new().with_child(Greeter::new("Hello", "Textual"))
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if action != "greeting" {
             return;
         }

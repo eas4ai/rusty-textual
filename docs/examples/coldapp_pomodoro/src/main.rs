@@ -97,7 +97,12 @@ impl PomodoroCard {
                 ChildDecl::from(Button::error("Reset").id("reset")),
             ])),
         ]);
-        Self { base, remaining: POMODORO_SECS, running: false, timer: None }
+        Self {
+            base,
+            remaining: POMODORO_SECS,
+            running: false,
+            timer: None,
+        }
     }
 
     /// Register the card's own countdown timer. Replaces the app-global tick loop
@@ -134,7 +139,8 @@ impl PomodoroCard {
     /// type — no id plumbing.
     fn sync_digits(&self, ctx: &mut WidgetCtx) {
         let text = format_mmss(self.remaining);
-        ctx.query_one::<Digits>().update_via(ctx, move |d, _| d.update(text));
+        ctx.query_one::<Digits>()
+            .update_via(ctx, move |d, _| d.update(text));
     }
 
     /// The card handles its own Start/Pause/Reset buttons via bubbling — no app
@@ -208,7 +214,10 @@ struct PomodoroApp {
 
 impl PomodoroApp {
     fn new() -> Self {
-        Self { dark: true, completed: 0 }
+        Self {
+            dark: true,
+            completed: 0,
+        }
     }
 
     /// Reactive watch (`#[reactive(watch_with_app)] completed`): repaint the
@@ -251,7 +260,11 @@ impl TextualApp for PomodoroApp {
     fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut WidgetCtx) {
         if action == "dark" {
             self.dark = !self.dark;
-            app.set_theme_by_name(if self.dark { "textual-dark" } else { "textual-light" });
+            app.set_theme_by_name(if self.dark {
+                "textual-dark"
+            } else {
+                "textual-light"
+            });
             ctx.set_handled();
         }
     }
@@ -371,7 +384,11 @@ mod tests {
             pilot.click("#pause")?;
             assert!(!first_running(pilot), "Pause must stop the card");
             pilot.advance_clock(Duration::from_secs(4))?;
-            assert_eq!(first_remaining(pilot), mid, "a paused card must not decrement");
+            assert_eq!(
+                first_remaining(pilot),
+                mid,
+                "a paused card must not decrement"
+            );
             Ok(())
         })
         .unwrap();
@@ -385,7 +402,11 @@ mod tests {
             pilot.advance_clock(Duration::from_secs(4))?;
             assert!(first_remaining(pilot) < POMODORO_SECS);
             pilot.click("#reset")?;
-            assert_eq!(first_remaining(pilot), POMODORO_SECS, "Reset must restore 25:00");
+            assert_eq!(
+                first_remaining(pilot),
+                POMODORO_SECS,
+                "Reset must restore 25:00"
+            );
             assert!(!first_running(pilot), "Reset must stop the card");
             Ok(())
         })
@@ -402,7 +423,11 @@ mod tests {
             pilot.click("#start")?;
             // Run the full 25:00 out (plus a hair) so the card crosses zero.
             pilot.advance_clock(Duration::from_secs(1501))?;
-            assert_eq!(first_remaining(pilot), 0.0, "the card must bottom out at 00:00");
+            assert_eq!(
+                first_remaining(pilot),
+                0.0,
+                "the card must bottom out at 00:00"
+            );
             assert!(!first_running(pilot), "a finished card must stop itself");
             assert_eq!(
                 completed(pilot),

@@ -40,21 +40,46 @@ impl TextualApp for HatchApp {
     fn compose(&mut self) -> AppRoot {
         AppRoot::new().with_child(
             Horizontal::new()
-                .with_child(Vertical::new().with_child(
-                    Static::new("").class("hatch").class("cross").with_border_title("cross"),
-                ))
-                .with_child(Vertical::new().with_child(
-                    Static::new("").class("hatch").class("horizontal").with_border_title("horizontal"),
-                ))
-                .with_child(Vertical::new().with_child(
-                    Static::new("").class("hatch").class("custom").with_border_title("custom"),
-                ))
-                .with_child(Vertical::new().with_child(
-                    Static::new("").class("hatch").class("left").with_border_title("left"),
-                ))
-                .with_child(Vertical::new().with_child(
-                    Static::new("").class("hatch").class("right").with_border_title("right"),
-                )),
+                .with_child(
+                    Vertical::new().with_child(
+                        Static::new("")
+                            .class("hatch")
+                            .class("cross")
+                            .with_border_title("cross"),
+                    ),
+                )
+                .with_child(
+                    Vertical::new().with_child(
+                        Static::new("")
+                            .class("hatch")
+                            .class("horizontal")
+                            .with_border_title("horizontal"),
+                    ),
+                )
+                .with_child(
+                    Vertical::new().with_child(
+                        Static::new("")
+                            .class("hatch")
+                            .class("custom")
+                            .with_border_title("custom"),
+                    ),
+                )
+                .with_child(
+                    Vertical::new().with_child(
+                        Static::new("")
+                            .class("hatch")
+                            .class("left")
+                            .with_border_title("left"),
+                    ),
+                )
+                .with_child(
+                    Vertical::new().with_child(
+                        Static::new("")
+                            .class("hatch")
+                            .class("right")
+                            .with_border_title("right"),
+                    ),
+                ),
         )
     }
 }

@@ -87,36 +87,41 @@ impl TextualApp for ComputedApp {
     fn compose(&mut self) -> AppRoot {
         AppRoot::new()
             .with_child(
-                
-                    Horizontal::new()
-                        .with_child(
-                            Input::new()
-                                .with_value("0")
-                                .with_placeholder("Enter red 0-255")
-                                .id("red"),
-                        )
-                        .with_child(
-                            Input::new()
-                                .with_value("0")
-                                .with_placeholder("Enter green 0-255")
-                                .id("green"),
-                        )
-                        .with_child(
-                            Input::new()
-                                .with_value("0")
-                                .with_placeholder("Enter blue 0-255")
-                                .id("blue"),
-                        )
-                .id("color-inputs"),
+                Horizontal::new()
+                    .with_child(
+                        Input::new()
+                            .with_value("0")
+                            .with_placeholder("Enter red 0-255")
+                            .id("red"),
+                    )
+                    .with_child(
+                        Input::new()
+                            .with_value("0")
+                            .with_placeholder("Enter green 0-255")
+                            .id("green"),
+                    )
+                    .with_child(
+                        Input::new()
+                            .with_value("0")
+                            .with_placeholder("Enter blue 0-255")
+                            .id("blue"),
+                    )
+                    .id("color-inputs"),
             )
             .with_child(Static::new("").id("color"))
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(m) = message.downcast_ref::<InputChanged>() {
             let sender = message.sender;
             // Parse the channel value; ignore non-integer input (Python rings the bell).
-            let Some(component) = m.value.trim().parse::<u16>().ok().map(|v| v.min(255) as u8) else {
+            let Some(component) = m.value.trim().parse::<u16>().ok().map(|v| v.min(255) as u8)
+            else {
                 return;
             };
 

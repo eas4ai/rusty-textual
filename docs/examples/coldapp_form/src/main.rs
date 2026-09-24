@@ -33,7 +33,11 @@ fn username_ok(value: &str) -> bool {
 }
 
 fn parse_age(value: &str) -> Option<i64> {
-    value.trim().parse::<i64>().ok().filter(|n| (18..=120).contains(n))
+    value
+        .trim()
+        .parse::<i64>()
+        .ok()
+        .filter(|n| (18..=120).contains(n))
 }
 
 const CSS: &str = r#"
@@ -75,7 +79,10 @@ struct FormApp {
 
 impl FormApp {
     fn new() -> Self {
-        Self { submitted: 0, last_status: String::new() }
+        Self {
+            submitted: 0,
+            last_status: String::new(),
+        }
     }
 
     /// Gather every control's state, validate, and return either the success
@@ -152,7 +159,7 @@ impl TextualApp for FormApp {
             .with_placeholder("18 to 120")
             .id("age")
             .with_validators(vec![
-                Arc::new(Number::new().minimum(18.0).maximum(120.0)) as ValidatorRef,
+                Arc::new(Number::new().minimum(18.0).maximum(120.0)) as ValidatorRef
             ]);
 
         let plan = Select::new(
@@ -323,7 +330,10 @@ mod tests {
             pilot.click("#submit")?;
             assert_eq!(submitted(pilot), 1, "a valid form must submit exactly once");
             let s = status(pilot);
-            assert!(s.contains("alice") && s.contains("30"), "summary must echo inputs, got: {s}");
+            assert!(
+                s.contains("alice") && s.contains("30"),
+                "summary must echo inputs, got: {s}"
+            );
             Ok(())
         })
         .unwrap();
@@ -338,7 +348,10 @@ mod tests {
             let before = pilot.app().frame_fingerprint();
             type_into(pilot, "#age", "30")?;
             let after = pilot.app().frame_fingerprint();
-            assert_ne!(before, after, "typing into a validated Input must re-render");
+            assert_ne!(
+                before, after,
+                "typing into a validated Input must re-render"
+            );
             Ok(())
         })
         .unwrap();

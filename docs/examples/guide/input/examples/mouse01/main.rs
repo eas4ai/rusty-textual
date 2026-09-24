@@ -155,12 +155,14 @@ impl Widget for MouseScreen {
 
     fn compose(&mut self) -> textual::compose::ComposeResult {
         vec![
-            textual::compose::ChildDecl::new(
-                Box::new(std::mem::replace(&mut self.log, RichLog::new())) as Box<dyn Widget>,
-            ),
-            textual::compose::ChildDecl::new(
-                Box::new(std::mem::replace(&mut self.ball, Ball::new())) as Box<dyn Widget>,
-            ),
+            textual::compose::ChildDecl::new(Box::new(std::mem::replace(
+                &mut self.log,
+                RichLog::new(),
+            )) as Box<dyn Widget>),
+            textual::compose::ChildDecl::new(Box::new(std::mem::replace(
+                &mut self.ball,
+                Ball::new(),
+            )) as Box<dyn Widget>),
         ]
     }
 
@@ -231,9 +233,7 @@ impl TextualApp for MouseApp {
             let screen_y = m.screen_y;
 
             // Write event info to the RichLog.
-            let line = format!(
-                "MouseMove(screen_x={screen_x}, screen_y={screen_y})"
-            );
+            let line = format!("MouseMove(screen_x={screen_x}, screen_y={screen_y})");
             let _ = app.with_query_one_mut_as::<RichLog, _>("RichLog", |log| {
                 log.write(line);
             });

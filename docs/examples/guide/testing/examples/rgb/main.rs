@@ -52,7 +52,12 @@ impl TextualApp for RGBApp {
     /// Handle button presses: use the button id as the colour name.
     ///
     /// Python: `@on(Button.Pressed) def pressed_button(self, event): self.action_switch_color(event.button.id)`
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(bp) = message.downcast_ref::<ButtonPressed>() {
             if let Some(color_name) = bp.button_id.as_deref() {
                 switch_screen_color(app, color_name, ctx);
@@ -64,12 +69,18 @@ impl TextualApp for RGBApp {
     /// Handle the `switch_color('<color>')` action dispatched by key bindings.
     ///
     /// Python: `def action_switch_color(self, color: str): self.screen.styles.background = color`
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Ok(parsed) = parse_action(action)
             && parsed.name == "switch_color"
-                && let Some(color_name) = parsed.arguments.first().and_then(|a| a.as_str()) {
-                    switch_screen_color(app, color_name, ctx);
-                }
+            && let Some(color_name) = parsed.arguments.first().and_then(|a| a.as_str())
+        {
+            switch_screen_color(app, color_name, ctx);
+        }
     }
 }
 

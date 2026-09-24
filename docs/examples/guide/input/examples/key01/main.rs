@@ -12,7 +12,12 @@ impl TextualApp for InputApp {
         AppRoot::new().with_child(RichLog::new())
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         let key_name = key.name().to_string();
         let character = key.character;
         let is_printable = key.is_printable;
@@ -66,7 +71,10 @@ mod tests {
             // A second, different keypress writes another line — frame changes again.
             pilot.press(&["b"])?;
             let after3 = pilot.app().frame_fingerprint();
-            assert_ne!(after, after3, "a second keypress must append another log line");
+            assert_ne!(
+                after, after3,
+                "a second keypress must append another log line"
+            );
             Ok(())
         })
         .unwrap();

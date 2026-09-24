@@ -1,3 +1,4 @@
+use textual::prelude::*;
 /// Port of Python Textual `docs/examples/guide/reactivity/refresh02.py`.
 ///
 /// Demonstrates reactive LAYOUT invalidation: a custom `Name` widget renders
@@ -17,7 +18,6 @@
 /// Python's `reactive(layout=True)`. The app handler queries the `Name` node,
 /// sets `who`, and enqueues the change for the runtime reactive phase.
 use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
-use textual::prelude::*;
 
 const CSS: &str = r#"
 Input {
@@ -90,7 +90,12 @@ impl TextualApp for WatchApp {
             .with_child(Name::new())
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(m) = message.downcast_ref::<InputChanged>() {
             let value = m.value.clone();
             if let Ok(name_id) = app.query_one("Name") {

@@ -166,9 +166,16 @@ mod tests {
 
             // Click Cancel inside the modal -> dismiss back to the base screen.
             pilot.click("#cancel")?;
-            assert_eq!(pilot.app().screen_count(), 0, "cancel must dismiss the screen");
+            assert_eq!(
+                pilot.app().screen_count(),
+                0,
+                "cancel must dismiss the screen"
+            );
             let dismissed = pilot.app().frame_fingerprint();
-            assert_ne!(pushed, dismissed, "dismissing the modal must change the frame");
+            assert_ne!(
+                pushed, dismissed,
+                "dismissing the modal must change the frame"
+            );
             Ok(())
         })
         .expect("modal01 push/dismiss harness should run");

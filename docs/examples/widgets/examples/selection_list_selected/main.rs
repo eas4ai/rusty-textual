@@ -87,7 +87,12 @@ impl TextualApp for SelectionListApp {
         refresh_pretty(app);
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        _ctx: &mut textual::event::WidgetCtx,
+    ) {
         if message
             .downcast_ref::<SelectionListSelectedChanged>()
             .is_some()

@@ -69,10 +69,10 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
+    Ident, ItemStruct, LitStr, Path, Token, Type,
     parse::{Parse, ParseStream},
     parse2,
     punctuated::Punctuated,
-    Ident, ItemStruct, LitStr, Path, Token, Type,
 };
 
 /// Parsed `#[widget(..)]` arguments.
@@ -150,7 +150,7 @@ impl Parse for WidgetArgs {
                             return Err(syn::Error::new_spanned(
                                 other,
                                 "`base` must be a type path, e.g. `base = VerticalGroup`",
-                            ))
+                            ));
                         }
                     };
                     base = Some(path);
@@ -240,8 +240,16 @@ fn method_table() -> Vec<MethodSpec> {
             quote! { compose() }
         ),
         // ── Focus / node state ─────────────────────────────────────────
-        m!("focusable", quote! { fn focusable(&self) -> bool }, quote! { focusable() }),
-        m!("can_focus", quote! { fn can_focus(&self) -> bool }, quote! { can_focus() }),
+        m!(
+            "focusable",
+            quote! { fn focusable(&self) -> bool },
+            quote! { focusable() }
+        ),
+        m!(
+            "can_focus",
+            quote! { fn can_focus(&self) -> bool },
+            quote! { can_focus() }
+        ),
         m!(
             "can_focus_children",
             quote! { fn can_focus_children(&self) -> bool },
@@ -263,8 +271,16 @@ fn method_table() -> Vec<MethodSpec> {
             quote! { fn on_mount(&mut self, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_mount(ctx) }
         ),
-        m!("on_unmount", quote! { fn on_unmount(&mut self) }, quote! { on_unmount() }),
-        m!("on_tick", quote! { fn on_tick(&mut self, tick: u64) }, quote! { on_tick(tick) }),
+        m!(
+            "on_unmount",
+            quote! { fn on_unmount(&mut self) },
+            quote! { on_unmount() }
+        ),
+        m!(
+            "on_tick",
+            quote! { fn on_tick(&mut self, tick: u64) },
+            quote! { on_tick(tick) }
+        ),
         m!(
             "on_resize",
             quote! { fn on_resize(&mut self, width: u16, height: u16) },
@@ -437,14 +453,22 @@ fn method_table() -> Vec<MethodSpec> {
             quote! { border_subtitle() }
         ),
         // ── State ──────────────────────────────────────────────────────
-        m!("is_active", quote! { fn is_active(&self) -> bool }, quote! { is_active() }),
+        m!(
+            "is_active",
+            quote! { fn is_active(&self) -> bool },
+            quote! { is_active() }
+        ),
         m!(
             "mouse_interactive",
             quote! { fn mouse_interactive(&self) -> bool },
             quote! { mouse_interactive() }
         ),
         // ── Tooltip / help ─────────────────────────────────────────────
-        m!("tooltip", quote! { fn tooltip(&self) -> Option<String> }, quote! { tooltip() }),
+        m!(
+            "tooltip",
+            quote! { fn tooltip(&self) -> Option<String> },
+            quote! { tooltip() }
+        ),
         m!(
             "tooltip_anchor",
             quote! { fn tooltip_anchor(&self) -> Option<(u16, u16)> },
@@ -456,7 +480,11 @@ fn method_table() -> Vec<MethodSpec> {
             quote! { help_markup() }
         ),
         // ── Selection ──────────────────────────────────────────────────
-        m!("allow_select", quote! { fn allow_select(&self) -> bool }, quote! { allow_select() }),
+        m!(
+            "allow_select",
+            quote! { fn allow_select(&self) -> bool },
+            quote! { allow_select() }
+        ),
         m!(
             "selection_at",
             quote! { fn selection_at(&self, x: u16, y: u16) -> Option<rusty_textual::widgets::WidgetSelectionAnchor> },
@@ -629,30 +657,67 @@ fn method_group(name: &str) -> Group {
     match name {
         "render" | "render_with_debug" | "compose" | "render_line" | "render_lines"
         | "style_type" | "style_type_aliases" | "border_title" | "border_subtitle" => Group::Render,
-        "on_mount" | "on_unmount" | "on_tick" | "on_resize" | "on_layout" | "on_event_capture"
-        | "on_event" | "on_message" | "on_mouse_move" | "on_node_state_changed" => {
-            Group::Interactive
-        }
-        "content_width" | "auto_content_width" | "layout_height" | "auto_content_height"
-        | "set_virtual_content_size" | "tree_child_content_inset" | "child_display_for_tree"
-        | "child_classes_for_tree" | "is_transparent_wrapper" | "preserve_underlay"
-        | "clips_descendants_to_content" | "style" => Group::Layout,
-        "scroll_offset" | "scroll_offset_f32" | "scroll_viewport_size"
-        | "scroll_virtual_content_size" | "on_mouse_scroll" => Group::Scrollable,
-        "focusable" | "can_focus" | "can_focus_children" | "traps_focus" | "mouse_interactive" | "is_active"
-        | "is_initially_disabled" | "is_initially_focused" | "bindings" | "binding_hints"
-        | "action_namespace" | "action_registry" | "execute_action" | "check_action"
+        "on_mount"
+        | "on_unmount"
+        | "on_tick"
+        | "on_resize"
+        | "on_layout"
+        | "on_event_capture"
+        | "on_event"
+        | "on_message"
+        | "on_mouse_move"
+        | "on_node_state_changed" => Group::Interactive,
+        "content_width"
+        | "auto_content_width"
+        | "layout_height"
+        | "auto_content_height"
+        | "set_virtual_content_size"
+        | "tree_child_content_inset"
+        | "child_display_for_tree"
+        | "child_classes_for_tree"
+        | "is_transparent_wrapper"
+        | "preserve_underlay"
+        | "clips_descendants_to_content"
+        | "style" => Group::Layout,
+        "scroll_offset"
+        | "scroll_offset_f32"
+        | "scroll_viewport_size"
+        | "scroll_virtual_content_size"
+        | "on_mouse_scroll" => Group::Scrollable,
+        "focusable"
+        | "can_focus"
+        | "can_focus_children"
+        | "traps_focus"
+        | "mouse_interactive"
+        | "is_active"
+        | "is_initially_disabled"
+        | "is_initially_focused"
+        | "bindings"
+        | "binding_hints"
+        | "action_namespace"
+        | "action_registry"
+        | "execute_action"
+        | "check_action"
         | "help_markup" => Group::Focus,
-        "allow_select" | "selection_at" | "selection_word_range_at" | "selection_all_range"
-        | "update_selection" | "clear_selection" | "get_selection" | "selection_updated" => {
-            Group::Selectable
-        }
+        "allow_select"
+        | "selection_at"
+        | "selection_word_range_at"
+        | "selection_all_range"
+        | "update_selection"
+        | "clear_selection"
+        | "get_selection"
+        | "selection_updated" => Group::Selectable,
         "tooltip" | "tooltip_anchor" => Group::HasTooltip,
         "component_classes" | "get_component_styles" | "get_component_rich_style" => {
             Group::Components
         }
-        "on_app_key" | "on_app_action" | "on_app_unhandled_action" | "on_app_message"
-        | "on_app_tick" | "on_app_timer" | "on_app_mount" => Group::AppHooks,
+        "on_app_key"
+        | "on_app_action"
+        | "on_app_unhandled_action"
+        | "on_app_message"
+        | "on_app_tick"
+        | "on_app_timer"
+        | "on_app_mount" => Group::AppHooks,
         "style_classes" | "style_id" | "is_hovered" | "set_seed_css_id" | "set_seed_classes" => {
             Group::StyleIdentity
         }
@@ -816,12 +881,10 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     // Validate the target field exists on the struct.
-    let field_exists = item_struct.fields.iter().any(|f| {
-        f.ident
-            .as_ref()
-            .map(|id| id == field)
-            .unwrap_or(false)
-    });
+    let field_exists = item_struct
+        .fields
+        .iter()
+        .any(|f| f.ident.as_ref().map(|id| id == field).unwrap_or(false));
     if !field_exists {
         return syn::Error::new_spanned(
             field,
@@ -943,7 +1006,11 @@ fn assemble_impl(item_struct: &ItemStruct, methods: Vec<TokenStream>) -> TokenSt
 /// the `Widget` default. See the LOUD authoring rule on the capability traits:
 /// implementing a capability trait AND listing it in `#[widget(..)]` are BOTH
 /// required for the methods to run.
-fn own_widget_impl(item_struct: &ItemStruct, args: &WidgetArgs, table: &[MethodSpec]) -> TokenStream {
+fn own_widget_impl(
+    item_struct: &ItemStruct,
+    args: &WidgetArgs,
+    table: &[MethodSpec],
+) -> TokenStream {
     // Validate capability names.
     for cap in &args.capabilities {
         let cap_s = cap.to_string();
@@ -984,9 +1051,10 @@ fn own_widget_impl(item_struct: &ItemStruct, args: &WidgetArgs, table: &[MethodS
 
     let enabled: std::collections::HashSet<String> =
         args.capabilities.iter().map(|i| i.to_string()).collect();
-    let has_seed_field = item_struct.fields.iter().any(|f| {
-        f.ident.as_ref().map(|id| id == "seed").unwrap_or(false)
-    });
+    let has_seed_field = item_struct
+        .fields
+        .iter()
+        .any(|f| f.ident.as_ref().map(|id| id == "seed").unwrap_or(false));
 
     let mut methods: Vec<TokenStream> = Vec::new();
     for spec in table {
@@ -1149,7 +1217,8 @@ mod tests {
 
     #[test]
     fn own_mode_forwards_render_seed_and_capability() {
-        let out = widget_impl(quote! { Layout }, quote! { struct W { seed: NodeSeed } }).to_string();
+        let out =
+            widget_impl(quote! { Layout }, quote! { struct W { seed: NodeSeed } }).to_string();
         // Render group is always forwarded (required core).
         assert!(out.contains("Render :: render"));
         // Opted-in Layout capability forwarded, including the own-mode-only
@@ -1173,15 +1242,17 @@ mod tests {
 
     #[test]
     fn own_mode_style_type_literal_wins() {
-        let out = widget_impl(quote! { style_type = "Foo" }, quote! { struct W { x: usize } })
-            .to_string();
+        let out = widget_impl(
+            quote! { style_type = "Foo" },
+            quote! { struct W { x: usize } },
+        )
+        .to_string();
         assert!(out.contains("\"Foo\""));
     }
 
     #[test]
     fn own_mode_reactive_exposes_self() {
-        let out =
-            widget_impl(quote! { reactive }, quote! { struct W { x: usize } }).to_string();
+        let out = widget_impl(quote! { reactive }, quote! { struct W { x: usize } }).to_string();
         assert!(out.contains("Some (self)"));
     }
 
@@ -1215,7 +1286,11 @@ mod tests {
         names.sort_unstable();
         let before = names.len();
         names.dedup();
-        assert_eq!(before, names.len(), "duplicate method name in the delegated surface table");
+        assert_eq!(
+            before,
+            names.len(),
+            "duplicate method name in the delegated surface table"
+        );
     }
 
     #[test]

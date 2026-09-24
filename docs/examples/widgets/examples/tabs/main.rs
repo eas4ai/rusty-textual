@@ -88,7 +88,12 @@ impl TextualApp for TabsApp {
             .with_child(Footer::new())
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         match key.name() {
             "a" => {
                 // Add next name from rotating list. Mutating the tab set changes
@@ -112,12 +117,13 @@ impl TextualApp for TabsApp {
                     .ok()
                     .flatten();
                 if let Some(id) = active_id
-                    && let Ok(tabs) = app.query_one_typed::<Tabs>("Tabs") {
-                        let _ = tabs.update(app, |tabs, ctx| {
-                            tabs.remove_tab(&id);
-                            ctx.request_recompose();
-                        });
-                    }
+                    && let Ok(tabs) = app.query_one_typed::<Tabs>("Tabs")
+                {
+                    let _ = tabs.update(app, |tabs, ctx| {
+                        tabs.remove_tab(&id);
+                        ctx.request_recompose();
+                    });
+                }
                 ctx.set_handled();
                 ctx.request_repaint();
             }

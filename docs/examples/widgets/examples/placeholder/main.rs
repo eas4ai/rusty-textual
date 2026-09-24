@@ -76,9 +76,15 @@ impl TextualApp for PlaceholderApp {
     fn compose(&mut self) -> AppRoot {
         // Horizontal row inside #bot: three placeholders side by side.
         let horiz = Horizontal::new().with_compose(compose![
-            Placeholder::new("").with_variant(PlaceholderVariant::Size).id("col1"),
-            Placeholder::new("").with_variant(PlaceholderVariant::Text).id("col2"),
-            Placeholder::new("").with_variant(PlaceholderVariant::Size).id("col3"),
+            Placeholder::new("")
+                .with_variant(PlaceholderVariant::Size)
+                .id("col1"),
+            Placeholder::new("")
+                .with_variant(PlaceholderVariant::Text)
+                .id("col2"),
+            Placeholder::new("")
+                .with_variant(PlaceholderVariant::Size)
+                .id("col3"),
         ]);
         // Give #c1 its CSS id via the seed of the delegate target (Container inner).
         // Since Horizontal delegates take_node_seed to its inner Container,
@@ -103,9 +109,15 @@ impl TextualApp for PlaceholderApp {
 
         // #top container: 2×2 grid. Set id directly on the Container seed.
         let mut top = Container::new().with_compose(compose![
-            Placeholder::new("").with_variant(PlaceholderVariant::Text).id("left"),
-            Placeholder::new("").with_variant(PlaceholderVariant::Size).id("topright"),
-            Placeholder::new("").with_variant(PlaceholderVariant::Text).id("botright"),
+            Placeholder::new("")
+                .with_variant(PlaceholderVariant::Text)
+                .id("left"),
+            Placeholder::new("")
+                .with_variant(PlaceholderVariant::Size)
+                .id("topright"),
+            Placeholder::new("")
+                .with_variant(PlaceholderVariant::Text)
+                .id("botright"),
         ]);
         top.seed_mut().css_id = Some("top".to_string());
 

@@ -41,7 +41,12 @@ impl TextualApp for MultiGreet {
         root
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(m) = message.downcast_ref::<InputSubmitted>() {
             let name = m.value.clone();
             if !name.is_empty() {
@@ -90,7 +95,10 @@ mod tests {
         let mut ctx = ReactiveCtx::new(textual::node_id::NodeId::default());
         app.mutate_names(&mut ctx);
         assert!(ctx.has_changes());
-        assert!(ctx.needs_recompose(), "mutate of a recompose reactive must request recompose");
+        assert!(
+            ctx.needs_recompose(),
+            "mutate of a recompose reactive must request recompose"
+        );
     }
 
     /// LIVENESS PROBE — submitting a name into the Input must push it onto the

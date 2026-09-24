@@ -110,8 +110,11 @@ impl Widget for WorldClock {
     fn compose(&mut self) -> ComposeResult {
         vec![
             ChildDecl::from(Label::new(self.timezone.clone())),
-            ChildDecl::from(Digits::new(format_local(self.clock_time, self.utc_offset_secs)))
-                .with_id(&self.digits_id),
+            ChildDecl::from(Digits::new(format_local(
+                self.clock_time,
+                self.utc_offset_secs,
+            )))
+            .with_id(&self.digits_id),
         ]
     }
 
@@ -249,7 +252,10 @@ mod tests {
         let mut clock = WorldClock::new("Asia/Tokyo", 9 * 3600);
         let mut ctx = ReactiveCtx::new(textual::node_id::NodeId::default());
         clock.set_clock_time(*clock.clock_time() + 1, &mut ctx);
-        assert!(ctx.has_changes(), "child clock_time set must record a change");
+        assert!(
+            ctx.has_changes(),
+            "child clock_time set must record a change"
+        );
         assert_eq!(ctx.changes()[0].field_name, "clock_time");
     }
 

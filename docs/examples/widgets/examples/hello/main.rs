@@ -33,29 +33,31 @@ impl TextualApp for MissionControl {
             &["4096", "zsh", "0.3", "32M"],
         ]);
 
-        let sidebar = Container::new().with_compose(compose![
-            Static::new("System Metrics").class("section-title"),
-            Sparkline::new(cpu_data),
-            Static::new("Disk Usage").class("section-title"),
-            disk_bar,
-            Rule::horizontal(),
-            ScrollView::new(proc_table),
-        ])
-        .class("sidebar");
+        let sidebar = Container::new()
+            .with_compose(compose![
+                Static::new("System Metrics").class("section-title"),
+                Sparkline::new(cpu_data),
+                Static::new("Disk Usage").class("section-title"),
+                disk_bar,
+                Rule::horizontal(),
+                ScrollView::new(proc_table),
+            ])
+            .class("sidebar");
 
         // -- Right column: Tabbed Content -------------------------------------
         let events_pane = TabPane::new("Events", Markdown::new(EVENTS_MD)).id("events");
 
         let config_pane = TabPane::new(
             "Config",
-            Container::new().with_compose(compose![
-                Input::new().with_placeholder("Hostname"),
-                Checkbox::new("Enable notifications"),
-                Static::new("Dark mode"),
-                Switch::new(false),
-                Button::primary("Apply"),
-            ])
-            .class("config-form"),
+            Container::new()
+                .with_compose(compose![
+                    Input::new().with_placeholder("Hostname"),
+                    Checkbox::new("Enable notifications"),
+                    Static::new("Dark mode"),
+                    Switch::new(false),
+                    Button::primary("Apply"),
+                ])
+                .class("config-form"),
         )
         .id("config");
 

@@ -40,13 +40,9 @@ impl TextualApp for IndeterminateProgressBar {
 
     fn compose(&mut self) -> AppRoot {
         AppRoot::new()
-            .with_child(
-                Center::new().with_child(
-                    Middle::new().with_compose(vec![
-                        ChildDecl::from(ProgressBar::new(None)).with_id("progress_bar"),
-                    ]),
-                ),
-            )
+            .with_child(Center::new().with_child(Middle::new().with_compose(vec![
+                ChildDecl::from(ProgressBar::new(None)).with_id("progress_bar"),
+            ])))
             .with_child(Footer::new())
     }
 
@@ -65,7 +61,12 @@ impl TextualApp for IndeterminateProgressBar {
         ));
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if action == "start" {
             // Python action_start: query_one(ProgressBar).update(total=100); timer.resume().
             if let Ok(handle) = app.query_one_typed::<ProgressBar>("#progress_bar") {
@@ -121,7 +122,10 @@ mod tests {
             }),
         );
         // The timer exists (registered) even while paused — `start` will resume it.
-        assert!(app.timer_is_active(handle), "interval is registered at mount");
+        assert!(
+            app.timer_is_active(handle),
+            "interval is registered at mount"
+        );
 
         // Resume (Python action_start) then stop — public state machine works.
         app.resume_timer(handle);

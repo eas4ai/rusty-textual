@@ -153,14 +153,25 @@ mod tests {
             let before = pilot.app().frame_fingerprint();
 
             pilot.press(&["q"])?;
-            assert_eq!(pilot.app().screen_count(), 1, "q must push the modal QuitScreen");
+            assert_eq!(
+                pilot.app().screen_count(),
+                1,
+                "q must push the modal QuitScreen"
+            );
             let pushed = pilot.app().frame_fingerprint();
             assert_ne!(before, pushed, "pushing the modal must change the frame");
 
             pilot.click("#cancel")?;
-            assert_eq!(pilot.app().screen_count(), 0, "cancel must dismiss the modal");
+            assert_eq!(
+                pilot.app().screen_count(),
+                0,
+                "cancel must dismiss the modal"
+            );
             let dismissed = pilot.app().frame_fingerprint();
-            assert_ne!(pushed, dismissed, "dismissing the modal must change the frame");
+            assert_ne!(
+                pushed, dismissed,
+                "dismissing the modal must change the frame"
+            );
             Ok(())
         })
         .expect("modal02 push/dismiss harness should run");

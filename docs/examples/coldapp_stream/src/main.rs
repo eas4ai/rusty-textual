@@ -59,7 +59,11 @@ struct Feed {
 
 impl Feed {
     fn new() -> Self {
-        Self { count: 0, paused: false, lines: Vec::new() }
+        Self {
+            count: 0,
+            paused: false,
+            lines: Vec::new(),
+        }
     }
 }
 
@@ -69,7 +73,9 @@ struct StreamApp {
 
 impl StreamApp {
     fn new() -> Self {
-        Self { feed: Arc::new(Mutex::new(Feed::new())) }
+        Self {
+            feed: Arc::new(Mutex::new(Feed::new())),
+        }
     }
 }
 
@@ -81,7 +87,10 @@ fn log_line(n: u64) -> (String, &'static str) {
     let ms = 3 + (n * 7) % 40;
     // Every 6th request is a slow 503 to exercise the warn color.
     if n % 6 == 5 {
-        (format!("[req {n:04}] GET {path} -> 503 Unavailable ({ms}ms)"), "warn")
+        (
+            format!("[req {n:04}] GET {path} -> 503 Unavailable ({ms}ms)"),
+            "warn",
+        )
     } else {
         (format!("[req {n:04}] GET {path} -> 200 OK ({ms}ms)"), "ok")
     }
@@ -132,8 +141,7 @@ impl TextualApp for StreamApp {
                 }
                 f.count += 1;
                 let (text, kind) = log_line(f.count);
-                if let Ok(nid) =
-                    app.mount_under("#log", Label::new(text).class("line").class(kind))
+                if let Ok(nid) = app.mount_under("#log", Label::new(text).class("line").class(kind))
                 {
                     f.lines.push(nid);
                 }
@@ -141,8 +149,9 @@ impl TextualApp for StreamApp {
                 drop(f);
                 // Follow the tail: scrolling to `count` rows always lands at the
                 // bottom (VerticalScroll clamps the offset; it has no scroll_end).
-                let _ = app
-                    .with_query_one_mut_as::<VerticalScroll, _>("#log", |s| s.scroll_to(count as usize));
+                let _ = app.with_query_one_mut_as::<VerticalScroll, _>("#log", |s| {
+                    s.scroll_to(count as usize)
+                });
                 let _ = app.with_query_one_mut_as::<Label, _>("#header", |l| {
                     l.set_text(StreamApp::header_text(count, false));
                 });
@@ -225,7 +234,10 @@ mod tests {
             assert_eq!(line_count(pilot), 0, "log starts empty");
             pilot.advance_clock(Duration::from_secs(1))?;
             let n = line_count(pilot);
-            assert!(n >= 3, "≈4 lines should mount over 1s at 250ms/tick, got {n}");
+            assert!(
+                n >= 3,
+                "≈4 lines should mount over 1s at 250ms/tick, got {n}"
+            );
             assert_eq!(
                 feed.lock().unwrap().lines.len(),
                 n,
@@ -245,7 +257,11 @@ mod tests {
             assert!(before >= 2, "some lines before pause, got {before}");
             pilot.press(&["space"])?; // pause
             pilot.advance_clock(Duration::from_secs(2))?;
-            assert_eq!(line_count(pilot), before, "a paused feed must not mount new lines");
+            assert_eq!(
+                line_count(pilot),
+                before,
+                "a paused feed must not mount new lines"
+            );
             Ok(())
         })
         .unwrap();
@@ -261,8 +277,15 @@ mod tests {
             assert!(line_count(pilot) > 0);
             pilot.press(&["c"])?; // clear
             assert_eq!(line_count(pilot), 0, "clear must remove every mounted line");
-            assert_eq!(feed.lock().unwrap().count, 0, "clear must reset the counter");
-            assert!(feed.lock().unwrap().lines.is_empty(), "clear must drop tracked ids");
+            assert_eq!(
+                feed.lock().unwrap().count,
+                0,
+                "clear must reset the counter"
+            );
+            assert!(
+                feed.lock().unwrap().lines.is_empty(),
+                "clear must drop tracked ids"
+            );
             Ok(())
         })
         .unwrap();

@@ -31,7 +31,10 @@ mod tests {
     #[test]
     fn widgets01_ok_button_exits_is_live() {
         run_test(WelcomeApp, |pilot| {
-            assert!(!pilot.app().headless_stop_requested(), "no stop before interaction");
+            assert!(
+                !pilot.app().headless_stop_requested(),
+                "no stop before interaction"
+            );
             pilot.click("#close")?;
             assert!(
                 pilot.app().headless_stop_requested(),

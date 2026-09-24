@@ -66,7 +66,10 @@ struct ColumnModel {
 
 impl ColumnModel {
     fn new(title: &str) -> Self {
-        Self { title: title.to_string(), cards: Vec::new() }
+        Self {
+            title: title.to_string(),
+            cards: Vec::new(),
+        }
     }
 }
 
@@ -137,9 +140,8 @@ struct Column {
 impl Column {
     fn new(model: &ColumnModel, active: bool, active_card: usize) -> Self {
         let header = format!("{}  ({})", model.title, model.cards.len());
-        let mut children: Vec<ChildDecl> = vec![
-            ChildDecl::new(Box::new(Label::new(header))).with_classes(&["col-header"]),
-        ];
+        let mut children: Vec<ChildDecl> =
+            vec![ChildDecl::new(Box::new(Label::new(header))).with_classes(&["col-header"])];
         for (i, card) in model.cards.iter().enumerate() {
             let mut classes: Vec<&str> = vec![card.priority.css_class()];
             if active && i == active_card {
@@ -147,7 +149,9 @@ impl Column {
             }
             children.push(ChildDecl::new(Box::new(TaskCard::new(card))).with_classes(&classes));
         }
-        Self { base: VerticalScroll::new().with_compose(children) }
+        Self {
+            base: VerticalScroll::new().with_compose(children),
+        }
     }
 }
 
@@ -166,15 +170,21 @@ struct AutoSaveIndicator {
 
 impl AutoSaveIndicator {
     fn new() -> Self {
-        Self { base: Static::new("auto-save: idle"), ticks: 0, timer: None }
+        Self {
+            base: Static::new("auto-save: idle"),
+            ticks: 0,
+            timer: None,
+        }
     }
 
     fn on_mount(&mut self, ctx: &mut WidgetCtx) {
         // Own a 2s interval; each fire bumps the reactive `ticks`.
         self.timer =
-            Some(ctx.set_interval(Duration::from_secs(2), false, |w: &mut Self, c, _tick| {
-                w.tick(c);
-            }));
+            Some(
+                ctx.set_interval(Duration::from_secs(2), false, |w: &mut Self, c, _tick| {
+                    w.tick(c);
+                }),
+            );
     }
 
     fn tick(&mut self, ctx: &mut WidgetCtx) {
@@ -240,7 +250,11 @@ impl Widget for AddTaskRoot {
             VerticalGroup::new()
                 .with_child(Label::new("Add a new task").with_id("add-title"))
                 .with_child(Label::new("Title:"))
-                .with_child(Input::new().with_placeholder("Describe the task").id("task-title"))
+                .with_child(
+                    Input::new()
+                        .with_placeholder("Describe the task")
+                        .id("task-title"),
+                )
                 .with_child(Label::new("Priority:"))
                 .with_child(Button::new("Low").id("p-low"))
                 .with_child(Button::new("Med").id("p-med"))
@@ -249,7 +263,11 @@ impl Widget for AddTaskRoot {
         )]
     }
 
-    fn render(&self, _console: &rich_rs::Console, _options: &rich_rs::ConsoleOptions) -> rich_rs::Segments {
+    fn render(
+        &self,
+        _console: &rich_rs::Console,
+        _options: &rich_rs::ConsoleOptions,
+    ) -> rich_rs::Segments {
         rich_rs::Segments::new()
     }
 }
@@ -262,7 +280,9 @@ struct AddTaskScreen {
 
 impl AddTaskScreen {
     fn new() -> Self {
-        Self { title: String::new() }
+        Self {
+            title: String::new(),
+        }
     }
 }
 
@@ -301,7 +321,10 @@ impl Screen for AddTaskScreen {
                 submitted.value.clone()
             };
             if !title.is_empty() {
-                ctx.dismiss(NewTask { title, priority: Priority::Medium });
+                ctx.dismiss(NewTask {
+                    title,
+                    priority: Priority::Medium,
+                });
             }
         }
     }
@@ -318,7 +341,10 @@ impl Screen for AddTaskScreen {
             _ => Priority::Medium,
         };
         if !self.title.is_empty() {
-            ctx.dismiss(NewTask { title: self.title.clone(), priority });
+            ctx.dismiss(NewTask {
+                title: self.title.clone(),
+                priority,
+            });
         } else {
             ctx.dismiss_none();
         }
@@ -348,12 +374,23 @@ impl Board {
     fn new() -> Self {
         let mut todo = ColumnModel::new("To-Do");
         todo.cards = vec![
-            CardData { id: 1, title: "Write friction report".into(), priority: Priority::High },
-            CardData { id: 2, title: "Buy oat milk".into(), priority: Priority::Low },
+            CardData {
+                id: 1,
+                title: "Write friction report".into(),
+                priority: Priority::High,
+            },
+            CardData {
+                id: 2,
+                title: "Buy oat milk".into(),
+                priority: Priority::Low,
+            },
         ];
         let mut doing = ColumnModel::new("In-Progress");
-        doing.cards =
-            vec![CardData { id: 3, title: "Port Kanban board".into(), priority: Priority::Medium }];
+        doing.cards = vec![CardData {
+            id: 3,
+            title: "Port Kanban board".into(),
+            priority: Priority::Medium,
+        }];
         let done = ColumnModel::new("Done");
         Self {
             columns: vec![todo, doing, done],
@@ -409,7 +446,12 @@ impl Board {
         let next = self.completed + 1;
         self.set_completed(next, app.reactive_ctx());
         self.touch(app);
-        app.notify(format!("Completed: {title}"), "Nice", ToastSeverity::Information, None);
+        app.notify(
+            format!("Completed: {title}"),
+            "Nice",
+            ToastSeverity::Information,
+            None,
+        );
     }
 
     fn delete_active_card(&mut self, app: &mut App) {
@@ -452,10 +494,17 @@ impl Board {
         for task in drained {
             let id = self.next_id;
             self.next_id += 1;
-            self.columns[0]
-                .cards
-                .push(CardData { id, title: task.title.clone(), priority: task.priority });
-            app.notify(format!("Added: {}", task.title), "Task", ToastSeverity::Information, None);
+            self.columns[0].cards.push(CardData {
+                id,
+                title: task.title.clone(),
+                priority: task.priority,
+            });
+            app.notify(
+                format!("Added: {}", task.title),
+                "Task",
+                ToastSeverity::Information,
+                None,
+            );
         }
         self.touch(app);
     }
@@ -552,12 +601,10 @@ impl TextualApp for Board {
         let done = self.completed;
         let topbar = HorizontalGroup::new().with_compose(vec![
             ChildDecl::new(Box::new(Label::new("KANBAN"))).with_id("board-title"),
-            ChildDecl::from(
-                Link::new("[?]").with_tooltip(
-                    "h/l select column · j/k select card · Shift+H/L move card · \
+            ChildDecl::from(Link::new("[?]").with_tooltip(
+                "h/l select column · j/k select card · Shift+H/L move card · \
                      a add · d delete · c complete · p priority",
-                ),
-            ),
+            )),
             ChildDecl::from(AutoSaveIndicator::new()),
             ChildDecl::new(Box::new(Label::new(format!("Done: {done}")))).with_id("done-label"),
         ]);
@@ -666,7 +713,13 @@ mod tests {
         pilot
             .app_mut()
             .with_app_struct::<Board, _>(
-                |b, _app, _ctx| b.columns[col].cards.iter().map(|c| c.title.clone()).collect(),
+                |b, _app, _ctx| {
+                    b.columns[col]
+                        .cards
+                        .iter()
+                        .map(|c| c.title.clone())
+                        .collect()
+                },
                 &mut textual::event::EventCtx::default(),
             )
             .unwrap_or_default()
@@ -685,7 +738,10 @@ mod tests {
     fn completed(pilot: &mut Pilot) -> u32 {
         pilot
             .app_mut()
-            .with_app_struct::<Board, _>(|b, _app, _ctx| b.completed, &mut textual::event::EventCtx::default())
+            .with_app_struct::<Board, _>(
+                |b, _app, _ctx| b.completed,
+                &mut textual::event::EventCtx::default(),
+            )
             .unwrap_or(0)
     }
 
@@ -730,7 +786,11 @@ mod tests {
             let todo_after = card_titles(pilot, 0).len();
             let doing_after = card_titles(pilot, 1).len();
             assert_eq!(todo_after, todo_before - 1, "card must leave To-Do");
-            assert_eq!(doing_after, doing_before + 1, "card must arrive in In-Progress");
+            assert_eq!(
+                doing_after,
+                doing_before + 1,
+                "card must arrive in In-Progress"
+            );
             Ok(())
         })
         .unwrap();
@@ -746,7 +806,11 @@ mod tests {
             pilot.press(&["c"])?; // action: complete
             assert_eq!(completed(pilot), 1, "completing must bump the counter");
             let done_after = card_titles(pilot, DONE_COL).len();
-            assert_eq!(done_after, done_before + 1, "completed card must land in Done");
+            assert_eq!(
+                done_after,
+                done_before + 1,
+                "completed card must land in Done"
+            );
             Ok(())
         })
         .unwrap();
@@ -777,12 +841,19 @@ mod tests {
         let mut ectx = textual::event::EventCtx::default();
         let mut sctx = ScreenMessageCtx::for_test(&mut ectx, &slot);
         screen.on_message(
-            &MessageEvent::new(NodeId::default(), InputSubmitted { value: "Buy milk".into() }),
+            &MessageEvent::new(
+                NodeId::default(),
+                InputSubmitted {
+                    value: "Buy milk".into(),
+                },
+            ),
             &mut sctx,
         );
         match slot.lock().unwrap().take() {
             Some(ScreenResult::Value(v)) => {
-                let task = v.downcast::<NewTask>().expect("dismiss value must be a NewTask");
+                let task = v
+                    .downcast::<NewTask>()
+                    .expect("dismiss value must be a NewTask");
                 assert_eq!(task.title, "Buy milk");
                 assert_eq!(task.priority, Priority::Medium);
             }
@@ -796,7 +867,10 @@ mod tests {
         let mut ectx = textual::event::EventCtx::default();
         let mut sctx = ScreenMessageCtx::for_test(&mut ectx, &slot);
         screen.on_button_pressed(
-            &ButtonPressed { description: "High".into(), button_id: Some("p-high".into()) },
+            &ButtonPressed {
+                description: "High".into(),
+                button_id: Some("p-high".into()),
+            },
             NodeId::default(),
             &mut sctx,
         );
@@ -817,18 +891,32 @@ mod tests {
         run_test(Board::new(), |pilot| {
             let before = card_titles(pilot, 0).len();
             pilot.press(&["a"])?;
-            assert_eq!(pilot.app().screen_count(), 1, "`a` must push the add-task modal");
+            assert_eq!(
+                pilot.app().screen_count(),
+                1,
+                "`a` must push the add-task modal"
+            );
             // Return a typed result (the screen's own dismiss path is unit-tested
             // above; modal internals are not query/click-reachable headlessly).
-            pilot.app_mut().dismiss_screen(ScreenResult::Value(Box::new(NewTask {
-                title: "Widget".into(),
-                priority: Priority::High,
-            })));
-            assert_eq!(pilot.app().screen_count(), 0, "dismissing must pop the modal");
+            pilot
+                .app_mut()
+                .dismiss_screen(ScreenResult::Value(Box::new(NewTask {
+                    title: "Widget".into(),
+                    priority: Priority::High,
+                })));
+            assert_eq!(
+                pilot.app().screen_count(),
+                0,
+                "dismissing must pop the modal"
+            );
             // A key press drains the pending queue into the model.
             pilot.press(&["k"])?;
             let after = card_titles(pilot, 0);
-            assert_eq!(after.len(), before + 1, "the new task must be appended to To-Do");
+            assert_eq!(
+                after.len(),
+                before + 1,
+                "the new task must be appended to To-Do"
+            );
             assert!(
                 after.iter().any(|t| t == "Widget"),
                 "the appended card must carry the result title, got {after:?}"
@@ -866,7 +954,10 @@ mod tests {
             let before = pilot.app().frame_fingerprint();
             pilot.advance_clock(Duration::from_secs(2))?;
             let after = pilot.app().frame_fingerprint();
-            assert_ne!(before, after, "the auto-save interval tick must repaint the indicator");
+            assert_ne!(
+                before, after,
+                "the auto-save interval tick must repaint the indicator"
+            );
             Ok(())
         })
         .unwrap();
@@ -886,7 +977,10 @@ mod tests {
             // that card active — moving the cursor back to column 0.
             pilot.click("TaskCard")?;
             let after = cursor(pilot);
-            assert_eq!(after.0, 0, "clicking To-Do's card must select column 0 (got {after:?})");
+            assert_eq!(
+                after.0, 0,
+                "clicking To-Do's card must select column 0 (got {after:?})"
+            );
             Ok(())
         })
         .unwrap();

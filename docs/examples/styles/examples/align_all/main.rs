@@ -70,15 +70,51 @@ impl TextualApp for AlignAllApp {
 
     fn compose(&mut self) -> AppRoot {
         AppRoot::new()
-            .with_child(Container::new().id("left-top").with_child(Label::new("left top")))
-            .with_child(Container::new().id("center-top").with_child(Label::new("center top")))
-            .with_child(Container::new().id("right-top").with_child(Label::new("right top")))
-            .with_child(Container::new().id("left-middle").with_child(Label::new("left middle")))
-            .with_child(Container::new().id("center-middle").with_child(Label::new("center middle")))
-            .with_child(Container::new().id("right-middle").with_child(Label::new("right middle")))
-            .with_child(Container::new().id("left-bottom").with_child(Label::new("left bottom")))
-            .with_child(Container::new().id("center-bottom").with_child(Label::new("center bottom")))
-            .with_child(Container::new().id("right-bottom").with_child(Label::new("right bottom")))
+            .with_child(
+                Container::new()
+                    .id("left-top")
+                    .with_child(Label::new("left top")),
+            )
+            .with_child(
+                Container::new()
+                    .id("center-top")
+                    .with_child(Label::new("center top")),
+            )
+            .with_child(
+                Container::new()
+                    .id("right-top")
+                    .with_child(Label::new("right top")),
+            )
+            .with_child(
+                Container::new()
+                    .id("left-middle")
+                    .with_child(Label::new("left middle")),
+            )
+            .with_child(
+                Container::new()
+                    .id("center-middle")
+                    .with_child(Label::new("center middle")),
+            )
+            .with_child(
+                Container::new()
+                    .id("right-middle")
+                    .with_child(Label::new("right middle")),
+            )
+            .with_child(
+                Container::new()
+                    .id("left-bottom")
+                    .with_child(Label::new("left bottom")),
+            )
+            .with_child(
+                Container::new()
+                    .id("center-bottom")
+                    .with_child(Label::new("center bottom")),
+            )
+            .with_child(
+                Container::new()
+                    .id("right-bottom")
+                    .with_child(Label::new("right bottom")),
+            )
     }
 }
 

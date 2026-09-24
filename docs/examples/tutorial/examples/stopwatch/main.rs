@@ -32,7 +32,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use textual::prelude::*;
-use textual::reactive::{enqueue_runtime_reactive_entry, RuntimeReactiveEntry};
+use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
 
 // ---------------------------------------------------------------------------
 // CSS (mirrors stopwatch.tcss exactly)
@@ -348,10 +348,9 @@ impl TextualApp for StopwatchApp {
             .with_child(Header::new())
             .with_child(Footer::new())
             .with_child(
-                
-                    VerticalScroll::new()
-                        .with_child(Vertical::new().with_compose(stopwatches))
-                .id("timers"),
+                VerticalScroll::new()
+                    .with_child(Vertical::new().with_compose(stopwatches))
+                    .id("timers"),
             )
     }
 
@@ -382,7 +381,12 @@ impl TextualApp for StopwatchApp {
         );
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(cmd) = message.downcast_ref::<TimeDisplayCmd>() {
             let sel = format!("#{}", cmd.display_id);
             let node_id = match app.query(&sel).and_then(|q| q.first()) {
@@ -403,7 +407,12 @@ impl TextualApp for StopwatchApp {
         }
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         match key.name() {
             "a" => {
                 // Python: self.query_one("#timers").mount(Stopwatch())

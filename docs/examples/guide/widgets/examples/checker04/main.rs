@@ -310,7 +310,10 @@ mod tests {
             assert_eq!(g, 0x00);
             assert_eq!(b, 0x00);
         } else {
-            panic!("cursor square should resolve to an RGB background, got {:?}", style.bgcolor);
+            panic!(
+                "cursor square should resolve to an RGB background, got {:?}",
+                style.bgcolor
+            );
         }
     }
 

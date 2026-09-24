@@ -66,7 +66,12 @@ impl TextualApp for TableApp {
         }
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if key.name() == "c" {
             let next_cursor = self.next_cursor();
             if let Ok(handle) = app.query_one_typed::<DataTable>("DataTable") {

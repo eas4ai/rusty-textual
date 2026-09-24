@@ -104,12 +104,7 @@ impl TextualApp for ClockApp {
 
     fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut textual::event::WidgetCtx) {
         // Python: self.set_interval(1, self.update_time).
-        app.set_interval(
-            Duration::from_secs(1),
-            None,
-            false,
-            Box::new(update_time),
-        );
+        app.set_interval(Duration::from_secs(1), None, false, Box::new(update_time));
     }
 }
 

@@ -1,3 +1,4 @@
+use textual::prelude::*;
 /// Port of Python Textual `docs/examples/guide/reactivity/refresh01.py`.
 ///
 /// Demonstrates reactive text refresh driven by Input changes.
@@ -15,7 +16,6 @@
 /// default `reactive` (repaint on change). The app handler queries the `Name`
 /// node, sets `who`, and enqueues the change for the runtime reactive phase.
 use textual::reactive::{RuntimeReactiveEntry, enqueue_runtime_reactive_entry};
-use textual::prelude::*;
 
 const CSS: &str = r#"
 Input {
@@ -88,7 +88,12 @@ impl TextualApp for WatchApp {
             .with_child(Name::new())
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(changed) = message.downcast_ref::<InputChanged>() {
             let value = changed.value.clone();
             if let Ok(name_id) = app.query_one("Name") {
@@ -133,7 +138,10 @@ mod tests {
         assert_eq!(name.who().as_str(), "World");
         assert!(ctx.has_changes());
         assert!(ctx.needs_repaint());
-        assert!(!ctx.needs_layout(), "plain reactive does not request layout");
+        assert!(
+            !ctx.needs_layout(),
+            "plain reactive does not request layout"
+        );
     }
 
     /// LIVENESS PROBE — typing into the Input must drive the `Name` widget's

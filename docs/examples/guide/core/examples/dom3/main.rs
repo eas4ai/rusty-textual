@@ -21,17 +21,15 @@ impl TextualApp for ExampleApp {
             .with_child(Header::new())
             .with_child(Footer::new())
             .with_child(
-                
-                    Container::new()
-                        .with_child(Static::new(QUESTION).class("question"))
-                        .with_child(
-                            
-                                Horizontal::new()
-                                    .with_child(Button::success("Yes"))
-                                    .with_child(Button::error("No"))
+                Container::new()
+                    .with_child(Static::new(QUESTION).class("question"))
+                    .with_child(
+                        Horizontal::new()
+                            .with_child(Button::success("Yes"))
+                            .with_child(Button::error("No"))
                             .class("buttons"),
-                        )
-                .id("dialog"),
+                    )
+                    .id("dialog"),
             )
     }
 }

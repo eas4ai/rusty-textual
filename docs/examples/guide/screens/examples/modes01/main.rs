@@ -13,12 +13,10 @@ impl Screen for DashboardScreen {
     }
 
     fn compose(&self) -> Box<dyn Widget> {
-        Box::new(
-            Vertical::new().with_compose(compose![
-                Placeholder::new("Dashboard Screen"),
-                Footer::new(),
-            ]),
-        )
+        Box::new(Vertical::new().with_compose(compose![
+            Placeholder::new("Dashboard Screen"),
+            Footer::new(),
+        ]))
     }
 }
 
@@ -35,10 +33,8 @@ impl Screen for SettingsScreen {
 
     fn compose(&self) -> Box<dyn Widget> {
         Box::new(
-            Vertical::new().with_compose(compose![
-                Placeholder::new("Settings Screen"),
-                Footer::new(),
-            ]),
+            Vertical::new()
+                .with_compose(compose![Placeholder::new("Settings Screen"), Footer::new(),]),
         )
     }
 }
@@ -56,10 +52,7 @@ impl Screen for HelpScreen {
 
     fn compose(&self) -> Box<dyn Widget> {
         Box::new(
-            Vertical::new().with_compose(compose![
-                Placeholder::new("Help Screen"),
-                Footer::new(),
-            ]),
+            Vertical::new().with_compose(compose![Placeholder::new("Help Screen"), Footer::new(),]),
         )
     }
 }
@@ -127,7 +120,10 @@ mod tests {
             .configure(&mut app)
             .expect("modes01 configure should succeed");
 
-        assert!(!app.switch_mode("nonexistent"), "unknown mode should return false");
+        assert!(
+            !app.switch_mode("nonexistent"),
+            "unknown mode should return false"
+        );
     }
 
     #[test]
@@ -172,17 +168,29 @@ mod tests {
             assert_eq!(pilot.app().current_mode(), Some("dashboard"));
 
             pilot.press(&["s"])?; // switch_mode('settings')
-            assert_eq!(pilot.app().current_mode(), Some("settings"), "s must switch mode to settings");
+            assert_eq!(
+                pilot.app().current_mode(),
+                Some("settings"),
+                "s must switch mode to settings"
+            );
             let settings = pilot.app().frame_fingerprint();
             assert_ne!(dashboard, settings, "pressing 's' must switch to Settings");
 
             pilot.press(&["h"])?; // switch_mode('help')
-            assert_eq!(pilot.app().current_mode(), Some("help"), "h must switch mode to help");
+            assert_eq!(
+                pilot.app().current_mode(),
+                Some("help"),
+                "h must switch mode to help"
+            );
             let help = pilot.app().frame_fingerprint();
             assert_ne!(settings, help, "pressing 'h' must switch to Help");
 
             pilot.press(&["d"])?; // switch_mode('dashboard')
-            assert_eq!(pilot.app().current_mode(), Some("dashboard"), "d must switch mode back to dashboard");
+            assert_eq!(
+                pilot.app().current_mode(),
+                Some("dashboard"),
+                "d must switch mode back to dashboard"
+            );
             let back = pilot.app().frame_fingerprint();
             assert_ne!(help, back, "pressing 'd' must switch back to Dashboard");
             Ok(())

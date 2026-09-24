@@ -58,11 +58,7 @@ impl Widget for BsodRoot {
         ]
     }
 
-    fn render(
-        &self,
-        _console: &rich_rs::Console,
-        _options: &rich_rs::ConsoleOptions,
-    ) -> Segments {
+    fn render(&self, _console: &rich_rs::Console, _options: &rich_rs::ConsoleOptions) -> Segments {
         Segments::new()
     }
 }
@@ -157,12 +153,22 @@ mod tests {
             pilot.press(&["b"])?;
             assert_eq!(pilot.app().screen_count(), 1, "b must push the BSOD screen");
             let pushed = pilot.app().frame_fingerprint();
-            assert_ne!(before, pushed, "pushing the BSOD screen must change the frame");
+            assert_ne!(
+                before, pushed,
+                "pushing the BSOD screen must change the frame"
+            );
 
             pilot.press(&["escape"])?;
-            assert_eq!(pilot.app().screen_count(), 0, "escape must pop the BSOD screen");
+            assert_eq!(
+                pilot.app().screen_count(),
+                0,
+                "escape must pop the BSOD screen"
+            );
             let popped = pilot.app().frame_fingerprint();
-            assert_ne!(pushed, popped, "popping the BSOD screen must change the frame");
+            assert_ne!(
+                pushed, popped,
+                "popping the BSOD screen must change the frame"
+            );
             Ok(())
         })
         .expect("screen01 push/pop harness should run");

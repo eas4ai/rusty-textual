@@ -40,9 +40,7 @@ impl TextualApp for RadioChoicesApp {
             .with_button(RadioButton::new("Star Trek: The Motion Picture"))
             .with_button(RadioButton::new("Star Wars: A New Hope"))
             .with_button(RadioButton::new("The Last Starfighter"))
-            .with_button(RadioButton::new(
-                "Total Recall 👉 🔴",
-            ))
+            .with_button(RadioButton::new("Total Recall 👉 🔴"))
             .with_button(RadioButton::new("Wing Commander"));
 
         AppRoot::new().with_child(radio_set)

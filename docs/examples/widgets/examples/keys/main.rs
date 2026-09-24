@@ -164,7 +164,12 @@ impl TextualApp for KeysApp {
         Ok(())
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         let key_name = key.name();
         let _ = app.with_query_one_mut_as::<KeyLog, _>("KeyLog", |key_log| {
             let log = &mut key_log.log;

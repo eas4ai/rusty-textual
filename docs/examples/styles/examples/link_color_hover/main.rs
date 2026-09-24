@@ -32,24 +32,17 @@ impl TextualApp for LinkHoverColorApp {
     fn compose(&mut self) -> AppRoot {
         AppRoot::new()
             .with_child(
-                Label::new(
-                    "Visit the [link='https://textualize.io']Textualize[/link] website.",
-                )
-                .with_id("lbl1"),
+                Label::new("Visit the [link='https://textualize.io']Textualize[/link] website.")
+                    .with_id("lbl1"),
             )
             .with_child(
-                Label::new("Click [@click=app.bell]here[/] for the bell sound.")
-                    .with_id("lbl2"),
+                Label::new("Click [@click=app.bell]here[/] for the bell sound.").with_id("lbl2"),
             )
             .with_child(
-                Label::new(
-                    "You can also click [@click=app.bell]here[/] for the bell sound.",
-                )
-                .with_id("lbl3"),
+                Label::new("You can also click [@click=app.bell]here[/] for the bell sound.")
+                    .with_id("lbl3"),
             )
-            .with_child(
-                Label::new("[@click=app.quit]Exit this application.[/]").with_id("lbl4"),
-            )
+            .with_child(Label::new("[@click=app.quit]Exit this application.[/]").with_id("lbl4"))
     }
 }
 

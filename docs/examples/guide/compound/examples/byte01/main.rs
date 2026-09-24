@@ -299,10 +299,7 @@ mod tests {
                 .app_mut()
                 .with_query_one_mut_as::<Switch, _>("Switch", |s| s.value())
                 .unwrap_or(before);
-            assert_ne!(
-                before, after,
-                "toggling a Switch must flip its value"
-            );
+            assert_ne!(before, after, "toggling a Switch must flip its value");
             Ok(())
         })
         .unwrap();

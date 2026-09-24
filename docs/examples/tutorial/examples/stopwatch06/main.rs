@@ -22,7 +22,13 @@ Button { width: 16; }
 /// `HH:MM:SS.cc` — mirrors Python `f"{hours:02,.0f}:{minutes:02.0f}:{seconds:05.2f}"`.
 fn format_time(secs: f64) -> String {
     let cs = (secs * 100.0) as u64;
-    format!("{:02}:{:02}:{:02}.{:02}", cs / 360_000, cs / 6_000 % 60, cs / 100 % 60, cs % 100)
+    format!(
+        "{:02}:{:02}:{:02}.{:02}",
+        cs / 360_000,
+        cs / 6_000 % 60,
+        cs / 100 % 60,
+        cs % 100
+    )
 }
 
 /// A `Digits` showing elapsed time, advanced by its own paused 1/60s interval.
@@ -38,12 +44,17 @@ struct TimeDisplay {
 
 impl TimeDisplay {
     fn new() -> Self {
-        Self { base: Digits::new("00:00:00.00"), time: 0.0, timer: None }
+        Self {
+            base: Digits::new("00:00:00.00"),
+            time: 0.0,
+            timer: None,
+        }
     }
     /// Python `on_mount`: `set_interval(1/60, update_time, pause=True)`.
     fn on_mount(&mut self, ctx: &mut WidgetCtx) {
         let sixtieth = Duration::from_secs_f64(1.0 / 60.0);
-        self.timer = Some(ctx.set_interval(sixtieth, true, |w: &mut Self, c, tick| w.tick(c, tick)));
+        self.timer =
+            Some(ctx.set_interval(sixtieth, true, |w: &mut Self, c, tick| w.tick(c, tick)));
     }
     /// `time` accumulates the REAL clock time elapsed since the previous fire
     /// (`tick.elapsed`) — drift-free vs Python's `monotonic() - start`, and
@@ -55,9 +66,19 @@ impl TimeDisplay {
     fn watch_time(&mut self, _old: &f64, new: &f64, _ctx: &mut ReactiveCtx) {
         self.base.update(format_time(*new));
     }
-    fn start(&mut self) { if let Some(t) = self.timer { t.resume(); } }
-    fn stop(&mut self) { if let Some(t) = self.timer { t.pause(); } }
-    fn reset(&mut self, ctx: &mut WidgetCtx) { self.set_time(0.0, ctx); }
+    fn start(&mut self) {
+        if let Some(t) = self.timer {
+            t.resume();
+        }
+    }
+    fn stop(&mut self) {
+        if let Some(t) = self.timer {
+            t.pause();
+        }
+    }
+    fn reset(&mut self, ctx: &mut WidgetCtx) {
+        self.set_time(0.0, ctx);
+    }
 }
 
 /// A stopwatch: three buttons + a `TimeDisplay`, wired via `#[on]` + `query_one`.
@@ -82,8 +103,14 @@ impl Stopwatch {
     fn on_button(&mut self, event: &ButtonPressed, ctx: &mut WidgetCtx) {
         let td = ctx.query_one::<TimeDisplay>();
         match event.button_id.as_deref() {
-            Some("start") => { td.update_via(ctx, |d, _| d.start()); ctx.add_class("started"); }
-            Some("stop") => { td.update_via(ctx, |d, _| d.stop()); ctx.remove_class("started"); }
+            Some("start") => {
+                td.update_via(ctx, |d, _| d.start());
+                ctx.add_class("started");
+            }
+            Some("stop") => {
+                td.update_via(ctx, |d, _| d.stop());
+                ctx.remove_class("started");
+            }
             Some("reset") => td.update_via(ctx, |d, c| d.reset(c)),
             _ => {}
         }
@@ -142,15 +169,27 @@ mod tests {
             let idle = pilot.app().frame_fingerprint();
             pilot.click("#start")?;
             pilot.advance_clock(Duration::from_secs(1))?;
-            assert_ne!(idle, pilot.app().frame_fingerprint(), "Start + 1s must advance the clock");
+            assert_ne!(
+                idle,
+                pilot.app().frame_fingerprint(),
+                "Start + 1s must advance the clock"
+            );
 
             pilot.click("#stop")?;
             let stopped = pilot.app().frame_fingerprint();
             pilot.advance_clock(Duration::from_secs(2))?;
-            assert_eq!(stopped, pilot.app().frame_fingerprint(), "Stop must freeze the clock");
+            assert_eq!(
+                stopped,
+                pilot.app().frame_fingerprint(),
+                "Stop must freeze the clock"
+            );
 
             pilot.click("#reset")?;
-            assert_eq!(idle, pilot.app().frame_fingerprint(), "Reset must zero the display");
+            assert_eq!(
+                idle,
+                pilot.app().frame_fingerprint(),
+                "Reset must zero the display"
+            );
             Ok(())
         })
         .unwrap();

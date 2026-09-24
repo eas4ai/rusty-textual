@@ -47,7 +47,11 @@ mod tests {
     #[test]
     fn suspend_process_ctrl_z_is_live() {
         run_test(SuspendKeysApp, |pilot| {
-            assert_eq!(pilot.app().headless_suspend_count(), 0, "no suspend before ctrl+z");
+            assert_eq!(
+                pilot.app().headless_suspend_count(),
+                0,
+                "no suspend before ctrl+z"
+            );
             pilot.press(&["ctrl+z"])?;
             assert_eq!(
                 pilot.app().headless_suspend_count(),

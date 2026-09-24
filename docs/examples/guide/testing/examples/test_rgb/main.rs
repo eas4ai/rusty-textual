@@ -36,13 +36,11 @@ impl TextualApp for RGBApp {
 
     fn compose(&mut self) -> AppRoot {
         AppRoot::new()
-            .with_child(
-                Horizontal::new().with_compose(textual::compose![
-                    Button::new("Red").id("red"),
-                    Button::new("Green").id("green"),
-                    Button::new("Blue").id("blue"),
-                ]),
-            )
+            .with_child(Horizontal::new().with_compose(textual::compose![
+                Button::new("Red").id("red"),
+                Button::new("Green").id("green"),
+                Button::new("Blue").id("blue"),
+            ]))
             .with_child(Footer::new())
     }
 
@@ -54,17 +52,23 @@ impl TextualApp for RGBApp {
     /// Handle the `switch_color` action dispatched by the r/g/b key bindings.
     ///
     /// Python: `def action_switch_color(self, color: str) -> None: self.screen.styles.background = color`
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Ok(parsed) = parse_action(action)
             && parsed.name == "switch_color"
-                && let Some(color_name) = parsed.arguments.first().and_then(|a| a.as_str())
-                    && let Some(color) = textual::style::parse_color_like(color_name) {
-                        let _ = app.query_mut("Screen").map(|q| {
-                            q.set_styles(|styles| styles.set_bg(color));
-                        });
-                        ctx.set_handled();
-                        ctx.request_repaint();
-                    }
+            && let Some(color_name) = parsed.arguments.first().and_then(|a| a.as_str())
+            && let Some(color) = textual::style::parse_color_like(color_name)
+        {
+            let _ = app.query_mut("Screen").map(|q| {
+                q.set_styles(|styles| styles.set_bg(color));
+            });
+            ctx.set_handled();
+            ctx.request_repaint();
+        }
     }
 
     /// Handle button presses — mirror Python's `@on(Button.Pressed)` handler:
@@ -72,16 +76,22 @@ impl TextualApp for RGBApp {
     ///
     /// `ButtonPressed.button_id` carries the CSS id set via `.id("red")` etc.,
     /// which we use as the color name to set the screen background.
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(bp) = message.downcast_ref::<ButtonPressed>()
             && let Some(color_name) = &bp.button_id
-                && let Some(color) = textual::style::parse_color_like(color_name) {
-                    let _ = app.query_mut("Screen").map(|q| {
-                        q.set_styles(|styles| styles.set_bg(color));
-                    });
-                    ctx.set_handled();
-                    ctx.request_repaint();
-                }
+            && let Some(color) = textual::style::parse_color_like(color_name)
+        {
+            let _ = app.query_mut("Screen").map(|q| {
+                q.set_styles(|styles| styles.set_bg(color));
+            });
+            ctx.set_handled();
+            ctx.request_repaint();
+        }
     }
 }
 

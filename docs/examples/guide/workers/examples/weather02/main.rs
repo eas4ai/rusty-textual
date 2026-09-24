@@ -90,22 +90,23 @@ impl TextualApp for WeatherApp {
         ctx: &mut textual::event::WidgetCtx,
     ) {
         if let Some(w) = message.downcast_ref::<WorkerStateChanged>()
-            && matches!(w.state, WorkerState::Success) {
-                // Take the result produced by the worker thread.
-                let weather = {
-                    let mut guard =
-                        self.weather_result.lock().unwrap_or_else(|e| e.into_inner());
-                    guard.take()
-                };
-                // Update the Static widget with the weather text (or clear it).
-                let _ = app.with_query_one_mut_as::<Static, _>("Static", |widget| {
-                    match weather {
-                        Some(text) => widget.update(text),
-                        None => widget.clear(),
-                    }
-                });
-                ctx.request_repaint();
-            }
+            && matches!(w.state, WorkerState::Success)
+        {
+            // Take the result produced by the worker thread.
+            let weather = {
+                let mut guard = self
+                    .weather_result
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                guard.take()
+            };
+            // Update the Static widget with the weather text (or clear it).
+            let _ = app.with_query_one_mut_as::<Static, _>("Static", |widget| match weather {
+                Some(text) => widget.update(text),
+                None => widget.clear(),
+            });
+            ctx.request_repaint();
+        }
     }
 }
 
@@ -164,8 +165,9 @@ mod tests {
         let result: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
         let holder = Arc::clone(&result);
         let city = "London".to_string();
-        let weather =
-            format!("Weather for {city}:\n\n  Sunny  72°F (22°C)\n  Wind: 8 mph NW\n  Humidity: 45%");
+        let weather = format!(
+            "Weather for {city}:\n\n  Sunny  72°F (22°C)\n  Wind: 8 mph NW\n  Humidity: 45%"
+        );
         *holder.lock().unwrap() = Some(weather);
 
         let guard = result.lock().unwrap();

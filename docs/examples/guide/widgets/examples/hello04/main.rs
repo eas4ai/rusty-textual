@@ -131,11 +131,12 @@ impl Widget for Hello {
     /// so we mirror that here.
     fn on_event(&mut self, event: &Event, ctx: &mut textual::event::WidgetCtx) {
         if let Event::MouseUp(mouse) = event
-            && mouse.target == Some(self.node_id()) {
-                self.next_word();
-                ctx.request_repaint();
-                ctx.set_handled();
-            }
+            && mouse.target == Some(self.node_id())
+        {
+            self.next_word();
+            ctx.request_repaint();
+            ctx.set_handled();
+        }
         self.inner.on_event(event, ctx);
     }
 

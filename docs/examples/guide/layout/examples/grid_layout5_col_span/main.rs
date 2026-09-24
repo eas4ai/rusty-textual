@@ -32,7 +32,11 @@ impl TextualApp for GridLayoutExample {
     fn compose(&mut self) -> AppRoot {
         AppRoot::new()
             .with_child(Static::new("One").class("box"))
-            .with_child(Static::new("Two [b](column-span: 2)").class("box").id("two"))
+            .with_child(
+                Static::new("Two [b](column-span: 2)")
+                    .class("box")
+                    .id("two"),
+            )
             .with_child(Static::new("Three").class("box"))
             .with_child(Static::new("Four").class("box"))
             .with_child(Static::new("Five").class("box"))

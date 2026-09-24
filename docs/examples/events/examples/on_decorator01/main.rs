@@ -114,7 +114,10 @@ mod tests {
     #[test]
     fn on_decorator01_quit_button_is_live() {
         run_test(OnDecoratorApp, |pilot| {
-            assert!(!pilot.app().headless_stop_requested(), "no stop before Quit");
+            assert!(
+                !pilot.app().headless_stop_requested(),
+                "no stop before Quit"
+            );
             pilot.click("#quit")?;
             assert!(
                 pilot.app().headless_stop_requested(),

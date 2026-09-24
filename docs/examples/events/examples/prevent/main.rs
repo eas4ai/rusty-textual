@@ -53,25 +53,26 @@ impl TextualApp for PreventApp {
         ctx: &mut textual::event::WidgetCtx,
     ) {
         if let Some(bp) = message.downcast_ref::<ButtonPressed>()
-            && bp.button_id.as_deref() == Some("clear") {
-                // Suppress InputChanged for the duration of the clear, exactly
-                // like Python's `with input.prevent(Input.Changed):`. Any
-                // InputChanged posted while clearing is dropped, so the
-                // bell-on-change handler never fires for a programmatic clear.
-                ctx.prevent::<InputChanged, _>(|ctx| {
-                    let _ = app.with_query_one_mut_as::<Input, _>("Input", |input| {
-                        input.clear();
-                    });
-                    // Mirror the reactive emission the input would make: even
-                    // when explicitly posted, this InputChanged is suppressed.
-                    ctx.post_message(InputChanged {
-                        value: String::new(),
-                        validation: ValidationResult::success(),
-                    });
+            && bp.button_id.as_deref() == Some("clear")
+        {
+            // Suppress InputChanged for the duration of the clear, exactly
+            // like Python's `with input.prevent(Input.Changed):`. Any
+            // InputChanged posted while clearing is dropped, so the
+            // bell-on-change handler never fires for a programmatic clear.
+            ctx.prevent::<InputChanged, _>(|ctx| {
+                let _ = app.with_query_one_mut_as::<Input, _>("Input", |input| {
+                    input.clear();
                 });
-                ctx.request_repaint();
-                ctx.set_handled();
-            }
+                // Mirror the reactive emission the input would make: even
+                // when explicitly posted, this InputChanged is suppressed.
+                ctx.post_message(InputChanged {
+                    value: String::new(),
+                    validation: ValidationResult::success(),
+                });
+            });
+            ctx.request_repaint();
+            ctx.set_handled();
+        }
     }
 }
 
