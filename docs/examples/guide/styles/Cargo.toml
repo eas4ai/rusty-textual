@@ -10,3 +10,5 @@ rich-rs = "1.1.0"
 crossterm = "0.28"
 tree-sitter-java = "0.23"
 
+[lints]
+workspace = true

@@ -29,3 +29,8 @@ members = [
   "widgets",
 ]
 resolver = "2"
+
+# Strict clippy: pedantic at warn level, so plain `cargo clippy --all-targets`
+# is strict. Never deny warnings (`-D warnings`); clear them instead.
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }

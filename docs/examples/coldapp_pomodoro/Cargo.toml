@@ -11,3 +11,6 @@ path = "src/main.rs"
 [dependencies]
 textual = { package = "rusty-textual", path = "../../.." }
 rich-rs = "1.1.1"
+
+[lints]
+workspace = true
