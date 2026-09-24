@@ -12,6 +12,7 @@ use crate::num::Cast;
 /// edit funnel owns applying that selection after re-wrap, preserving the
 /// Python ordering (edit, `wrap_range`, then selection restore).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_field_names)] // Named like its public getter `Edit::edit_result`.
 pub struct Edit {
     /// The text to insert. An empty string is equivalent to deletion.
     pub text: String,

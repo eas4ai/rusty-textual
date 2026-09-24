@@ -155,11 +155,11 @@ impl FuzzyMatcher {
         let mut starts = std::collections::HashSet::new();
         let mut in_word = false;
         for (idx, ch) in candidate.iter().enumerate() {
-            let is_word = ch.is_alphanumeric() || *ch == '_';
-            if is_word && !in_word {
+            let word_char = ch.is_alphanumeric() || *ch == '_';
+            if word_char && !in_word {
                 starts.insert(idx);
             }
-            in_word = is_word;
+            in_word = word_char;
         }
         starts
     }

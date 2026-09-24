@@ -337,6 +337,7 @@ fn p2g25_border_box_includes_chrome() {
 }
 
 #[test]
+#[allow(clippy::similar_names)] // a_w is A's layout width, a_cw its content width.
 fn p2g25_border_box_horizontal_layout() {
     // Verify border-box works in horizontal layout too.
     let mut tree = WidgetTree::new();
@@ -704,6 +705,7 @@ fn p2g33_span_with_gutter() {
 }
 
 #[test]
+#[allow(clippy::many_single_char_names)] // Single letters name the nodes of the test tree.
 fn p2g33_no_span_preserves_existing_behavior() {
     // Without spans, grid behavior should be identical to before.
     let mut tree = WidgetTree::new();

@@ -636,25 +636,45 @@ fn p1g13_focus_transfer_no_dual_focus() {
     let children: Vec<NodeId> = tree.children(root_id).to_vec();
     assert!(children.len() >= 3);
 
-    let one = children[0];
-    let two = children[1];
-    let three = children[2];
+    let node_one = children[0];
+    let node_two = children[1];
+    let node_three = children[2];
 
     // Focus "one".
-    dispatch_event_to_target_tree(&mut tree, one, &Event::Focus(FocusEvent { node: one }));
-    assert_eq!(focused_node_id_tree(&tree), Some(one));
+    dispatch_event_to_target_tree(
+        &mut tree,
+        node_one,
+        &Event::Focus(FocusEvent { node: node_one }),
+    );
+    assert_eq!(focused_node_id_tree(&tree), Some(node_one));
 
     // Transfer: one -> two.
-    dispatch_event_to_target_tree(&mut tree, one, &Event::Blur(BlurEvent { node: one }));
-    dispatch_event_to_target_tree(&mut tree, two, &Event::Focus(FocusEvent { node: two }));
-    assert_eq!(focused_node_id_tree(&tree), Some(two));
+    dispatch_event_to_target_tree(
+        &mut tree,
+        node_one,
+        &Event::Blur(BlurEvent { node: node_one }),
+    );
+    dispatch_event_to_target_tree(
+        &mut tree,
+        node_two,
+        &Event::Focus(FocusEvent { node: node_two }),
+    );
+    assert_eq!(focused_node_id_tree(&tree), Some(node_two));
 
     // Transfer: two -> three.
-    dispatch_event_to_target_tree(&mut tree, two, &Event::Blur(BlurEvent { node: two }));
-    dispatch_event_to_target_tree(&mut tree, three, &Event::Focus(FocusEvent { node: three }));
+    dispatch_event_to_target_tree(
+        &mut tree,
+        node_two,
+        &Event::Blur(BlurEvent { node: node_two }),
+    );
+    dispatch_event_to_target_tree(
+        &mut tree,
+        node_three,
+        &Event::Focus(FocusEvent { node: node_three }),
+    );
     assert_eq!(
         focused_node_id_tree(&tree),
-        Some(three),
+        Some(node_three),
         "only 'three' should be focused"
     );
 }

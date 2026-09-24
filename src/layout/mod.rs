@@ -199,6 +199,7 @@ fn apply_parent_align(
 /// 3. Calls [`arrange_dock`] for docked children → reduced available region.
 /// 4. Dispatches flow children to [`layout_vertical`] / [`layout_horizontal`].
 ///    Grid dispatches to [`layout_grid`] with parent style for track sizing.
+#[allow(clippy::similar_names)] // Paired names for the two axes (h/v).
 pub fn resolve_layout(
     tree: &mut WidgetTree,
     node: NodeId,
@@ -2355,6 +2356,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[allow(clippy::many_single_char_names)] // Single letters name the nodes of the test tree.
     fn grid_basic_2x2() {
         let mut tree = WidgetTree::new();
         let root = tree.set_root(LayoutTestWidget::boxed("Container"));
@@ -2427,6 +2429,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::many_single_char_names)] // Single letters name the nodes of the test tree.
     fn grid_with_gutter() {
         let mut tree = WidgetTree::new();
         let root = tree.set_root(LayoutTestWidget::boxed("Container"));

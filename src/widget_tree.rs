@@ -1533,6 +1533,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::many_single_char_names)] // Single letters name the nodes of the test tree.
     fn walk_depth_first_order() {
         //       R
         //      / \
@@ -1551,6 +1552,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::many_single_char_names)] // Single letters name the nodes of the test tree.
     fn walk_breadth_first_order() {
         //       R
         //      / \

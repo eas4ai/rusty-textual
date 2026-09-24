@@ -2780,6 +2780,7 @@ mod tests {
     /// Python: pad segments are emitted with `style.background_style.rich_style`,
     /// which has bg but NO fg.  This is the `has_glyph` invariant.
     #[test]
+    #[allow(clippy::similar_names)] // Paired names for the two colour channels (fg/bg).
     fn test_render_strips_pad_segment_no_fg() {
         // "hi" in width=6, right-align → 4 spaces pad-left + "hi"
         let blue = crate::style::Color::rgb(0, 0, 200);

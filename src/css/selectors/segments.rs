@@ -308,6 +308,7 @@ pub(crate) fn apply_ansi_truecolor_to_segments(segments: Segments) -> Segments {
         .collect()
 }
 
+#[allow(clippy::similar_names)] // Paired names for the two colour channels (fg/bg).
 pub(crate) fn apply_widget_opacity_to_segments(
     segments: Segments,
     opacity_percent: u8,

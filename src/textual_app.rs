@@ -1901,6 +1901,7 @@ mod tests {
     }
 
     #[derive(Clone)]
+    #[allow(clippy::struct_field_names)] // Parallel counters, one per provider hook.
     struct ProviderState {
         startup_count: Arc<AtomicUsize>,
         shutdown_count: Arc<AtomicUsize>,
@@ -2083,6 +2084,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::struct_field_names)] // Parallel counters, one per hook.
     struct LegacyAppHookForwardingApp {
         action_hits: Arc<AtomicUsize>,
         message_hits: Arc<AtomicUsize>,
@@ -2107,6 +2109,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::struct_field_names)] // Parallel counters, one per hook.
     struct AppHandleHooksApp {
         action_hits: Arc<AtomicUsize>,
         message_hits: Arc<AtomicUsize>,

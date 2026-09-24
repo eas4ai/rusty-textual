@@ -77,6 +77,7 @@ impl Color {
     }
 
     #[must_use]
+    #[allow(clippy::many_single_char_names)] // h/s/l/a are the standard HSL(A) component names.
     pub fn parse(value: &str) -> Option<Self> {
         let value = value.trim();
         if value.is_empty() {
@@ -226,6 +227,7 @@ impl Color {
 
 /// CSS `hsl()` → RGB (Python Textual / CSS Color Module). `h` in degrees,
 /// `s`/`l` in [0,1].
+#[allow(clippy::many_single_char_names)] // h/s/l and r/g/b are the standard colour-model names.
 fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
     let h = h.rem_euclid(360.0) / 360.0;
     let s = s.clamp(0.0, 1.0);
@@ -908,6 +910,7 @@ pub(crate) fn contrast_text(color: Color) -> Color {
 
 /// Convert an RGB color to CIE-L*a*b* via XYZ, byte-exact to Python Textual's
 /// `textual.color.rgb_to_lab` (easyrgb form, f64). Cf. <http://www.easyrgb.com/en/math.php>.
+#[allow(clippy::many_single_char_names)] // r/g/b and l/a/b are the standard colour-model names.
 fn rgb_to_lab(color: Color) -> (f64, f64, f64) {
     let (r8, g8, b8) = to_rgb(color);
     let mut r = f64::from(r8) / 255.0;
@@ -957,6 +960,7 @@ fn rgb_to_lab(color: Color) -> (f64, f64, f64) {
 /// Convert a CIE-L*a*b* color back to RGB via XYZ, byte-exact to Python Textual's
 /// `textual.color.lab_to_rgb` (easyrgb form, f64). Result is NOT clamped here —
 /// callers apply `.clamped()`, matching Python's `int(c * 255)` + `.clamped`.
+#[allow(clippy::many_single_char_names)] // l/a/b and r/g/b are the standard colour-model names.
 fn lab_to_rgb(l: f64, a: f64, b: f64, alpha: f32) -> Color {
     let mut y = (l + 16.0) / 116.0;
     let mut x = a / 500.0 + y;

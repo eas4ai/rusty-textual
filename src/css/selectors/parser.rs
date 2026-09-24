@@ -1099,24 +1099,24 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                     }
                     // Try to extract a property name (first non-duration/non-timing token).
                     let mut prop_name: Option<String> = None;
-                    let mut dur: Option<std::time::Duration> = None;
-                    let mut del: Option<std::time::Duration> = None;
-                    let mut tim: Option<TransitionTiming> = None;
+                    let mut explicit_duration: Option<std::time::Duration> = None;
+                    let mut explicit_delay: Option<std::time::Duration> = None;
+                    let mut explicit_timing: Option<TransitionTiming> = None;
                     for token in item.split_whitespace() {
-                        if dur.is_none() {
+                        if explicit_duration.is_none() {
                             if let Some(d) = parse_duration(token) {
-                                dur = Some(d);
+                                explicit_duration = Some(d);
                                 continue;
                             }
-                        } else if del.is_none() {
+                        } else if explicit_delay.is_none() {
                             if let Some(d) = parse_duration(token) {
-                                del = Some(d);
+                                explicit_delay = Some(d);
                                 continue;
                             }
                         }
-                        if tim.is_none() {
+                        if explicit_timing.is_none() {
                             if let Some(t) = parse_transition_timing(token) {
-                                tim = Some(t);
+                                explicit_timing = Some(t);
                                 continue;
                             }
                         }
@@ -1124,9 +1124,10 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                             prop_name = Some(token.to_string());
                         }
                     }
-                    let duration = dur.unwrap_or(std::time::Duration::from_millis(250));
-                    let timing = tim.unwrap_or(TransitionTiming::Linear);
-                    let delay = del.unwrap_or(std::time::Duration::ZERO);
+                    let duration =
+                        explicit_duration.unwrap_or(std::time::Duration::from_millis(250));
+                    let timing = explicit_timing.unwrap_or(TransitionTiming::Linear);
+                    let delay = explicit_delay.unwrap_or(std::time::Duration::ZERO);
                     if let Some(name) = prop_name {
                         per_property.push(PropertyTransition {
                             property: name,
@@ -1138,19 +1139,19 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                     // First item: set global transition fields only for values
                     // explicitly present in the declaration (backward compat).
                     if idx == 0 {
-                        if let Some(d) = dur {
+                        if let Some(d) = explicit_duration {
                             style = style.transition_duration(d);
                             if is_important {
                                 style.importance.set(StyleProperty::TransitionDuration);
                             }
                         }
-                        if let Some(d) = del {
+                        if let Some(d) = explicit_delay {
                             style = style.transition_delay(d);
                             if is_important {
                                 style.importance.set(StyleProperty::TransitionDelay);
                             }
                         }
-                        if let Some(t) = tim {
+                        if let Some(t) = explicit_timing {
                             style = style.transition_timing(t);
                             if is_important {
                                 style.importance.set(StyleProperty::TransitionTiming);

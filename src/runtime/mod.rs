@@ -711,6 +711,9 @@ impl AwaitRemove {
 
 // Independent flags; any combination is valid, so no enum fits.
 #[allow(clippy::struct_excessive_bools)]
+// app_* marks app-wide state; app_suspend_signal and app_resume_signal are
+// Python's names.
+#[allow(clippy::struct_field_names)]
 pub struct App {
     driver: TerminalDriver,
     console: Console,
@@ -2904,13 +2907,13 @@ impl App {
     }
 
     pub fn action_screenshot(&mut self, filename: Option<&str>, path: Option<&str>) -> bool {
-        let file_name = filename
+        let name = filename
             .filter(|value| !value.trim().is_empty())
             .unwrap_or("screenshot.svg");
         let output = if let Some(path) = path {
-            PathBuf::from(path).join(file_name)
+            PathBuf::from(path).join(name)
         } else {
-            PathBuf::from(file_name)
+            PathBuf::from(name)
         };
         let result = self.console.save_svg(
             output.to_string_lossy().as_ref(),
@@ -4966,6 +4969,7 @@ impl App {
     ///   before this call.
     /// - Any error from [`App::start`], for example [`Error::Terminal`] when
     ///   the terminal driver fails to start.
+    #[allow(clippy::unused_async)] // Public async API; the loop does not await yet.
     pub async fn run(&mut self) -> Result<()> {
         if !self.running {
             return Err(Error::RuntimeStopped);

@@ -113,20 +113,20 @@ fn build_ramp(stops: &[(f32, Color)]) -> Vec<Color> {
         while position + 1 < stops.len() && step > stops[position + 1].0 {
             position += 1;
         }
-        let (stop1, color1) = stops[position];
-        let (stop2, color2) = if position + 1 < stops.len() {
+        let (lower_stop, lower_color) = stops[position];
+        let (upper_stop, upper_color) = if position + 1 < stops.len() {
             stops[position + 1]
         } else {
             stops[position]
         };
-        let span = stop2 - stop1;
+        let span = upper_stop - lower_stop;
         let local = if span.abs() < f32::EPSILON {
             0.0
         } else {
-            (step - stop1) / span
+            (step - lower_stop) / span
         };
         let pct = (local.clamp(0.0, 1.0) * 100.0).round().to_u8_sat();
-        colors.push(blend_colors(color1, color2, pct));
+        colors.push(blend_colors(lower_color, upper_color, pct));
     }
     colors
 }

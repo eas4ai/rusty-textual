@@ -712,6 +712,7 @@ fn parallel_alias_wrappers_both_render() {
 /// Each vertical scroll column must keep its children stacked vertically.
 /// If wrappers collapse into a horizontal flow, this should fail.
 #[test]
+#[allow(clippy::similar_names)] // r_/c_ are the row and column of each button label.
 fn p1g15_buttons_advanced_chain_preserves_vertical_grouping() {
     let mut root =
         Dock::new().push_fill(ScrollView::new(Horizontal::new().with_compose(compose![

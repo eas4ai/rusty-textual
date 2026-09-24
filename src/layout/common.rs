@@ -318,6 +318,7 @@ pub(crate) fn resolve_scalar_to_cells(
 }
 
 /// Build a [`ChildSpec`] from a resolved style.
+#[allow(clippy::similar_names)] // Paired names for the two axes (w/h, h/v).
 pub(crate) fn extract_child_spec(
     style: &Style,
     parent_width: u16,

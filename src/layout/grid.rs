@@ -356,6 +356,7 @@ fn find_next_grid_slot(
 ///
 /// Reference: Python Textual's `layouts/grid.py`.
 #[allow(clippy::needless_range_loop)] // r/c/row/col used as 2D grid indices
+#[allow(clippy::similar_names)] // Paired names for the two axes (h/v, w/h).
 pub fn layout_grid(
     tree: &mut WidgetTree,
     children: &[NodeId],

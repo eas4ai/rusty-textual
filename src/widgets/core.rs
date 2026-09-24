@@ -1264,12 +1264,14 @@ pub(crate) fn render_widget_with_meta<W: Widget + ?Sized>(
         let inner_bg = fill_inner_bg;
         let fill = rich_rs::Style::new().with_bgcolor(inner_bg.to_simple_opaque());
         let pad_fill = fill;
-        let fill_width = content_width + line_pad * 2;
+        let content_row_width = content_width + line_pad * 2;
         // Horizontal pad of existing content rows: background-only.
         let mut shaped: Vec<Vec<rich_rs::Segment>> = lines
             .iter()
             .take(content_height)
-            .map(|line| rich_rs::Segment::adjust_line_length(line, fill_width, Some(fill), true))
+            .map(|line| {
+                rich_rs::Segment::adjust_line_length(line, content_row_width, Some(fill), true)
+            })
             .collect();
         // Vertical extend rows: which fill style to use depends on which Python
         // surface this widget's blank rows correspond to.
@@ -1305,7 +1307,7 @@ pub(crate) fn render_widget_with_meta<W: Widget + ?Sized>(
                 fill // chrome-only container (or no fg) → bg-only extend (Blank/inner.rich_style)
             };
         let vfill_blank = vec![rich_rs::Segment::styled(
-            " ".repeat(fill_width),
+            " ".repeat(content_row_width),
             vfill_style,
         )];
         while shaped.len() < content_height {

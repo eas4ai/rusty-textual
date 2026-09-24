@@ -277,6 +277,7 @@ impl Selection {
 #[widget(Focus, Interactive, Layout, Selectable, StyleIdentity, Components)]
 // Independent flags; any combination is valid, so no enum fits.
 #[allow(clippy::struct_excessive_bools)]
+#[allow(clippy::struct_field_names)] // Python's attribute is `type`, a Rust keyword.
 pub struct Input {
     text: String,
     cursor: usize,

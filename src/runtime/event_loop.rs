@@ -2453,6 +2453,7 @@ impl App {
     /// - [`Error::Terminal`](crate::Error::Terminal) when a terminal operation
     ///   fails: starting or restoring the terminal, polling or reading input,
     ///   reading the terminal size, or writing a frame.
+    #[allow(clippy::unused_async)] // Public async API; the loop does not await yet.
     pub async fn run_with<F, R>(&mut self, mut render: F) -> crate::Result<()>
     where
         F: FnMut(&mut App, u64) -> R,
@@ -2512,6 +2513,7 @@ impl App {
     /// - [`Error::Terminal`](crate::Error::Terminal) when a terminal operation
     ///   fails: starting or restoring the terminal, polling or reading input,
     ///   reading the terminal size, or writing a frame.
+    #[allow(clippy::unused_async)] // Public async API; the loop does not await yet.
     pub async fn run_widget_tree(&mut self, root: &mut dyn Widget) -> crate::Result<()> {
         if !self.running {
             return Err(crate::Error::RuntimeStopped);
@@ -7412,6 +7414,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::struct_field_names)] // Parallel counters, one per bound key.
     struct SimulatedKeyBindingHost {
         hits_l: Arc<AtomicUsize>,
         hits_j: Arc<AtomicUsize>,

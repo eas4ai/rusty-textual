@@ -535,6 +535,7 @@ impl ScrollView {
         self.child.on_layout(width, height);
     }
 
+    #[allow(clippy::similar_names)] // Paired names for the two scrollbars (h/v).
     fn update_scrollbar_hover_state(&mut self, x: u16, y: u16) -> bool {
         let widget_width = self.widget_width.load(Ordering::Relaxed).max(1);
         let widget_height = self.widget_height.load(Ordering::Relaxed).max(1);
@@ -1283,6 +1284,7 @@ impl crate::widgets::Layout for ScrollView {
 }
 
 impl crate::widgets::Scrollable for ScrollView {
+    #[allow(clippy::similar_names)] // Paired names for the two axes (dx/dy).
     fn on_mouse_scroll(&mut self, delta_x: i32, delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
         // Horizontal-only scroll containers use wheel Y deltas to scroll X.
         let mut resolved_dx = delta_x;

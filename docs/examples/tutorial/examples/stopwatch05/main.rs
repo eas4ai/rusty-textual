@@ -94,13 +94,13 @@ Button {
 // Elapsed time is never negative; `as` rounds the centiseconds toward zero.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn format_time(secs: f64) -> String {
-    let total_cs = (secs * 100.0) as u64;
-    let cs = total_cs % 100;
-    let total_s = total_cs / 100;
-    let s = total_s % 60;
-    let total_m = total_s / 60;
-    let m = total_m % 60;
-    let h = total_m / 60;
+    let total_centis = (secs * 100.0) as u64;
+    let cs = total_centis % 100;
+    let total_secs = total_centis / 100;
+    let s = total_secs % 60;
+    let total_mins = total_secs / 60;
+    let m = total_mins % 60;
+    let h = total_mins / 60;
     format!("{h:02}:{m:02}:{s:02}.{cs:02}")
 }
 

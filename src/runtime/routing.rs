@@ -966,10 +966,10 @@ pub(crate) fn match_binding_chain(
     // clash semantics by construction.
     let mut collect_node =
         |node_id: NodeId, source: BindingSource, widget: &dyn Widget| -> Vec<BindingDecl> {
-            let mut clashed = Vec::new();
-            let bindings = effective_bindings(widget, keymap, &mut clashed);
+            let mut node_clashes = Vec::new();
+            let bindings = effective_bindings(widget, keymap, &mut node_clashes);
             if let Some(sink) = clashes.as_deref_mut() {
-                sink.extend(clashed.into_iter().map(|binding| BindingClash {
+                sink.extend(node_clashes.into_iter().map(|binding| BindingClash {
                     node: node_id,
                     source,
                     binding,
@@ -2317,6 +2317,7 @@ mod envelope_tests {
     // DescendantBlur, bubble=True). Dispatched at the focused/blurred node,
     // they bubble to ancestors carrying the node — and never touch focus
     // state (unlike Focus/Blur).
+    #[allow(clippy::struct_field_names)] // Each field records one thing the probe saw.
     struct DescendantProbe {
         seen_focus: Arc<AtomicUsize>,
         seen_blur: Arc<AtomicUsize>,

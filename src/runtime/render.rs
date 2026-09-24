@@ -2313,6 +2313,7 @@ impl KeylineStroke {
     }
 }
 
+#[allow(clippy::similar_names)] // Paired corner coordinates (x0/y0, x1/y1).
 fn paint_grid_keyline_rectangles(
     tree: &WidgetTree,
     child_ids: &[NodeId],

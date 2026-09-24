@@ -332,6 +332,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)] // Paired names for the two colour channels (fg/bg).
     fn widget_opacity_dims_background_and_text_together() {
         let original_bg = crate::style::Color::rgb(1, 120, 212);
         let original_fg = crate::style::Color::rgb(221, 237, 249);

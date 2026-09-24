@@ -178,6 +178,7 @@ fn focused_defaults_header_tint_and_cursor_colors() {
 /// `$block-cursor-blurred-foreground`. The token must be opaque for that to
 /// be equivalent to a flatten — pin both.
 #[test]
+#[allow(clippy::similar_names)] // Paired names for the two colour channels (fg/bg).
 fn blurred_cursor_keeps_raw_blurred_foreground() {
     rusty_textual::run_test(TableApp::new(USER_CSS_NONE), |pilot| {
         pilot.pause()?;

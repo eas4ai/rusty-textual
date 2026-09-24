@@ -397,6 +397,7 @@ fn init_true_is_default_behavior() {
 // ── P3-06: computed fields ──────────────────────────────────────────
 
 #[derive(Reactive)]
+#[allow(clippy::struct_field_names)] // The fields are the parts of a name.
 struct ComputedWidget {
     #[reactive]
     first_name: String,
