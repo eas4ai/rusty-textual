@@ -36,6 +36,7 @@ Widget {
 }
 
 Screen {
+    padding: 1;
     layout: vertical;
     overflow-y: auto;
     overflow-x: hidden;

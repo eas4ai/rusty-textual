@@ -175,12 +175,16 @@ fn interactive_parity() {
         let bin = repo()
             .join("docs/examples/target/debug/examples")
             .join(case.bin);
+        // Every case is expected to pass, so a missing binary or golden is a
+        // failure: skipping it would pass the case unchecked.
         if !bin.exists() {
-            eprintln!("SKIP {} (no bin)", case.name);
+            eprintln!("FAIL {} (no bin)", case.name);
+            failures.push(case.name);
             continue;
         }
         let Ok(golden) = std::fs::read_to_string(golden_path(case.name)) else {
-            eprintln!("SKIP {} (no golden)", case.name);
+            eprintln!("FAIL {} (no golden)", case.name);
+            failures.push(case.name);
             continue;
         };
         let actual = capture(
