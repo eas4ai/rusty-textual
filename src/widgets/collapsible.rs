@@ -134,7 +134,7 @@ impl crate::widgets::Interactive for CollapsibleTitle {
 
     /// The title is the focusable node (Python `CollapsibleTitle`), so it owns
     /// the toggle interaction: `enter` while focused, or a click, posts a
-    /// [`CollapsibleTitleToggle`] that bubbles to the parent `Collapsible`.
+    /// `CollapsibleTitleToggle` that bubbles to the parent `Collapsible`.
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
         match event {
             Event::MouseDown(mouse) if mouse.target == self.node_id() => {

@@ -16,7 +16,7 @@ pub(crate) fn border_spacing(style: &Style) -> (u16, u16, u16, u16) {
 
 /// A positioned rectangle in terminal cells (x, y, width, height form).
 ///
-/// Complements [`Rect`] (x0/y0/x1/y1 form) used by `WidgetTree` for storage.
+/// Complements `Rect` (x0/y0/x1/y1 form) used by `WidgetTree` for storage.
 ///
 /// The position (`x`/`y`) is **signed** (`i32`) so a region can sit partly
 /// above/left of the viewport (negative origin), mirroring Python's signed

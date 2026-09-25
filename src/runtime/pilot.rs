@@ -1,10 +1,11 @@
-//! In-process headless test harness (`App::run_test` + [`Pilot`]).
+//! In-process headless test harness ([`run_test`](crate::run_test) + [`Pilot`]).
 //!
 //! This is the Rust analogue of Python Textual's `Pilot` (see
 //! `textual/src/textual/pilot.py`) and headless driver. It runs the real app
 //! event-dispatch engine in-process, fed from injected input events instead of
-//! a terminal, and rendering into the in-memory [`FrameBuffer`] instead of a
-//! TTY (see [`App::headless`] seam in `runtime/mod.rs`).
+//! a terminal, and rendering into the in-memory
+//! [`FrameBuffer`](crate::render::FrameBuffer) instead of a TTY (see the
+//! `App::headless` seam in `runtime/mod.rs`).
 //!
 //! Each driver call (`press`, `click`, `pause`, …) injects the event(s) and
 //! advances the loop until idle (no pending invalidation, no active animations,
@@ -37,7 +38,8 @@ use crate::widgets::Widget;
 /// Drives a headless app in tests. Mirrors Python Textual's `Pilot`.
 ///
 /// Borrows the running [`App`] and its root widget; created and passed to the
-/// closure given to [`App::run_test`] / the `TextualApp::run_test` extension.
+/// closure given to [`run_test`](crate::run_test) / the
+/// [`TextualApp::run_test`](crate::TextualApp::run_test) extension.
 pub struct Pilot<'a> {
     app: &'a mut App,
     root: &'a mut dyn Widget,
@@ -100,8 +102,9 @@ impl<'a> Pilot<'a> {
     /// Simulate a bracketed-paste of `text`, then advance to idle.
     ///
     /// Mirrors a terminal delivering DECSET-2004 paste bytes (enabled at
-    /// driver start): the payload dispatches as one [`Event::Paste`] to
-    /// focus, not as raw keystrokes. Mirrors `pilot.press` for paste.
+    /// driver start): the payload dispatches as one
+    /// [`Event::Paste`](crate::event::Event::Paste) to focus, not as raw
+    /// keystrokes. Mirrors `pilot.press` for paste.
     ///
     /// # Errors
     ///
@@ -402,7 +405,7 @@ impl<'a> Pilot<'a> {
     ///
     /// This is the deterministic analogue of Python's `await pilot.pause(delay)`
     /// (which sleeps real time so wall-clock timers fire). Inside `run_test` the
-    /// timer subsystem runs on a manual clock (installed in [`Pilot::new`]), so
+    /// timer subsystem runs on a manual clock (installed in `Pilot::new`), so
     /// time-driven demos — clocks, stopwatches, progress timers — become fully
     /// deterministic with no sleeping and no flakiness.
     ///

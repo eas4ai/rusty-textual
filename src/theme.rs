@@ -14,8 +14,7 @@
 //! The hand-tuned `textual-dark` token table in `style.rs::resolve_textual_dark_token`
 //! is preserved as the default resolution path (so the styled/visual goldens that
 //! were calibrated against it never regress). When a *non-default* named theme is
-//! active, [`active_token`] / [`active_auto_token`] consult the generated map for
-//! that theme instead.
+//! active, `active_token` consults the generated map for that theme instead.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};

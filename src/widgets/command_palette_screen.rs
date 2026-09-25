@@ -310,7 +310,7 @@ impl crate::widgets::Render for CommandPaletteBody {
 /// The command palette as a pushed `SystemModalScreen` (Python
 /// `CommandPalette(SystemModalScreen[None])`). Thin: it owns the command
 /// snapshot + the screen-scoped surface (bindings, auto-focus, dismiss); the
-/// [`CommandPaletteBody`] does the composing/searching.
+/// `CommandPaletteBody` does the composing/searching.
 pub struct CommandPaletteScreen {
     commands: Vec<CommandPaletteCommand>,
     placeholder: String,

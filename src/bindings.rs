@@ -108,7 +108,7 @@ fn normalize_single_char_key(alt: &str) -> String {
 ///
 /// Order fidelity matters beyond insertion order: `apply_keymap` ends with a
 /// Python-`dict.update` step whose positional semantics are replicated by
-/// [`BindingsMap::update_entries`] (existing keys keep their position and get
+/// `BindingsMap::update_entries` (existing keys keep their position and get
 /// their value replaced; new keys append at the end; a key deleted
 /// mid-algorithm and re-added lands at the end).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

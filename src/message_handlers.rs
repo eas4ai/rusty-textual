@@ -3,7 +3,7 @@
 //! This is a convenience layer over the same message bus that drives
 //! `Widget::on_message` — not a separate dispatch path.
 //! Registration lives on [`crate::textual_app::TextualApp`] via
-//! [`TextualApp::register_message_handlers`].
+//! [`TextualApp::register_message_handlers`](crate::TextualApp::register_message_handlers).
 
 use std::any::{Any, TypeId};
 

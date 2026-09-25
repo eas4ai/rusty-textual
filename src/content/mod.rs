@@ -18,8 +18,8 @@
 //! ## Phase B scope
 //! - [`Content::truncate`] — cell-width truncation with optional ellipsis.
 //! - [`Content::pad_left`], [`Content::pad_right`], [`Content::pad`] — padding.
-//! - [`Content::center`], [`Content::right`] — alignment helpers.
-//! - [`Content::divide`], [`Content::split`] — splitting on offsets / separator.
+//! - [`Content::center`], [`Content::right_align`] — alignment helpers.
+//! - [`Content::divide`], [`Content::split_on`] — splitting on offsets / separator.
 //! - [`Content::rstrip`], [`Content::rstrip_end`], [`Content::right_crop`] —
 //!   trailing-whitespace removal.
 //! - [`Content::wrap_and_format`] — word-wrapped lines (reuses
@@ -996,8 +996,9 @@ impl Content {
             .collect()
     }
 
-    /// Like [`wrap_and_format`] but also returns, per output line, whether it is
-    /// the **last** wrapped line of its logical (newline-delimited) paragraph.
+    /// Like [`wrap_and_format`](Self::wrap_and_format) but also returns, per
+    /// output line, whether it is the **last** wrapped line of its logical
+    /// (newline-delimited) paragraph.
     ///
     /// Mirrors Python `_wrap_and_format` setting `new_lines[-1].line_end = True`.
     /// The flag matters for `text-align: justify`, where the final line of a

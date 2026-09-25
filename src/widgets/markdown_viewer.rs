@@ -412,8 +412,9 @@ impl Navigator {
 /// a `Markdown` widget and a `MarkdownTableOfContents` sidebar).
 ///
 /// ## Architecture
-/// Internally delegates to a [`ScrollableContainer`], making this widget a scroll
-/// host. Children are composed as:
+/// Internally delegates to a [`VerticalScroll`](crate::widgets::VerticalScroll)
+/// (itself a [`ScrollableContainer`](crate::widgets::ScrollableContainer)),
+/// making this widget a scroll host. Children are composed as:
 /// - `Markdown` — the rendered content (scrollable)
 /// - `MarkdownTableOfContents` — docked left via CSS
 /// - Scrollbar widgets (from `ScrollableContainer`)

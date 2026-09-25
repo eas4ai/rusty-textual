@@ -25,8 +25,8 @@ static NEXT_SELECT_ID: AtomicU64 = AtomicU64::new(1);
 /// A dropdown select control.
 ///
 /// Port of Python Textual's `Select` (`textual/widgets/_select.py`). It is a
-/// composed-children ARENA widget: `compose()` emits a [`SelectCurrent`] bar and
-/// a [`SelectOverlay`] pop-up as real child nodes (state-pure, so a recompose —
+/// composed-children ARENA widget: `compose()` emits a `SelectCurrent` bar and
+/// a `SelectOverlay` pop-up as real child nodes (state-pure, so a recompose —
 /// used to reflect a value/options change — rebuilds an identical subtree). The
 /// overlay resolves `overlay: screen; display: block` when the Select carries
 /// `-expanded`, so it floats UNCLIPPED at the top z via the Mechanism-A deferred

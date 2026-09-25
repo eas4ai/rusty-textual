@@ -1501,7 +1501,7 @@ impl crate::widgets::Interactive for Input {
         }
     }
 
-    /// Apply an [`EditCommand`] (shared by direct key handling and the
+    /// Apply an `EditCommand` (shared by direct key handling and the
     /// action-declared bindings below, so both paths behave identically).
     fn on_message(&mut self, message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
         if let Some(m) = message.downcast_ref::<TextEditClipboardPaste>() {

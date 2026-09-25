@@ -517,7 +517,7 @@ pub(crate) fn resolve_style_for_meta(meta: &SelectorMeta) -> Style {
 /// Public so external/custom widgets can read component-class styling from CSS
 /// (Python parity: `Widget.get_component_styles`). The component name(s) are
 /// resolved on a typeless virtual phantom node
-/// ([`selector_meta_component_phantom`]).
+/// (`selector_meta_component_phantom`).
 ///
 /// Multi-name semantics: all `classes` go onto ONE phantom (the COMPOUND
 /// form), so compound rules like `.a.b { ... }` match. This is the right form

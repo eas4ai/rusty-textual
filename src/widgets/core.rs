@@ -1603,7 +1603,7 @@ pub struct NodeState {
 /// `(child_index, css_id, classes)`. Widgets that keep `with_compose`-supplied
 /// id/class metadata in a parallel array fold it back into per-child
 /// [`ChildDecl`](crate::compose::ChildDecl)s inside `compose()` (see
-/// [`zip_child_decls`](crate::compose::zip_child_decls)).
+/// `compose::zip_child_decls`).
 pub type ChildDeclMeta = (usize, Option<String>, Vec<String>);
 
 /// One-shot identity/style payload set by widget builder methods before mount

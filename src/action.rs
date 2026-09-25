@@ -263,8 +263,9 @@ impl std::error::Error for ActionParseError {}
 
 /// Trait for widgets/apps that handle string-based actions.
 ///
-/// Implementors declare which actions they support via [`action_registry`] and
-/// execute them in [`execute_action`].
+/// Implementors declare which actions they support via
+/// [`action_registry`](ActionHandler::action_registry) and execute them in
+/// [`execute_action`](ActionHandler::execute_action).
 pub trait ActionHandler {
     /// The namespace this handler owns (e.g. `"app"`, `"screen"`).
     ///

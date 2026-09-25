@@ -165,7 +165,7 @@ impl KeyEventData {
     }
 
     /// Returns aliases for this key, computed on demand from the
-    /// [`KEY_ALIASES`] table.  The canonical name is always the first element.
+    /// `KEY_ALIASES` table.  The canonical name is always the first element.
     #[must_use]
     pub fn aliases(&self) -> Vec<&str> {
         let mut result = vec![self.key.as_str()];

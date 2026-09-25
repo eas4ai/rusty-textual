@@ -38,7 +38,7 @@
 //!   parsed into a `crate::style::Style` and stored in the span's style field at
 //!   resolve time.
 //! - `[@click=...]` / `[key=value]` key-value pairs are stored as meta on
-//!   [`RawSpan`] so they are not lost during span manipulation.
+//!   `RawSpan` so they are not lost during span manipulation.
 
 use crate::style::{Color, Style, parse_color_like};
 

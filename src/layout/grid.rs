@@ -347,8 +347,9 @@ fn find_next_grid_slot(
 /// Lay out children in a 2D grid.
 ///
 /// Grid tracks (columns and rows) are resolved independently using
-/// [`layout_resolve_1d`], then each child is placed into its grid cell
-/// with margin/border/padding chrome from the child's style.
+/// [`layout_resolve_1d`](crate::layout::layout_resolve_1d), then each child is
+/// placed into its grid cell with margin/border/padding chrome from the
+/// child's style.
 ///
 /// Children are placed left-to-right, top-to-bottom (row-major order).
 /// If there are more children than cells, additional rows are created.

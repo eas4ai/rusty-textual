@@ -162,7 +162,7 @@ impl WidgetCtx<'_> {
 
     /// Add a CSS class to this widget's own node (Python `self.add_class(name)`).
     ///
-    /// RA2.3: enqueues a deferred [`WidgetCommand::AddClass`] applied by the
+    /// RA2.3: enqueues a deferred `WidgetCommand::AddClass` applied by the
     /// shared flush (`tree.add_class` + layout invalidation) — the ONE deferred
     /// mechanism, replacing the RA2.2-interim `EventCtx`/`DispatchOutcome`
     /// class-op side-channel. Because both the live loop and headless pump run the
@@ -225,7 +225,7 @@ impl WidgetCtx<'_> {
 
     /// Apply a closure to this widget's own inline styles (Python
     /// `widget.styles.<prop> = v`). Deferred: enqueues a
-    /// [`WidgetCommand::UpdateStyles`] applied by the shared flush against the
+    /// `WidgetCommand::UpdateStyles` applied by the shared flush against the
     /// arena node record. This is the post-mount inline-style write path — the
     /// widget's node seed is drained at mount, so mutating the seed after mount is
     /// invisible; route style writes here so they reach layout/render (retires the

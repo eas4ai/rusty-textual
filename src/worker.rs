@@ -495,7 +495,8 @@ impl Default for WorkerRequestPayload {
 
 /// A request from a widget to spawn a background worker.
 ///
-/// Created via [`EventCtx::request_worker`] / [`EventCtx::request_exclusive_worker`].
+/// Created via [`EventCtx::request_worker`](crate::event::EventCtx::request_worker) /
+/// [`EventCtx::request_exclusive_worker`](crate::event::EventCtx::request_exclusive_worker).
 /// The runtime collects these after event dispatch and feeds them to
 /// [`WorkerRegistry::register`].
 #[derive(Debug, Clone)]

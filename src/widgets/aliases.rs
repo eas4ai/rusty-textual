@@ -201,7 +201,7 @@ impl Static {
         self.content = StaticContent::Renderable(Arc::new(renderable));
     }
 
-    /// Replace content with a pre-built [`Content`] value.
+    /// Replace content with a pre-built [`Content`](crate::content::Content) value.
     ///
     /// Use this to display markup whose template variables were already
     /// substituted (e.g. `Content::from_markup_with_vars(...)`), so the Static

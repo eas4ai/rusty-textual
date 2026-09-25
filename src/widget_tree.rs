@@ -740,7 +740,7 @@ impl WidgetTree {
 
     /// Backwards-compatible alias for runtime-controlled display visibility.
     ///
-    /// Prefer [`set_runtime_display`] for new code.
+    /// Prefer [`set_runtime_display`](Self::set_runtime_display) for new code.
     pub fn set_display(&mut self, node: NodeId, visible: bool) {
         self.set_runtime_display(node, visible);
     }
@@ -786,10 +786,10 @@ impl WidgetTree {
 
     /// Apply a collapsed structural wrapper's identity onto `node`'s record.
     ///
-    /// Used when a transparent wrapper (a bare [`Node`](crate::widgets::Node)) is
-    /// collapsed out of the tree and its single inner child is mounted in its
-    /// place (see
-    /// [`Widget::elide_transparent_wrapper`](crate::widgets::Widget::elide_transparent_wrapper)).
+    /// Written for the transparent `Node` wrapper, which was collapsed out of
+    /// the tree with its single inner child mounted in its place. `Node` and
+    /// that collapse pass have since been removed, and nothing in the crate
+    /// calls this now.
     /// The id replaces any existing id; classes are merged in; the wrapper's
     /// inline styles are folded onto the child's existing inline styles.
     pub fn apply_forwarded_seed(&mut self, node: NodeId, seed: NodeSeed) {

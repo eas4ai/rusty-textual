@@ -636,12 +636,12 @@ impl<'a> DomQueryMut<'a> {
     }
 }
 
-/// Payload of [`App::app_suspend_signal`]: published before the driver stops
+/// Payload of `App::app_suspend_signal`: published before the driver stops
 /// (Python `App.app_suspend_signal`, PR-14).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AppSuspended;
 
-/// Payload of [`App::app_resume_signal`]: published when the driver restarts
+/// Payload of `App::app_resume_signal`: published when the driver restarts
 /// (Python `App.app_resume_signal`, PR-14).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AppResumed;
@@ -1891,13 +1891,13 @@ impl App {
     /// Mount a boxed widget onto the active screen body.
     ///
     /// Routes through the canonical compose-aware mount path
-    /// ([`mount_extracted_recursive`](Self::mount_extracted_recursive)) so the
+    /// (`mount_extracted_recursive`) so the
     /// widget's composed children (e.g. `Welcome`'s `#close` button) are built,
     /// laid out, and painted — matching the compose-time build and Python's
     /// `Widget.mount`, which composes + refreshes the new subtree. A raw
     /// `tree.mount` insert (the previous behavior) left composed children absent
     /// and the widget unpainted; it also targeted the bare tree root, mounting
-    /// the widget offscreen (see [`Self::default_mount_parent`]).
+    /// the widget offscreen (see `Self::default_mount_parent`).
     ///
     /// # Errors
     ///
@@ -3039,7 +3039,7 @@ impl App {
         std::mem::take(&mut self.pending_recompose_nodes)
     }
 
-    /// Recompose the application root from a freshly composed [`AppRoot`].
+    /// Recompose the application root from a freshly composed [`AppRoot`](crate::widgets::AppRoot).
     ///
     /// Mirrors Python Textual's `reactive(recompose=True)` at the `App`/`Screen`
     /// level (e.g. `recompose01.py`, `set_reactive03.py`): when an app-level
@@ -3155,8 +3155,8 @@ impl App {
     ///     `source` + `source_field`;
     ///   - on fire, the new value is downcast to `T`, then for each matched
     ///     child the caller-supplied `set_child` runs the child's generated
-    ///     reactive setter into a fresh [`ReactiveCtx`] (an *unconditional* set,
-    ///     like Python wrapping the value in `_Mutated`);
+    ///     reactive setter into a fresh [`ReactiveCtx`](crate::ReactiveCtx) (an
+    ///     *unconditional* set, like Python wrapping the value in `_Mutated`);
     ///   - any recorded change is enqueued as a
     ///     [`RuntimeReactiveEntry`](crate::reactive::RuntimeReactiveEntry) so the
     ///     child's `watch_*` runs through the normal runtime reactive phase.
@@ -3301,7 +3301,7 @@ impl App {
 
     /// Borrow a widget mutably by node id for a scoped update.
     ///
-    /// Runs `f` against the widget through the shared [`run_on_node_widget_r`]
+    /// Runs `f` against the widget through the shared `run_on_node_widget_r`
     /// path (dispatch-recipient guard + reactive-fixpoint / `EventCtx` absorption),
     /// so it converges identically to the other node-scoped mutation entry points.
     /// Returns `None` when the node is absent (the `Option<R>` contract). The
@@ -5553,7 +5553,7 @@ fn style_affects_layout(style: &crate::style::Style) -> bool {
 /// Build an arena-based [`WidgetTree`] from a root widget without requiring
 /// a full [`App`] instance.
 ///
-/// Replicates the extraction logic of [`App::build_widget_tree()`] for
+/// Replicates the extraction logic of `App::build_widget_tree()` for
 /// user-declared children (excluding runtime-injected system widgets):
 /// 1. Creates a `TreeStubWidget` root node.
 /// 2. Recursively extracts children via `compose()`.

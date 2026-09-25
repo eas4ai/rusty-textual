@@ -959,7 +959,7 @@ crate::impl_message!(WorkerStateChanged);
 /// Canonical open message trait. Every message — built-in or third-party —
 /// is a plain struct implementing this trait. Dispatch is by `TypeId`.
 ///
-/// Use [`impl_message!`] to implement this trait for your types.
+/// Use [`impl_message!`](crate::impl_message!) to implement this trait for your types.
 pub trait Message: std::any::Any + Send + Sync + std::fmt::Debug + 'static {
     /// Downcast support.
     fn as_any(&self) -> &dyn std::any::Any;

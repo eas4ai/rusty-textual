@@ -1653,7 +1653,7 @@ fn collect_stylesheet_affected_widgets_tree(
     out
 }
 
-/// Resolve per-property transition parameters from a CSS [`Style`].
+/// Resolve per-property transition parameters from a CSS [`Style`](crate::Style).
 ///
 /// Checks the `transitions` vec first for a matching property name (or `"all"`).
 /// Falls back to the generic `transition-duration / delay / timing` properties.
@@ -6165,10 +6165,11 @@ impl App {
 
     /// Export the currently rendered frame as a "rich terminal" SVG file.
     ///
-    /// Reads the same in-memory [`FrameBuffer`] that [`frame_fingerprint`]
-    /// hashes, so it works in headless (`run_test`/Pilot) mode where nothing is
-    /// written to a real terminal — the Rust analogue of Python Textual's
-    /// `App.save_screenshot` / `take_svg_screenshot` doc-screenshot path.
+    /// Reads the same in-memory [`FrameBuffer`](crate::render::FrameBuffer)
+    /// that [`frame_fingerprint`] hashes, so it works in headless
+    /// (`run_test`/Pilot) mode where nothing is written to a real terminal —
+    /// the Rust analogue of Python Textual's `App.save_screenshot` /
+    /// `take_svg_screenshot` doc-screenshot path.
     ///
     /// [`frame_fingerprint`]: Self::frame_fingerprint
     ///
