@@ -1118,23 +1118,8 @@ pub(crate) fn render_widget_with_meta<W: Widget + ?Sized>(
 
     // Textual's `line-pad` is horizontal padding applied to each line. To model this, render the
     // widget into a smaller content width and then wrap each line with `line_pad` spaces.
-    let mut content_options = options.clone();
-    content_options.size = (content_width, content_height);
-    content_options.max_width = content_width;
-    content_options.max_height = content_height;
-
-    // Generic `text-align` propagation: feed the resolved CSS `text-align` into
-    // the text renderer's justify so Label/Static (and any text widget) honor
-    // `text-align: center|right|justify` exactly like Python Textual. Widgets
-    // that need bespoke justify behavior may still override inside render().
-    if let Some(text_align) = resolved.text_align {
-        content_options.justify = Some(match text_align {
-            crate::style::TextAlign::Left => rich_rs::JustifyMethod::Left,
-            crate::style::TextAlign::Center => rich_rs::JustifyMethod::Center,
-            crate::style::TextAlign::Right => rich_rs::JustifyMethod::Right,
-            crate::style::TextAlign::Justify => rich_rs::JustifyMethod::Full,
-        });
-    }
+    let content_options =
+        content_render_options(options, resolved, (content_width, content_height));
 
     let segments = crate::css::with_style_stack(meta.clone(), resolved.clone(), || {
         // Mark the widget's own meta (now top-of-stack) as the LIVE render
@@ -1154,105 +1139,25 @@ pub(crate) fn render_widget_with_meta<W: Widget + ?Sized>(
         .saturating_add(line_pad.saturating_mul(2))
         .saturating_add(padding.left as usize + padding.right as usize)
         .max(1);
-    let mut lines = if line_pad > 0 {
-        let padded = helpers::apply_line_pad(
-            segments,
-            content_width,
-            content_width + line_pad * 2,
-            line_pad,
-        );
-        rich_rs::Segment::split_and_crop_lines(
-            padded,
-            content_width + line_pad * 2,
-            None,
-            false,
-            false,
-        )
-    } else {
-        rich_rs::Segment::split_and_crop_lines(segments, content_width, None, false, false)
-    };
+    let content_row_width = content_width + line_pad * 2;
+    let lines = split_content_lines(segments, content_width, line_pad);
 
-    // Shared inner background for fill surfaces (content-align pad below and the
-    // set_shape/CSS-pad fill further down).
-    let fill_fallback_bg =
-        crate::style::parse_color_like("$background").unwrap_or(crate::style::Color::rgb(0, 0, 0));
-    let fill_parent_bg = crate::css::current_composited_background()
-        .or_else(|| parent_style.clone().and_then(|s| s.bg))
-        .unwrap_or(fill_fallback_bg);
-    let fill_inner_bg = resolved
-        .bg
-        .map_or(fill_parent_bg, |c| c.flatten_over(fill_parent_bg));
+    let (fill_inner_bg, fill_fg_style) = fill_styles(resolved, parent_style.as_ref());
+    let lines = align_content(
+        lines,
+        resolved,
+        (content_row_width, content_height),
+        fill_fg_style,
+    );
 
-    // Fill style that carries the resolved foreground over the inner background.
-    // Mirrors Python's `visual_style.rich_style` (color = background + $foreground,
-    // or auto-contrast for `color: auto`). Used for BOTH content-align padding
-    // (visual.py `Strip.align`) and the vertical extend beyond content (widget.py
-    // `render_line` IndexError fallback `Strip.blank(width, visual_style.rich_style)`).
-    //
-    // Python `visual_style` cache parity: `visual_style` is cached on the
-    // widget's OWN `styles._cache_key`, so after an ancestor-only INLINE bg
-    // change these visual_style-derived fills keep the FROZEN ancestor surface
-    // (runtime::render installs the override), while `fill`/`pad_fill` below —
-    // Python's live `background_colors` inner style — stay live.
-    let visual_parent_bg = crate::css::frozen_ancestor_bg_override().unwrap_or(fill_parent_bg);
-    let visual_inner_bg = resolved
-        .bg
-        .map_or(visual_parent_bg, |c| c.flatten_over(visual_parent_bg));
-    let fill_fg_style = {
-        let mut s = rich_rs::Style::new().with_bgcolor(visual_inner_bg.to_simple_opaque());
-        if let Some(fg) = resolved.fg {
-            s = s.with_color(fg.flatten_over(visual_inner_bg).to_simple_opaque());
-        } else if let Some(auto) = resolved.fg_auto {
-            let contrast = crate::style::contrast_text(visual_inner_bg)
-                .blend_over_float(visual_inner_bg, auto.alpha());
-            s = s.with_color(contrast.to_simple_opaque());
-        }
-        s
-    };
-
-    // Only run the alignment fill for a NON-default content-align. Python's
-    // `_visual_to_strips` guards `Strip.align` with `if content_align !=
-    // ("left", "top")`: for the default the content stays top-left and the
-    // trailing space comes from the background-only `adjust_cell_length` /
-    // `inner.rich_style` extend (fg = default), NOT the fg-bearing align pad.
-    if let Some(content_align) = resolved
-        .content_align
-        .filter(|ca| !(ca.horizontal == HorizontalAlign::Left && ca.vertical == VerticalAlign::Top))
-    {
-        // Content-align padding carries the resolved fg (Strip.align semantics).
-        let align_pad = fill_fg_style;
-        lines = apply_content_alignment(
-            lines,
-            content_width + line_pad * 2,
-            content_height,
-            content_align.horizontal,
-            content_align.vertical,
-            align_pad,
-        );
-    }
-
-    let has_surface_paint = resolved.bg.is_some()
-        || resolved.hatch.is_some()
-        || resolved.border_top.is_set()
-        || resolved.border_right.is_set()
-        || resolved.border_bottom.is_set()
-        || resolved.border_left.is_set()
-        || resolved.outline_top.is_set()
-        || resolved.outline_right.is_set()
-        || resolved.outline_bottom.is_set()
-        || resolved.outline_left.is_set();
-    let preserve_underlay = widget.preserve_underlay()
-        || (resolved.position == Some(Position::Absolute) && !has_surface_paint)
-        || (!has_surface_paint && segments_empty);
-
+    let preserve_underlay = preserves_underlay(widget, resolved, segments_empty);
     if preserve_underlay && segments_empty {
         return Segments::new();
     }
-    let mut final_lines: Vec<Vec<rich_rs::Segment>> = Vec::new();
-    if preserve_underlay {
+    let final_lines = if preserve_underlay {
         // Overlay-style path: keep sparse output and don't auto-fill the whole
         // layout rect. This allows widgets to paint only explicit cells.
-        final_lines.extend(lines);
+        lines
     } else {
         // Two distinct fill surfaces, mirroring Python:
         //  - Trailing HORIZONTAL pad of a content row is BACKGROUND-ONLY
@@ -1261,18 +1166,7 @@ pub(crate) fn render_widget_with_meta<W: Widget + ?Sized>(
         //  - VERTICAL extend beyond the content rows carries the resolved fg
         //    (widget.py `render_line` IndexError → Strip.blank(width,
         //    visual_style.rich_style)`, where visual_style includes $foreground).
-        let inner_bg = fill_inner_bg;
-        let fill = rich_rs::Style::new().with_bgcolor(inner_bg.to_simple_opaque());
-        let pad_fill = fill;
-        let content_row_width = content_width + line_pad * 2;
-        // Horizontal pad of existing content rows: background-only.
-        let mut shaped: Vec<Vec<rich_rs::Segment>> = lines
-            .iter()
-            .take(content_height)
-            .map(|line| {
-                rich_rs::Segment::adjust_line_length(line, content_row_width, Some(fill), true)
-            })
-            .collect();
+        let fill = rich_rs::Style::new().with_bgcolor(fill_inner_bg.to_simple_opaque());
         // Vertical extend rows: which fill style to use depends on which Python
         // surface this widget's blank rows correspond to.
         //
@@ -1306,58 +1200,16 @@ pub(crate) fn render_widget_with_meta<W: Widget + ?Sized>(
             } else {
                 fill // chrome-only container (or no fg) → bg-only extend (Blank/inner.rich_style)
             };
-        let vfill_blank = vec![rich_rs::Segment::styled(
-            " ".repeat(content_row_width),
+        let shaped = shape_content_rows(
+            &lines,
+            (content_row_width, content_height),
+            fill,
             vfill_style,
-        )];
-        while shaped.len() < content_height {
-            shaped.push(vfill_blank.clone());
-        }
-        lines = shaped;
+        );
+        pad_content_box(shaped, padding, content_row_width, fill)
+    };
 
-        // Apply left/right padding.
-        let pad_left = padding.left as usize;
-        let pad_right = padding.right as usize;
-        let mut padded_lines: Vec<Vec<rich_rs::Segment>> = Vec::with_capacity(lines.len());
-        for line in lines {
-            let mut out = Vec::new();
-            if pad_left > 0 {
-                out.push(rich_rs::Segment::styled(" ".repeat(pad_left), pad_fill));
-            }
-            out.extend(line);
-            if pad_right > 0 {
-                out.push(rich_rs::Segment::styled(" ".repeat(pad_right), pad_fill));
-            }
-            padded_lines.push(out);
-        }
-
-        // Apply top/bottom padding.
-        let pad_top = padding.top as usize;
-        let pad_bottom = padding.bottom as usize;
-        let padded_width = content_width + line_pad * 2 + pad_left + pad_right;
-        if pad_top > 0 {
-            let blank = vec![rich_rs::Segment::styled(" ".repeat(padded_width), pad_fill)];
-            for _ in 0..pad_top {
-                final_lines.push(blank.clone());
-            }
-        }
-        final_lines.extend(padded_lines);
-        if pad_bottom > 0 {
-            let blank = vec![rich_rs::Segment::styled(" ".repeat(padded_width), pad_fill)];
-            for _ in 0..pad_bottom {
-                final_lines.push(blank.clone());
-            }
-        }
-    }
-
-    let mut segments = Segments::new();
-    let line_count = final_lines.len();
-    for (idx, line) in final_lines.into_iter().enumerate() {
-        segments.extend(line);
-        if idx + 1 < line_count {
-            segments.push(rich_rs::Segment::line());
-        }
-    }
+    let segments = helpers::join_lines(final_lines);
 
     let styled = crate::css::apply_style_to_segments(
         node_id,
@@ -1387,6 +1239,223 @@ pub(crate) fn render_widget_with_meta<W: Widget + ?Sized>(
     // (e.g. from rich renderables) become their truecolor theme equivalents.
     let segments = crate::css::apply_ansi_truecolor_to_segments(segments);
     tag_widget_meta(node_id, segments)
+}
+
+/// The console options for rendering the widget's content: the content box
+/// size and, from CSS `text-align`, the text justify.
+fn content_render_options(
+    options: &ConsoleOptions,
+    resolved: &Style,
+    (content_width, content_height): (usize, usize),
+) -> ConsoleOptions {
+    let mut content_options = options.clone();
+    content_options.size = (content_width, content_height);
+    content_options.max_width = content_width;
+    content_options.max_height = content_height;
+
+    // Generic `text-align` propagation: feed the resolved CSS `text-align` into
+    // the text renderer's justify so Label/Static (and any text widget) honor
+    // `text-align: center|right|justify` exactly like Python Textual. Widgets
+    // that need bespoke justify behavior may still override inside render().
+    if let Some(text_align) = resolved.text_align {
+        content_options.justify = Some(match text_align {
+            crate::style::TextAlign::Left => rich_rs::JustifyMethod::Left,
+            crate::style::TextAlign::Center => rich_rs::JustifyMethod::Center,
+            crate::style::TextAlign::Right => rich_rs::JustifyMethod::Right,
+            crate::style::TextAlign::Justify => rich_rs::JustifyMethod::Full,
+        });
+    }
+    content_options
+}
+
+/// Split the rendered content into lines of the content width, with
+/// `line_pad` spaces on each side.
+fn split_content_lines(
+    segments: Segments,
+    content_width: usize,
+    line_pad: usize,
+) -> Vec<Vec<rich_rs::Segment>> {
+    if line_pad > 0 {
+        let padded = helpers::apply_line_pad(
+            segments,
+            content_width,
+            content_width + line_pad * 2,
+            line_pad,
+        );
+        rich_rs::Segment::split_and_crop_lines(
+            padded,
+            content_width + line_pad * 2,
+            None,
+            false,
+            false,
+        )
+    } else {
+        rich_rs::Segment::split_and_crop_lines(segments, content_width, None, false, false)
+    }
+}
+
+/// The inner background and the fg-bearing fill style used to pad and
+/// extend the content.
+fn fill_styles(resolved: &Style, parent_style: Option<&Style>) -> (Color, rich_rs::Style) {
+    // Shared inner background for fill surfaces (content-align pad below and the
+    // set_shape/CSS-pad fill further down).
+    let fill_fallback_bg =
+        crate::style::parse_color_like("$background").unwrap_or(crate::style::Color::rgb(0, 0, 0));
+    let fill_parent_bg = crate::css::current_composited_background()
+        .or_else(|| parent_style.and_then(|s| s.bg))
+        .unwrap_or(fill_fallback_bg);
+    let fill_inner_bg = resolved
+        .bg
+        .map_or(fill_parent_bg, |c| c.flatten_over(fill_parent_bg));
+
+    // Fill style that carries the resolved foreground over the inner background.
+    // Mirrors Python's `visual_style.rich_style` (color = background + $foreground,
+    // or auto-contrast for `color: auto`). Used for BOTH content-align padding
+    // (visual.py `Strip.align`) and the vertical extend beyond content (widget.py
+    // `render_line` IndexError fallback `Strip.blank(width, visual_style.rich_style)`).
+    //
+    // Python `visual_style` cache parity: `visual_style` is cached on the
+    // widget's OWN `styles._cache_key`, so after an ancestor-only INLINE bg
+    // change these visual_style-derived fills keep the FROZEN ancestor surface
+    // (runtime::render installs the override), while `fill`/`pad_fill` below —
+    // Python's live `background_colors` inner style — stay live.
+    let visual_parent_bg = crate::css::frozen_ancestor_bg_override().unwrap_or(fill_parent_bg);
+    let visual_inner_bg = resolved
+        .bg
+        .map_or(visual_parent_bg, |c| c.flatten_over(visual_parent_bg));
+    let fill_fg_style = {
+        let mut s = rich_rs::Style::new().with_bgcolor(visual_inner_bg.to_simple_opaque());
+        if let Some(fg) = resolved.fg {
+            s = s.with_color(fg.flatten_over(visual_inner_bg).to_simple_opaque());
+        } else if let Some(auto) = resolved.fg_auto {
+            let contrast = crate::style::contrast_text(visual_inner_bg)
+                .blend_over_float(visual_inner_bg, auto.alpha());
+            s = s.with_color(contrast.to_simple_opaque());
+        }
+        s
+    };
+    (fill_inner_bg, fill_fg_style)
+}
+
+/// Apply a non-default CSS `content-align` to the content lines.
+fn align_content(
+    lines: Vec<Vec<rich_rs::Segment>>,
+    resolved: &Style,
+    (content_row_width, content_height): (usize, usize),
+    fill_fg_style: rich_rs::Style,
+) -> Vec<Vec<rich_rs::Segment>> {
+    // Only run the alignment fill for a NON-default content-align. Python's
+    // `_visual_to_strips` guards `Strip.align` with `if content_align !=
+    // ("left", "top")`: for the default the content stays top-left and the
+    // trailing space comes from the background-only `adjust_cell_length` /
+    // `inner.rich_style` extend (fg = default), NOT the fg-bearing align pad.
+    if let Some(content_align) = resolved
+        .content_align
+        .filter(|ca| !(ca.horizontal == HorizontalAlign::Left && ca.vertical == VerticalAlign::Top))
+    {
+        // Content-align padding carries the resolved fg (Strip.align semantics).
+        let align_pad = fill_fg_style;
+        return apply_content_alignment(
+            lines,
+            content_row_width,
+            content_height,
+            content_align.horizontal,
+            content_align.vertical,
+            align_pad,
+        );
+    }
+    lines
+}
+
+/// Whether the widget keeps what is under it instead of filling its box:
+/// the widget asks for it, or it has no surface paint and is absolutely
+/// positioned or rendered nothing.
+fn preserves_underlay<W: Widget + ?Sized>(
+    widget: &W,
+    resolved: &Style,
+    segments_empty: bool,
+) -> bool {
+    let has_surface_paint = resolved.bg.is_some()
+        || resolved.hatch.is_some()
+        || resolved.border_top.is_set()
+        || resolved.border_right.is_set()
+        || resolved.border_bottom.is_set()
+        || resolved.border_left.is_set()
+        || resolved.outline_top.is_set()
+        || resolved.outline_right.is_set()
+        || resolved.outline_bottom.is_set()
+        || resolved.outline_left.is_set();
+    widget.preserve_underlay()
+        || (resolved.position == Some(Position::Absolute) && !has_surface_paint)
+        || (!has_surface_paint && segments_empty)
+}
+
+/// The content rows cut or padded to the content box. Existing rows get a
+/// background-only pad; rows added below the content use `vfill_style`.
+fn shape_content_rows(
+    lines: &[Vec<rich_rs::Segment>],
+    (content_row_width, content_height): (usize, usize),
+    fill: rich_rs::Style,
+    vfill_style: rich_rs::Style,
+) -> Vec<Vec<rich_rs::Segment>> {
+    // Horizontal pad of existing content rows: background-only.
+    let mut shaped: Vec<Vec<rich_rs::Segment>> = lines
+        .iter()
+        .take(content_height)
+        .map(|line| rich_rs::Segment::adjust_line_length(line, content_row_width, Some(fill), true))
+        .collect();
+    let vfill_blank = vec![rich_rs::Segment::styled(
+        " ".repeat(content_row_width),
+        vfill_style,
+    )];
+    while shaped.len() < content_height {
+        shaped.push(vfill_blank.clone());
+    }
+    shaped
+}
+
+/// Add the CSS padding around the shaped content rows.
+fn pad_content_box(
+    lines: Vec<Vec<rich_rs::Segment>>,
+    padding: crate::style::Spacing,
+    content_row_width: usize,
+    pad_fill: rich_rs::Style,
+) -> Vec<Vec<rich_rs::Segment>> {
+    // Apply left/right padding.
+    let pad_left = padding.left as usize;
+    let pad_right = padding.right as usize;
+    let mut final_lines: Vec<Vec<rich_rs::Segment>> = Vec::new();
+    let mut padded_lines: Vec<Vec<rich_rs::Segment>> = Vec::with_capacity(lines.len());
+    for line in lines {
+        let mut out = Vec::new();
+        if pad_left > 0 {
+            out.push(rich_rs::Segment::styled(" ".repeat(pad_left), pad_fill));
+        }
+        out.extend(line);
+        if pad_right > 0 {
+            out.push(rich_rs::Segment::styled(" ".repeat(pad_right), pad_fill));
+        }
+        padded_lines.push(out);
+    }
+
+    // Apply top/bottom padding.
+    let pad_top = padding.top as usize;
+    let pad_bottom = padding.bottom as usize;
+    let padded_width = content_row_width + pad_left + pad_right;
+    if pad_top > 0 {
+        let blank = vec![rich_rs::Segment::styled(" ".repeat(padded_width), pad_fill)];
+        for _ in 0..pad_top {
+            final_lines.push(blank.clone());
+        }
+    }
+    final_lines.extend(padded_lines);
+    if pad_bottom > 0 {
+        let blank = vec![rich_rs::Segment::styled(" ".repeat(padded_width), pad_fill)];
+        for _ in 0..pad_bottom {
+            final_lines.push(blank.clone());
+        }
+    }
+    final_lines
 }
 
 fn apply_content_alignment(
