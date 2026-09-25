@@ -1,0 +1,13 @@
+# The inline-mode probe app driven by tests/inline_mode.rs. A standalone
+# package (its own workspace), built on demand by that test, so the root
+# package's builds and tests do not depend on it.
+[package]
+name = "inline_probe"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+textual = { package = "rusty-textual", path = "../../.." }
