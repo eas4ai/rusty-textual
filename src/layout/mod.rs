@@ -12,7 +12,7 @@ use crate::node_id::NodeId;
 use crate::num::Cast;
 #[cfg(test)]
 use crate::style::Dock;
-use crate::style::{Align, Display, HorizontalAlign, Layout, VerticalAlign};
+use crate::style::{Align, Display, HorizontalAlign, Layout, Style, VerticalAlign};
 #[cfg(test)]
 use crate::widget_tree::Rect;
 use crate::widget_tree::WidgetTree;
@@ -199,7 +199,6 @@ fn apply_parent_align(
 /// 3. Calls [`arrange_dock`] for docked children → reduced available region.
 /// 4. Dispatches flow children to [`layout_vertical`] / [`layout_horizontal`].
 ///    Grid dispatches to [`layout_grid`] with parent style for track sizing.
-#[allow(clippy::similar_names)] // Paired names for the two axes (h/v).
 pub fn resolve_layout(
     tree: &mut WidgetTree,
     node: NodeId,
@@ -207,7 +206,6 @@ pub fn resolve_layout(
     viewport: (u16, u16),
 ) {
     let style = get_node_style(tree, node);
-    let strategy = style.layout.unwrap_or(Layout::Vertical);
     let is_dock_parent = tree
         .get(node)
         .is_some_and(|n| n.widget.style_type() == "Dock");
@@ -223,7 +221,57 @@ pub fn resolve_layout(
 
     // Widgets may reserve internal chrome before child layout (for example
     // tab bars). Convert that chrome into an inset child-available region.
-    let child_available = if let Some(node_ref) = tree.get(node) {
+    let child_available = child_content_region(tree, node, available);
+
+    // Overlay children are layered in the same region (base + modal stack),
+    // not arranged in normal flow.
+    if is_overlay_parent {
+        let layered: Vec<NodeId> = children
+            .iter()
+            .copied()
+            .filter(|&child| laid_out_style(tree, child).is_some())
+            .collect();
+        if !layered.is_empty() {
+            layout_absolute(tree, &layered, child_available, viewport);
+        }
+        resolve_child_layouts(tree, children, viewport);
+        return;
+    }
+
+    // Separate children into categories: split, docked, absolute, and flow.
+    let groups = group_children(tree, &children);
+
+    // Arrange split children first → reduced available region.
+    let after_split = if groups.split.is_empty() {
+        child_available
+    } else {
+        arrange_split(tree, &groups.split, child_available, viewport)
+    };
+
+    // Arrange docked children → further reduced available region.
+    let inner = arrange_docked(tree, &groups.docked, &groups.flow, after_split, viewport);
+
+    // Dispatch flow children to the appropriate layout.
+    if !groups.flow.is_empty() {
+        if is_dock_parent && groups.flow.len() == 1 {
+            layout_dock_fill(tree, groups.flow[0], inner);
+        } else {
+            layout_flow(tree, node, &style, &groups.flow, inner, viewport);
+        }
+    }
+
+    // Place absolute children on top of the original available region (P2-24).
+    if !groups.absolute.is_empty() {
+        layout_absolute(tree, &groups.absolute, child_available, viewport);
+    }
+
+    resolve_child_layouts(tree, children, viewport);
+}
+
+/// `available` minus the chrome the widget reserves before child layout
+/// (`tree_child_content_inset`, e.g. a tab bar).
+fn child_content_region(tree: &WidgetTree, node: NodeId, available: Region) -> Region {
+    if let Some(node_ref) = tree.get(node) {
         let (ct, cr, cb, cl) = node_ref.widget.tree_child_content_inset();
         let x = available.x + i32::from(cl);
         let y = available.y + i32::from(ct);
@@ -234,79 +282,66 @@ pub fn resolve_layout(
         Region::new(x, y, width.max(1), height.max(1))
     } else {
         available
-    };
-
-    // Overlay children are layered in the same region (base + modal stack),
-    // not arranged in normal flow.
-    if is_overlay_parent {
-        let mut layered = Vec::new();
-        for &child in &children {
-            if tree.get(child).is_none_or(|n| !n.display) {
-                continue;
-            }
-            let child_style = get_node_style(tree, child);
-            if child_style.display == Some(Display::None) {
-                continue;
-            }
-            layered.push(child);
-        }
-        if !layered.is_empty() {
-            layout_absolute(tree, &layered, child_available, viewport);
-        }
-        for child in children {
-            let Some(child_node) = tree.get(child) else {
-                continue;
-            };
-            // Only `display:none` removes from layout; `visibility:hidden` keeps
-            // its space and still positions descendants (paint-time concern).
-            if !child_node.display {
-                continue;
-            }
-            let rect = child_node.content_rect;
-            let w = rect.width();
-            let h = rect.height();
-            if w == 0 || h == 0 {
-                continue;
-            }
-            resolve_layout(tree, child, Region::new(rect.x0, rect.y0, w, h), viewport);
-        }
-        return;
     }
+}
 
-    // Separate children into categories: split, docked, absolute, and flow.
-    let mut split = Vec::new();
-    let mut docked = Vec::new();
-    let mut absolute = Vec::new();
-    let mut flow = Vec::new();
-    for &child in &children {
-        // Runtime/widget-driven hidden nodes should not participate in layout.
-        if tree.get(child).is_none_or(|n| !n.display) {
+/// The style of a child that takes part in layout, or `None` for a child the
+/// runtime hides or that has `display: none`.
+fn laid_out_style(tree: &WidgetTree, child: NodeId) -> Option<Style> {
+    // Runtime/widget-driven hidden nodes should not participate in layout.
+    if tree.get(child).is_none_or(|n| !n.display) {
+        return None;
+    }
+    let child_style = get_node_style(tree, child);
+    if child_style.display == Some(Display::None) {
+        return None;
+    }
+    Some(child_style)
+}
+
+/// A node's laid-out children, by how they are placed.
+struct ChildGroups {
+    split: Vec<NodeId>,
+    docked: Vec<NodeId>,
+    absolute: Vec<NodeId>,
+    flow: Vec<NodeId>,
+}
+
+/// Sort the children that take part in layout into split, docked,
+/// absolute and flow children, keeping their order.
+fn group_children(tree: &WidgetTree, children: &[NodeId]) -> ChildGroups {
+    let mut groups = ChildGroups {
+        split: Vec::new(),
+        docked: Vec::new(),
+        absolute: Vec::new(),
+        flow: Vec::new(),
+    };
+    for &child in children {
+        let Some(child_style) = laid_out_style(tree, child) else {
             continue;
-        }
-        let child_style = get_node_style(tree, child);
-        if child_style.display == Some(Display::None) {
-            continue;
-        }
+        };
         if child_style.split.is_some() {
-            split.push(child);
+            groups.split.push(child);
         } else if child_style.dock.is_some() {
-            docked.push(child);
+            groups.docked.push(child);
         } else if child_style.position == Some(crate::style::Position::Absolute) {
-            absolute.push(child);
+            groups.absolute.push(child);
         } else {
-            flow.push(child);
+            groups.flow.push(child);
         }
     }
+    groups
+}
 
-    // Arrange split children first → reduced available region.
-    let after_split = if split.is_empty() {
-        child_available
-    } else {
-        arrange_split(tree, &split, child_available, viewport)
-    };
-
-    // Arrange docked children → further reduced available region.
-    //
+/// Arrange the docked children and return the region left for the flow
+/// children.
+fn arrange_docked(
+    tree: &mut WidgetTree,
+    docked: &[NodeId],
+    flow: &[NodeId],
+    after_split: Region,
+    viewport: (u16, u16),
+) -> Region {
     // Python parity (`_arrange.py::arrange`): widgets are grouped into LAYERS and
     // each layer is arranged independently, starting from the full region. Dock
     // carving (`dock_region.shrink(dock_spacing)`) happens WITHIN a layer, so a
@@ -319,179 +354,208 @@ pub fn resolve_layout(
     // We split docks into those sharing the flow children's layer (carve, as
     // before) and those on a distinct layer (position only, no carve). Layers are
     // compared by name with `None` == the default layer.
-    let inner = if docked.is_empty() {
+    if docked.is_empty() {
+        return after_split;
+    }
+    let flow_layers: std::collections::HashSet<Option<String>> = flow
+        .iter()
+        .map(|&c| get_node_style(tree, c).layer)
+        .collect();
+    let (docked_carve, docked_overlay): (Vec<NodeId>, Vec<NodeId>) =
+        docked.iter().copied().partition(|&c| {
+            let layer = get_node_style(tree, c).layer;
+            // Carve when this dock shares a layer with a flow child (or there
+            // are no flow children to compare against — preserve prior carve
+            // behaviour).
+            flow_layers.is_empty() || flow_layers.contains(&layer)
+        });
+    // Overlay docks (distinct layer) are positioned against the full region
+    // but do not reduce the flow region.
+    if !docked_overlay.is_empty() {
+        arrange_dock(tree, &docked_overlay, after_split, viewport);
+    }
+    if docked_carve.is_empty() {
         after_split
     } else {
-        let flow_layers: std::collections::HashSet<Option<String>> = flow
-            .iter()
-            .map(|&c| get_node_style(tree, c).layer)
-            .collect();
-        let (docked_carve, docked_overlay): (Vec<NodeId>, Vec<NodeId>) =
-            docked.iter().copied().partition(|&c| {
-                let layer = get_node_style(tree, c).layer;
-                // Carve when this dock shares a layer with a flow child (or there
-                // are no flow children to compare against — preserve prior carve
-                // behaviour).
-                flow_layers.is_empty() || flow_layers.contains(&layer)
-            });
-        // Overlay docks (distinct layer) are positioned against the full region
-        // but do not reduce the flow region.
-        if !docked_overlay.is_empty() {
-            arrange_dock(tree, &docked_overlay, after_split, viewport);
-        }
-        if docked_carve.is_empty() {
-            after_split
-        } else {
-            arrange_dock(tree, &docked_carve, after_split, viewport)
-        }
-    };
+        arrange_dock(tree, &docked_carve, after_split, viewport)
+    }
+}
 
-    // Dispatch flow children to the appropriate layout.
-    if !flow.is_empty() {
-        if is_dock_parent && flow.len() == 1 {
-            layout_dock_fill(tree, flow[0], inner);
-        } else {
-            // A SCROLL HOST (a widget that clips its descendants to its content
-            // box — the `ScrollView` host behind every `*Scroll`/`Scrollable
-            // Container`) keeps its children at their RESOLVED size on a clipped
-            // axis instead of WRAPPING them to the viewport. Python establishes a
-            // clipping content region for any non-`visible` overflow and never
-            // re-wraps a widget's box to its container (`_resolve.resolve_box_
-            // models` passes no `constrain_width`); the compositor clips at the
-            // content box. So a `VerticalScroll` (overflow-x: HIDDEN, overflow-y:
-            // auto) must still let its auto/explicit-width child overflow + clip
-            // horizontally — `hidden` differs from `auto`/`scroll` only by hiding
-            // the scrollbar, not by re-wrapping content. A plain `Container`
-            // (overflow: hidden but NOT a scroll host) keeps the historical
-            // wrap-to-fit behavior, so this is scoped to scroll hosts only.
-            let is_scroll_host = tree
-                .get(node)
-                .is_some_and(|n| n.widget.clips_descendants_to_content());
-            // A horizontally-scrollable parent (overflow-x: auto/scroll), OR a
-            // scroll host that clips horizontal overflow (overflow-x: hidden on a
-            // `VerticalScroll`), lets its children keep their resolved width.
-            let allow_h_overflow = matches!(
-                style.overflow_x.or(style.overflow),
-                Some(crate::style::Overflow::Auto | crate::style::Overflow::Scroll)
-            ) || (is_scroll_host
-                && matches!(
-                    style.overflow_x.or(style.overflow),
-                    Some(crate::style::Overflow::Hidden)
-                ));
-            // Same for the vertical axis.
-            let allow_v_overflow = matches!(
-                style.overflow_y.or(style.overflow),
-                Some(crate::style::Overflow::Auto | crate::style::Overflow::Scroll)
-            ) || (is_scroll_host
-                && matches!(
-                    style.overflow_y.or(style.overflow),
-                    Some(crate::style::Overflow::Hidden)
-                ));
-            // Transparent styling wrappers (`Node`, from `.id()`/`.class()`) stand
-            // in for the styled widget itself. Python applies `content-align`
-            // directly to that widget to position its (shrink-to-content) content
-            // within its content box. In the wrapper split, the content IS the
-            // single drained child, so the wrapper's `content-align` becomes the
-            // child alignment (mapped to `align`) when no explicit `align` is set.
-            let is_transparent_wrapper = tree
-                .get(node)
-                .is_some_and(|n| n.widget.is_transparent_wrapper());
-            let effective_align = style
-                .align
-                .or_else(|| {
-                    if is_transparent_wrapper {
-                        style.content_align.map(|ca| crate::style::Align {
-                            horizontal: ca.horizontal,
-                            vertical: ca.vertical,
-                        })
-                    } else {
-                        None
-                    }
+/// Lay the flow children out with the node's layout strategy, one pass per
+/// CSS layer, then align them and apply their `offset`.
+#[allow(clippy::similar_names)] // Paired names for the two axes (h/v).
+fn layout_flow(
+    tree: &mut WidgetTree,
+    node: NodeId,
+    style: &Style,
+    flow: &[NodeId],
+    inner: Region,
+    viewport: (u16, u16),
+) {
+    let strategy = style.layout.unwrap_or(Layout::Vertical);
+    let (allow_h_overflow, allow_v_overflow) = flow_overflow_axes(tree, node, style);
+    let effective_align = effective_flow_align(tree, node, style);
+    // Python parity (`_arrange.py::arrange` + `_build_layers`): flow
+    // children are grouped by CSS `layer` and each layer is arranged
+    // INDEPENDENTLY — its own flow-layout pass over the full flow region
+    // and its own container alignment. A single combined pass would
+    // stack widgets on different layers into one flow and align their
+    // UNION: in guide/layout/layers two 28x8 Statics on `below`/`above`
+    // under `align: center middle` must EACH center to the same spot
+    // (y=11 in 30 rows), not center a 16-row two-box stack (y=7). The
+    // unset layer is Python's implicit "default" layer (`Widget.layer`:
+    // `styles.layer or "default"`); grouping preserves child order, and
+    // paint z-order stays a render-side concern (`sort_children_by_layer`).
+    let layer_groups = flow_layer_groups(tree, flow);
+    for (_, group) in &layer_groups {
+        match strategy {
+            Layout::Vertical => {
+                layout_vertical(tree, group, inner, viewport, allow_h_overflow);
+                apply_parent_align(tree, group, inner, Layout::Vertical, effective_align);
+            }
+            Layout::Grid => {
+                layout_grid(tree, group, inner, viewport, style);
+                apply_parent_align(tree, group, inner, Layout::Grid, effective_align);
+            }
+            Layout::Horizontal => {
+                layout_horizontal(tree, group, inner, viewport, allow_v_overflow);
+                apply_parent_align(tree, group, inner, Layout::Horizontal, effective_align);
+            }
+        }
+    }
+    // CSS `offset` is applied AFTER alignment (Python WidgetPlacement
+    // offset is added post-arrange) so a relative-position offset is not
+    // cancelled by container centering.
+    apply_flow_offsets(tree, flow, viewport);
+}
+
+/// Whether the flow children may overflow the node `(horizontally,
+/// vertically)` instead of being fitted to it.
+#[allow(clippy::similar_names)] // Paired names for the two axes (h/v).
+fn flow_overflow_axes(tree: &WidgetTree, node: NodeId, style: &Style) -> (bool, bool) {
+    // A SCROLL HOST (a widget that clips its descendants to its content
+    // box — the `ScrollView` host behind every `*Scroll`/`Scrollable
+    // Container`) keeps its children at their RESOLVED size on a clipped
+    // axis instead of WRAPPING them to the viewport. Python establishes a
+    // clipping content region for any non-`visible` overflow and never
+    // re-wraps a widget's box to its container (`_resolve.resolve_box_
+    // models` passes no `constrain_width`); the compositor clips at the
+    // content box. So a `VerticalScroll` (overflow-x: HIDDEN, overflow-y:
+    // auto) must still let its auto/explicit-width child overflow + clip
+    // horizontally — `hidden` differs from `auto`/`scroll` only by hiding
+    // the scrollbar, not by re-wrapping content. A plain `Container`
+    // (overflow: hidden but NOT a scroll host) keeps the historical
+    // wrap-to-fit behavior, so this is scoped to scroll hosts only.
+    let is_scroll_host = tree
+        .get(node)
+        .is_some_and(|n| n.widget.clips_descendants_to_content());
+    // A horizontally-scrollable parent (overflow-x: auto/scroll), OR a
+    // scroll host that clips horizontal overflow (overflow-x: hidden on a
+    // `VerticalScroll`), lets its children keep their resolved width.
+    let allow_h_overflow = matches!(
+        style.overflow_x.or(style.overflow),
+        Some(crate::style::Overflow::Auto | crate::style::Overflow::Scroll)
+    ) || (is_scroll_host
+        && matches!(
+            style.overflow_x.or(style.overflow),
+            Some(crate::style::Overflow::Hidden)
+        ));
+    // Same for the vertical axis.
+    let allow_v_overflow = matches!(
+        style.overflow_y.or(style.overflow),
+        Some(crate::style::Overflow::Auto | crate::style::Overflow::Scroll)
+    ) || (is_scroll_host
+        && matches!(
+            style.overflow_y.or(style.overflow),
+            Some(crate::style::Overflow::Hidden)
+        ));
+    (allow_h_overflow, allow_v_overflow)
+}
+
+/// The alignment for the flow children: the node's own `align`, else a
+/// transparent wrapper's `content-align`, else the `align` of a wrapper
+/// this node is the sole flow child of.
+fn effective_flow_align(
+    tree: &WidgetTree,
+    node: NodeId,
+    style: &Style,
+) -> Option<crate::style::Align> {
+    // Transparent styling wrappers (`Node`, from `.id()`/`.class()`) stand
+    // in for the styled widget itself. Python applies `content-align`
+    // directly to that widget to position its (shrink-to-content) content
+    // within its content box. In the wrapper split, the content IS the
+    // single drained child, so the wrapper's `content-align` becomes the
+    // child alignment (mapped to `align`) when no explicit `align` is set.
+    let is_transparent_wrapper = tree
+        .get(node)
+        .is_some_and(|n| n.widget.is_transparent_wrapper());
+    style
+        .align
+        .or_else(|| {
+            if is_transparent_wrapper {
+                style.content_align.map(|ca| crate::style::Align {
+                    horizontal: ca.horizontal,
+                    vertical: ca.vertical,
                 })
-                // A transparent styling wrapper (`Node`, from `.id()`/`.class()`)
-                // that carries an explicit `align` is the Rust stand-in for the
-                // styled container itself (e.g. `Horizontal#questions` in Python is
-                // a `Node("#questions") > Horizontal` here). The wrapper's single
-                // flow child fills the wrapper region, so aligning that child within
-                // the wrapper is a no-op — the `align` must instead govern the
-                // child's OWN children. When THIS node is a wrapper's sole flow
-                // child and has no `align` of its own, inherit the wrapper's
-                // explicit `align` so it centers/positions its content like Python.
-                .or_else(|| {
-                    let parent = tree.parent(node)?;
-                    let parent_is_wrapper = tree
-                        .get(parent)
-                        .is_some_and(|n| n.widget.is_transparent_wrapper());
-                    if !parent_is_wrapper {
-                        return None;
-                    }
-                    // Only when this node is the wrapper's single flow child (the
-                    // collapsed-region case); otherwise the wrapper's own
-                    // `apply_parent_align` is meaningful and must not be duplicated.
-                    let parent_flow_children: Vec<NodeId> = tree
-                        .children(parent)
-                        .iter()
-                        .copied()
-                        .filter(|&c| {
-                            tree.get(c).is_some_and(|n| n.display)
-                                && get_node_style(tree, c).display != Some(Display::None)
-                        })
-                        .collect();
-                    if parent_flow_children.as_slice() != [node] {
-                        return None;
-                    }
-                    get_node_style(tree, parent).align
-                });
-            // Python parity (`_arrange.py::arrange` + `_build_layers`): flow
-            // children are grouped by CSS `layer` and each layer is arranged
-            // INDEPENDENTLY — its own flow-layout pass over the full flow region
-            // and its own container alignment. A single combined pass would
-            // stack widgets on different layers into one flow and align their
-            // UNION: in guide/layout/layers two 28x8 Statics on `below`/`above`
-            // under `align: center middle` must EACH center to the same spot
-            // (y=11 in 30 rows), not center a 16-row two-box stack (y=7). The
-            // unset layer is Python's implicit "default" layer (`Widget.layer`:
-            // `styles.layer or "default"`); grouping preserves child order, and
-            // paint z-order stays a render-side concern (`sort_children_by_layer`).
-            let mut layer_groups: Vec<(String, Vec<NodeId>)> = Vec::new();
-            for &child in &flow {
-                let layer = get_node_style(tree, child)
-                    .layer
-                    .unwrap_or_else(|| "default".to_string());
-                if let Some((_, group)) = layer_groups.iter_mut().find(|(name, _)| *name == layer) {
-                    group.push(child);
-                } else {
-                    layer_groups.push((layer, vec![child]));
-                }
+            } else {
+                None
             }
-            for (_, group) in &layer_groups {
-                match strategy {
-                    Layout::Vertical => {
-                        layout_vertical(tree, group, inner, viewport, allow_h_overflow);
-                        apply_parent_align(tree, group, inner, Layout::Vertical, effective_align);
-                    }
-                    Layout::Grid => {
-                        layout_grid(tree, group, inner, viewport, &style);
-                        apply_parent_align(tree, group, inner, Layout::Grid, effective_align);
-                    }
-                    Layout::Horizontal => {
-                        layout_horizontal(tree, group, inner, viewport, allow_v_overflow);
-                        apply_parent_align(tree, group, inner, Layout::Horizontal, effective_align);
-                    }
-                }
+        })
+        // A transparent styling wrapper (`Node`, from `.id()`/`.class()`)
+        // that carries an explicit `align` is the Rust stand-in for the
+        // styled container itself (e.g. `Horizontal#questions` in Python is
+        // a `Node("#questions") > Horizontal` here). The wrapper's single
+        // flow child fills the wrapper region, so aligning that child within
+        // the wrapper is a no-op — the `align` must instead govern the
+        // child's OWN children. When THIS node is a wrapper's sole flow
+        // child and has no `align` of its own, inherit the wrapper's
+        // explicit `align` so it centers/positions its content like Python.
+        .or_else(|| {
+            let parent = tree.parent(node)?;
+            let parent_is_wrapper = tree
+                .get(parent)
+                .is_some_and(|n| n.widget.is_transparent_wrapper());
+            if !parent_is_wrapper {
+                return None;
             }
-            // CSS `offset` is applied AFTER alignment (Python WidgetPlacement
-            // offset is added post-arrange) so a relative-position offset is not
-            // cancelled by container centering.
-            apply_flow_offsets(tree, &flow, viewport);
+            // Only when this node is the wrapper's single flow child (the
+            // collapsed-region case); otherwise the wrapper's own
+            // `apply_parent_align` is meaningful and must not be duplicated.
+            let parent_flow_children: Vec<NodeId> = tree
+                .children(parent)
+                .iter()
+                .copied()
+                .filter(|&c| {
+                    tree.get(c).is_some_and(|n| n.display)
+                        && get_node_style(tree, c).display != Some(Display::None)
+                })
+                .collect();
+            if parent_flow_children.as_slice() != [node] {
+                return None;
+            }
+            get_node_style(tree, parent).align
+        })
+}
+
+/// The flow children grouped by CSS `layer` (unset is `"default"`), in
+/// first-appearance order.
+fn flow_layer_groups(tree: &WidgetTree, flow: &[NodeId]) -> Vec<(String, Vec<NodeId>)> {
+    let mut layer_groups: Vec<(String, Vec<NodeId>)> = Vec::new();
+    for &child in flow {
+        let layer = get_node_style(tree, child)
+            .layer
+            .unwrap_or_else(|| "default".to_string());
+        if let Some((_, group)) = layer_groups.iter_mut().find(|(name, _)| *name == layer) {
+            group.push(child);
+        } else {
+            layer_groups.push((layer, vec![child]));
         }
     }
+    layer_groups
+}
 
-    // Place absolute children on top of the original available region (P2-24).
-    if !absolute.is_empty() {
-        layout_absolute(tree, &absolute, child_available, viewport);
-    }
-
+/// Resolve the layout of each laid-out child's subtree.
+fn resolve_child_layouts(tree: &mut WidgetTree, children: Vec<NodeId>, viewport: (u16, u16)) {
     // Recurse into all laid-out descendants so every node receives
     // layout/content rectangles, not only one level under `node`.
     //
