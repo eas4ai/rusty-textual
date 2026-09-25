@@ -28,7 +28,7 @@ pub use resolver::{
 pub(crate) use component::{
     component_style_to_rich, component_surface_bg, resolve_component_rich_style,
 };
-pub(crate) use context::mark_live_widget_meta;
+pub(crate) use context::{app_runtime_inline, mark_live_widget_meta};
 pub(crate) use resolver::{
     apply_display_visibility_to_tree, begin_style_render_pass, cover_selector_meta,
     current_ancestor_composited_background, current_composited_background, current_host_style,

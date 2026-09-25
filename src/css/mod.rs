@@ -8,7 +8,7 @@ pub use selectors::{
     set_style_context,
 };
 pub(crate) use selectors::{
-    Combinator, SelectorChain, SelectorMeta, ancestor_selector_fingerprint,
+    Combinator, SelectorChain, SelectorMeta, ancestor_selector_fingerprint, app_runtime_inline,
     apply_ansi_truecolor_to_segments, apply_display_visibility_to_tree, apply_style_to_segments,
     apply_widget_opacity_to_segments, begin_style_render_pass, component_style_to_rich,
     component_surface_bg, cover_selector_meta, current_ancestor_composited_background,
