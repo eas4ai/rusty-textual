@@ -479,6 +479,14 @@ fn visual_parity_batch() {
     let report_only = std::env::var("REPORT_ONLY").is_ok();
     let cases = discover();
     let mut regressions: Vec<String> = Vec::new();
+    // discover() drops a case whose golden or example binary is missing; a
+    // PASSING case that dropped out would otherwise pass unchecked.
+    for name in PASSING {
+        if !cases.iter().any(|case| case.name == *name) {
+            eprintln!("REGRESSION {name} (in PASSING but its golden or example binary is missing)");
+            regressions.push((*name).to_string());
+        }
+    }
     let (mut n_pass, mut n_ready, mut n_pending, mut n_skip) = (0u32, 0u32, 0u32, 0u32);
     let mut ready: Vec<String> = Vec::new();
 
