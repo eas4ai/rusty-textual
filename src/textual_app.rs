@@ -354,6 +354,25 @@ pub trait TextualApp: Send + 'static {
     fn take_exit_output(&mut self) -> Option<String> {
         None
     }
+
+    /// Blank lines written below the cursor before the first frame when the
+    /// app runs inline (Python `App.INLINE_PADDING`, 1 by default).
+    fn inline_padding(&self) -> usize {
+        1
+    }
+}
+
+/// How [`run_with_options`] runs an app (Python `App.run` keyword
+/// arguments).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RunOptions {
+    /// Run inline, below the shell prompt, instead of on the alternate screen
+    /// (Python `inline=True`). Unix only: on Windows the app runs
+    /// full-screen, as in Python.
+    pub inline: bool,
+    /// When running inline, leave the last frame on screen on exit (Python
+    /// `inline_no_clear=True`). Ignored when the app exits with a message.
+    pub inline_no_clear: bool,
 }
 
 /// Command provider lifecycle for `TextualApp` command palette integration.
@@ -1361,6 +1380,21 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
 ///   `configure` calls [`App::stop`] or [`App::exit`].
 /// - Any error that [`TextualApp::configure`] returns.
 pub async fn run_with_output<T: TextualApp>(definition: T) -> Result<Option<String>> {
+    run_with_options(definition, RunOptions::default()).await
+}
+
+/// Run a `TextualApp` definition with [`RunOptions`], such as inline mode,
+/// and return the app's exit output.
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_with_output`], and
+/// [`Error::Terminal`](crate::Error::Terminal) when an inline app cannot
+/// clear itself from the terminal on exit.
+pub async fn run_with_options<T: TextualApp>(
+    definition: T,
+    options: RunOptions,
+) -> Result<Option<String>> {
     let state = Arc::new(Mutex::new(definition));
     let mut app = App::new()?;
 
@@ -1392,12 +1426,27 @@ pub async fn run_with_output<T: TextualApp>(definition: T) -> Result<Option<Stri
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .compose();
+    if options.inline {
+        let padding = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .inline_padding();
+        app.enable_inline(padding);
+    }
     let mut root = build_textual_app_runtime_root(state.clone(), composed);
-    app.run_widget_tree(&mut root).await?;
-    Ok(state
+    let run = app.run_widget_tree(&mut root).await;
+    let exit_output = state
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .take_exit_output())
+        .take_exit_output();
+    if app.is_inline() {
+        // Python keeps the last frame only for `inline_no_clear` without an
+        // exit message (`App._process_messages`).
+        let has_message = exit_output.is_some() || app.exit_message().is_some();
+        app.end_inline(run.is_ok() && options.inline_no_clear && !has_message)?;
+    }
+    run?;
+    Ok(exit_output)
 }
 
 /// Run a `TextualApp` definition using the standard `App` runtime.
@@ -1578,6 +1627,23 @@ pub fn run_sync_with_output<T: TextualApp>(definition: T) -> Result<Option<Strin
         .enable_all()
         .build()?;
     runtime.block_on(run_with_output(definition))
+}
+
+/// Blocking/synchronous variant of [`run_with_options`].
+///
+/// # Errors
+///
+/// Returns [`Error::Terminal`](crate::Error::Terminal) when the Tokio
+/// runtime cannot be built. Otherwise returns the same errors as
+/// [`run_with_options`].
+pub fn run_sync_with_options<T: TextualApp>(
+    definition: T,
+    options: RunOptions,
+) -> Result<Option<String>> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(run_with_options(definition, options))
 }
 
 /// Blocking/synchronous variant of [`run`].

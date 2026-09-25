@@ -1,10 +1,9 @@
 /// Port of Python Textual `docs/examples/how-to/inline02.py`.
 ///
 /// A clock app displayed using the `Digits` widget, centered on screen.
-/// The Python source runs in inline mode (`app.run(inline=True)`) with CSS that
-/// applies extra styling only when `&:inline` — those rules are omitted here as
-/// the parity scoreboard runs the app in full-screen mode, where they would not
-/// apply.
+/// Runs inline like the Python original (`app.run(inline=True)`), with its CSS
+/// that applies only inline (`&:inline`): no border, half the terminal's height,
+/// and green digits.
 ///
 /// NOTE: This example is non-deterministic — it displays the live current time,
 /// which changes every second and cannot be parity-verified by plain-text
@@ -15,6 +14,13 @@ use textual::prelude::*;
 const CSS: &str = r"
 Screen {
     align: center middle;
+    &:inline {
+        border: none;
+        height: 50vh;
+        Digits {
+            color: $success;
+        }
+    }
 }
 Digits {
     width: auto;
@@ -65,7 +71,12 @@ impl TextualApp for ClockApp {
 }
 
 fn main() -> textual::Result<()> {
-    run_sync(ClockApp::default())
+    let options = RunOptions {
+        inline: true,
+        ..RunOptions::default()
+    };
+    run_sync_with_options(ClockApp::default(), options)?;
+    Ok(())
 }
 
 #[cfg(test)]

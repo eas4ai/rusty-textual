@@ -14,6 +14,7 @@ mod frozen_bg_regression;
 mod helpers;
 #[cfg(test)]
 mod hidden_focus_reset_regression;
+pub(crate) mod inline;
 mod layers;
 #[cfg(test)]
 mod loading_cover_regression;
@@ -773,6 +774,9 @@ pub struct App {
     pointer_shape: PointerShape,
     app_active: bool,
     app_inline: bool,
+    /// Inline render mode (Python `App.run(inline=True)`); `None` runs
+    /// full-screen.
+    inline: Option<inline::InlineState>,
     app_ansi: bool,
     app_nocolor: bool,
     /// Focused widget snapshot captured when app loses terminal focus.
@@ -1076,6 +1080,7 @@ impl App {
             pointer_shape: PointerShape::Default,
             app_active: true,
             app_inline: false,
+            inline: None,
             app_ansi: matches!(std::env::var("TEXTUAL_APP_ANSI").ok().as_deref(), Some("1")),
             app_nocolor: matches!(
                 std::env::var("TEXTUAL_APP_NOCOLOR").ok().as_deref(),
@@ -2765,6 +2770,10 @@ impl App {
     }
 
     pub fn action_suspend_process(&mut self) -> bool {
+        // Python's inline driver cannot suspend: the action does nothing.
+        if self.inline.is_some() {
+            return false;
+        }
         // Headless (run_test): never SIGTSTP the test runner. Record the request
         // so suspend-on-interaction demos are observable via
         // `headless_suspend_count`, and return without touching the driver.
@@ -2846,6 +2855,13 @@ impl App {
     /// headless and the driver is started. The suspend signal has already
     /// been published when this error returns.
     pub fn suspend(&mut self) -> Result<SuspendGuard<'_>> {
+        // Python's inline driver cannot suspend (`can_suspend` is False).
+        if self.inline.is_some() {
+            return Err(Error::Terminal(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "App.suspend is not supported in inline mode",
+            )));
+        }
         self.app_suspend_signal.emit(&AppSuspended);
         // Mirror `action_suspend_process`: never touch a real terminal from
         // the headless harness; `started()` is already false there, but the
@@ -4500,6 +4516,13 @@ impl App {
         // SYNC stays off unless the startup negotiation proved support
         // (PR-15b): the env opt-out alone no longer wraps every frame.
         self.sync_output = self.sync_output && self.driver.negotiated_modes().sync_supported;
+        if let Some(inline) = &self.inline {
+            // Python never wraps inline frames in synchronized output, and
+            // writes the padding lines below the cursor before the first one.
+            self.sync_output = false;
+            self.console
+                .write_str(&inline::ROW_BREAK.repeat(inline.padding))?;
+        }
         self.refresh_size()?;
         debug_render(&format!("[app] sync_output={}", self.sync_output));
         debug_render(&format!(
@@ -4522,8 +4545,53 @@ impl App {
             return Ok(());
         }
         self.driver.stop()?;
+        // Inline mode prints it in `end_inline`, after clearing the app.
+        if self.inline.is_some() {
+            return Ok(());
+        }
         // Python `App.exit(message=...)`: the shutdown message is displayed
         // on exit, after the driver releases the terminal.
+        if let Some(message) = self.exit_message.take() {
+            println!("{message}");
+        }
+        Ok(())
+    }
+
+    /// Run inline (Python `App.run(inline=True)`) with `padding` blank lines
+    /// above the first frame. Call before the app starts; ignored on Windows
+    /// (Python runs inline requests full-screen there) and in headless runs.
+    pub(crate) fn enable_inline(&mut self, padding: usize) {
+        if self.headless || !inline::effective_inline(true, cfg!(windows)) {
+            return;
+        }
+        let size = self.driver.size();
+        self.inline = Some(inline::InlineState::new(padding, (size.width, size.height)));
+        self.driver.set_inline(true);
+        self.app_inline = true;
+    }
+
+    /// Whether the app runs inline (Python `App.is_inline`).
+    #[must_use]
+    pub fn is_inline(&self) -> bool {
+        self.inline.is_some()
+    }
+
+    /// End an inline run, after the driver has stopped: keep the last frame
+    /// on screen with the cursor below it (`keep_frame`, Python's
+    /// `inline_no_clear` without an exit message), or erase the app and its
+    /// padding. Then print the exit message, if any. Does nothing when the
+    /// app did not run inline.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`] when writing to the terminal fails.
+    pub(crate) fn end_inline(&mut self, keep_frame: bool) -> Result<()> {
+        let Some(state) = self.inline.take() else {
+            return Ok(());
+        };
+        let height = state.previous_height.unwrap_or(0);
+        self.console
+            .write_str(&inline::exit_sequence(keep_frame, height, state.padding))?;
         if let Some(message) = self.exit_message.take() {
             println!("{message}");
         }
@@ -5375,6 +5443,17 @@ impl App {
         } else {
             self.driver.refresh_size()?
         };
+        if let Some(inline) = &mut self.inline {
+            // The frame is the app's inline height, which the render measures;
+            // only a change of the terminal itself is a resize.
+            let terminal = (size.width, size.height);
+            if inline.terminal != terminal {
+                inline.terminal = terminal;
+                inline.resized = true;
+                self.resized_since_last_render = true;
+            }
+            return Ok(());
+        }
         apply_size(&mut self.options, size);
         if self.frame.width != size.width as usize || self.frame.height != size.height as usize {
             let now = Instant::now();

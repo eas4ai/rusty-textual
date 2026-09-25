@@ -53,11 +53,15 @@ pub struct Size {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)] // Independent switches, each its own Python driver argument (`mouse`, `inline`, ...).
 pub struct DriverOptions {
     pub enable_mouse: bool,
     pub enable_pointer_shapes: bool,
     pub enable_focus_change: bool,
     pub keyboard_protocol: KeyboardProtocol,
+    /// Inline mode (Python `App.run(inline=True)`): stay on the main screen
+    /// and leave line wrap alone instead of entering the alternate screen.
+    pub inline: bool,
 }
 
 impl Default for DriverOptions {
@@ -68,6 +72,7 @@ impl Default for DriverOptions {
             enable_pointer_shapes: detect_pointer_shapes_enabled(),
             enable_focus_change: false,
             keyboard_protocol: KeyboardProtocol::Off,
+            inline: false,
         }
     }
 }
@@ -139,6 +144,15 @@ impl TerminalDriver {
     #[must_use]
     pub fn options(&self) -> DriverOptions {
         self.options
+    }
+
+    /// Choose inline mode (see [`DriverOptions::inline`]). Takes effect at the
+    /// next [`start`](Self::start); a started driver keeps its mode until it
+    /// stops.
+    pub fn set_inline(&mut self, inline: bool) {
+        if !self.started {
+            self.options.inline = inline;
+        }
     }
 
     /// Terminal capability profile for the active platform driver.
@@ -232,6 +246,10 @@ impl TerminalDriver {
     /// fails. When the driver has not started, it writes nothing and returns
     /// `Ok(())`.
     pub fn reassert_runtime_modes(&mut self) -> io::Result<()> {
+        // Inline mode never changed line wrap, so there is nothing to reassert.
+        if self.options.inline {
+            return Ok(());
+        }
         self.platform.reassert_runtime_modes(self.started)
     }
 

@@ -18,6 +18,7 @@ use crate::widget_tree::Rect;
 use crate::widget_tree::WidgetTree;
 
 mod common;
+pub(crate) use common::inline_height;
 mod dock;
 mod grid;
 mod horizontal;

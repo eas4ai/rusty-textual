@@ -408,6 +408,38 @@ impl FrameBuffer {
         }
     }
 
+    /// Every row of the frame as styled segments, rows separated by a
+    /// `row_break` text segment, with no cursor movement: inline mode redraws
+    /// the whole frame from its origin (Python `InlineUpdate`).
+    #[must_use]
+    pub fn row_segments(&self, row_break: &str) -> Segments {
+        let mut out = Segments::new();
+        for y in 0..self.height {
+            if y > 0 {
+                out.push(Segment::new(row_break.to_string()));
+            }
+            let mut x = 0;
+            while x < self.width {
+                let cell = self.get(x, y);
+                if cell.continuation {
+                    x += 1;
+                    continue;
+                }
+                let text = if cell.text.is_empty() {
+                    " ".to_string()
+                } else {
+                    cell.text.clone()
+                };
+                let mut seg = Segment::new(text);
+                seg.style = cell.style;
+                seg.meta.clone_from(&cell.meta);
+                out.push(seg);
+                x += self.cell_span_width(x, y).max(1);
+            }
+        }
+        out
+    }
+
     /// Compute an update sequence that transforms `previous` into `self`.
     ///
     /// The returned segments:
