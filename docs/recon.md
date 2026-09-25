@@ -165,16 +165,17 @@ included) landed after the 1.1.0 docs commit `922cf93` (2026-07-16):
 ## 10. Findings since the recon (2026-09-24 to 2026-09-25)
 
 Found during the strict-clippy cleanup and the long-function splits
-(`79f6864e` to `e6d2f4c7`). Measured at `main` `e6d2f4c7`. Only the
-combinator panic is fixed. The splits kept behavior unchanged on purpose, so
-the other defects are still present.
+(`79f6864e` to `e6d2f4c7`). Measured at `main` `e6d2f4c7`. The splits kept
+behavior unchanged on purpose. The combinator panic was fixed during the
+cleanup and the DirectoryTree symlink gap on 2026-09-25; the other defects
+are still present.
 
 ### 10.1 Defects and gaps
 
 | Claim | Status | Citation |
 |---|---|---|
 | A CSS child-combinator chain longer than the ancestor stack (`A > B > C` where `B` is the top ancestor) panicked with an index out of bounds. It now does not match. | Exists (fixed in `794f7eb4`) | Guards: `src/css/selectors/matching.rs:134` (`rule_specificity`) and `src/runtime/event_loop.rs:1531` (`rule_matches_snapshot_chain`). Tests: `matching.rs:217`, `event_loop.rs:7559` |
-| `DirectoryTree` lists a symlink to a directory as a file, so the user cannot expand it. Python follows the link. | Exists (not fixed) | Child entries use `DirEntry::file_type()`, which does not follow symlinks (`src/widgets/directory_tree.rs:553`). The root node uses `Path::is_dir()`, which does (`:37`). Python uses `path.is_dir()` for both (`../textual/src/textual/widgets/_directory_tree.py:457-467`). Present since `7628e659`. Not run in a live app |
+| `DirectoryTree` lists a symlink to a directory as a file, so the user cannot expand it. Python follows the link. | Exists (fixed 2026-09-25) | Child entries used `DirEntry::file_type()`, which does not follow symlinks, in both the sync and the async listing (`src/widgets/directory_tree.rs:553`, `src/runtime/tasks.rs:508` at `e6d2f4c7`). The root node uses `Path::is_dir()`, which does (`:37`). Python uses `path.is_dir()` for both (`../textual/src/textual/widgets/_directory_tree.py:457-467`). Present since `7628e659`. Both listings now use `Path::is_dir()`; tests `read_children_lists_a_symlinked_directory_as_a_directory` and `read_directory_request_lists_a_symlinked_directory_as_a_directory` |
 | An app whose terminal (pty) closes without a SIGHUP keeps running at 100% CPU. This happens when the app has no controlling terminal, for example under `scripts/record_demo.py`. | Exists (not fixed) | Observed 2026-09-24 on `79f6864e`: each recording left eight example processes at full CPU (`c7cfb55f` message). That commit makes the recorder kill the whole process group, which hides the symptom. The input wait is `event::poll(timeout)` then `event::read()` (`src/runtime/event_loop.rs:3117-3118`), and `src/` has no SIGHUP handling. Cause Unverified: likely `poll` reports the hung-up terminal as ready on every pass. Python Textual in the same case: Unverified |
 | A key sent through `AppSimulateKey` loses the CSS class changes that its binding's action stages. The live and headless key paths apply them. A Footer key click and the `app.simulate_key` action both post `AppSimulateKey`. | Exists (not fixed) | `dispatch_simulated_key_binding` passes each action's `EventCtx` to `merge_ctx_into_runtime_pass` (`src/runtime/event_loop.rs:614,624,637`). That function leaves class changes on the context (`:545`), and the context is then dropped. The live path (`:3505,3530`) and the headless path (`:5720,5732,5745`) use `outcome_from_action` (`:2217`), which keeps them. Posters: `src/widgets/footer.rs:852`, `src/textual_app.rs:969`. Not run |
 | In headless runs (`Pilot`), the default `ctrl+c` action (`CopySelectedText`) and `HelpQuit` skip the app-level handling: no copy of the app's text selection and no quit hint. They only reach widgets as `Event::Action`. The live loop and `AppSimulateKey` run the app-level handling for both. | Exists (not fixed) | Headless: `headless_action_map` (`src/runtime/event_loop.rs:5758-5786`). Live: `live_action_map_fallback` (`:3598-3605`). Simulated: `dispatch_simulated_action_map` (`:655-675`). Default key map: `src/runtime/helpers.rs:51-55`. Not run |

@@ -42,6 +42,10 @@ until the API stabilizes.
 - A child-combinator selector with more parts than the widget has
   ancestors (`A > B > C` where `B` is the top ancestor) no longer panics
   with an index out of bounds; the rule does not match.
+- `DirectoryTree` lists a symlink to a directory as a directory, as
+  Python Textual does: it sorts with the directories and can be
+  expanded. Before, it was listed as a file. A dangling symlink is still
+  a file.
 
 ## [1.1.0] - 2026-07-16
 

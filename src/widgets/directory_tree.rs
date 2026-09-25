@@ -550,7 +550,9 @@ fn read_children(
             continue;
         }
 
-        let is_dir = entry.file_type().is_ok_and(|ft| ft.is_dir());
+        // `Path::is_dir` follows symlinks, like Python's `_safe_is_dir`;
+        // `DirEntry::file_type` does not.
+        let is_dir = path.is_dir();
         entries.push(DirectoryNode {
             path,
             label,
@@ -964,5 +966,35 @@ mod tests {
                 .downcast_ref::<AsyncTaskCancel>()
                 .is_some_and(|m| m.task_id == 1)
         }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_children_lists_a_symlinked_directory_as_a_directory() {
+        let temp = TempTreeDir::new("directory-tree-symlink");
+        fs::create_dir_all(temp.path.join("real")).expect("create real dir");
+        std::os::unix::fs::symlink(temp.path.join("real"), temp.path.join("link"))
+            .expect("create directory symlink");
+        std::os::unix::fs::symlink(temp.path.join("missing"), temp.path.join("dangling"))
+            .expect("create dangling symlink");
+        fs::write(temp.path.join("alpha.txt"), "alpha").expect("write file");
+
+        let children = read_children(&temp.path, false, None);
+        let listed: Vec<(&str, bool, bool)> = children
+            .iter()
+            .map(|child| (child.label.as_str(), child.is_dir, child.loaded))
+            .collect();
+        // Python's `_safe_is_dir` uses `Path.is_dir()`, which follows the link,
+        // so a linked directory sorts with the directories and can be expanded
+        // (not yet loaded). A dangling link is a file.
+        assert_eq!(
+            listed,
+            [
+                ("link", true, false),
+                ("real", true, false),
+                ("alpha.txt", false, true),
+                ("dangling", false, true)
+            ]
+        );
     }
 }

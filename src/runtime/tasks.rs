@@ -506,7 +506,9 @@ fn read_directory_request(path: String, show_hidden: bool) -> AsyncTaskResult {
         if !show_hidden && name.starts_with('.') {
             continue;
         }
-        let is_dir = entry.file_type().is_ok_and(|ft| ft.is_dir());
+        // `Path::is_dir` follows symlinks, like Python's `_safe_is_dir`;
+        // `DirEntry::file_type` does not.
+        let is_dir = entry_path.is_dir();
         entries.push(AsyncDirectoryEntry {
             path: entry_path.display().to_string(),
             label: name.to_string(),
@@ -606,6 +608,40 @@ mod tests {
             assert_eq!(m.task_id, 7);
             assert_eq!(m.target, target_id);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_directory_request_lists_a_symlinked_directory_as_a_directory() {
+        let temp = TempTreeDir::new("async-task-symlink");
+        fs::create_dir_all(temp.path.join("real")).expect("create real dir");
+        std::os::unix::fs::symlink(temp.path.join("real"), temp.path.join("link"))
+            .expect("create directory symlink");
+        std::os::unix::fs::symlink(temp.path.join("missing"), temp.path.join("dangling"))
+            .expect("create dangling symlink");
+        fs::write(temp.path.join("alpha.txt"), "alpha").expect("write file");
+
+        let crate::message::AsyncTaskResult::DirectoryEntries { entries, .. } =
+            super::read_directory_request(temp.path.display().to_string(), false)
+        else {
+            panic!("expected directory entries");
+        };
+        let listed: Vec<(&str, bool)> = entries
+            .iter()
+            .map(|entry| (entry.label.as_str(), entry.is_dir))
+            .collect();
+        // Python's `_safe_is_dir` uses `Path.is_dir()`, which follows the link,
+        // so a linked directory sorts with the directories. A dangling link is
+        // a file.
+        assert_eq!(
+            listed,
+            [
+                ("link", true),
+                ("real", true),
+                ("alpha.txt", false),
+                ("dangling", false)
+            ]
+        );
     }
 
     // ── call_from_thread bridge ───────────────────────────────────────
