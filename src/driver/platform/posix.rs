@@ -37,7 +37,6 @@ impl PlatformDriver for PosixPlatformDriver {
         terminal::enable_raw_mode()?;
         if let Err(err) = execute!(
             std::io::stdout(),
-            terminal::EnterAlternateScreen,
             cursor::Hide,
             terminal::DisableLineWrap
         ) {
