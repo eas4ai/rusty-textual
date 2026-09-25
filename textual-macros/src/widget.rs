@@ -852,53 +852,10 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     // ── DELEGATION MODE (`base = <Type>`) ──────────────────────────────
     let field = &args.field;
 
-    // Validate `override(..)` names against the known surface.
-    let known: std::collections::HashSet<&str> = table.iter().map(|m| m.name).collect();
-    for ov in &args.overrides {
-        let ov_s = ov.to_string();
-        if !known.contains(ov_s.as_str()) {
-            return syn::Error::new_spanned(
-                ov,
-                format!(
-                    "`override({ov_s})` is not a delegated `Widget` method; \
-                     override an unknown method by hand-writing the full `impl Widget` instead"
-                ),
-            )
-            .to_compile_error();
-        }
-    }
-    let overrides: std::collections::HashSet<String> = args
-        .overrides
-        .iter()
-        .map(std::string::ToString::to_string)
-        .collect();
-
-    // `on(..)` wires the generated `on_message`; `override(on_message)` replaces
-    // it. Both at once is contradictory.
-    if !args.on_handlers.is_empty() && overrides.contains("on_message") {
-        return syn::Error::new_spanned(
-            &args.on_handlers[0],
-            "`on(..)` cannot be combined with `override(on_message)`; the override \
-             replaces the generated `on_message` that `on(..)` would wire",
-        )
-        .to_compile_error();
-    }
-
-    // Validate the target field exists on the struct.
-    let field_exists = item_struct
-        .fields
-        .iter()
-        .any(|f| f.ident.as_ref().is_some_and(|id| id == field));
-    if !field_exists {
-        return syn::Error::new_spanned(
-            field,
-            format!(
-                "`#[widget]` expects a field named `{field}` to delegate to \
-                 (use `field = <name>` to point at a differently-named field)"
-            ),
-        )
-        .to_compile_error();
-    }
+    let overrides = match check_delegation_args(&item_struct, &args, &table) {
+        Ok(overrides) => overrides,
+        Err(err) => return err.to_compile_error(),
+    };
 
     let mut methods: Vec<TokenStream> = Vec::new();
     for spec in &table {
@@ -985,6 +942,103 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     assemble_impl(&item_struct, &methods)
 }
 
+/// Check the delegation-mode arguments: every `override(..)` names a
+/// delegated method, `on(..)` is not combined with `override(on_message)`,
+/// and the delegated field exists. Returns the override names.
+fn check_delegation_args(
+    item_struct: &ItemStruct,
+    args: &WidgetArgs,
+    table: &[MethodSpec],
+) -> syn::Result<std::collections::HashSet<String>> {
+    let field = &args.field;
+
+    // Validate `override(..)` names against the known surface.
+    let known: std::collections::HashSet<&str> = table.iter().map(|m| m.name).collect();
+    for ov in &args.overrides {
+        let ov_s = ov.to_string();
+        if !known.contains(ov_s.as_str()) {
+            return Err(syn::Error::new_spanned(
+                ov,
+                format!(
+                    "`override({ov_s})` is not a delegated `Widget` method; \
+                     override an unknown method by hand-writing the full `impl Widget` instead"
+                ),
+            ));
+        }
+    }
+    let overrides: std::collections::HashSet<String> = args
+        .overrides
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
+
+    // `on(..)` wires the generated `on_message`; `override(on_message)` replaces
+    // it. Both at once is contradictory.
+    if !args.on_handlers.is_empty() && overrides.contains("on_message") {
+        return Err(syn::Error::new_spanned(
+            &args.on_handlers[0],
+            "`on(..)` cannot be combined with `override(on_message)`; the override \
+             replaces the generated `on_message` that `on(..)` would wire",
+        ));
+    }
+
+    // Validate the target field exists on the struct.
+    let field_exists = item_struct
+        .fields
+        .iter()
+        .any(|f| f.ident.as_ref().is_some_and(|id| id == field));
+    if !field_exists {
+        return Err(syn::Error::new_spanned(
+            field,
+            format!(
+                "`#[widget]` expects a field named `{field}` to delegate to \
+                 (use `field = <name>` to point at a differently-named field)"
+            ),
+        ));
+    }
+    Ok(overrides)
+}
+
+/// Check the own-widget-mode arguments: known capability names, and no
+/// delegation-only `override(..)` / `on(..)`.
+fn check_own_mode_args(args: &WidgetArgs) -> syn::Result<()> {
+    // Validate capability names.
+    for cap in &args.capabilities {
+        let cap_s = cap.to_string();
+        if !is_known_capability(&cap_s) {
+            return Err(syn::Error::new_spanned(
+                cap,
+                format!(
+                    "unknown `#[widget]` capability `{cap_s}`; expected one of: \
+                     Interactive, Layout, Scrollable, Focus, Selectable, HasTooltip, \
+                     Components, AppHooks (own-widget mode), or `base = <Type>` (delegation)"
+                ),
+            ));
+        }
+    }
+
+    // `override(..)` / `on(..)` are delegation-mode features: in own-widget mode
+    // you implement the capability trait method directly (and, for typed
+    // handlers, call your `#[on(..)]` dispatch methods from your own
+    // `Interactive::on_message`).
+    if let Some(ov) = args.overrides.first() {
+        return Err(syn::Error::new_spanned(
+            ov,
+            "`override(..)` requires `base = <Type>` delegation mode; in own-widget \
+             mode implement the capability trait method directly",
+        ));
+    }
+    if let Some(on) = args.on_handlers.first() {
+        return Err(syn::Error::new_spanned(
+            on,
+            "`on(..)` requires `base = <Type>` delegation mode; in own-widget mode \
+             implement `Interactive::on_message` and call your `#[on(..)]` dispatch \
+             methods directly",
+        ));
+    }
+    Ok(())
+}
+
 /// Emit the widget struct plus its generated `impl Widget` (body = `methods`)
 /// and the always-present `impl Renderable` (both modes share this).
 fn assemble_impl(item_struct: &ItemStruct, methods: &[TokenStream]) -> TokenStream {
@@ -1015,42 +1069,8 @@ fn own_widget_impl(
     args: &WidgetArgs,
     table: &[MethodSpec],
 ) -> TokenStream {
-    // Validate capability names.
-    for cap in &args.capabilities {
-        let cap_s = cap.to_string();
-        if !is_known_capability(&cap_s) {
-            return syn::Error::new_spanned(
-                cap,
-                format!(
-                    "unknown `#[widget]` capability `{cap_s}`; expected one of: \
-                     Interactive, Layout, Scrollable, Focus, Selectable, HasTooltip, \
-                     Components, AppHooks (own-widget mode), or `base = <Type>` (delegation)"
-                ),
-            )
-            .to_compile_error();
-        }
-    }
-
-    // `override(..)` / `on(..)` are delegation-mode features: in own-widget mode
-    // you implement the capability trait method directly (and, for typed
-    // handlers, call your `#[on(..)]` dispatch methods from your own
-    // `Interactive::on_message`).
-    if let Some(ov) = args.overrides.first() {
-        return syn::Error::new_spanned(
-            ov,
-            "`override(..)` requires `base = <Type>` delegation mode; in own-widget \
-             mode implement the capability trait method directly",
-        )
-        .to_compile_error();
-    }
-    if let Some(on) = args.on_handlers.first() {
-        return syn::Error::new_spanned(
-            on,
-            "`on(..)` requires `base = <Type>` delegation mode; in own-widget mode \
-             implement `Interactive::on_message` and call your `#[on(..)]` dispatch \
-             methods directly",
-        )
-        .to_compile_error();
+    if let Err(err) = check_own_mode_args(args) {
+        return err.to_compile_error();
     }
 
     let enabled: std::collections::HashSet<String> = args
