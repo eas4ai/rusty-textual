@@ -19,7 +19,7 @@ sys.dont_write_bytecode = True
 
 from mechanism_env import clean_env  # noqa: E402
 
-REQUIREMENTS = [f"INL-{n:03d}" for n in range(1, 17)] + ["TRM-001"]
+REQUIREMENTS = [f"INL-{n:03d}" for n in range(1, 18)] + ["TRM-001"]
 RUNS = [
     ["cargo", "test", "--test", "inline_mode", "--", "--test-threads=1"],
     ["cargo", "test", "--lib", "--", "--test-threads=1", "inl_0"],
