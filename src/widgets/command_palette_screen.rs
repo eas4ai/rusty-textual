@@ -364,6 +364,7 @@ impl Screen for CommandPaletteScreen {
         // `overlay: screen` (Mechanism A) and the input row sizes to content.
         Some(
             "\
+CommandPalette:inline { min-height: 20; }
 CommandPalette { color: $foreground; align-horizontal: center; }
 CommandPalette > Vertical { margin-top: 3; height: auto; background: $surface; }
 CommandPalette #--input { height: auto; }

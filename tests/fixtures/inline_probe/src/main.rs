@@ -6,7 +6,12 @@
 //! - `PROBE_PADDING`: inline padding lines (unset: 1, Python's default).
 //! - `PROBE_LINES`: lines in the body (default 3).
 //! - `PROBE_BUTTON`: when set, a `Press` button follows the body.
-//! - `PROBE_EXIT_MESSAGE`: when set, the app exits with this message.
+//! - `PROBE_EXIT_MESSAGE`: when set, `q` exits through `App::exit` with this
+//!   message (Python `App.exit(message=...)`).
+//! - `PROBE_EXIT_RESULT`: when set, the app returns this value
+//!   (`take_exit_output`, Python `App.exit(result=...)`); `main` prints it.
+//! - `PROBE_EXIT_IN_CONFIGURE`: when set, `configure` calls `App::exit`, so the
+//!   app stops before it starts.
 //!
 //! Keys: `s` shrinks the body to one line, `z` tries `App::suspend`, `x`
 //! runs the suspend-process action, `q` quits. The status line counts every
@@ -25,6 +30,8 @@ struct Probe {
     padding: usize,
     button: bool,
     exit_message: Option<String>,
+    exit_result: Option<String>,
+    exit_in_configure: bool,
     other_keys: usize,
     suspend: &'static str,
     clicked: bool,
@@ -43,6 +50,8 @@ impl Probe {
             padding: number("PROBE_PADDING", 1),
             button: std::env::var_os("PROBE_BUTTON").is_some(),
             exit_message: std::env::var("PROBE_EXIT_MESSAGE").ok(),
+            exit_result: std::env::var("PROBE_EXIT_RESULT").ok(),
+            exit_in_configure: std::env::var_os("PROBE_EXIT_IN_CONFIGURE").is_some(),
             other_keys: 0,
             suspend: "none",
             clicked: false,
@@ -72,6 +81,9 @@ impl Probe {
 impl TextualApp for Probe {
     fn configure(&mut self, app: &mut App) -> textual::Result<()> {
         app.load_stylesheet(CSS);
+        if self.exit_in_configure {
+            app.exit(None, 0, None);
+        }
         Ok(())
     }
 
@@ -108,6 +120,9 @@ impl TextualApp for Probe {
                 };
             }
             "q" => {
+                if let Some(message) = self.exit_message.take() {
+                    app.exit(None, 0, Some(message));
+                }
                 ctx.request_stop();
                 ctx.set_handled();
                 return;
@@ -127,7 +142,7 @@ impl TextualApp for Probe {
     }
 
     fn take_exit_output(&mut self) -> Option<String> {
-        self.exit_message.take()
+        self.exit_result.take()
     }
 }
 
@@ -137,8 +152,8 @@ fn main() -> textual::Result<()> {
         inline: mode != "full",
         inline_no_clear: mode == "inline-no-clear",
     };
-    if let Some(message) = run_sync_with_options(Probe::from_env(), options)? {
-        println!("{message}");
+    if let Some(result) = run_sync_with_options(Probe::from_env(), options)? {
+        println!("{result}");
     }
     Ok(())
 }

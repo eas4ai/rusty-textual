@@ -10,6 +10,7 @@
 //! be made relative to the app.
 
 use std::fmt::Write as _;
+use std::time::{Duration, Instant};
 
 /// Inline-mode state for a running app.
 #[derive(Debug, Clone)]
@@ -26,10 +27,16 @@ pub(crate) struct InlineState {
     pub(crate) origin: Option<(u16, u16)>,
     /// The terminal was resized since the last frame.
     pub(crate) resized: bool,
-    /// Whether the terminal answers cursor position queries; cleared after
-    /// one goes unanswered, so a silent terminal costs one timeout, not one
-    /// per frame.
-    pub(crate) cursor_reports: bool,
+    /// The app started: the padding was written and frames may be on screen.
+    /// An inline run that stopped earlier has nothing to erase on exit.
+    pub(crate) started: bool,
+    /// After a cursor position query went unanswered, the earliest time to
+    /// ask again; `None` asks after every frame. A reply that was only late
+    /// is still queued and answers the next query at once.
+    pub(crate) origin_retry_at: Option<Instant>,
+    /// The wait before asking again after an unanswered query; doubles while
+    /// the terminal stays silent (see [`next_origin_backoff`]).
+    pub(crate) origin_backoff: Duration,
 }
 
 impl InlineState {
@@ -40,9 +47,26 @@ impl InlineState {
             previous_height: None,
             origin: None,
             resized: false,
-            cursor_reports: true,
+            started: false,
+            origin_retry_at: None,
+            origin_backoff: Duration::ZERO,
         }
     }
+}
+
+/// The first wait before asking a silent terminal for the cursor position
+/// again.
+pub(crate) const ORIGIN_RETRY_MIN: Duration = Duration::from_secs(1);
+/// The longest wait between such attempts.
+pub(crate) const ORIGIN_RETRY_MAX: Duration = Duration::from_secs(32);
+
+/// The wait after another unanswered cursor position query: 1 s, then
+/// doubling up to 32 s. Each attempt at a silent terminal blocks for
+/// crossterm's 2 s timeout, so the backoff bounds that cost.
+pub(crate) fn next_origin_backoff(current: Duration) -> Duration {
+    current
+        .saturating_mul(2)
+        .clamp(ORIGIN_RETRY_MIN, ORIGIN_RETRY_MAX)
 }
 
 /// Whether a request to run inline takes effect: Python picks its inline
@@ -149,6 +173,17 @@ mod tests {
     fn no_clear_exit_moves_below_the_last_frame() {
         assert_eq!(exit_sequence(true, 5, 1), "\x1b[4B\r\n");
         assert_eq!(exit_sequence(true, 1, 1), "\r\n");
+    }
+
+    #[test]
+    fn origin_retries_back_off_up_to_the_maximum() {
+        let mut wait = Duration::ZERO;
+        let mut waits = Vec::new();
+        for _ in 0..8 {
+            wait = next_origin_backoff(wait);
+            waits.push(wait.as_secs());
+        }
+        assert_eq!(waits, [1, 2, 4, 8, 16, 32, 32, 32]);
     }
 
     #[test]
