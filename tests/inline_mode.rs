@@ -676,6 +676,39 @@ fn inl_016_inline02_renders_its_inline_rule() {
 }
 
 #[test]
+fn inl_017_a_screen_taller_than_the_terminal_keeps_its_border_and_scrolls() {
+    // Python lays each screen out at the inline height, so the default
+    // `Screen:inline` bottom border stays on the frame's last row and the
+    // content scrolls inside the screen.
+    let term = Term::spawn(
+        SHELL_THEN_EXEC,
+        &probe(),
+        &[("PROBE_LINES", "60")],
+        Answers::TERMINAL,
+    );
+    term.wait_for("probe body", has_text("line 20"));
+    let screen = term.settle();
+    let (rows, cols) = screen.size();
+    let last = &lines(&screen)[usize::from(rows - 1)];
+    assert!(
+        last.chars().filter(|&c| c == '\u{2581}').count() >= usize::from(cols - 2),
+        "the frame's last row is not the screen's bottom border:\n{}",
+        dump(&screen)
+    );
+    // With a vertical scrollbar the rightmost column shows the thumb and the
+    // track in different colors; without one it is all screen background.
+    let colors: std::collections::HashSet<String> = (1..rows - 1)
+        .filter_map(|row| screen.cell(row, cols - 1))
+        .map(|cell| format!("{:?}", cell.bgcolor()))
+        .collect();
+    assert!(
+        colors.len() >= 2,
+        "no vertical scrollbar in the last column:\n{}",
+        dump(&screen)
+    );
+}
+
+#[test]
 fn trm_001_full_screen_uses_and_restores_the_alternate_screen() {
     let term = Term::spawn(SHELL_AROUND, &calculator(), &[], Answers::TERMINAL);
     let screen = term.wait_for("calculator", |s| {
