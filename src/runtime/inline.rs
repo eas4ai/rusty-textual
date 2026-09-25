@@ -30,13 +30,8 @@ pub(crate) struct InlineState {
     /// The app started: the padding was written and frames may be on screen.
     /// An inline run that stopped earlier has nothing to erase on exit.
     pub(crate) started: bool,
-    /// After a cursor position query went unanswered, the earliest time to
-    /// ask again; `None` asks after every frame. A reply that was only late
-    /// is still queued and answers the next query at once.
-    pub(crate) origin_retry_at: Option<Instant>,
-    /// The wait before asking again after an unanswered query; doubles while
-    /// the terminal stays silent (see [`next_origin_backoff`]).
-    pub(crate) origin_backoff: Duration,
+    /// When to ask the terminal for the origin again.
+    pub(crate) origin_query: OriginQuery,
 }
 
 impl InlineState {
@@ -48,25 +43,47 @@ impl InlineState {
             origin: None,
             resized: false,
             started: false,
-            origin_retry_at: None,
-            origin_backoff: Duration::ZERO,
+            origin_query: OriginQuery::EveryFrame,
         }
     }
 }
 
-/// The first wait before asking a silent terminal for the cursor position
-/// again.
-pub(crate) const ORIGIN_RETRY_MIN: Duration = Duration::from_secs(1);
-/// The longest wait between such attempts.
-pub(crate) const ORIGIN_RETRY_MAX: Duration = Duration::from_secs(32);
+/// The wait before retrying an unanswered cursor position query.
+pub(crate) const ORIGIN_RETRY: Duration = Duration::from_secs(1);
 
-/// The wait after another unanswered cursor position query: 1 s, then
-/// doubling up to 32 s. Each attempt at a silent terminal blocks for
-/// crossterm's 2 s timeout, so the backoff bounds that cost.
-pub(crate) fn next_origin_backoff(current: Duration) -> Duration {
-    current
-        .saturating_mul(2)
-        .clamp(ORIGIN_RETRY_MIN, ORIGIN_RETRY_MAX)
+/// When the runtime asks the terminal where the origin is. Each unanswered
+/// query blocks for crossterm's 2 s timeout, so a terminal that does not
+/// answer is asked twice and then left alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OriginQuery {
+    /// After every frame: the last query was answered, or none was sent.
+    EveryFrame,
+    /// The last query went unanswered: ask once more at this time. A reply
+    /// that was only late is queued by then and answers at once.
+    RetryAt(Instant),
+    /// The retry went unanswered too: the terminal does not report the
+    /// cursor position, so it is not asked again this run.
+    Stopped,
+}
+
+impl OriginQuery {
+    /// Whether to send a query at `now`.
+    pub(crate) fn due(self, now: Instant) -> bool {
+        match self {
+            Self::EveryFrame => true,
+            Self::RetryAt(at) => now >= at,
+            Self::Stopped => false,
+        }
+    }
+
+    /// The state after a query that returned at `now`, `answered` or not.
+    pub(crate) fn after(self, answered: bool, now: Instant) -> Self {
+        match (answered, self) {
+            (true, _) => Self::EveryFrame,
+            (false, Self::EveryFrame) => Self::RetryAt(now + ORIGIN_RETRY),
+            (false, Self::RetryAt(_) | Self::Stopped) => Self::Stopped,
+        }
+    }
 }
 
 /// Whether a request to run inline takes effect: Python picks its inline
@@ -176,14 +193,21 @@ mod tests {
     }
 
     #[test]
-    fn origin_retries_back_off_up_to_the_maximum() {
-        let mut wait = Duration::ZERO;
-        let mut waits = Vec::new();
-        for _ in 0..8 {
-            wait = next_origin_backoff(wait);
-            waits.push(wait.as_secs());
-        }
-        assert_eq!(waits, [1, 2, 4, 8, 16, 32, 32, 32]);
+    fn an_unanswered_origin_query_is_retried_once_then_stopped() {
+        let now = Instant::now();
+        assert!(OriginQuery::EveryFrame.due(now));
+        let retry = OriginQuery::EveryFrame.after(false, now);
+        assert_eq!(retry, OriginQuery::RetryAt(now + ORIGIN_RETRY));
+        assert!(!retry.due(now), "the retry waits");
+        assert!(retry.due(now + ORIGIN_RETRY));
+        assert_eq!(
+            retry.after(true, now),
+            OriginQuery::EveryFrame,
+            "a late reply answers the retry"
+        );
+        let stopped = retry.after(false, now);
+        assert_eq!(stopped, OriginQuery::Stopped);
+        assert!(!stopped.due(now + Duration::from_secs(3600)));
     }
 
     #[test]

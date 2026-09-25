@@ -538,34 +538,27 @@ impl App {
     }
 
     /// Ask the terminal where the cursor, now at the app's origin, is
-    /// (Python asks after every frame). After an unanswered query, ask again
-    /// only after a backoff: a late reply stays queued in crossterm and
-    /// answers the next query at once, while a silent terminal costs one
-    /// timeout per backoff period instead of one per frame.
+    /// (Python asks after every frame). Each unanswered query blocks for
+    /// crossterm's 2 s timeout, so an unanswered query is retried once and,
+    /// if the retry goes unanswered too, the terminal is not asked again
+    /// (see [`OriginQuery`](super::inline::OriginQuery)).
     fn query_inline_origin(&mut self) {
         let Some(state) = &mut self.inline else {
             return;
         };
-        if state
-            .origin_retry_at
-            .is_some_and(|at| std::time::Instant::now() < at)
-        {
+        if !state.origin_query.due(std::time::Instant::now()) {
             return;
         }
-        match crossterm::cursor::position() {
-            Ok(origin) => {
-                state.origin = Some(origin);
-                state.origin_retry_at = None;
-                state.origin_backoff = std::time::Duration::ZERO;
-            }
-            Err(error) => {
-                state.origin_backoff = super::inline::next_origin_backoff(state.origin_backoff);
-                state.origin_retry_at = Some(std::time::Instant::now() + state.origin_backoff);
-                debug_render(&format!(
-                    "[inline] no cursor position report ({error}); asking again in {:?}",
-                    state.origin_backoff
-                ));
-            }
+        let answer = crossterm::cursor::position();
+        state.origin_query = state
+            .origin_query
+            .after(answer.is_ok(), std::time::Instant::now());
+        match answer {
+            Ok(origin) => state.origin = Some(origin),
+            Err(error) => debug_render(&format!(
+                "[inline] no cursor position report ({error}); next: {:?}",
+                state.origin_query
+            )),
         }
     }
 

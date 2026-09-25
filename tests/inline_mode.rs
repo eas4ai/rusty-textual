@@ -319,6 +319,24 @@ fn inl_007_mouse_is_relative_to_the_origin_and_reports_are_not_keys() {
 }
 
 #[test]
+fn inl_007_a_silent_terminal_is_asked_twice_then_left_alone() {
+    // Each unanswered query blocks for crossterm's 2 s timeout. The app asks,
+    // retries once (a late reply would be queued by then), and then stops, so
+    // a terminal that never answers does not freeze the app again and again.
+    let answers = Answers {
+        cursor_position: false,
+        ..Answers::TERMINAL
+    };
+    let term = Term::spawn(SHELL_THEN_EXEC, &docs_example("inline01"), &[], answers);
+    term.wait_for("clock", |s| !painted_rows(s).is_empty());
+    // The clock redraws every second, and each frame may ask again. A
+    // doubling backoff would ask a third time about 7 s in.
+    std::thread::sleep(std::time::Duration::from_secs(10));
+    let queries = term.raw().windows(4).filter(|w| w == b"\x1b[6n").count();
+    assert_eq!(queries, 2, "cursor position queries in the first 10 s");
+}
+
+#[test]
 fn inl_007_mouse_recovers_after_a_slow_cursor_report() {
     // The first report comes after crossterm's 2 s timeout; it stays queued
     // and answers the next query, so the app learns its origin anyway.
@@ -328,7 +346,7 @@ fn inl_007_mouse_recovers_after_a_slow_cursor_report() {
     };
     let term = Term::spawn(SHELL_THEN_EXEC, &probe(), &[("PROBE_BUTTON", "1")], answers);
     term.wait_for("button", has_text("Press"));
-    // Past the late reply and the first retry backoff, draw another frame.
+    // Past the late reply and the retry wait, draw another frame.
     // A resize always redraws (a key would go to the focused button).
     std::thread::sleep(std::time::Duration::from_secs(4));
     term.resize(ROWS - 1);
