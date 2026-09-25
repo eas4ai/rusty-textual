@@ -6,12 +6,18 @@ Test names carry their requirement: `inl_007_...` checks INL-007 and
 library tests named `inl_NNN_...` count too (INL-015's Windows fallback can
 only be checked as a unit test on Linux). A requirement passes only when at
 least one of its tests ran and none failed, so a missing test or a build
-failure fails it.
+failure fails it. Cargo runs in the environment from mechanism_env; the PTY
+tests also start each app with a cleared environment.
 """
 
 import re
 import subprocess
 import sys
+
+# No __pycache__ next to the scripts: Sudus counts it as an undeclared change.
+sys.dont_write_bytecode = True
+
+from mechanism_env import clean_env  # noqa: E402
 
 REQUIREMENTS = [f"INL-{n:03d}" for n in range(1, 17)] + ["TRM-001"]
 RUNS = [
@@ -24,8 +30,11 @@ NAME = re.compile(r"(?:^|::)(inl|trm)_(\d{3})_")
 
 def main() -> int:
     outcomes: dict[str, list[str]] = {req: [] for req in REQUIREMENTS}
+    env = clean_env()
     for command in RUNS:
-        run = subprocess.run(command, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        run = subprocess.run(
+            command, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env
+        )
         output = run.stdout + run.stderr
         print(output)
         for name, status in RESULT.findall(output):
