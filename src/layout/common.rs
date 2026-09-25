@@ -3,7 +3,7 @@ use crate::num::Cast;
 use crate::style::{BoxSizing, Scalar, Spacing, Style, resolve_scalar, resolve_scalar_exact};
 use crate::widget_tree::WidgetTree;
 
-use super::region::border_spacing;
+use super::region::{Region, border_spacing};
 use super::resolve_1d::Edge;
 
 /// For a transparent styling wrapper (`Node`, from `.id()`/`.class()`), report
@@ -142,6 +142,52 @@ pub(crate) fn wrapper_child_fill_axes(tree: &WidgetTree, node: NodeId) -> (bool,
     )
 }
 
+/// Adjust a flow child's style for transparent styling wrappers (`Node`):
+/// its own unset axes and, when it is a wrapped widget, the axes it must fill.
+pub(crate) fn apply_wrapper_sizing(tree: &WidgetTree, child: NodeId, style: &mut Style) {
+    // Transparent styling wrappers (`Node`) stand in for the wrapped widget,
+    // so an UNSET axis must adopt that widget's sizing intent: when the
+    // wrapped child is `width:auto`/`height:auto`, make the wrapper behave as
+    // `auto` (shrink-to-content) on that axis; otherwise it keeps the `1fr`
+    // fill of an unset dimension. Done before spec extraction so the auto
+    // arms (which size to the measured intrinsic) are selected correctly.
+    let (wrapper_w_auto_pre, _wrapper_h_auto_pre) = wrapper_child_auto_axes(tree, child);
+    if wrapper_w_auto_pre && style.width.is_none() {
+        style.width = Some(crate::style::Scalar::Auto);
+    }
+    // A transparent wrapper's unset height mirrors the wrapped child's intent
+    // (`auto` → shrink, otherwise `1fr` flex-fill); it must NOT fall through to
+    // the bare-leaf "unset fills the whole container" rule, or a `Node`-wrapped
+    // `1fr` container would overflow instead of sharing its track.
+    if style.height.is_none()
+        && let Some(h) = wrapper_unset_height(tree, child)
+    {
+        style.height = Some(h);
+    }
+
+    // This `child` is a wrapped widget (its parent — the node being laid out
+    // here — is a transparent wrapper for which `child` is the sole flow
+    // child). On an axis the wrapper sized by ADOPTING this widget's extent
+    // (its own axis unset), the widget must FILL the wrapper instead of
+    // re-applying its own explicit size against it (which would shrink a
+    // `height: 50%` widget to 50% of an already-50%-sized wrapper —
+    // `min_height`). The widget's own min/max on that axis were applied at the
+    // wrapper; clear them to avoid double-application. Axes where the wrapper
+    // carries its OWN extent are left untouched so the widget keeps its
+    // natural size for the wrapper's `content-align` (`docs_center07`).
+    let (fill_w, fill_h) = wrapper_child_fill_axes(tree, child);
+    if fill_h {
+        style.height = Some(crate::style::Scalar::Percent(100.0));
+        style.min_height = None;
+        style.max_height = None;
+    }
+    if fill_w {
+        style.width = Some(crate::style::Scalar::Percent(100.0));
+        style.min_width = None;
+        style.max_width = None;
+    }
+}
+
 /// Seed width-dependent intrinsic measurement for the children of a transparent
 /// styling wrapper (`Node`). The wrapper's own `on_layout` is a no-op, so its
 /// drained child never learns the real content width before the layout asks for
@@ -233,6 +279,67 @@ pub(crate) struct ChildSpec {
     pub(crate) frac_height: Option<f64>,
     /// EXACT (pre-floor) box width, analogous to `frac_height`.
     pub(crate) frac_width: Option<f64>,
+}
+
+impl ChildSpec {
+    /// Horizontal border + padding (the box chrome without margin).
+    pub(crate) fn h_box_chrome(&self) -> u16 {
+        self.border_left + self.border_right + self.padding.left + self.padding.right
+    }
+
+    /// Vertical border + padding (the box chrome without margin).
+    pub(crate) fn v_box_chrome(&self) -> u16 {
+        self.border_top + self.border_bottom + self.padding.top + self.padding.bottom
+    }
+
+    /// Clamp an outer box width to `max-width`. Under `box-sizing:
+    /// border-box` the limit already includes the chrome; otherwise the
+    /// chrome is added to it.
+    pub(crate) fn clamp_to_max_width(&self, width: u16) -> u16 {
+        if let Some(max_w) = self.max_width_cells {
+            let max_w_outer = if self.box_sizing == BoxSizing::BorderBox {
+                max_w
+            } else {
+                max_w.saturating_add(self.h_box_chrome())
+            };
+            width.min(max_w_outer)
+        } else {
+            width
+        }
+    }
+
+    /// Clamp an outer box height to `max-height` (see `clamp_to_max_width`).
+    pub(crate) fn clamp_to_max_height(&self, height: u16) -> u16 {
+        if let Some(max_h) = self.max_height_cells {
+            let max_h_outer = if self.box_sizing == BoxSizing::BorderBox {
+                max_h
+            } else {
+                max_h.saturating_add(self.v_box_chrome())
+            };
+            height.min(max_h_outer)
+        } else {
+            height
+        }
+    }
+
+    /// Write `child`'s layout rect at `(x, y)` with size `(width, height)`,
+    /// and its content rect: the inner area after border + padding.
+    pub(crate) fn write_rects(
+        &self,
+        tree: &mut WidgetTree,
+        child: NodeId,
+        (x, y): (i32, i32),
+        (width, height): (u16, u16),
+    ) {
+        let content_x = x + i32::from(self.border_left + self.padding.left);
+        let content_y = y + i32::from(self.border_top + self.padding.top);
+        let content_w = width.saturating_sub(self.h_box_chrome());
+        let content_h = height.saturating_sub(self.v_box_chrome());
+        if let Some(node) = tree.get_mut(child) {
+            node.layout_rect = Region::new(x, y, width, height).to_rect();
+            node.content_rect = Region::new(content_x, content_y, content_w, content_h).to_rect();
+        }
+    }
 }
 
 /// Vertical chrome = margin.top + `border_top` + padding.top + padding.bottom + `border_bottom` + margin.bottom.
