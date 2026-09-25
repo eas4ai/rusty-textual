@@ -351,26 +351,8 @@ enum Request {
 
 fn parse_command(raw: &str) -> Result<Request, String> {
     let line = raw.trim();
-    if line.eq_ignore_ascii_case("PING") {
-        return Ok(Request::Ping);
-    }
-    if line.eq_ignore_ascii_case("INFO") {
-        return Ok(Request::Info);
-    }
-    if line.eq_ignore_ascii_case("SNAPSHOT") {
-        return Ok(Request::Snapshot);
-    }
-    if line.eq_ignore_ascii_case("WATCH") {
-        return Ok(Request::Watch);
-    }
-    if line.eq_ignore_ascii_case("LOGS") {
-        return Ok(Request::Logs);
-    }
-    if line.eq_ignore_ascii_case("CHANNELS") {
-        return Ok(Request::Channels);
-    }
-    if line.eq_ignore_ascii_case("QUIT") {
-        return Ok(Request::Quit);
+    if let Some(request) = keyword_request(line) {
+        return Ok(request);
     }
 
     let mut parts = line.split_whitespace();
@@ -462,6 +444,33 @@ fn parse_command(raw: &str) -> Result<Request, String> {
     }
 
     Err(format!("unknown request: {head}"))
+}
+
+/// The request for a one-word command (`PING`, `INFO`, ...), matched
+/// without regard to case.
+fn keyword_request(line: &str) -> Option<Request> {
+    if line.eq_ignore_ascii_case("PING") {
+        return Some(Request::Ping);
+    }
+    if line.eq_ignore_ascii_case("INFO") {
+        return Some(Request::Info);
+    }
+    if line.eq_ignore_ascii_case("SNAPSHOT") {
+        return Some(Request::Snapshot);
+    }
+    if line.eq_ignore_ascii_case("WATCH") {
+        return Some(Request::Watch);
+    }
+    if line.eq_ignore_ascii_case("LOGS") {
+        return Some(Request::Logs);
+    }
+    if line.eq_ignore_ascii_case("CHANNELS") {
+        return Some(Request::Channels);
+    }
+    if line.eq_ignore_ascii_case("QUIT") {
+        return Some(Request::Quit);
+    }
+    None
 }
 
 fn write_ok_line(stream: &mut TcpStream, detail: &str) -> io::Result<()> {
