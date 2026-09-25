@@ -293,21 +293,56 @@ impl Tree {
         }
         max_x.saturating_sub(1)
     }
-}
 
-impl crate::widgets::Render for Tree {
-    fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
-        let width = options.size.0.max(1);
-        let height = options.size.1.max(1);
-        let nodes = self.visible_nodes();
-        let mut out = Segments::new();
+    /// A row's guide segments: the ancestor continuation lines, then the
+    /// node's branch connector, each styled by `guide_style_at(level)`.
+    fn row_guide_segments(
+        &self,
+        node: &VisibleNode,
+        guide_style_at: &dyn Fn(usize) -> rich_rs::Style,
+    ) -> Vec<Segment> {
+        let mut row_segments: Vec<Segment> = Vec::new();
+        if node.depth > 0 {
+            let gd = self.guide_depth.clamp(2, 10);
+            // Ancestor continuation lines.
+            for level in 1..node.depth {
+                let guide_text = if self.show_guides && !node.is_last_at_depth[level] {
+                    let mut s = String::with_capacity(gd);
+                    s.push('│');
+                    for _ in 0..gd - 1 {
+                        s.push(' ');
+                    }
+                    s
+                } else {
+                    " ".repeat(gd)
+                };
+                row_segments.push(Segment::styled(guide_text, guide_style_at(level)));
+            }
+            // Branch connector for this node.
+            let connector = if self.show_guides {
+                let ch = if node.is_last_at_depth[node.depth] {
+                    '└'
+                } else {
+                    '├'
+                };
+                let mut s = String::with_capacity(gd);
+                s.push(ch);
+                for _ in 0..gd.saturating_sub(2) {
+                    s.push('─');
+                }
+                s.push(' ');
+                s
+            } else {
+                " ".repeat(gd)
+            };
+            row_segments.push(Segment::styled(connector, guide_style_at(node.depth)));
+        }
+        row_segments
+    }
 
-        // Resolve component styles once per render, through the canonical API
-        // with per-name MERGE semantics for stacked node class lists (Python
-        // stylize order: DirectoryTree stacks `directory-tree--file` +
-        // `--extension` + `--hidden` in application order). During a tree
-        // render the Tree's live meta is already the top of the selector
-        // stack; off-tree the seed fallback applies.
+    /// The Tree's base style and its component styles, resolved once per
+    /// render.
+    fn tree_styles(&self) -> TreeStyles {
         let parent_resolved = crate::css::current_self_style().unwrap_or_else(|| {
             let parent_meta = crate::css::selector_meta_generic(self);
             crate::css::resolve_style(self, &parent_meta)
@@ -343,6 +378,163 @@ impl crate::widgets::Render for Tree {
         let highlight_line_style = resolve_component(&["tree--highlight-line"])
             .to_rich_over(component_bg_base)
             .unwrap_or(base_style);
+        TreeStyles {
+            base_style,
+            guide_style,
+            guide_hover_style,
+            guide_selected_style,
+            label_style,
+            cursor_style,
+            highlight_style,
+            highlight_line_style,
+            component_bg_base,
+        }
+    }
+
+    /// One visible row: guides, twisty and label, padded or cropped to
+    /// `width`. `index` is the row's node index and `selected` the cursor's.
+    fn render_row(
+        &self,
+        console: &Console,
+        node: &VisibleNode,
+        (index, selected): (usize, usize),
+        (selected_path, hovered_path): (Option<&[usize]>, Option<&[usize]>),
+        styles: &TreeStyles,
+        width: usize,
+    ) -> Vec<Segment> {
+        let TreeStyles {
+            guide_style,
+            guide_hover_style,
+            guide_selected_style,
+            label_style,
+            cursor_style,
+            highlight_style,
+            highlight_line_style,
+            component_bg_base,
+            ..
+        } = *styles;
+        let highlighted = index == selected && !node.disabled;
+        let hovered = self.hovered_index == Some(index);
+        let hover_in_path = hovered_path.is_some_and(|path| node.path.starts_with(path));
+        let row_line_style = if hover_in_path {
+            highlight_line_style
+        } else {
+            rich_rs::Style::default()
+        };
+
+        // Per-level guide style, mirroring Python `_tree.py::_render_line`.
+        // A guide at visual `level` is styled selected/hover only when an
+        // ANCESTOR strictly above that level is the cursor/hover node; the
+        // selected style propagates to a node's DESCENDANT guides, not to
+        // the node's own connector. So the cursor row's own `├──`/`│`
+        // guides keep the base (muted `$surface-lighten-3`) colour, while
+        // Python's `$block-cursor-background` only reaches deeper guides.
+        let sel_len = selected_path
+            .filter(|sp| node.path.starts_with(sp))
+            .map_or(usize::MAX, <[usize]>::len);
+        let hov_len = hovered_path
+            .filter(|hp| node.path.starts_with(hp))
+            .map_or(usize::MAX, <[usize]>::len);
+        let guide_style_at = |level: usize| -> rich_rs::Style {
+            let base = if sel_len <= level {
+                guide_selected_style
+            } else if hov_len <= level {
+                guide_hover_style
+            } else {
+                guide_style
+            };
+            base + row_line_style
+        };
+
+        // Build label style: base label + component classes + highlight + cursor.
+        let mut row_label_style = label_style + row_line_style;
+        // Apply node-specific component classes (e.g. directory-tree--file).
+        if !node.component_classes.is_empty() {
+            let cc_refs: Vec<&str> = node.component_classes.iter().map(String::as_str).collect();
+            if let Some(cc_style) = crate::css::resolve_component_style_merged(self, &cc_refs)
+                .to_rich_over(component_bg_base)
+            {
+                row_label_style = row_label_style + cc_style;
+            }
+        }
+        if hovered {
+            row_label_style = row_label_style + highlight_style;
+        }
+        if highlighted {
+            row_label_style = row_label_style + cursor_style;
+        }
+
+        // Build segments for this row.
+        // 1. Guide prefix segments (per-depth styled).
+        let mut row_segments: Vec<Segment> = self.row_guide_segments(node, &guide_style_at);
+
+        // Cursor label/twisty cells are fully composed above; tag them so
+        // the widget-level `background-tint` pass does not re-tint the
+        // opaque `$block-cursor-background` fill.
+        let label_start = row_segments.len();
+
+        // 2. Twisty (expand/collapse indicator).
+        let twisty = Self::twisty(node, self.hide_twisty);
+        if !twisty.is_empty() {
+            row_segments.push(Segment::styled(twisty.to_string(), row_label_style));
+        }
+
+        // 3. Label text (with Rich markup support).
+        //
+        // Mirrors Python's TreeNode which stores `rich.text.Text` objects
+        // with per-character styling. Parse Rich markup (e.g. `[b]name[/b]`)
+        // so json_tree can render bold keys like Python does.
+        let label_segs = Self::render_label_markup(&node.label, row_label_style, console);
+        row_segments.extend(label_segs);
+
+        // When this row carries the focused cursor, its label/twisty cells
+        // paint the opaque `$block-cursor-background`; tag them `no_style`
+        // so the `Tree:focus` `background-tint` is not composited on top.
+        if highlighted && self.node_state().focused {
+            for seg in &mut row_segments[label_start..] {
+                tag_segment_no_style(seg);
+            }
+        }
+
+        // Pad/crop to width.
+        // For hover-line rows, fill the entire row width with hover background.
+        // Otherwise keep trailing cells transparent so parent surface composes naturally.
+        if hover_in_path {
+            Segment::adjust_line_length(&row_segments, width, Some(row_line_style), true)
+        } else {
+            adjust_line_length_no_bg(&row_segments, width)
+        }
+    }
+}
+
+/// Styles for one Tree render.
+#[derive(Clone, Copy)]
+struct TreeStyles {
+    base_style: rich_rs::Style,
+    guide_style: rich_rs::Style,
+    guide_hover_style: rich_rs::Style,
+    guide_selected_style: rich_rs::Style,
+    label_style: rich_rs::Style,
+    cursor_style: rich_rs::Style,
+    highlight_style: rich_rs::Style,
+    highlight_line_style: rich_rs::Style,
+    component_bg_base: crate::style::Color,
+}
+
+impl crate::widgets::Render for Tree {
+    fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
+        let width = options.size.0.max(1);
+        let height = options.size.1.max(1);
+        let nodes = self.visible_nodes();
+        let mut out = Segments::new();
+
+        // Resolve component styles once per render, through the canonical API
+        // with per-name MERGE semantics for stacked node class lists (Python
+        // stylize order: DirectoryTree stacks `directory-tree--file` +
+        // `--extension` + `--hidden` in application order). During a tree
+        // render the Tree's live meta is already the top of the selector
+        // stack; off-tree the seed fallback applies.
+        let styles = self.tree_styles();
 
         let selected = self.selected_line_in(&nodes);
         let selected_path: Option<&[usize]> = if self.node_state().focused {
@@ -358,139 +550,20 @@ impl crate::widgets::Render for Tree {
         for row in 0..height {
             let index = self.offset + row;
             if let Some(node) = nodes.get(index) {
-                let highlighted = index == selected && !node.disabled;
-                let hovered = self.hovered_index == Some(index);
-                let hover_in_path = hovered_path.is_some_and(|path| node.path.starts_with(path));
-                let row_line_style = if hover_in_path {
-                    highlight_line_style
-                } else {
-                    rich_rs::Style::default()
-                };
-
-                // Per-level guide style, mirroring Python `_tree.py::_render_line`.
-                // A guide at visual `level` is styled selected/hover only when an
-                // ANCESTOR strictly above that level is the cursor/hover node; the
-                // selected style propagates to a node's DESCENDANT guides, not to
-                // the node's own connector. So the cursor row's own `├──`/`│`
-                // guides keep the base (muted `$surface-lighten-3`) colour, while
-                // Python's `$block-cursor-background` only reaches deeper guides.
-                let sel_len = selected_path
-                    .filter(|sp| node.path.starts_with(sp))
-                    .map_or(usize::MAX, <[usize]>::len);
-                let hov_len = hovered_path
-                    .filter(|hp| node.path.starts_with(hp))
-                    .map_or(usize::MAX, <[usize]>::len);
-                let guide_style_at = |level: usize| -> rich_rs::Style {
-                    let base = if sel_len <= level {
-                        guide_selected_style
-                    } else if hov_len <= level {
-                        guide_hover_style
-                    } else {
-                        guide_style
-                    };
-                    base + row_line_style
-                };
-
-                // Build label style: base label + component classes + highlight + cursor.
-                let mut row_label_style = label_style + row_line_style;
-                // Apply node-specific component classes (e.g. directory-tree--file).
-                if !node.component_classes.is_empty() {
-                    let cc_refs: Vec<&str> =
-                        node.component_classes.iter().map(String::as_str).collect();
-                    if let Some(cc_style) =
-                        resolve_component(&cc_refs).to_rich_over(component_bg_base)
-                    {
-                        row_label_style = row_label_style + cc_style;
-                    }
-                }
-                if hovered {
-                    row_label_style = row_label_style + highlight_style;
-                }
-                if highlighted {
-                    row_label_style = row_label_style + cursor_style;
-                }
-
-                // Build segments for this row.
-                let mut row_segments: Vec<Segment> = Vec::new();
-
-                // 1. Guide prefix segments (per-depth styled).
-                if node.depth > 0 {
-                    let gd = self.guide_depth.clamp(2, 10);
-                    // Ancestor continuation lines.
-                    for level in 1..node.depth {
-                        let guide_text = if self.show_guides && !node.is_last_at_depth[level] {
-                            let mut s = String::with_capacity(gd);
-                            s.push('│');
-                            for _ in 0..gd - 1 {
-                                s.push(' ');
-                            }
-                            s
-                        } else {
-                            " ".repeat(gd)
-                        };
-                        row_segments.push(Segment::styled(guide_text, guide_style_at(level)));
-                    }
-                    // Branch connector for this node.
-                    let connector = if self.show_guides {
-                        let ch = if node.is_last_at_depth[node.depth] {
-                            '└'
-                        } else {
-                            '├'
-                        };
-                        let mut s = String::with_capacity(gd);
-                        s.push(ch);
-                        for _ in 0..gd.saturating_sub(2) {
-                            s.push('─');
-                        }
-                        s.push(' ');
-                        s
-                    } else {
-                        " ".repeat(gd)
-                    };
-                    row_segments.push(Segment::styled(connector, guide_style_at(node.depth)));
-                }
-
-                // Cursor label/twisty cells are fully composed above; tag them so
-                // the widget-level `background-tint` pass does not re-tint the
-                // opaque `$block-cursor-background` fill.
-                let label_start = row_segments.len();
-
-                // 2. Twisty (expand/collapse indicator).
-                let twisty = Self::twisty(node, self.hide_twisty);
-                if !twisty.is_empty() {
-                    row_segments.push(Segment::styled(twisty.to_string(), row_label_style));
-                }
-
-                // 3. Label text (with Rich markup support).
-                //
-                // Mirrors Python's TreeNode which stores `rich.text.Text` objects
-                // with per-character styling. Parse Rich markup (e.g. `[b]name[/b]`)
-                // so json_tree can render bold keys like Python does.
-                let label_segs = Self::render_label_markup(&node.label, row_label_style, console);
-                row_segments.extend(label_segs);
-
-                // When this row carries the focused cursor, its label/twisty cells
-                // paint the opaque `$block-cursor-background`; tag them `no_style`
-                // so the `Tree:focus` `background-tint` is not composited on top.
-                if highlighted && self.node_state().focused {
-                    for seg in &mut row_segments[label_start..] {
-                        tag_segment_no_style(seg);
-                    }
-                }
-
-                // Pad/crop to width.
-                // For hover-line rows, fill the entire row width with hover background.
-                // Otherwise keep trailing cells transparent so parent surface composes naturally.
-                let line = if hover_in_path {
-                    Segment::adjust_line_length(&row_segments, width, Some(row_line_style), true)
-                } else {
-                    adjust_line_length_no_bg(&row_segments, width)
-                };
-                out.extend(line);
+                out.extend(self.render_row(
+                    console,
+                    node,
+                    (index, selected),
+                    (selected_path, hovered_path),
+                    &styles,
+                    width,
+                ));
             } else {
                 // Empty row beyond visible nodes.
-                let line =
-                    adjust_line_length_no_bg(&[Segment::styled(String::new(), base_style)], width);
+                let line = adjust_line_length_no_bg(
+                    &[Segment::styled(String::new(), styles.base_style)],
+                    width,
+                );
                 out.extend(line);
             }
             if row + 1 < height {
