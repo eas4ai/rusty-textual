@@ -20,241 +20,289 @@ pub(crate) fn apply_style_to_segments(
         .or(fallback_bg);
     segments
         .into_iter()
-        .map(|mut seg| {
-            if seg.control.is_some() {
+        .map(|seg| style_segment(seg, widget_id, style, rich_attrs, parent_bg))
+        .collect()
+}
+
+/// Apply the widget's resolved style to one of its segments. Control
+/// segments, segments of other widgets and `textual:no_style` segments are
+/// returned unchanged.
+fn style_segment(
+    mut seg: rich_rs::Segment,
+    widget_id: NodeId,
+    style: &Style,
+    rich_attrs: Option<rich_rs::Style>,
+    parent_bg: Option<crate::style::Color>,
+) -> rich_rs::Segment {
+    if seg.control.is_some() {
+        return seg;
+    }
+
+    // Only apply this widget's resolved style to segments that originate from this widget.
+    // Child widgets render their own styles already (including inherited properties), and
+    // parent widgets should not overwrite them during this pass.
+    if let Some(meta) = seg.meta.as_ref().and_then(|meta| meta.meta.as_ref()) {
+        if let Some(MetaValue::Int(value)) = meta.get("textual:widget_id") {
+            if *value != node_id_to_meta(widget_id) {
                 return seg;
             }
+        }
+    }
 
-            // Only apply this widget's resolved style to segments that originate from this widget.
-            // Child widgets render their own styles already (including inherited properties), and
-            // parent widgets should not overwrite them during this pass.
-            if let Some(meta) = seg.meta.as_ref().and_then(|meta| meta.meta.as_ref()) {
-                if let Some(MetaValue::Int(value)) = meta.get("textual:widget_id") {
-                    if *value != node_id_to_meta(widget_id) {
-                        return seg;
-                    }
-                }
-            }
-
-            let mut no_text_style = false;
-            if let Some(meta) = seg.meta.as_ref().and_then(|meta| meta.meta.as_ref()) {
-                if let Some(MetaValue::Bool(true)) = meta.get("textual:no_style") {
-                    return seg;
-                }
-                if let Some(MetaValue::Bool(true)) = meta.get("textual:no_text_style") {
-                    no_text_style = true;
-                }
-                if let Some(MetaValue::Bool(true)) = meta.get("textual:no_bg") {
-                    // We'll clear bgcolor after composing below.
-                }
-            }
-            if !no_text_style {
-                if let Some(rich_attrs) = rich_attrs {
-                    seg.style = Some(match seg.style {
-                        Some(existing) => rich_attrs.combine(&existing),
-                        None => rich_attrs,
-                    });
-                }
-            }
-            let mut no_bg = false;
-            if let Some(meta) = seg.meta.as_ref().and_then(|meta| meta.meta.as_ref()) {
-                if let Some(MetaValue::Bool(true)) = meta.get("textual:no_bg") {
-                    no_bg = true;
-                }
-            }
-
-            let mut style_changed = false;
-            let mut s = seg.style.unwrap_or_else(rich_rs::Style::new);
-            // In composition terms, terminal-default background should behave as transparent
-            // so children can inherit parent/widget surfaces.
-            let explicit_bg = s.bgcolor.and_then(|bg| {
-                if matches!(bg, rich_rs::SimpleColor::Default) {
-                    None
-                } else {
-                    Some(bg)
-                }
+    let mut no_text_style = false;
+    if let Some(meta) = seg.meta.as_ref().and_then(|meta| meta.meta.as_ref()) {
+        if let Some(MetaValue::Bool(true)) = meta.get("textual:no_style") {
+            return seg;
+        }
+        if let Some(MetaValue::Bool(true)) = meta.get("textual:no_text_style") {
+            no_text_style = true;
+        }
+        if let Some(MetaValue::Bool(true)) = meta.get("textual:no_bg") {
+            // We'll clear bgcolor after composing below.
+        }
+    }
+    if !no_text_style {
+        if let Some(rich_attrs) = rich_attrs {
+            seg.style = Some(match seg.style {
+                Some(existing) => rich_attrs.combine(&existing),
+                None => rich_attrs,
             });
-            let mut under_bg = explicit_bg
-                .map(crate::style::color_from_simple)
-                .or(parent_bg)
-                .unwrap_or(crate::style::Color::rgb(0, 0, 0));
+        }
+    }
+    let mut no_bg = false;
+    if let Some(meta) = seg.meta.as_ref().and_then(|meta| meta.meta.as_ref()) {
+        if let Some(MetaValue::Bool(true)) = meta.get("textual:no_bg") {
+            no_bg = true;
+        }
+    }
 
-            if !no_bg {
-                if explicit_bg.is_none() {
-                    // Preserve per-segment backgrounds (e.g. DataTable row/cell backgrounds,
-                    // Input selection/cursor). When a segment has no explicit background:
-                    // - apply this widget's own `bg` if present, flattened over parent bg
-                    // - otherwise keep the parent surface color so transparent children
-                    //   visually inherit container background during composition.
-                    let effective_bg = if let Some(bg) = style.bg {
-                        bg.flatten_over(under_bg)
-                    } else {
-                        under_bg
-                    };
-                    under_bg = effective_bg;
-                    s.bgcolor = Some(effective_bg.to_simple_opaque());
-                    style_changed = true;
-                }
-            } else if s.bgcolor.is_some() {
-                s.bgcolor = None;
-                style_changed = true;
-            }
+    let mut s = seg.style.unwrap_or_default();
+    let (under_bg, mut style_changed) = paint_surface_bg(&mut s, style, parent_bg, no_bg);
+    let text_opacity = style.text_opacity.map(|value| f32::from(value) / 100.0);
+    // Only stamp the widget's resolved foreground onto segments carrying a
+    // visible glyph. Whitespace-only fill (padding, content-area extend,
+    // blank rows) must keep fg = terminal-default unless it was given an
+    // explicit fg at construction — mirroring Python Textual's `to_strip`,
+    // where glyph cells use the full style but pad cells use
+    // `style.background_style` (bg only). The App/Screen default
+    // `color: $foreground` therefore reaches text glyphs but not the fill.
+    let has_glyph = seg.text.chars().any(|c| !c.is_whitespace());
+    // text-opacity: 0% — mirror Python `TextOpacity.process_segments`
+    // (opacity == 0 branch): every cell becomes a blank with only the
+    // background set (`from_color(bgcolor=style.bgcolor)`), so the glyph run
+    // is replaced by spaces of equal cell width and the foreground is
+    // dropped entirely (fg = terminal-default). Applies to glyph cells AND
+    // to fg-bearing fill cells (the vertical-extend rows carry visual_style
+    // fg from the widget render), matching Python's per-line filter.
+    if matches!(text_opacity, Some(o) if o == 0.0) {
+        if has_glyph {
+            let width = rich_rs::cell_len(&seg.text);
+            seg.text = " ".repeat(width).into();
+        }
+        if s.color.is_some() {
+            s.color = None;
+            style_changed = true;
+        }
+        if style_changed || seg.style.is_some() {
+            seg.style = Some(s);
+        }
+        return seg;
+    }
+    style_changed |= paint_text_fg(
+        &mut s,
+        style,
+        (parent_bg, under_bg),
+        text_opacity,
+        has_glyph,
+    );
+    style_changed |= apply_tint(&mut s, style);
+    if style_changed || seg.style.is_some() {
+        seg.style = Some(s);
+    }
+    seg
+}
 
-            // `background-tint` tints only the widget's OWN surface, mirroring
-            // Python's `styles.background.tint(styles.background_tint)` in
-            // `DOMNode.rich_style`/`background_colors`: the tint folds into each
-            // node's own `background` rule, not blanket over every segment the
-            // widget emits. Child/component renderables that carry their own
-            // opaque bg (e.g. a Switch slider's `$panel-darken-2`) must NOT be
-            // re-tinted by the parent widget's tint — doing so double-tints them
-            // (byte01/02 slider #0b1922 vs #000f18). The widget's own surface is
-            // the set of cells painting `style.bg` (its `background` rule) over
-            // the inherited parent surface; cells whose bg equals that surface
-            // (both the inherited fill we set above and any explicit surface
-            // fill the layout emits, e.g. the Switch `padding: 0 2` cells) get
-            // the tint, while cells with a different opaque bg keep their color.
-            if !no_bg {
-                if let Some(tint) = style.background_tint {
-                    // The widget's own surface color: its `background` rule
-                    // composited over the inherited parent surface. `None` when
-                    // the widget has no `background` rule — matching Python,
-                    // where tinting a transparent `styles.background` is a no-op.
-                    let own_surface_bg = style.bg.map(|bg| {
-                        bg.flatten_over(
-                            parent_bg.unwrap_or_else(|| crate::style::Color::rgb(0, 0, 0)),
-                        )
-                    });
-                    if let (Some(bg_simple), Some(surface)) = (s.bgcolor, own_surface_bg) {
-                        let bg = crate::style::color_from_simple(bg_simple);
-                        if bg == surface {
-                            let blended =
-                                Tint::<()>::blend_color_with_percent(bg, tint.color, tint.percent);
-                            let flat = blended.flatten_over(under_bg);
-                            under_bg = flat;
-                            s.bgcolor = Some(flat.to_simple_opaque());
-                            style_changed = true;
-                        }
-                    }
-                }
-            }
-            let text_opacity = style.text_opacity.map(|value| f32::from(value) / 100.0);
-            // Python parity: auto/text-opacity folds composite over the
-            // opacity-flattened background — the intermediate
-            // `parent.blend(widget_bg, opacity)` that Python threads into
-            // every rendered line — not the raw rule bg. Without widget
-            // opacity this is the segment bg unchanged, so widgets without
-            // `opacity` render exactly as before.
-            let fold_opacity = style
-                .opacity
-                .map(|value| f32::from(value) / 100.0)
-                .map(|o| o.clamp(0.0, 1.0))
-                .filter(|o| *o < 1.0);
-            let opacity_parent = parent_bg.unwrap_or(crate::style::Color::rgb(0, 0, 0));
-            let fold_base = |bg: crate::style::Color| -> crate::style::Color {
-                match fold_opacity {
-                    Some(o) => TextOpacity::<()>::apply_alpha(bg, o).flatten_over(opacity_parent),
-                    None => bg,
-                }
+/// Paint the segment background: the widget's own `background` (over the
+/// inherited surface) where the segment has none, then `background-tint`
+/// on the widget's own surface. Returns the colour under the text and
+/// whether the style changed.
+fn paint_surface_bg(
+    s: &mut rich_rs::Style,
+    style: &Style,
+    parent_bg: Option<crate::style::Color>,
+    no_bg: bool,
+) -> (crate::style::Color, bool) {
+    let mut style_changed = false;
+    // In composition terms, terminal-default background should behave as transparent
+    // so children can inherit parent/widget surfaces.
+    let explicit_bg = s.bgcolor.and_then(|bg| {
+        if matches!(bg, rich_rs::SimpleColor::Default) {
+            None
+        } else {
+            Some(bg)
+        }
+    });
+    let mut under_bg = explicit_bg
+        .map(crate::style::color_from_simple)
+        .or(parent_bg)
+        .unwrap_or(crate::style::Color::rgb(0, 0, 0));
+
+    if !no_bg {
+        if explicit_bg.is_none() {
+            // Preserve per-segment backgrounds (e.g. DataTable row/cell backgrounds,
+            // Input selection/cursor). When a segment has no explicit background:
+            // - apply this widget's own `bg` if present, flattened over parent bg
+            // - otherwise keep the parent surface color so transparent children
+            //   visually inherit container background during composition.
+            let effective_bg = if let Some(bg) = style.bg {
+                bg.flatten_over(under_bg)
+            } else {
+                under_bg
             };
-            // Only stamp the widget's resolved foreground onto segments carrying a
-            // visible glyph. Whitespace-only fill (padding, content-area extend,
-            // blank rows) must keep fg = terminal-default unless it was given an
-            // explicit fg at construction — mirroring Python Textual's `to_strip`,
-            // where glyph cells use the full style but pad cells use
-            // `style.background_style` (bg only). The App/Screen default
-            // `color: $foreground` therefore reaches text glyphs but not the fill.
-            let has_glyph = seg.text.chars().any(|c| !c.is_whitespace());
-            // text-opacity: 0% — mirror Python `TextOpacity.process_segments`
-            // (opacity == 0 branch): every cell becomes a blank with only the
-            // background set (`from_color(bgcolor=style.bgcolor)`), so the glyph run
-            // is replaced by spaces of equal cell width and the foreground is
-            // dropped entirely (fg = terminal-default). Applies to glyph cells AND
-            // to fg-bearing fill cells (the vertical-extend rows carry visual_style
-            // fg from the widget render), matching Python's per-line filter.
-            if matches!(text_opacity, Some(o) if o == 0.0) {
-                if has_glyph {
-                    let width = rich_rs::cell_len(&seg.text);
-                    seg.text = " ".repeat(width).into();
-                }
-                if s.color.is_some() {
-                    s.color = None;
-                    style_changed = true;
-                }
-                if style_changed || seg.style.is_some() {
-                    seg.style = Some(s);
-                }
-                return seg;
-            }
-            // Preserve per-segment foregrounds unless unset.
-            if s.color.is_none() && has_glyph {
-                let bg_for_text = s.bgcolor.map_or(under_bg, crate::style::color_from_simple);
+            under_bg = effective_bg;
+            s.bgcolor = Some(effective_bg.to_simple_opaque());
+            style_changed = true;
+        }
+    } else if s.bgcolor.is_some() {
+        s.bgcolor = None;
+        style_changed = true;
+    }
 
-                if let Some(fg) = style.fg {
-                    let mut fg = fg;
-                    if let Some(opacity) = text_opacity {
-                        fg = TextOpacity::<()>::apply_alpha(fg, opacity);
-                    }
-                    let flat = fg.flatten_over(fold_base(bg_for_text));
-                    s.color = Some(flat.to_simple_opaque());
-                    style_changed = true;
-                } else if let Some(auto) = style.fg_auto {
-                    // The blend base is the opacity-flattened bg (matching
-                    // the text-opacity fold input), but the contrast HUE is
-                    // decided by the rule-stage bg: Python resolves `auto`
-                    // against `styles.background`, so a light rule bg
-                    // (`$success`) yields black even when the flattened bg
-                    // underneath is dark.
-                    let fold_bg = fold_base(bg_for_text);
-                    let contrast = crate::style::contrast_text(bg_for_text);
-                    // Step 1 — Python `auto NN%` resolution against the
-                    // composited bg: opaque contrast base, truncated per
-                    // channel like rich (fractional alpha kept as a float,
-                    // avoiding u8 alpha quantization drift).
-                    let base = contrast.blend_over_float(fold_bg, auto.alpha());
-                    // Step 2 — Python TextOpacity fold over the same base
-                    // (identity without text-opacity).
-                    let flat = match text_opacity {
-                        Some(o) => {
-                            TextOpacity::<()>::blend_foreground_over_background(base, fold_bg, o)
-                        }
-                        None => base,
-                    };
-                    s.color = Some(flat.to_simple_opaque());
-                    style_changed = true;
-                }
-            } else if let (Some(opacity), Some(existing)) = (text_opacity, s.color) {
-                let bg_for_text = s.bgcolor.map_or(under_bg, crate::style::color_from_simple);
-                let existing = crate::style::color_from_simple(existing);
-                let flat = TextOpacity::<()>::blend_foreground_over_background(
-                    existing,
-                    fold_base(bg_for_text),
-                    opacity,
-                );
-                s.color = Some(flat.to_simple_opaque());
-                style_changed = true;
-            }
-            if let Some(tint) = style.tint {
-                if let Some(bg) = s.bgcolor {
-                    let bg = crate::style::color_from_simple(bg);
+    // `background-tint` tints only the widget's OWN surface, mirroring
+    // Python's `styles.background.tint(styles.background_tint)` in
+    // `DOMNode.rich_style`/`background_colors`: the tint folds into each
+    // node's own `background` rule, not blanket over every segment the
+    // widget emits. Child/component renderables that carry their own
+    // opaque bg (e.g. a Switch slider's `$panel-darken-2`) must NOT be
+    // re-tinted by the parent widget's tint — doing so double-tints them
+    // (byte01/02 slider #0b1922 vs #000f18). The widget's own surface is
+    // the set of cells painting `style.bg` (its `background` rule) over
+    // the inherited parent surface; cells whose bg equals that surface
+    // (both the inherited fill we set above and any explicit surface
+    // fill the layout emits, e.g. the Switch `padding: 0 2` cells) get
+    // the tint, while cells with a different opaque bg keep their color.
+    if !no_bg {
+        if let Some(tint) = style.background_tint {
+            // The widget's own surface color: its `background` rule
+            // composited over the inherited parent surface. `None` when
+            // the widget has no `background` rule — matching Python,
+            // where tinting a transparent `styles.background` is a no-op.
+            let own_surface_bg = style.bg.map(|bg| {
+                bg.flatten_over(parent_bg.unwrap_or_else(|| crate::style::Color::rgb(0, 0, 0)))
+            });
+            if let (Some(bg_simple), Some(surface)) = (s.bgcolor, own_surface_bg) {
+                let bg = crate::style::color_from_simple(bg_simple);
+                if bg == surface {
                     let blended =
                         Tint::<()>::blend_color_with_percent(bg, tint.color, tint.percent);
-                    s.bgcolor = Some(blended.to_simple_opaque());
-                    style_changed = true;
-                }
-                if let Some(fg) = s.color {
-                    let fg = crate::style::color_from_simple(fg);
-                    let blended =
-                        Tint::<()>::blend_color_with_percent(fg, tint.color, tint.percent);
-                    s.color = Some(blended.to_simple_opaque());
+                    let flat = blended.flatten_over(under_bg);
+                    under_bg = flat;
+                    s.bgcolor = Some(flat.to_simple_opaque());
                     style_changed = true;
                 }
             }
-            if style_changed || seg.style.is_some() {
-                seg.style = Some(s);
+        }
+    }
+    (under_bg, style_changed)
+}
+
+/// Stamp the widget's foreground (or `color: auto` contrast) on a glyph
+/// segment without its own, folding in `text-opacity`; or fade an existing
+/// foreground by `text-opacity`. Returns whether the style changed.
+fn paint_text_fg(
+    s: &mut rich_rs::Style,
+    style: &Style,
+    (parent_bg, under_bg): (Option<crate::style::Color>, crate::style::Color),
+    text_opacity: Option<f32>,
+    has_glyph: bool,
+) -> bool {
+    let mut style_changed = false;
+    // Python parity: auto/text-opacity folds composite over the
+    // opacity-flattened background — the intermediate
+    // `parent.blend(widget_bg, opacity)` that Python threads into
+    // every rendered line — not the raw rule bg. Without widget
+    // opacity this is the segment bg unchanged, so widgets without
+    // `opacity` render exactly as before.
+    let fold_opacity = style
+        .opacity
+        .map(|value| f32::from(value) / 100.0)
+        .map(|o| o.clamp(0.0, 1.0))
+        .filter(|o| *o < 1.0);
+    let opacity_parent = parent_bg.unwrap_or(crate::style::Color::rgb(0, 0, 0));
+    let fold_base = |bg: crate::style::Color| -> crate::style::Color {
+        match fold_opacity {
+            Some(o) => TextOpacity::<()>::apply_alpha(bg, o).flatten_over(opacity_parent),
+            None => bg,
+        }
+    };
+    // Preserve per-segment foregrounds unless unset.
+    if s.color.is_none() && has_glyph {
+        let bg_for_text = s.bgcolor.map_or(under_bg, crate::style::color_from_simple);
+
+        if let Some(fg) = style.fg {
+            let mut fg = fg;
+            if let Some(opacity) = text_opacity {
+                fg = TextOpacity::<()>::apply_alpha(fg, opacity);
             }
-            seg
-        })
-        .collect()
+            let flat = fg.flatten_over(fold_base(bg_for_text));
+            s.color = Some(flat.to_simple_opaque());
+            style_changed = true;
+        } else if let Some(auto) = style.fg_auto {
+            // The blend base is the opacity-flattened bg (matching
+            // the text-opacity fold input), but the contrast HUE is
+            // decided by the rule-stage bg: Python resolves `auto`
+            // against `styles.background`, so a light rule bg
+            // (`$success`) yields black even when the flattened bg
+            // underneath is dark.
+            let fold_bg = fold_base(bg_for_text);
+            let contrast = crate::style::contrast_text(bg_for_text);
+            // Step 1 — Python `auto NN%` resolution against the
+            // composited bg: opaque contrast base, truncated per
+            // channel like rich (fractional alpha kept as a float,
+            // avoiding u8 alpha quantization drift).
+            let base = contrast.blend_over_float(fold_bg, auto.alpha());
+            // Step 2 — Python TextOpacity fold over the same base
+            // (identity without text-opacity).
+            let flat = match text_opacity {
+                Some(o) => TextOpacity::<()>::blend_foreground_over_background(base, fold_bg, o),
+                None => base,
+            };
+            s.color = Some(flat.to_simple_opaque());
+            style_changed = true;
+        }
+    } else if let (Some(opacity), Some(existing)) = (text_opacity, s.color) {
+        let bg_for_text = s.bgcolor.map_or(under_bg, crate::style::color_from_simple);
+        let existing = crate::style::color_from_simple(existing);
+        let flat = TextOpacity::<()>::blend_foreground_over_background(
+            existing,
+            fold_base(bg_for_text),
+            opacity,
+        );
+        s.color = Some(flat.to_simple_opaque());
+        style_changed = true;
+    }
+    style_changed
+}
+
+/// Blend the widget's `tint` into the segment background and foreground.
+/// Returns whether the style changed.
+fn apply_tint(s: &mut rich_rs::Style, style: &Style) -> bool {
+    let mut style_changed = false;
+    if let Some(tint) = style.tint {
+        if let Some(bg) = s.bgcolor {
+            let bg = crate::style::color_from_simple(bg);
+            let blended = Tint::<()>::blend_color_with_percent(bg, tint.color, tint.percent);
+            s.bgcolor = Some(blended.to_simple_opaque());
+            style_changed = true;
+        }
+        if let Some(fg) = s.color {
+            let fg = crate::style::color_from_simple(fg);
+            let blended = Tint::<()>::blend_color_with_percent(fg, tint.color, tint.percent);
+            s.color = Some(blended.to_simple_opaque());
+            style_changed = true;
+        }
+    }
+    style_changed
 }
 
 /// Rust analog of Python's always-on `ANSIToTruecolor` line filter
