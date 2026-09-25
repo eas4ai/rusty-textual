@@ -5,6 +5,8 @@
 //! - `PROBE_MODE`: `inline` (the default), `inline-no-clear`, or `full`.
 //! - `PROBE_PADDING`: inline padding lines (unset: 1, Python's default).
 //! - `PROBE_LINES`: lines in the body (default 3).
+//! - `PROBE_SCREEN_HEIGHT`: when set, the height of a `Screen:inline` rule
+//!   (for example `10`), so the inline height is below the content height.
 //! - `PROBE_BUTTON`: when set, a `Press` button follows the body.
 //! - `PROBE_EXIT_MESSAGE`: when set, `q` exits through `App::exit` with this
 //!   message (Python `App.exit(message=...)`).
@@ -28,6 +30,7 @@ Screen:inline #cssmark { display: block; }
 struct Probe {
     lines: usize,
     padding: usize,
+    screen_height: Option<String>,
     button: bool,
     exit_message: Option<String>,
     exit_result: Option<String>,
@@ -48,6 +51,7 @@ impl Probe {
         Self {
             lines: number("PROBE_LINES", 3),
             padding: number("PROBE_PADDING", 1),
+            screen_height: std::env::var("PROBE_SCREEN_HEIGHT").ok(),
             button: std::env::var_os("PROBE_BUTTON").is_some(),
             exit_message: std::env::var("PROBE_EXIT_MESSAGE").ok(),
             exit_result: std::env::var("PROBE_EXIT_RESULT").ok(),
@@ -80,7 +84,10 @@ impl Probe {
 
 impl TextualApp for Probe {
     fn configure(&mut self, app: &mut App) -> textual::Result<()> {
-        app.load_stylesheet(CSS);
+        match &self.screen_height {
+            Some(height) => app.load_stylesheet(&format!("{CSS}Screen:inline {{ height: {height}; }}\n")),
+            None => app.load_stylesheet(CSS),
+        }
         if self.exit_in_configure {
             app.exit(None, 0, None);
         }
