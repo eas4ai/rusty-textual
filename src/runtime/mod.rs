@@ -1561,6 +1561,12 @@ impl App {
     /// This controls `:inline`, `:ansi`, and `:nocolor` matching during style
     /// resolution. Defaults are `inline=false`, `ansi`/`nocolor` from
     /// `TEXTUAL_APP_ANSI`/`TEXTUAL_APP_NOCOLOR` at startup.
+    ///
+    /// `inline` is the app's one inline state, as Python's `App.is_inline`
+    /// is: besides the `:inline` rules, it makes the layout lay the app's
+    /// Screen out on the whole viewport whatever its own height rules say,
+    /// as an inline run does. Running inline sets it; set it by hand only to
+    /// lay an app out as it runs inline.
     pub fn set_css_runtime_pseudos(&mut self, inline: bool, ansi: bool, nocolor: bool) {
         self.app_inline = inline;
         self.app_ansi = ansi;

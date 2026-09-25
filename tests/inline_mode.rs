@@ -676,6 +676,76 @@ fn inl_016_inline02_renders_its_inline_rule() {
 }
 
 #[test]
+fn inl_017_a_pushed_screen_keeps_its_border_inside_the_frame() {
+    // The command palette is a pushed screen; the default `Screen:inline`
+    // rule gives it a top and a bottom border, which INL-004 counts in the
+    // inline height. They belong on the frame's first and last rows.
+    let term = Term::spawn(
+        SHELL_THEN_EXEC,
+        &docs_example("inline01"),
+        &[],
+        Answers::TERMINAL,
+    );
+    term.wait_for("clock", |s| !painted_rows(s).is_empty());
+    term.settle();
+    term.send(b"\x10"); // ctrl+p
+    term.wait_for("the palette", has_text("Search for commands"));
+    let screen = term.settle();
+    let rows = painted_rows(&screen);
+    let text = lines(&screen);
+    let (_, cols) = screen.size();
+    let edge = |row: u16, glyph: char| {
+        text[usize::from(row)]
+            .chars()
+            .filter(|&c| c == glyph)
+            .count()
+            >= usize::from(cols - 2)
+    };
+    assert!(
+        edge(rows[0], '\u{2594}') && edge(rows[rows.len() - 1], '\u{2581}'),
+        "the palette's border is not on the frame's first and last rows:\n{}",
+        dump(&screen)
+    );
+}
+
+#[test]
+fn inl_017_the_inline_screen_scrolls_to_its_last_line() {
+    // The body, then the status line, then the `inline-css` marker: the
+    // marker is the last line, so it shows only once the screen has
+    // scrolled to its end.
+    let cases: [(&[(&str, &str)], &str); 2] = [
+        (&[("PROBE_LINES", "60")], "60 lines in a 30-row terminal"),
+        (
+            &[("PROBE_LINES", "12"), ("PROBE_SCREEN_HEIGHT", "10")],
+            "12 lines under Screen:inline { height: 10 }",
+        ),
+    ];
+    for (env, what) in cases {
+        let term = Term::spawn(SHELL_THEN_EXEC, &probe(), env, Answers::TERMINAL);
+        term.wait_for("probe body", has_text("line 5"));
+        let screen = term.settle();
+        assert!(
+            !has_text("inline-css")(&screen),
+            "{what}: the last line shows before scrolling:\n{}",
+            dump(&screen)
+        );
+        let rows = painted_rows(&screen);
+        let (top, bottom) = (rows[0], rows[rows.len() - 1]);
+        let y = top.midpoint(bottom) + 1;
+        for _ in 0..80 {
+            term.send(format!("\x1b[<65;10;{y}M").as_bytes()); // wheel down
+        }
+        let screen = term.wait_for("the last line", has_text("inline-css"));
+        let last = &lines(&screen)[usize::from(bottom)];
+        assert!(
+            last.chars().filter(|&c| c == '\u{2581}').count() > 10,
+            "{what}: the frame's last row is not the bottom border after scrolling:\n{}",
+            dump(&screen)
+        );
+    }
+}
+
+#[test]
 fn inl_017_a_screen_taller_than_the_terminal_keeps_its_border_and_scrolls() {
     // Python lays each screen out at the inline height, so the default
     // `Screen:inline` bottom border stays on the frame's last row and the

@@ -1976,6 +1976,7 @@ fn render_screen_tree_layer(
             }
         }
         stamp_owner_meta_in_rect(frame, clip, root_id);
+        paint_root_border(frame, root_rect, &root_resolved);
     }
 
     push_style_context(root_meta, root_resolved);
@@ -2093,6 +2094,59 @@ fn paint_deferred_overlays(
             overlay_root_exempt: Some(item.node_id),
         };
         render_tree_node(tree, item.node_id, ctx, frame, console, debug, overlays);
+    }
+}
+
+/// Paint a screen tree root's CSS border. The root renders no content, so
+/// no `render_styled` call draws its border: build the bordered box with
+/// `apply_border_edges` and write only its edge cells, so the interior keeps
+/// the background painted before (a translucent screen tints its underlay).
+fn paint_root_border(
+    frame: &mut FrameBuffer,
+    rect: crate::widget_tree::Rect,
+    style: &crate::style::Style,
+) {
+    let (top, bottom, left, right) = crate::widgets::helpers::border_spacing_from_style(style);
+    if top + bottom + left + right == 0 {
+        return;
+    }
+    let (Ok(x0), Ok(y0)) = (usize::try_from(rect.x0), usize::try_from(rect.y0)) else {
+        return;
+    };
+    let width = usize::try_from(rect.x1 - rect.x0).unwrap_or(0);
+    let height = usize::try_from(rect.y1 - rect.y0).unwrap_or(0);
+    if width <= left + right || height <= top + bottom {
+        return;
+    }
+    let inner_width = width - left - right;
+    let blank = vec![vec![Segment::new(" ".repeat(inner_width))]; height - top - bottom];
+    let boxed = crate::widgets::helpers::apply_border_edges(
+        crate::widgets::helpers::join_lines(blank),
+        inner_width,
+        style,
+        crate::css::current_parent_style(),
+        width,
+        height,
+        "Screen",
+        None,
+        None,
+        style.opacity,
+    );
+    let lines = Segment::split_and_crop_lines(boxed, width, None, true, false);
+    for (row, line) in lines.iter().enumerate().take(height) {
+        let y = y0 + row;
+        if row < top || row >= height - bottom {
+            frame.write_line_at(x0, y, line, false);
+            continue;
+        }
+        if left > 0 {
+            let edge = crate::widgets::helpers::crop_line_horizontal(line, 0, left);
+            frame.write_line_at(x0, y, &edge, false);
+        }
+        if right > 0 {
+            let edge = crate::widgets::helpers::crop_line_horizontal(line, width - right, right);
+            frame.write_line_at(x0 + width - right, y, &edge, false);
+        }
     }
 }
 
@@ -3934,15 +3988,17 @@ pub fn run_layout_pass(tree: &mut WidgetTree, viewport: (u16, u16)) {
     hide_host_scrollbar_children_for_flow_layout(tree);
 
     let available = crate::layout::Region::new(0, 0, viewport.0, viewport.1);
-
-    // Set root's own rects to the full viewport.
+    // The root's box is the whole viewport; a Screen root keeps its own
+    // border and padding inside it (a pushed screen's `Screen:inline`
+    // border, for example).
+    let inner = crate::layout::root_content_region(tree, root_id, available);
     if let Some(root) = tree.get_mut(root_id) {
         root.layout_rect = available.to_rect();
-        root.content_rect = available.to_rect();
+        root.content_rect = inner.to_rect();
     }
 
     // Resolve children's layout rects.
-    crate::layout::resolve_layout(tree, root_id, available, viewport);
+    crate::layout::resolve_layout(tree, root_id, inner, viewport);
     apply_host_scrollbar_layout(tree, viewport);
 
     // Optional per-node rect trace for layout debugging.

@@ -419,6 +419,33 @@ fn inline_screen_node(tree: &WidgetTree) -> Option<NodeId> {
     )
 }
 
+/// The region a layout root lays its children out in. A Screen root (a
+/// pushed screen's `ScreenHost`) keeps its own border and padding, so its
+/// children sit inside them, as Python arranges a screen's children inside
+/// its gutter; any other root lays them out on the whole viewport.
+pub(crate) fn root_content_region(tree: &WidgetTree, root: NodeId, available: Region) -> Region {
+    if !is_screen_node(tree, root) {
+        return available;
+    }
+    let style = get_node_style(tree, root);
+    let (bt, bb, bl, br) = border_spacing(&style);
+    let padding = style.effective_padding();
+    let left = bl.saturating_add(padding.left);
+    let top = bt.saturating_add(padding.top);
+    let width = available
+        .width
+        .saturating_sub(left.saturating_add(br).saturating_add(padding.right));
+    let height = available
+        .height
+        .saturating_sub(top.saturating_add(bb).saturating_add(padding.bottom));
+    Region::new(
+        available.x + i32::from(left),
+        available.y + i32::from(top),
+        width.max(1),
+        height.max(1),
+    )
+}
+
 /// Whether `node` is a Screen (its style type, or an alias, is `Screen`).
 fn is_screen_node(tree: &WidgetTree, node: NodeId) -> bool {
     tree.get(node).is_some_and(|n| {

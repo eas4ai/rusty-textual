@@ -111,15 +111,22 @@ fn vertical_child_spec(
 ) -> ChildSpec {
     let mut style = get_node_style(tree, child);
     apply_wrapper_sizing(tree, child, &mut style);
-    if is_inline_app_screen(tree, child) {
+    let inline_app_screen = is_inline_app_screen(tree, child);
+    if inline_app_screen {
         // Inline, the viewport is the inline height, and the Screen fills it
         // as it fills the terminal in full-screen mode: its height rules
         // (`Screen:inline { height: auto }`) already set the inline height.
         style.height = None;
         style.min_height = None;
         style.max_height = None;
+    } else {
+        // Not for the inline Screen: it fills the viewport, so no seeded
+        // measurement sizes it, and seeding would clamp its scroll offset
+        // against the outer height (`AppRoot::on_layout`), in the measuring
+        // pass at the terminal size too, before the final layout gives it
+        // its real content box.
+        seed_measure_width(tree, child, &style, available, viewport, allow_h_overflow);
     }
-    seed_measure_width(tree, child, &style, available, viewport, allow_h_overflow);
 
     let mut intrinsic_height = tree
         .get(child)
