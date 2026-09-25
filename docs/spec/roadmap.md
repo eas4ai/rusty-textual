@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: inline-render-mode
+Current: overflow-paints-over-screen-border
 
 ## inline-render-mode
 
@@ -16,3 +16,17 @@ and clock examples run inline. Full-screen behavior is unchanged.
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and the
 demo frames pass as on `main`.
+
+## overflow-paints-over-screen-border
+
+Requirements: INL-004, INL-017, TRM-003
+
+Delivers: in inline mode each screen is laid out at the app's inline
+height, as in Python, so an app taller than the terminal keeps its screen
+border inside the frame and scrolls its content instead of painting over
+the border. The inline height itself (INL-004) and full-screen behavior
+(TRM-003) do not change.
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, and the full test gate, strict clippy, and
+rustfmt pass.

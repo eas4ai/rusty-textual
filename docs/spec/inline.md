@@ -118,14 +118,14 @@ Status: Agreed 2026-09-25
 suspend call reports that suspend is unsupported, and the suspend-process
 action does nothing.
 Falsifier: Suspending an inline app stops the driver or sends SIGTSTP to the process.
-Mechanism: inline-unit
+Mechanism: inline-pty
 Rationale: Python's inline driver keeps can_suspend False (driver.py:62-65; app.py:4741-4780).
 Status: Agreed 2026-09-25
 
 [INL-015] On Windows, a request to run inline MUST run the app in
 full-screen mode, as Python does.
 Falsifier: On Windows, an app run with the inline option does not use the alternate screen.
-Mechanism: inline-unit
+Mechanism: inline-pty
 Rationale: Python app.py:3334-3343 picks the inline driver only when not on Windows.
 Status: Agreed 2026-09-25
 
@@ -136,4 +136,12 @@ digits).
 Falsifier: One of these examples starts on the alternate screen, or inline02 lacks its Screen:inline rule.
 Mechanism: inline-pty
 Rationale: Python docs/examples/how-to/inline01.py:31, inline02.py:11-38 and widgets/clock.py:31.
+Status: Agreed 2026-09-25
+
+[INL-017] Each screen MUST be laid out at the app's inline height, not at
+its own height rule: its border and padding stay inside the frame, and
+content taller than the frame scrolls inside the screen.
+Falsifier: An inline app whose content is taller than the terminal (the inline probe with 60 body lines in a 30-row terminal, default CSS) does not draw its bottom border on the frame's last row, or draws no vertical scrollbar.
+Mechanism: inline-pty
+Rationale: Python screen.py:1316-1320 lays the screen out at size.with_height(app._get_inline_height()) and _compositor.py:743-752 places it on that whole region, so the height rule only sets the inline height (INL-004); full-screen apps with a bordered, overflowing Screen already keep their border and scrollbar here.
 Status: Agreed 2026-09-25
