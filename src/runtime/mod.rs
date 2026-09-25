@@ -4516,12 +4516,13 @@ impl App {
         // SYNC stays off unless the startup negotiation proved support
         // (PR-15b): the env opt-out alone no longer wraps every frame.
         self.sync_output = self.sync_output && self.driver.negotiated_modes().sync_supported;
-        if let Some(inline) = &self.inline {
+        if let Some(inline) = &mut self.inline {
             // Python never wraps inline frames in synchronized output, and
             // writes the padding lines below the cursor before the first one.
             self.sync_output = false;
             self.console
                 .write_str(&inline::ROW_BREAK.repeat(inline.padding))?;
+            inline.started = true;
         }
         self.refresh_size()?;
         debug_render(&format!("[app] sync_output={}", self.sync_output));
@@ -4561,7 +4562,13 @@ impl App {
     /// above the first frame. Call before the app starts; ignored on Windows
     /// (Python runs inline requests full-screen there) and in headless runs.
     pub(crate) fn enable_inline(&mut self, padding: usize) {
-        if self.headless || !inline::effective_inline(true, cfg!(windows)) {
+        self.enable_inline_on(padding, cfg!(windows));
+    }
+
+    /// [`enable_inline`](Self::enable_inline) for a given platform, so the
+    /// Windows fallback can be tested anywhere.
+    fn enable_inline_on(&mut self, padding: usize, windows: bool) {
+        if self.headless || !inline::effective_inline(true, windows) {
             return;
         }
         let size = self.driver.size();
@@ -4589,9 +4596,13 @@ impl App {
         let Some(state) = self.inline.take() else {
             return Ok(());
         };
-        let height = state.previous_height.unwrap_or(0);
-        self.console
-            .write_str(&inline::exit_sequence(keep_frame, height, state.padding))?;
+        // A run that stopped before `start` wrote nothing: erasing would
+        // take out the shell's own lines above the cursor.
+        if state.started {
+            let height = state.previous_height.unwrap_or(0);
+            self.console
+                .write_str(&inline::exit_sequence(keep_frame, height, state.padding))?;
+        }
         if let Some(message) = self.exit_message.take() {
             println!("{message}");
         }
@@ -5842,6 +5853,20 @@ mod tests {
                 )))]
             }
         }
+    }
+
+    #[test]
+    fn inl_015_enable_inline_on_windows_stays_full_screen() {
+        // Python runs inline requests full-screen on Windows; `enable_inline`
+        // passes `cfg!(windows)` to `enable_inline_on`.
+        let mut app = App::new().expect("app should initialize");
+        app.enable_inline_on(1, true);
+        assert!(
+            !app.is_inline(),
+            "Windows runs an inline request full-screen"
+        );
+        app.enable_inline_on(1, false);
+        assert!(app.is_inline(), "other platforms run inline");
     }
 
     #[test]

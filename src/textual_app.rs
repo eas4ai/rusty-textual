@@ -1439,13 +1439,18 @@ pub async fn run_with_options<T: TextualApp>(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .take_exit_output();
-    if app.is_inline() {
+    let end = if app.is_inline() {
         // Python keeps the last frame only for `inline_no_clear` without an
-        // exit message (`App._process_messages`).
-        let has_message = exit_output.is_some() || app.exit_message().is_some();
-        app.end_inline(run.is_ok() && options.inline_no_clear && !has_message)?;
-    }
+        // exit message (`App.exit(message=...)`, `App._process_messages`);
+        // the app's return value (`take_exit_output`) is not a message.
+        let keep = run.is_ok() && options.inline_no_clear && app.exit_message().is_none();
+        app.end_inline(keep)
+    } else {
+        Ok(())
+    };
+    // The run's own error wins over a failure to clean up the terminal.
     run?;
+    end?;
     Ok(exit_output)
 }
 

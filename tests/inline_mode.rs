@@ -26,10 +26,10 @@ use pty::{
 };
 
 fn probe() -> PathBuf {
-    static CELL: OnceLock<Result<PathBuf, String>> = OnceLock::new();
-    let target = repo_root().join("target/inline-probe");
+    static CELL: OnceLock<pty::Built> = OnceLock::new();
+    let target_dir = repo_root().join("target/inline-probe");
+    let target_arg = target_dir.display().to_string();
     let manifest = "tests/fixtures/inline_probe/Cargo.toml";
-    let target_arg = target.display().to_string();
     built(
         &CELL,
         &[
@@ -39,29 +39,39 @@ fn probe() -> PathBuf {
             "--target-dir",
             &target_arg,
         ],
-        target.join("debug/inline_probe"),
+        "inline_probe",
     )
 }
 
 fn docs_example(name: &str) -> PathBuf {
-    static HOW_TO: OnceLock<Result<PathBuf, String>> = OnceLock::new();
-    static WIDGETS: OnceLock<Result<PathBuf, String>> = OnceLock::new();
-    let examples = repo_root().join("docs/examples/target/debug/examples");
+    static HOW_TO: OnceLock<pty::Built> = OnceLock::new();
+    static WIDGETS: OnceLock<pty::Built> = OnceLock::new();
     let manifest = "docs/examples/Cargo.toml";
-    let (cell, package) = if name == "clock" {
-        (&WIDGETS, "textual-docs-widgets")
+    if name == "clock" {
+        let args = [
+            "build",
+            "--manifest-path",
+            manifest,
+            "-p",
+            "textual-docs-widgets",
+            "--example",
+            "clock",
+        ];
+        built(&WIDGETS, &args, name)
     } else {
-        (&HOW_TO, "textual-docs-how-to")
-    };
-    let example_args: &[&str] = if name == "clock" {
-        &["--example", "clock"]
-    } else {
-        &["--example", "inline01", "--example", "inline02"]
-    };
-    let mut args = vec!["build", "--manifest-path", manifest, "-p", package];
-    args.extend_from_slice(example_args);
-    built(cell, &args, examples.clone());
-    examples.join(name)
+        let args = [
+            "build",
+            "--manifest-path",
+            manifest,
+            "-p",
+            "textual-docs-how-to",
+            "--example",
+            "inline01",
+            "--example",
+            "inline02",
+        ];
+        built(&HOW_TO, &args, name)
+    }
 }
 
 /// The painted rows form one block of `height` rows starting at `top`.
@@ -286,6 +296,59 @@ fn inl_007_mouse_is_relative_to_the_origin_and_reports_are_not_keys() {
 }
 
 #[test]
+fn inl_007_mouse_recovers_after_a_slow_cursor_report() {
+    // The first report comes after crossterm's 2 s timeout; it stays queued
+    // and answers the next query, so the app learns its origin anyway.
+    let answers = Answers {
+        cursor_delay: std::time::Duration::from_millis(2500),
+        ..Answers::TERMINAL
+    };
+    let term = Term::spawn(SHELL_THEN_EXEC, &probe(), &[("PROBE_BUTTON", "1")], answers);
+    term.wait_for("button", has_text("Press"));
+    // Past the late reply and the first retry backoff, draw another frame.
+    // A resize always redraws (a key would go to the focused button).
+    std::thread::sleep(std::time::Duration::from_secs(4));
+    term.resize(ROWS - 1);
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    let screen = term.settle();
+    let row = row_of(&screen, "Press").expect("button row");
+    let col = lines(&screen)[row].find("Press").expect("button column");
+    let (x, y) = (col + 2, row + 1);
+    term.send(format!("\x1b[<0;{x};{y}M\x1b[<0;{x};{y}m").as_bytes());
+    term.wait_for("click to register", has_text("clicked"));
+}
+
+#[test]
+fn inl_008_a_run_that_stops_before_starting_leaves_the_shell_alone() {
+    // `configure` calls `App::exit`: nothing was drawn, so nothing is erased.
+    let term = Term::spawn(
+        SHELL_AROUND,
+        &probe(),
+        &[("PROBE_EXIT_IN_CONFIGURE", "1")],
+        Answers::TERMINAL,
+    );
+    let screen = term.finish();
+    let text = lines(&screen);
+    assert_eq!(
+        text[0],
+        "shell-1",
+        "shell output erased:\n{}",
+        dump(&screen)
+    );
+    assert_eq!(
+        text[1],
+        "shell-2",
+        "shell output erased:\n{}",
+        dump(&screen)
+    );
+    assert!(
+        row_of(&screen, "after-exit").is_some_and(|row| row >= 2),
+        "{}",
+        dump(&screen)
+    );
+}
+
+#[test]
 fn inl_008_exit_erases_the_app_and_padding() {
     let term = Term::spawn(SHELL_AROUND, &probe(), &[], Answers::TERMINAL);
     term.wait_for("probe body", has_text("line 1"));
@@ -340,7 +403,11 @@ fn inl_009_no_clear_exit_keeps_the_last_frame() {
         "prompt not on the line below:\n{}",
         dump(&screen)
     );
+}
 
+#[test]
+fn inl_009_an_exit_message_clears_even_with_no_clear() {
+    // Python `App.exit(message=...)` drops the no-clear frame.
     let env = [
         ("PROBE_MODE", "inline-no-clear"),
         ("PROBE_EXIT_MESSAGE", "bye-message"),
@@ -358,6 +425,27 @@ fn inl_009_no_clear_exit_keeps_the_last_frame() {
     assert!(
         row_of(&screen, "line 1").is_none(),
         "frame kept despite an exit message:\n{}",
+        dump(&screen)
+    );
+}
+
+#[test]
+fn inl_009_a_return_value_keeps_the_no_clear_frame() {
+    // Python `App.exit(result=...)` is not a message: the frame stays.
+    let env = [
+        ("PROBE_MODE", "inline-no-clear"),
+        ("PROBE_EXIT_RESULT", "the-result"),
+    ];
+    let term = Term::spawn(SHELL_AROUND, &probe(), &env, Answers::TERMINAL);
+    term.wait_for("probe body", has_text("line 1"));
+    term.settle();
+    term.send(b"q");
+    let screen = term.finish();
+    let body = row_of(&screen, "line 1").expect("frame kept with a return value");
+    let result = row_of(&screen, "the-result").expect("main prints the return value");
+    assert!(
+        result > body,
+        "return value printed over the frame:\n{}",
         dump(&screen)
     );
 }
@@ -500,20 +588,50 @@ fn inl_016_docs_examples_run_inline() {
             "{name} runs on the alternate screen"
         );
     }
-    let source =
-        std::fs::read_to_string(repo_root().join("docs/examples/how-to/examples/inline02/main.rs"))
-            .expect("read inline02");
-    for rule in [
-        "&:inline",
-        "border: none",
-        "height: 50vh",
-        "color: $success",
-    ] {
-        assert!(
-            source.contains(rule),
-            "inline02 lacks `{rule}` from its Python Screen:inline rule"
-        );
-    }
+}
+
+#[test]
+fn inl_016_inline02_renders_its_inline_rule() {
+    // Python inline02: `&:inline { border: none; height: 50vh; Digits { color: $success } }`.
+    let term = Term::spawn(
+        SHELL_THEN_EXEC,
+        &docs_example("inline02"),
+        &[],
+        Answers::TERMINAL,
+    );
+    term.wait_for("inline02", |s| {
+        painted_rows(s).len() == usize::from(ROWS / 2)
+    });
+    let screen = term.settle();
+    assert_eq!(
+        painted_rows(&screen).len(),
+        usize::from(ROWS / 2),
+        "50vh; screen:\n{}",
+        dump(&screen)
+    );
+    let text = lines(&screen);
+    assert!(
+        !text
+            .iter()
+            .any(|line| line.contains('\u{2594}') || line.contains('\u{2581}')),
+        "a border row is drawn:\n{}",
+        dump(&screen)
+    );
+    // textual-dark `$success` is #4EBF71.
+    let success = vt100::Color::Rgb(0x4e, 0xbf, 0x71);
+    let (rows, cols) = screen.size();
+    let green = (0..rows).any(|row| {
+        (0..cols).any(|col| {
+            screen
+                .cell(row, col)
+                .is_some_and(|cell| cell.contents().trim() != "" && cell.fgcolor() == success)
+        })
+    });
+    assert!(
+        green,
+        "no digit drawn in the success color:\n{}",
+        dump(&screen)
+    );
 }
 
 #[test]

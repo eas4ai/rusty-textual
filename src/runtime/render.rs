@@ -537,20 +537,34 @@ impl App {
         Ok(())
     }
 
-    /// Ask the terminal where the cursor, now at the app's origin, is. A
-    /// terminal that does not answer is not asked again.
+    /// Ask the terminal where the cursor, now at the app's origin, is
+    /// (Python asks after every frame). After an unanswered query, ask again
+    /// only after a backoff: a late reply stays queued in crossterm and
+    /// answers the next query at once, while a silent terminal costs one
+    /// timeout per backoff period instead of one per frame.
     fn query_inline_origin(&mut self) {
         let Some(state) = &mut self.inline else {
             return;
         };
-        if !state.cursor_reports {
+        if state
+            .origin_retry_at
+            .is_some_and(|at| std::time::Instant::now() < at)
+        {
             return;
         }
         match crossterm::cursor::position() {
-            Ok(origin) => state.origin = Some(origin),
+            Ok(origin) => {
+                state.origin = Some(origin);
+                state.origin_retry_at = None;
+                state.origin_backoff = std::time::Duration::ZERO;
+            }
             Err(error) => {
-                state.cursor_reports = false;
-                debug_render(&format!("[inline] no cursor position report: {error}"));
+                state.origin_backoff = super::inline::next_origin_backoff(state.origin_backoff);
+                state.origin_retry_at = Some(std::time::Instant::now() + state.origin_backoff);
+                debug_render(&format!(
+                    "[inline] no cursor position report ({error}); asking again in {:?}",
+                    state.origin_backoff
+                ));
             }
         }
     }

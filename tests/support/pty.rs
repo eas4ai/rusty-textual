@@ -11,6 +11,7 @@
 // Shared by several PTY test binaries; each uses a subset of the helpers.
 #![allow(dead_code)]
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -38,42 +39,54 @@ pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// Run a cargo build once per test binary run; the result (the binary path
-/// or the build failure) is shared by every test that needs it.
-pub fn built(
-    cell: &'static OnceLock<Result<PathBuf, String>>,
-    args: &[&str],
-    bin: PathBuf,
-) -> PathBuf {
+/// Executables a cargo build produced, by target name.
+pub type Built = Result<HashMap<String, PathBuf>, String>;
+
+/// Run `cargo build <args>` once per test binary run and return the
+/// executable cargo reports for `target`. The paths come from cargo's own
+/// artifact messages, so a `CARGO_TARGET_DIR` in the environment can never
+/// leave a stale binary at a guessed path in play.
+pub fn built(cell: &'static OnceLock<Built>, args: &[&str], target: &str) -> PathBuf {
     let result = cell.get_or_init(|| {
         let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
         let output = Command::new(cargo)
             .args(args)
+            .arg("--message-format=json-render-diagnostics")
             .current_dir(repo_root())
             .output()
             .map_err(|e| format!("spawn cargo: {e}"))?;
-        if output.status.success() {
-            Ok(bin)
-        } else {
+        if !output.status.success() {
             let log = String::from_utf8_lossy(&output.stderr);
             let tail: Vec<&str> = log.lines().rev().take(20).collect();
-            Err(tail.into_iter().rev().collect::<Vec<_>>().join("\n"))
+            return Err(tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
         }
+        let mut executables = HashMap::new();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            if let (Some(name), Some(path)) = (
+                message["target"]["name"].as_str(),
+                message["executable"].as_str(),
+            ) {
+                executables.insert(name.to_string(), PathBuf::from(path));
+            }
+        }
+        Ok(executables)
     });
     match result {
-        Ok(path) => path.clone(),
+        Ok(executables) => executables
+            .get(target)
+            .unwrap_or_else(|| panic!("cargo {} built no executable {target}", args.join(" ")))
+            .clone(),
         Err(log) => panic!("cargo {} failed:\n{log}", args.join(" ")),
     }
 }
 
 /// The root package's calculator example.
 pub fn calculator() -> PathBuf {
-    static CELL: OnceLock<Result<PathBuf, String>> = OnceLock::new();
-    built(
-        &CELL,
-        &["build", "--example", "calculator"],
-        repo_root().join("target/debug/examples/calculator"),
-    )
+    static CELL: OnceLock<Built> = OnceLock::new();
+    built(&CELL, &["build", "--example", "calculator"], "calculator")
 }
 
 /// Which terminal queries the harness answers, and after what delay.
@@ -82,7 +95,10 @@ pub struct Answers {
     pub cursor_position: bool,
     pub modes: bool,
     pub device_attributes: bool,
+    /// Delay before answering the mode and device attributes queries.
     pub delay: Duration,
+    /// Delay before answering a cursor position query.
+    pub cursor_delay: Duration,
 }
 
 impl Answers {
@@ -92,6 +108,7 @@ impl Answers {
         modes: true,
         device_attributes: true,
         delay: Duration::ZERO,
+        cursor_delay: Duration::ZERO,
     };
     /// Answer nothing, like a bare vt100 parser.
     pub const NONE: Self = Self {
@@ -99,6 +116,7 @@ impl Answers {
         modes: false,
         device_attributes: false,
         delay: Duration::ZERO,
+        cursor_delay: Duration::ZERO,
     };
 }
 
@@ -177,7 +195,12 @@ fn pump(
             let mut parser = parser.lock().unwrap();
             parser.process(&pending[..end]);
             if let Some(bytes) = reply(query, answers, &parser) {
-                let _ = replies.send((Instant::now() + answers.delay, bytes));
+                let delay = if matches!(query, Query::CursorPosition) {
+                    answers.cursor_delay
+                } else {
+                    answers.delay
+                };
+                let _ = replies.send((Instant::now() + delay, bytes));
             }
             drop(parser);
             pending.drain(..end);
@@ -214,7 +237,16 @@ impl Term {
         cmd.args(["-c", script]);
         cmd.arg(bin);
         cmd.cwd(repo_root());
+        // Nothing from the test's own environment (NO_COLOR, TEXTUAL_*, ...)
+        // reaches the program; it sees only what is set here.
+        cmd.env_clear();
+        for key in ["PATH", "HOME"] {
+            if let Some(value) = std::env::var_os(key) {
+                cmd.env(key, value);
+            }
+        }
         cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
         cmd.env("LANG", "en_US.UTF-8");
         cmd.env("TEXTUAL_KEYBOARD_PROTOCOL", "off");
         for (key, value) in env {
