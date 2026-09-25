@@ -889,6 +889,94 @@ impl Tabs {
         true
     }
 
+    /// Move the `-active` class from the previous tab to `new_id`: posted
+    /// through `ctx` when there is one, else queued as pending messages.
+    fn move_active_class(
+        &self,
+        prev_id: Option<String>,
+        new_id: &str,
+        mut ctx: Option<&mut crate::event::WidgetCtx>,
+    ) {
+        if let Some(ctx) = ctx.as_mut() {
+            if let Some(prev) = prev_id {
+                ctx.post_message(crate::message::AppRemoveClass {
+                    selector: self.scoped_tab_selector(&prev),
+                    class_name: "-active".to_string(),
+                });
+            }
+            ctx.post_message(crate::message::AppAddClass {
+                selector: self.scoped_tab_selector(new_id),
+                class_name: "-active".to_string(),
+            });
+        } else {
+            if let Some(prev) = prev_id {
+                self.pending_messages
+                    .lock()
+                    .expect("tabs pending lock")
+                    .push(Box::new(crate::message::AppRemoveClass {
+                        selector: self.scoped_tab_selector(&prev),
+                        class_name: "-active".to_string(),
+                    }));
+            }
+            self.pending_messages
+                .lock()
+                .expect("tabs pending lock")
+                .push(Box::new(crate::message::AppAddClass {
+                    selector: self.scoped_tab_selector(new_id),
+                    class_name: "-active".to_string(),
+                }));
+        }
+    }
+
+    /// Animate the underline from its current range (or the previous tab's
+    /// span when it has none) to `target_start..target_end`.
+    fn animate_underline_to(
+        &self,
+        (target_start, target_end): (f32, f32),
+        previous_active_index: Option<usize>,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
+        let (duration, delay, ease) = self.underline_animation_params();
+        let fallback_source = previous_active_index
+            .and_then(|prev| self.underline_span_for_index(prev))
+            .unwrap_or((target_start, target_end));
+        let (from_start, from_end) = self.current_underline_range();
+        let from_start = if from_end > from_start {
+            from_start
+        } else {
+            fallback_source.0
+        };
+        let from_end = if from_end > from_start {
+            from_end
+        } else {
+            fallback_source.1
+        };
+        ctx.request_animation(
+            AnimationRequest::new(
+                self.node_id(),
+                Self::UNDERLINE_START_ATTR,
+                from_start,
+                target_start,
+                duration,
+            )
+            .with_delay(delay)
+            .with_ease(ease)
+            .with_level(AnimationLevel::Basic),
+        );
+        ctx.request_animation(
+            AnimationRequest::new(
+                self.node_id(),
+                Self::UNDERLINE_END_ATTR,
+                from_end,
+                target_end,
+                duration,
+            )
+            .with_delay(delay)
+            .with_ease(ease)
+            .with_level(AnimationLevel::Basic),
+        );
+    }
+
     fn activate(&mut self, index: usize, mut ctx: Option<&mut crate::event::WidgetCtx>) -> bool {
         let mut state = self.state.lock().expect("tabs state lock");
         if state.tabs.is_empty() {
@@ -907,76 +995,14 @@ impl Tabs {
             let prev_id = previous_active_index.map(|idx| state.tabs[idx].tab_id.clone());
             state.active = Some(new_id.clone());
             drop(state);
-            if let Some(ctx) = ctx.as_mut() {
-                if let Some(prev) = prev_id {
-                    ctx.post_message(crate::message::AppRemoveClass {
-                        selector: self.scoped_tab_selector(&prev),
-                        class_name: "-active".to_string(),
-                    });
-                }
-                ctx.post_message(crate::message::AppAddClass {
-                    selector: self.scoped_tab_selector(&new_id),
-                    class_name: "-active".to_string(),
-                });
-            } else {
-                if let Some(prev) = prev_id {
-                    self.pending_messages
-                        .lock()
-                        .expect("tabs pending lock")
-                        .push(Box::new(crate::message::AppRemoveClass {
-                            selector: self.scoped_tab_selector(&prev),
-                            class_name: "-active".to_string(),
-                        }));
-                }
-                self.pending_messages
-                    .lock()
-                    .expect("tabs pending lock")
-                    .push(Box::new(crate::message::AppAddClass {
-                        selector: self.scoped_tab_selector(&new_id),
-                        class_name: "-active".to_string(),
-                    }));
-            }
+            self.move_active_class(prev_id, &new_id, ctx.as_deref_mut());
             let target_span = self.underline_span_for_index(next);
             if let Some(ctx) = ctx.as_mut() {
                 if let Some((target_start, target_end)) = target_span {
-                    let (duration, delay, ease) = self.underline_animation_params();
-                    let fallback_source = previous_active_index
-                        .and_then(|prev| self.underline_span_for_index(prev))
-                        .unwrap_or((target_start, target_end));
-                    let (from_start, from_end) = self.current_underline_range();
-                    let from_start = if from_end > from_start {
-                        from_start
-                    } else {
-                        fallback_source.0
-                    };
-                    let from_end = if from_end > from_start {
-                        from_end
-                    } else {
-                        fallback_source.1
-                    };
-                    ctx.request_animation(
-                        AnimationRequest::new(
-                            self.node_id(),
-                            Self::UNDERLINE_START_ATTR,
-                            from_start,
-                            target_start,
-                            duration,
-                        )
-                        .with_delay(delay)
-                        .with_ease(ease)
-                        .with_level(AnimationLevel::Basic),
-                    );
-                    ctx.request_animation(
-                        AnimationRequest::new(
-                            self.node_id(),
-                            Self::UNDERLINE_END_ATTR,
-                            from_end,
-                            target_end,
-                            duration,
-                        )
-                        .with_delay(delay)
-                        .with_ease(ease)
-                        .with_level(AnimationLevel::Basic),
+                    self.animate_underline_to(
+                        (target_start, target_end),
+                        previous_active_index,
+                        ctx,
                     );
                 } else {
                     self.set_underline_range(0.0, 0.0);
