@@ -161,3 +161,34 @@ included) landed after the 1.1.0 docs commit `922cf93` (2026-07-16):
 - 2026-09-22 to 09-23: dispatch-model RFC follow-ups P-A to P-G and R7 (`31cf029` to `971c891`).
 - 2026-09-23: crate renamed to `rusty-textual`; README rewritten; `ROADMAP.md` and `KNOWN_GAPS.md` dropped (`7fb011c`).
 - 2026-09-23 to 09-24: calculator, merlin, diff and reminder examples; `DateInput` widget; strict-clippy cleanup; example layout fixes; App layout hook; PTY demo recorder; repository URL update; Link tests stop opening browser tabs (`6d0c10d` to `0d593d4`).
+
+## 10. Findings since the recon (2026-09-24 to 2026-09-25)
+
+Found during the strict-clippy cleanup and the long-function splits
+(`79f6864e` to `e6d2f4c7`). Measured at `main` `e6d2f4c7`. Only the
+combinator panic is fixed. The splits kept behavior unchanged on purpose, so
+the other defects are still present.
+
+### 10.1 Defects and gaps
+
+| Claim | Status | Citation |
+|---|---|---|
+| A CSS child-combinator chain longer than the ancestor stack (`A > B > C` where `B` is the top ancestor) panicked with an index out of bounds. It now does not match. | Exists (fixed in `794f7eb4`) | Guards: `src/css/selectors/matching.rs:134` (`rule_specificity`) and `src/runtime/event_loop.rs:1531` (`rule_matches_snapshot_chain`). Tests: `matching.rs:217`, `event_loop.rs:7559` |
+| `DirectoryTree` lists a symlink to a directory as a file, so the user cannot expand it. Python follows the link. | Exists (not fixed) | Child entries use `DirEntry::file_type()`, which does not follow symlinks (`src/widgets/directory_tree.rs:553`). The root node uses `Path::is_dir()`, which does (`:37`). Python uses `path.is_dir()` for both (`../textual/src/textual/widgets/_directory_tree.py:457-467`). Present since `7628e659`. Not run in a live app |
+| An app whose terminal (pty) closes without a SIGHUP keeps running at 100% CPU. This happens when the app has no controlling terminal, for example under `scripts/record_demo.py`. | Exists (not fixed) | Observed 2026-09-24 on `79f6864e`: each recording left eight example processes at full CPU (`c7cfb55f` message). That commit makes the recorder kill the whole process group, which hides the symptom. The input wait is `event::poll(timeout)` then `event::read()` (`src/runtime/event_loop.rs:3117-3118`), and `src/` has no SIGHUP handling. Cause Unverified: likely `poll` reports the hung-up terminal as ready on every pass. Python Textual in the same case: Unverified |
+| A key sent through `AppSimulateKey` loses the CSS class changes that its binding's action stages. The live and headless key paths apply them. A Footer key click and the `app.simulate_key` action both post `AppSimulateKey`. | Exists (not fixed) | `dispatch_simulated_key_binding` passes each action's `EventCtx` to `merge_ctx_into_runtime_pass` (`src/runtime/event_loop.rs:614,624,637`). That function leaves class changes on the context (`:545`), and the context is then dropped. The live path (`:3505,3530`) and the headless path (`:5720,5732,5745`) use `outcome_from_action` (`:2217`), which keeps them. Posters: `src/widgets/footer.rs:852`, `src/textual_app.rs:969`. Not run |
+| In headless runs (`Pilot`), the default `ctrl+c` action (`CopySelectedText`) and `HelpQuit` skip the app-level handling: no copy of the app's text selection and no quit hint. They only reach widgets as `Event::Action`. The live loop and `AppSimulateKey` run the app-level handling for both. | Exists (not fixed) | Headless: `headless_action_map` (`src/runtime/event_loop.rs:5758-5786`). Live: `live_action_map_fallback` (`:3598-3605`). Simulated: `dispatch_simulated_action_map` (`:655-675`). Default key map: `src/runtime/helpers.rs:51-55`. Not run |
+| `dispatch_event_auto` drops style-animation requests that the root widget stages in its key-capture, event-bridge and app-action hooks. It keeps the other requests from those hooks (messages, animations, workers, recomposes, class changes). Live and headless runs share this code, so both are affected. | Exists (not fixed) | `prepend_ctx_effects` and `append_ctx_effects` copy everything except style-animation requests (`src/runtime/event_loop.rs:2237,2275`). `dispatch_event_auto` (`:7217`) then drops the contexts. A root key capture that handles the key returns through `outcome_from_action`, which keeps them. Not run |
+| `WidgetTree::apply_forwarded_seed` is public but nothing calls it. | Exists | `src/widget_tree.rs:795`. Its callers were removed with `Node` in `f0b4c684`. Its doc says so since `91deae05` |
+| On the development machine, some build and test failures came from hardware instability, not code: kernel-logged segfaults on several different cores, a test binary with 26 zeroed bytes, and mold linker crashes. | Exists | `journalctl -k`, 2026-09-24 20:43 to 20:59. Each failure passed on a fresh build. Rule since then: rerun a failure on a fresh build and compare with the parent commit before debugging code |
+
+### 10.2 Earlier rows that have changed
+
+| Earlier claim | Now | Citation |
+|---|---|---|
+| Strict clippy: root crate 8339 warnings, `docs/examples` `textual-docs-widgets` 1113 (commands table and section 5). | 0 in the root crate, `docs/examples` and `textual-macros`. | Phases `616ad53b` to `22c8c0d4`; long-function splits `904fc026` to `fab1c060`. Counted from `--message-format=json` on 2026-09-25 |
+| `cargo doc --no-deps` warnings (not measured in the recon). | 0 in all three workspaces. The root crate had 46. | `91deae05` |
+| `docs/examples` is not rustfmt-clean (diffs in 162 files). | Clean. | `0d836f37`, `e6d2f4c7` |
+| Library unit tests: 2508 passed, 3 ignored. | Full gate: the library and 115 integration binaries, 3761 passed, 3 ignored. Examples: 64 passed. `docs/examples`: 30 passed. | Last full gate run 2026-09-24 23:57 during the splits. Only doc comments and formatting changed after it |
+| `CHANGELOG.md` `[Unreleased]` is empty. | It records the strict-clippy changes. | `CHANGELOG.md:8` |
+| `scripts/record_demo.py` stops only cargo after each example. | It kills the example's whole process group. | `c7cfb55f` |
