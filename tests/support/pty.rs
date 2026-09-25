@@ -222,8 +222,10 @@ pub struct Term {
 }
 
 impl Term {
-    /// Run `sh -c script sh bin` with `env` in a fresh terminal that answers
-    /// queries as `answers` says.
+    /// Run `/bin/sh -c script bin` (the script runs the binary as `$0`) with
+    /// `env` in a fresh terminal that answers queries as `answers` says. The
+    /// shell is `/bin/sh`, not the first `sh` on `PATH`, so the mechanisms'
+    /// identity can name it.
     pub fn spawn(script: &str, bin: &Path, env: &[(&str, &str)], answers: Answers) -> Self {
         let pty = native_pty_system()
             .openpty(PtySize {
@@ -233,7 +235,7 @@ impl Term {
                 pixel_height: 0,
             })
             .expect("openpty");
-        let mut cmd = CommandBuilder::new("sh");
+        let mut cmd = CommandBuilder::new("/bin/sh");
         cmd.args(["-c", script]);
         cmd.arg(bin);
         cmd.cwd(repo_root());
