@@ -54,7 +54,10 @@ impl WeatherApp {
             if city.is_empty() {
                 if !token.is_cancelled() {
                     let _ = App::call_from_thread(|app| {
-                        let _ = app.with_query_one_mut_as::<Static, _>("Static", textual::widgets::Static::clear);
+                        let _ = app.with_query_one_mut_as::<Static, _>(
+                            "Static",
+                            textual::widgets::Static::clear,
+                        );
                     });
                 }
                 return Ok(());
