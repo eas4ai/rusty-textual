@@ -5,6 +5,7 @@ use crate::event::Event;
 use crate::message::MessageEvent;
 use crate::num::Cast;
 
+use crate::widgets::helpers::join_lines;
 use crate::widgets::{NodeSeed, Spacer, Widget};
 
 #[widget(Focus, Interactive, Layout, Scrollable, StyleIdentity)]
@@ -47,6 +48,81 @@ impl Panel {
     pub fn border(mut self, border: bool) -> Self {
         self.border = border;
         self
+    }
+
+    /// Tree mode: the border and title chrome around blank content (the
+    /// child renders as its own node).
+    fn render_chrome_only(&self, options: &ConsoleOptions) -> Segments {
+        let border_width: usize = usize::from(self.border);
+        let total_padding = self.padding * 2;
+        let width = options.size.0.max(1);
+        let height = options.size.1.max(1);
+        let inner_width = width
+            .saturating_sub(border_width * 2 + total_padding)
+            .max(1);
+        let content_height = height.saturating_sub(border_width * 2).max(1);
+
+        if !self.border {
+            let mut out = Segments::new();
+            for idx in 0..height {
+                out.push(Segment::new(" ".repeat(width)));
+                if idx + 1 < height {
+                    out.push(Segment::line());
+                }
+            }
+            return out;
+        }
+
+        let blank_rows = vec![vec![Segment::new(" ".repeat(inner_width))]; content_height];
+        let out_lines = self.framed_lines(inner_width, blank_rows);
+        let out_lines = Segment::set_shape(&out_lines, width, Some(height), None, false);
+        join_lines(out_lines)
+    }
+
+    /// `content_lines` inside a square border, with the title centred in the
+    /// top edge.
+    fn framed_lines(
+        &self,
+        inner_width: usize,
+        content_lines: Vec<Vec<Segment>>,
+    ) -> Vec<Vec<Segment>> {
+        let box_chars = rich_rs::r#box::SQUARE;
+        let mut out_lines: Vec<Vec<Segment>> = Vec::new();
+
+        let mut top = String::new();
+        top.push(box_chars.top_left);
+        let mut title = self.title.clone().unwrap_or_default();
+        if !title.is_empty() && inner_width >= 2 {
+            title = format!(" {title} ");
+        }
+        let title_width = rich_rs::cell_len(&title);
+        if title_width >= inner_width {
+            top.push_str(&rich_rs::set_cell_size(&title, inner_width));
+        } else {
+            let remaining = inner_width.saturating_sub(title_width);
+            let left = remaining / 2;
+            let right = remaining - left;
+            top.push_str(&box_chars.top.to_string().repeat(left));
+            top.push_str(&title);
+            top.push_str(&box_chars.top.to_string().repeat(right));
+        }
+        top.push(box_chars.top_right);
+        out_lines.push(vec![Segment::new(top)]);
+
+        for line in content_lines {
+            let mut middle = Vec::new();
+            middle.push(Segment::new(box_chars.mid_left.to_string()));
+            middle.extend(line);
+            middle.push(Segment::new(box_chars.mid_right.to_string()));
+            out_lines.push(middle);
+        }
+
+        let mut bottom = String::new();
+        bottom.push(box_chars.bottom_left);
+        bottom.push_str(&box_chars.bottom.to_string().repeat(inner_width));
+        bottom.push(box_chars.bottom_right);
+        out_lines.push(vec![Segment::new(bottom)]);
+        out_lines
     }
 }
 
@@ -180,77 +256,7 @@ impl crate::widgets::Render for Panel {
     fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
         if self.child_extracted {
             // Tree-mode: render border + title chrome only, with blank content.
-            let border_width: usize = usize::from(self.border);
-            let total_padding = self.padding * 2;
-            let width = options.size.0.max(1);
-            let height = options.size.1.max(1);
-            let inner_width = width
-                .saturating_sub(border_width * 2 + total_padding)
-                .max(1);
-            let content_height = height.saturating_sub(border_width * 2).max(1);
-
-            if !self.border {
-                let mut out = Segments::new();
-                for idx in 0..height {
-                    out.push(Segment::new(" ".repeat(width)));
-                    if idx + 1 < height {
-                        out.push(Segment::line());
-                    }
-                }
-                return out;
-            }
-
-            let box_chars = rich_rs::r#box::SQUARE;
-            let mut out_lines: Vec<Vec<Segment>> = Vec::new();
-
-            // Top border with optional title
-            let mut top = String::new();
-            top.push(box_chars.top_left);
-            let mut title = self.title.clone().unwrap_or_default();
-            if !title.is_empty() && inner_width >= 2 {
-                title = format!(" {title} ");
-            }
-            let title_width = rich_rs::cell_len(&title);
-            if title_width >= inner_width {
-                top.push_str(&rich_rs::set_cell_size(&title, inner_width));
-            } else {
-                let remaining = inner_width.saturating_sub(title_width);
-                let left = remaining / 2;
-                let right = remaining - left;
-                top.push_str(&box_chars.top.to_string().repeat(left));
-                top.push_str(&title);
-                top.push_str(&box_chars.top.to_string().repeat(right));
-            }
-            top.push(box_chars.top_right);
-            out_lines.push(vec![Segment::new(top)]);
-
-            // Blank content rows
-            for _ in 0..content_height {
-                let middle = vec![
-                    Segment::new(box_chars.mid_left.to_string()),
-                    Segment::new(" ".repeat(inner_width)),
-                    Segment::new(box_chars.mid_right.to_string()),
-                ];
-                out_lines.push(middle);
-            }
-
-            // Bottom border
-            let mut bottom = String::new();
-            bottom.push(box_chars.bottom_left);
-            bottom.push_str(&box_chars.bottom.to_string().repeat(inner_width));
-            bottom.push(box_chars.bottom_right);
-            out_lines.push(vec![Segment::new(bottom)]);
-
-            let out_lines = Segment::set_shape(&out_lines, width, Some(height), None, false);
-            let line_count = out_lines.len();
-            let mut out = Segments::new();
-            for (idx, line) in out_lines.into_iter().enumerate() {
-                out.extend(line);
-                if idx + 1 < line_count {
-                    out.push(Segment::line());
-                }
-            }
-            return out;
+            return self.render_chrome_only(options);
         }
 
         let border_width: usize = usize::from(self.border);
@@ -290,7 +296,7 @@ impl crate::widgets::Render for Panel {
 
         let content_height = content_lines.len().max(1);
         let content_height = content_height.min(height.saturating_sub(border_width * 2).max(1));
-        let mut content_lines = Segment::set_shape(
+        let content_lines = Segment::set_shape(
             &content_lines,
             inner_width,
             Some(content_height),
@@ -299,64 +305,12 @@ impl crate::widgets::Render for Panel {
         );
 
         if !self.border {
-            let line_count = content_lines.len();
-            let mut out = Segments::new();
-            for (idx, line) in content_lines.into_iter().enumerate() {
-                out.extend(line);
-                if idx + 1 < line_count {
-                    out.push(Segment::line());
-                }
-            }
-            return out;
+            return join_lines(content_lines);
         }
 
-        let box_chars = rich_rs::r#box::SQUARE;
-        let mut out_lines: Vec<Vec<Segment>> = Vec::new();
-
-        let mut top = String::new();
-        top.push(box_chars.top_left);
-        let mut title = self.title.clone().unwrap_or_default();
-        if !title.is_empty() && inner_width >= 2 {
-            title = format!(" {title} ");
-        }
-        let title_width = rich_rs::cell_len(&title);
-        if title_width >= inner_width {
-            top.push_str(&rich_rs::set_cell_size(&title, inner_width));
-        } else {
-            let remaining = inner_width.saturating_sub(title_width);
-            let left = remaining / 2;
-            let right = remaining - left;
-            top.push_str(&box_chars.top.to_string().repeat(left));
-            top.push_str(&title);
-            top.push_str(&box_chars.top.to_string().repeat(right));
-        }
-        top.push(box_chars.top_right);
-        out_lines.push(vec![Segment::new(top)]);
-
-        for line in content_lines.drain(..) {
-            let mut middle = Vec::new();
-            middle.push(Segment::new(box_chars.mid_left.to_string()));
-            middle.extend(line);
-            middle.push(Segment::new(box_chars.mid_right.to_string()));
-            out_lines.push(middle);
-        }
-
-        let mut bottom = String::new();
-        bottom.push(box_chars.bottom_left);
-        bottom.push_str(&box_chars.bottom.to_string().repeat(inner_width));
-        bottom.push(box_chars.bottom_right);
-        out_lines.push(vec![Segment::new(bottom)]);
-
+        let out_lines = self.framed_lines(inner_width, content_lines);
         let out_lines = Segment::set_shape(&out_lines, width, Some(height), None, false);
-        let line_count = out_lines.len();
-        let mut out = Segments::new();
-        for (idx, line) in out_lines.into_iter().enumerate() {
-            out.extend(line);
-            if idx + 1 < line_count {
-                out.push(Segment::line());
-            }
-        }
-        out
+        join_lines(out_lines)
     }
 }
 #[cfg(test)]
