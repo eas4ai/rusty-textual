@@ -375,17 +375,18 @@ pub(crate) fn own_box_chrome(style: &Style) -> (u16, u16) {
 /// height rule (`auto` or unset means the content height at the full terminal
 /// width) plus its vertical padding and border, held within `min-height` and
 /// `max-height`, and never taller than the terminal. Scalars resolve against
-/// the terminal size. Expects a layout pass at the terminal size first, so
-/// display and visibility are current.
+/// the terminal size. Measured on the tree's Screen node (see
+/// [`inline_screen_node`]). Expects a layout pass at the terminal size
+/// first, so display and visibility are current.
 pub(crate) fn inline_height(tree: &WidgetTree, terminal: (u16, u16)) -> u16 {
-    let Some(root) = tree.root() else {
+    let Some(screen) = inline_screen_node(tree) else {
         return 0;
     };
-    let style = get_node_style(tree, root);
+    let style = get_node_style(tree, screen);
     let resolve = |scalar: Scalar| resolve_scalar_to_cells(scalar, terminal.1, terminal);
     let content = match style.height {
         None | Some(Scalar::Auto) => {
-            measure_intrinsic_content_height(tree, root, terminal, terminal.1).unwrap_or(0)
+            measure_intrinsic_content_height(tree, screen, terminal, terminal.1).unwrap_or(0)
         }
         Some(scalar) => resolve(scalar),
     };
@@ -398,6 +399,29 @@ pub(crate) fn inline_height(tree: &WidgetTree, terminal: (u16, u16)) -> u16 {
         height = height.min(resolve(max));
     }
     height.min(terminal.1)
+}
+
+/// The Screen node whose rules set the inline height: the root of a pushed
+/// screen's tree, or, in the app tree, the root's Screen child (the app tree's
+/// root stands for the App, as in Python where the App holds the Screen).
+/// Falls back to the root when no node is a Screen.
+fn inline_screen_node(tree: &WidgetTree) -> Option<NodeId> {
+    let root = tree.root()?;
+    let is_screen = |node: NodeId| {
+        tree.get(node).is_some_and(|n| {
+            n.widget.style_type() == "Screen" || n.widget.style_type_aliases().contains(&"Screen")
+        })
+    };
+    if is_screen(root) {
+        return Some(root);
+    }
+    Some(
+        tree.children(root)
+            .iter()
+            .copied()
+            .find(|&child| is_screen(child))
+            .unwrap_or(root),
+    )
 }
 
 /// Resolve a scalar to cells against an axis size.
