@@ -491,7 +491,6 @@ fn dispatch_simulated_key_like_input(
         root.on_app_key(app, key, &mut __wctx);
         __wctx.__enqueue_reactive_if_dirty();
     }
-    pass.class_ops.extend(app_key_ctx.take_class_ops());
     merge_ctx_into_runtime_pass(pass, &mut app_key_ctx);
     if pass.stop_requested || app_key_ctx.handled() {
         return;
@@ -540,8 +539,9 @@ fn dispatch_simulated_key_like_input(
     }
 }
 
-/// Merge what a hook or action staged on `ctx` into the runtime pass. Class
-/// ops are left on `ctx`: callers that apply them take them first.
+/// Merge what a hook or action staged on `ctx` into the runtime pass,
+/// including class ops, as `outcome_from_action` does for the live and
+/// headless key paths.
 fn merge_ctx_into_runtime_pass(pass: &mut RuntimeMessagePass, ctx: &mut EventCtx) {
     pass.repaint_requested |= ctx.repaint_requested();
     pass.invalidation.merge(ctx.invalidation());
@@ -552,6 +552,7 @@ fn merge_ctx_into_runtime_pass(pass: &mut RuntimeMessagePass, ctx: &mut EventCtx
         .extend(ctx.take_style_animation_requests());
     pass.worker_requests.extend(ctx.take_worker_requests());
     pass.recompose_nodes.extend(ctx.take_recompose_nodes());
+    pass.class_ops.extend(ctx.take_class_ops());
     pass.generated.extend(ctx.take_messages());
 }
 
@@ -3647,10 +3648,26 @@ impl App {
         pending_invalidation: &mut PendingInvalidation,
         t: &mut PassTiming,
     ) -> LoopStep {
+        let reason = if self.copy_selected_text_or_help_quit(root, pending_invalidation) {
+            "copy_selected_text"
+        } else {
+            "help_quit"
+        };
+        t.end_input_early(pending_invalidation, reason)
+    }
+
+    /// The action-map `CopySelectedText`: copy the app's text selection to
+    /// the clipboard, or show the quit hint when nothing is selected. Returns
+    /// true when it copied. Shared by the live and headless loops.
+    fn copy_selected_text_or_help_quit(
+        &mut self,
+        root: &mut dyn Widget,
+        pending_invalidation: &mut PendingInvalidation,
+    ) -> bool {
         let Some(text) = self.action_copy_selected_text() else {
             self.notify_help_quit();
             pending_invalidation.request_full_content();
-            return t.end_input_early(pending_invalidation, "help_quit");
+            return false;
         };
         let sender = App::runtime_message_sender();
         let mut msg_outcome = self.dispatch_message_queue_with_runtime(
@@ -3668,7 +3685,7 @@ impl App {
             pending_invalidation,
             InvalidationScope::Global,
         );
-        t.end_input_early(pending_invalidation, "copy_selected_text")
+        true
     }
 
     /// Focus next/previous: give the currently-focused branch a chance to
@@ -5761,6 +5778,16 @@ impl App {
         action: Action,
         pending: &mut PendingInvalidation,
     ) {
+        // The same app-level handling as `live_action_map_fallback`.
+        if action == Action::CopySelectedText {
+            self.copy_selected_text_or_help_quit(root, pending);
+            return;
+        }
+        if action == Action::HelpQuit {
+            self.notify_help_quit();
+            pending.request_full_content();
+            return;
+        }
         if matches!(action, Action::FocusNext | Action::FocusPrev) {
             let mut focus_outcome = self.dispatch_event_auto(root, &Event::Action(action));
             self.absorb_outcome(&mut focus_outcome, pending, InvalidationScope::Global);
@@ -8232,6 +8259,78 @@ mod tests {
         assert_eq!(hits_j.load(Ordering::SeqCst), 1, "j binding should fire");
         assert_eq!(hits_p.load(Ordering::SeqCst), 1, "p binding should fire");
         assert_eq!(hits_l.load(Ordering::SeqCst), 1, "l binding should fire");
+    }
+
+    #[test]
+    fn app_simulate_key_keeps_class_ops_staged_by_the_binding_action() {
+        // A binding action that stages a class op on its `EventCtx`. The live
+        // and headless key paths apply it (`outcome_from_action`); a key sent
+        // through `AppSimulateKey` (e.g. a Footer click) must as well.
+        struct ClassOpBindingHost;
+
+        impl Widget for ClassOpBindingHost {
+            fn render(&self, _console: &Console, _options: &ConsoleOptions) -> Segments {
+                Segments::new()
+            }
+
+            fn focusable(&self) -> bool {
+                true
+            }
+
+            fn bindings(&self) -> Vec<BindingDecl> {
+                vec![BindingDecl::new("k", "mark", "Mark")]
+            }
+
+            fn action_registry(&self) -> &[ActionDecl] {
+                const ACTIONS: &[ActionDecl] = &[ActionDecl {
+                    name: "mark",
+                    namespace: "",
+                    description: "mark",
+                    default_binding: None,
+                }];
+                ACTIONS
+            }
+
+            fn execute_action(
+                &mut self,
+                action: &ParsedAction,
+                ctx: &mut crate::event::WidgetCtx,
+            ) -> bool {
+                if action.name != "mark" {
+                    return false;
+                }
+                ctx.event_ctx_mut().add_class("picked");
+                ctx.set_handled();
+                true
+            }
+        }
+
+        let mut tree = crate::widget_tree::WidgetTree::new();
+        let host_root = tree.set_root(Box::new(ClassOpBindingHost));
+        tree.set_focus_state(host_root, true);
+
+        let mut app = test_app_with_tree(tree);
+        let mut runtime_root = StyleNode::new("RuntimeRoot");
+        let outcome = app.dispatch_message_queue_with_runtime(
+            &mut runtime_root,
+            vec![
+                MessageEvent::new(
+                    node_id_from_ffi(1),
+                    crate::message::AppSimulateKey {
+                        key: "k".to_string(),
+                    },
+                )
+                .with_control(node_id_from_ffi(1)),
+            ],
+        );
+
+        assert!(
+            outcome.class_ops.iter().any(
+                |(_, op)| matches!(op, crate::event::ClassOp::Add(class) if class == "picked")
+            ),
+            "the binding action's class op must reach the outcome: {:?}",
+            outcome.class_ops
+        );
     }
 
     #[test]

@@ -46,6 +46,12 @@ until the API stabilizes.
   Python Textual does: it sorts with the directories and can be
   expanded. Before, it was listed as a file. A dangling symlink is still
   a file.
+- A key sent through `AppSimulateKey` (a Footer key click, or the
+  `app.simulate_key` action) keeps the CSS class changes that its binding's
+  action stages on its `EventCtx`, as a typed key already did.
+- In headless runs (`run_test` / `Pilot`), a key bound with `App::bind_key` to
+  `Action::CopySelectedText` or `Action::HelpQuit` now copies the app's text
+  selection or shows the quit hint, as in a live run.
 
 ## [1.1.0] - 2026-07-16
 

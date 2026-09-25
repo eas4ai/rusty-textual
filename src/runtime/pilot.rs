@@ -1107,4 +1107,62 @@ Horizontal { width: auto; height: auto; }
         assert!(parse_key("boguskey").is_none());
         assert!(parse_key("ctrl+r").is_some());
     }
+
+    struct EmptyApp;
+
+    impl TextualApp for EmptyApp {
+        fn compose(&mut self) -> AppRoot {
+            AppRoot::new()
+        }
+    }
+
+    fn shows_quit_hint(app: &App) -> bool {
+        app.notifications
+            .iter()
+            .any(|n| n.message.contains("to quit the app"))
+    }
+
+    /// Python: `ctrl+c` with nothing selected ends in `App.action_help_quit`,
+    /// which shows the "Press ctrl+q to quit" notification. For a
+    /// `TextualApp` the screen's `copy_selected_text` binding handles it.
+    #[test]
+    fn ctrl_c_with_no_selection_shows_the_quit_hint() {
+        crate::run_test(EmptyApp, |pilot| {
+            pilot.pause()?;
+            assert!(!shows_quit_hint(pilot.app()));
+            pilot.press(&["ctrl+c"])?;
+            assert!(
+                shows_quit_hint(pilot.app()),
+                "ctrl+c with no selection should show the quit hint"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// A key bound with `App::bind_key` reaches the action-map fallback. The
+    /// headless fallback must handle `HelpQuit` and `CopySelectedText` the
+    /// way the live loop does: with nothing selected, both show the quit hint.
+    #[test]
+    fn bind_key_help_quit_and_copy_selected_text_show_the_quit_hint() {
+        for action in [
+            crate::event::Action::HelpQuit,
+            crate::event::Action::CopySelectedText,
+        ] {
+            crate::run_test(EmptyApp, |pilot| {
+                pilot.app_mut().bind_key(
+                    crate::event::KeyBind::new(KeyCode::F(2), KeyModifiers::empty()),
+                    action,
+                );
+                pilot.pause()?;
+                pilot.press(&["f2"])?;
+                assert!(
+                    shows_quit_hint(pilot.app()),
+                    "f2 bound to {action:?} should show the quit hint"
+                );
+                Ok(())
+            })
+            .unwrap();
+        }
+    }
 }
