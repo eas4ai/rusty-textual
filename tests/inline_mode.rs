@@ -227,6 +227,29 @@ fn inl_004_height_is_the_screen_auto_height_capped_at_the_terminal() {
 }
 
 #[test]
+fn inl_004_command_palette_holds_its_inline_min_height() {
+    // Python's `CommandPalette:inline { min-height: 20; }`: while the palette
+    // is open, the inline app is 20 rows tall even if its content is shorter.
+    let term = Term::spawn(
+        SHELL_THEN_EXEC,
+        &docs_example("inline01"),
+        &[],
+        Answers::TERMINAL,
+    );
+    term.wait_for("clock", |s| !painted_rows(s).is_empty());
+    term.settle();
+    term.send(b"\x10"); // ctrl+p
+    term.wait_for("the palette", |s| painted_rows(s).len() > 5);
+    let screen = term.settle();
+    assert_block(
+        &screen,
+        3,
+        20,
+        "the open command palette holds the inline app at 20 rows",
+    );
+}
+
+#[test]
 fn inl_005_frames_use_relative_cursor_moves_only() {
     let term = Term::spawn(
         SHELL_THEN_EXEC,

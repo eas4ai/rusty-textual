@@ -362,9 +362,12 @@ impl Screen for CommandPaletteScreen {
         // shared `ModalScreen` default CSS. Mirrors the load-bearing parts of
         // Python `command.py:548-630`: the results list escapes layout via
         // `overlay: screen` (Mechanism A) and the input row sizes to content.
+        // Python's `CommandPalette:inline { min-height: 20; }` is on the
+        // palette screen itself, which is `CommandPaletteScreen` here (the
+        // `CommandPalette` type is the body inside it).
         Some(
             "\
-CommandPalette:inline { min-height: 20; }
+CommandPaletteScreen:inline { min-height: 20; }
 CommandPalette { color: $foreground; align-horizontal: center; }
 CommandPalette > Vertical { margin-top: 3; height: auto; background: $surface; }
 CommandPalette #--input { height: auto; }
