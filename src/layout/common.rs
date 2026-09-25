@@ -407,21 +407,37 @@ pub(crate) fn inline_height(tree: &WidgetTree, terminal: (u16, u16)) -> u16 {
 /// Falls back to the root when no node is a Screen.
 fn inline_screen_node(tree: &WidgetTree) -> Option<NodeId> {
     let root = tree.root()?;
-    let is_screen = |node: NodeId| {
-        tree.get(node).is_some_and(|n| {
-            n.widget.style_type() == "Screen" || n.widget.style_type_aliases().contains(&"Screen")
-        })
-    };
-    if is_screen(root) {
+    if is_screen_node(tree, root) {
         return Some(root);
     }
     Some(
         tree.children(root)
             .iter()
             .copied()
-            .find(|&child| is_screen(child))
+            .find(|&child| is_screen_node(tree, child))
             .unwrap_or(root),
     )
+}
+
+/// Whether `node` is a Screen (its style type, or an alias, is `Screen`).
+fn is_screen_node(tree: &WidgetTree, node: NodeId) -> bool {
+    tree.get(node).is_some_and(|n| {
+        n.widget.style_type() == "Screen" || n.widget.style_type_aliases().contains(&"Screen")
+    })
+}
+
+/// Whether `node` is the app tree's Screen (the Screen child of a root that
+/// stands for the App) while the app runs inline. Python lays the screen out
+/// on the whole region it is given, which inline is the inline height
+/// (`screen.py:1316-1320`, `_compositor.py:743-752`); the screen's own
+/// height rules only set that height (INL-004, INL-017). A pushed screen is
+/// the root of its own tree and already gets the whole viewport.
+pub(super) fn is_inline_app_screen(tree: &WidgetTree, node: NodeId) -> bool {
+    crate::css::app_runtime_inline()
+        && is_screen_node(tree, node)
+        && tree
+            .parent(node)
+            .is_some_and(|parent| tree.root() == Some(parent) && !is_screen_node(tree, parent))
 }
 
 /// Resolve a scalar to cells against an axis size.

@@ -3,7 +3,7 @@ use crate::style::Style;
 use crate::widget_tree::WidgetTree;
 
 use super::common::{
-    ChildSpec, apply_wrapper_sizing, extract_child_spec, get_node_style,
+    ChildSpec, apply_wrapper_sizing, extract_child_spec, get_node_style, is_inline_app_screen,
     measure_intrinsic_content_height, measure_intrinsic_content_width,
 };
 use super::region::Region;
@@ -111,6 +111,14 @@ fn vertical_child_spec(
 ) -> ChildSpec {
     let mut style = get_node_style(tree, child);
     apply_wrapper_sizing(tree, child, &mut style);
+    if is_inline_app_screen(tree, child) {
+        // Inline, the viewport is the inline height, and the Screen fills it
+        // as it fills the terminal in full-screen mode: its height rules
+        // (`Screen:inline { height: auto }`) already set the inline height.
+        style.height = None;
+        style.min_height = None;
+        style.max_height = None;
+    }
     seed_measure_width(tree, child, &style, available, viewport, allow_h_overflow);
 
     let mut intrinsic_height = tree
