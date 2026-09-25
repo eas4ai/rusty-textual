@@ -771,6 +771,98 @@ impl ScrollBar {
     }
 }
 
+impl ScrollBar {
+    /// A press on the bar: grab the thumb when the press is on it, else
+    /// page towards the press.
+    fn on_track_press(&mut self, mouse: &MouseDownEvent, ctx: &mut crate::event::WidgetCtx) {
+        let pointer = if self.vertical {
+            mouse.y as usize
+        } else {
+            mouse.x as usize
+        };
+        let screen_pointer = if self.vertical {
+            mouse.screen_y as usize
+        } else {
+            mouse.screen_x as usize
+        };
+        let track_len = self.track_len.max(1);
+        let current_offset = self.position.max(0.0).round().to_usize_sat();
+        let (thumb_start, thumb_len) = thumb_range(
+            track_len,
+            self.window_virtual_size,
+            self.window_size.max(1),
+            current_offset,
+        );
+        if pointer >= thumb_start && pointer < thumb_start.saturating_add(thumb_len.max(1)) {
+            self.grabbed = true;
+            self.grab_offset = pointer.saturating_sub(thumb_start);
+            self.grab_anchor_screen = screen_pointer;
+            self.grabbed_position = self.position.max(0.0);
+        } else {
+            let page = self.window_size.max(1);
+            let mut next = current_offset;
+            if pointer < thumb_start {
+                next = next.saturating_sub(page);
+            } else if pointer >= thumb_start.saturating_add(thumb_len) {
+                next = next.saturating_add(page);
+            }
+            let clamped = clamp_offset(next, self.window_virtual_size, self.window_size.max(1));
+            self.position = clamped.to_f32_lossy();
+            ctx.post_message(ScrollbarScrollTo {
+                axis: self.axis(),
+                offset: clamped.to_f32_lossy(),
+                animate: true,
+                scroll_duration: None,
+            });
+        }
+    }
+
+    /// A drag of the grabbed thumb: scroll by the pointer's screen movement,
+    /// pinned to the ends when the pointer reaches them.
+    fn on_thumb_drag(&mut self, mouse: &MouseMoveEvent, ctx: &mut crate::event::WidgetCtx) {
+        let screen_pointer = if self.vertical {
+            mouse.screen_y as usize
+        } else {
+            mouse.screen_x as usize
+        };
+        let local_pointer = if self.vertical {
+            mouse.y as usize
+        } else {
+            mouse.x as usize
+        };
+        let max_pos = max_offset(self.window_virtual_size, self.window_size.max(1)).to_f32_lossy();
+        let scale =
+            self.window_virtual_size.to_f32_lossy() / self.window_size.max(1).to_f32_lossy();
+        let delta = screen_pointer.to_f32_lossy() - self.grab_anchor_screen.to_f32_lossy();
+        let gain = THUMB_DRAG_GAIN_FIXED;
+        let mut next_pos = quantize_drag_position(self.grabbed_position + delta * scale * gain)
+            .clamp(0.0, max_pos);
+        let track_len = self.track_len.max(1);
+        if local_pointer == 0 {
+            next_pos = 0.0;
+        } else if local_pointer >= track_len.saturating_sub(1) {
+            next_pos = max_pos;
+        }
+        if (next_pos - self.position).abs() > f32::EPSILON {
+            self.position = next_pos;
+            ctx.post_message(ScrollbarScrollTo {
+                axis: self.axis(),
+                offset: next_pos,
+                animate: true,
+                scroll_duration: None,
+            });
+        }
+    }
+
+    /// Drop the thumb grab.
+    fn release_grab(&mut self) {
+        self.grabbed = false;
+        self.grab_offset = 0;
+        self.grab_anchor_screen = 0;
+        self.grabbed_position = self.position.max(0.0);
+    }
+}
+
 impl crate::widgets::Focus for ScrollBar {
     fn focusable(&self) -> bool {
         false
@@ -784,113 +876,20 @@ impl crate::widgets::Focus for ScrollBar {
 impl crate::widgets::Interactive for ScrollBar {
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
         match event {
-            Event::MouseDown(MouseDownEvent {
-                target,
-                x,
-                y,
-                screen_x,
-                screen_y,
-            }) if *target == self.node_id() => {
-                let pointer = if self.vertical {
-                    *y as usize
-                } else {
-                    *x as usize
-                };
-                let screen_pointer = if self.vertical {
-                    *screen_y as usize
-                } else {
-                    *screen_x as usize
-                };
-                let track_len = self.track_len.max(1);
-                let current_offset = self.position.max(0.0).round().to_usize_sat();
-                let (thumb_start, thumb_len) = thumb_range(
-                    track_len,
-                    self.window_virtual_size,
-                    self.window_size.max(1),
-                    current_offset,
-                );
-                if pointer >= thumb_start && pointer < thumb_start.saturating_add(thumb_len.max(1))
-                {
-                    self.grabbed = true;
-                    self.grab_offset = pointer.saturating_sub(thumb_start);
-                    self.grab_anchor_screen = screen_pointer;
-                    self.grabbed_position = self.position.max(0.0);
-                } else {
-                    let page = self.window_size.max(1);
-                    let mut next = current_offset;
-                    if pointer < thumb_start {
-                        next = next.saturating_sub(page);
-                    } else if pointer >= thumb_start.saturating_add(thumb_len) {
-                        next = next.saturating_add(page);
-                    }
-                    let clamped =
-                        clamp_offset(next, self.window_virtual_size, self.window_size.max(1));
-                    self.position = clamped.to_f32_lossy();
-                    ctx.post_message(ScrollbarScrollTo {
-                        axis: self.axis(),
-                        offset: clamped.to_f32_lossy(),
-                        animate: true,
-                        scroll_duration: None,
-                    });
-                }
+            Event::MouseDown(mouse) if mouse.target == self.node_id() => {
+                self.on_track_press(mouse, ctx);
                 ctx.set_handled();
             }
-            Event::MouseMove(MouseMoveEvent {
-                target,
-                x,
-                y,
-                screen_x,
-                screen_y,
-                ..
-            }) if *target == self.node_id() && self.grabbed => {
-                let screen_pointer = if self.vertical {
-                    *screen_y as usize
-                } else {
-                    *screen_x as usize
-                };
-                let local_pointer = if self.vertical {
-                    *y as usize
-                } else {
-                    *x as usize
-                };
-                let max_pos =
-                    max_offset(self.window_virtual_size, self.window_size.max(1)).to_f32_lossy();
-                let scale = self.window_virtual_size.to_f32_lossy()
-                    / self.window_size.max(1).to_f32_lossy();
-                let delta = screen_pointer.to_f32_lossy() - self.grab_anchor_screen.to_f32_lossy();
-                let gain = THUMB_DRAG_GAIN_FIXED;
-                let mut next_pos =
-                    quantize_drag_position(self.grabbed_position + delta * scale * gain)
-                        .clamp(0.0, max_pos);
-                let track_len = self.track_len.max(1);
-                if local_pointer == 0 {
-                    next_pos = 0.0;
-                } else if local_pointer >= track_len.saturating_sub(1) {
-                    next_pos = max_pos;
-                }
-                if (next_pos - self.position).abs() > f32::EPSILON {
-                    self.position = next_pos;
-                    ctx.post_message(ScrollbarScrollTo {
-                        axis: self.axis(),
-                        offset: next_pos,
-                        animate: true,
-                        scroll_duration: None,
-                    });
-                }
+            Event::MouseMove(mouse) if mouse.target == self.node_id() && self.grabbed => {
+                self.on_thumb_drag(mouse, ctx);
                 ctx.set_handled();
             }
             Event::MouseUp(_) if self.grabbed => {
-                self.grabbed = false;
-                self.grab_offset = 0;
-                self.grab_anchor_screen = 0;
-                self.grabbed_position = self.position.max(0.0);
+                self.release_grab();
                 ctx.set_handled();
             }
             Event::AppFocus(false) => {
-                self.grabbed = false;
-                self.grab_offset = 0;
-                self.grab_anchor_screen = 0;
-                self.grabbed_position = self.position.max(0.0);
+                self.release_grab();
             }
             _ => {}
         }
