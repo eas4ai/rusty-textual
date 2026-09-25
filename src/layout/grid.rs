@@ -355,8 +355,6 @@ fn find_next_grid_slot(
 /// Supports `row-span` / `column-span` (P2-33) via occupancy-based placement.
 ///
 /// Reference: Python Textual's `layouts/grid.py`.
-#[allow(clippy::needless_range_loop)] // r/c/row/col used as 2D grid indices
-#[allow(clippy::similar_names)] // Paired names for the two axes (h/v, w/h).
 pub fn layout_grid(
     tree: &mut WidgetTree,
     children: &[NodeId],
@@ -364,20 +362,96 @@ pub fn layout_grid(
     viewport: (u16, u16),
     parent_style: &Style,
 ) {
-    // One placed child. Mirrors Python's `cell_size_map`: per widget ->
-    // (start_col, start_row, col_span, row_span).
-    struct Placement {
-        child: NodeId,
-        start_col: usize,
-        start_row: usize,
-        col_span: usize,
-        row_span: usize,
-    }
-
     if children.is_empty() {
         return;
     }
 
+    let grid_available = grid_content_region(parent_style, available);
+    let gutter_h = parent_style.grid_gutter_horizontal.unwrap_or(0);
+    let gutter_v = parent_style.grid_gutter_vertical.unwrap_or(0);
+    let (num_cols, num_rows, any_spans) = grid_dimensions(tree, children, parent_style);
+
+    // --- Placement: assign each child to its primary cell (occupancy-based) ---
+    // Computed BEFORE track resolution so `auto` tracks can measure the
+    // widgets that occupy them.
+    let cells = place_grid_cells(tree, children, (num_cols, num_rows), any_spans);
+
+    // --- Resolve column scalars (with auto handling) ---
+    let column_scalars = grid_column_scalars(tree, &cells, parent_style, grid_available, viewport);
+    let columns = resolve_tracks(
+        &column_scalars,
+        grid_available.width,
+        gutter_v,
+        grid_available.width,
+        viewport.0,
+    );
+    let col_offsets: Vec<u16> = columns.iter().map(|&(o, _)| o).collect();
+    let col_widths: Vec<u16> = columns.iter().map(|&(_, l)| l).collect();
+
+    // --- Resolve row scalars (with auto handling) ---
+    let row_scalars = grid_row_scalars(
+        tree,
+        &cells,
+        parent_style,
+        &col_widths,
+        grid_available,
+        viewport,
+    );
+    let rows = resolve_tracks(
+        &row_scalars,
+        grid_available.height,
+        gutter_h,
+        grid_available.height,
+        viewport.1,
+    );
+    let row_offsets: Vec<u16> = rows.iter().map(|&(o, _)| o).collect();
+    let row_heights: Vec<u16> = rows.iter().map(|&(_, l)| l).collect();
+
+    // --- Place children into their resolved cell rects ---
+    let tracks = GridTracks {
+        col_offsets: &col_offsets,
+        col_widths: &col_widths,
+        row_offsets: &row_offsets,
+        row_heights: &row_heights,
+        num_cols,
+        num_rows,
+    };
+    for p in &cells.placements {
+        place_grid_child(tree, p, &tracks, (grid_available, available), viewport);
+    }
+}
+
+/// One placed grid child. Mirrors Python's `cell_size_map`: per widget ->
+/// `(start_col, start_row, col_span, row_span)`.
+struct Placement {
+    child: NodeId,
+    start_col: usize,
+    start_row: usize,
+    col_span: usize,
+    row_span: usize,
+}
+
+/// The placed children and, per cell, the index of the placement whose
+/// PRIMARY cell it is (`usize::MAX` for none).
+struct GridCells {
+    placements: Vec<Placement>,
+    cell_owner: Vec<Vec<usize>>,
+    num_cols: usize,
+    num_rows: usize,
+}
+
+/// Resolved track offsets and sizes.
+struct GridTracks<'a> {
+    col_offsets: &'a [u16],
+    col_widths: &'a [u16],
+    row_offsets: &'a [u16],
+    row_heights: &'a [u16],
+    num_cols: usize,
+    num_rows: usize,
+}
+
+/// The region the grid cells occupy.
+fn grid_content_region(parent_style: &Style, available: Region) -> Region {
     // --- Grid configuration from parent style ---
     // Python parity: when keyline is enabled on a grid container, reserve a
     // 1-cell ring around all children so keyline borders don't overwrite cell
@@ -385,7 +459,7 @@ pub fn layout_grid(
     let keyline_enabled = parent_style
         .keyline
         .is_some_and(|k| k.keyline_type != KeylineType::None);
-    let grid_available = if keyline_enabled && available.width > 2 && available.height > 2 {
+    if keyline_enabled && available.width > 2 && available.height > 2 {
         Region::new(
             available.x + 1,
             available.y + 1,
@@ -394,11 +468,16 @@ pub fn layout_grid(
         )
     } else {
         available
-    };
+    }
+}
 
+/// Column count, row count, and whether any child spans cells.
+fn grid_dimensions(
+    tree: &WidgetTree,
+    children: &[NodeId],
+    parent_style: &Style,
+) -> (usize, usize, bool) {
     let num_cols = parent_style.grid_size_columns.unwrap_or(1).max(1) as usize;
-    let gutter_h = parent_style.grid_gutter_horizontal.unwrap_or(0);
-    let gutter_v = parent_style.grid_gutter_vertical.unwrap_or(0);
 
     // Check whether any child uses spans (enables occupancy-based placement).
     let any_spans = children.iter().any(|&c| {
@@ -420,10 +499,18 @@ pub fn layout_grid(
             None => min_rows,
         }
     };
+    (num_cols, num_rows, any_spans)
+}
 
-    // --- Placement: assign each child to its primary cell (occupancy-based) ---
-    // Computed BEFORE track resolution so `auto` tracks can measure the
-    // widgets that occupy them.
+/// Assign each child to its primary cell, row-major, skipping cells that
+/// spanning children already cover.
+#[allow(clippy::needless_range_loop)] // r/c used as 2D grid indices
+fn place_grid_cells(
+    tree: &WidgetTree,
+    children: &[NodeId],
+    (num_cols, num_rows): (usize, usize),
+    any_spans: bool,
+) -> GridCells {
     let mut placements: Vec<Placement> = Vec::with_capacity(children.len());
     // cell_map[(col, row)] -> index into `placements` for the widget whose
     // PRIMARY cell is (col, row); used for auto-track measurement.
@@ -474,8 +561,28 @@ pub fn layout_grid(
             row_span,
         });
     }
+    GridCells {
+        placements,
+        cell_owner,
+        num_cols,
+        num_rows,
+    }
+}
 
-    // --- Resolve column scalars (with auto handling) ---
+/// Column scalars, with `auto` columns sized to the widest content of the
+/// single-column widgets that start in them (Python grid.py "Handle any
+/// auto columns": `get_content_width + gutter.width`, with min/max-width
+/// limits).
+#[allow(clippy::needless_range_loop)] // r/c used as 2D grid indices
+fn grid_column_scalars(
+    tree: &mut WidgetTree,
+    cells: &GridCells,
+    parent_style: &Style,
+    grid_available: Region,
+    viewport: (u16, u16),
+) -> Vec<Scalar> {
+    let (num_cols, num_rows) = (cells.num_cols, cells.num_rows);
+    let (placements, cell_owner) = (&cells.placements, &cells.cell_owner);
     let mut column_scalars = repeat_scalars(
         parent_style.grid_columns.as_deref(),
         num_cols,
@@ -507,18 +614,23 @@ pub fn layout_grid(
         }
         column_scalars[col] = Scalar::Cells(width);
     }
+    column_scalars
+}
 
-    let columns = resolve_tracks(
-        &column_scalars,
-        grid_available.width,
-        gutter_v,
-        grid_available.width,
-        viewport.0,
-    );
-    let col_offsets: Vec<u16> = columns.iter().map(|&(o, _)| o).collect();
-    let col_widths: Vec<u16> = columns.iter().map(|&(_, l)| l).collect();
-
-    // --- Resolve row scalars (with auto handling) ---
+/// Row scalars, with `auto` rows sized to the tallest content of the
+/// single-row widgets that start in them, measured against their resolved
+/// column width.
+#[allow(clippy::similar_names)] // Paired names for the two axes (h/v, w/h).
+fn grid_row_scalars(
+    tree: &mut WidgetTree,
+    cells: &GridCells,
+    parent_style: &Style,
+    col_widths: &[u16],
+    grid_available: Region,
+    viewport: (u16, u16),
+) -> Vec<Scalar> {
+    let (num_cols, num_rows) = (cells.num_cols, cells.num_rows);
+    let (placements, cell_owner) = (&cells.placements, &cells.cell_owner);
     // Python default: `1fr` rows when the grid has a real height, but `auto`
     // rows when the grid is auto-height (so rows size to their content).
     let row_default = if matches!(parent_style.height, Some(Scalar::Auto)) {
@@ -556,139 +668,163 @@ pub fn layout_grid(
         }
         row_scalars[row] = Scalar::Cells(height);
     }
+    row_scalars
+}
 
-    let rows = resolve_tracks(
-        &row_scalars,
-        grid_available.height,
-        gutter_h,
-        grid_available.height,
-        viewport.1,
+/// Size and place one child in its (possibly spanned) cell.
+#[allow(clippy::similar_names)] // Paired names for the two axes (h/v, w/h).
+fn place_grid_child(
+    tree: &mut WidgetTree,
+    p: &Placement,
+    tracks: &GridTracks<'_>,
+    (grid_available, available): (Region, Region),
+    viewport: (u16, u16),
+) {
+    let (num_cols, num_rows) = (tracks.num_cols, tracks.num_rows);
+    let (col_offsets, col_widths) = (tracks.col_offsets, tracks.col_widths);
+    let (row_offsets, row_heights) = (tracks.row_offsets, tracks.row_heights);
+    let child = p.child;
+    let style = get_node_style(tree, child);
+    let start_col = p.start_col;
+    let start_row = p.start_row;
+    let end_col = (start_col + p.col_span).min(num_cols);
+    let end_row = (start_row + p.row_span).min(num_rows);
+
+    // Compute spanned cell area (includes inter-span gutters), mirroring
+    // Python: cell_size = (cols[last][0] + cols[last][1] - cols[first][0]).
+    let cell_x = col_offsets[start_col];
+    let cell_y = row_offsets[start_row];
+    let last_col = end_col - 1;
+    let last_row = end_row - 1;
+    let cell_w = (col_offsets[last_col] + col_widths[last_col]).saturating_sub(cell_x);
+    let cell_h = (row_offsets[last_row] + row_heights[last_row]).saturating_sub(cell_y);
+
+    // Child style for chrome.
+    let margin = style.effective_margin();
+    let padding = style.effective_padding();
+    let (bt, bb, bl, br) = border_spacing(&style);
+    let box_sizing = style.box_sizing.unwrap_or(BoxSizing::BorderBox);
+
+    // Layout rect: cell + available offset, margin inset. Positions are
+    // signed (the grid container itself may originate off-viewport).
+    let layout_x = grid_available.x + i32::from(cell_x) + i32::from(margin.left);
+    let layout_y = grid_available.y + i32::from(cell_y) + i32::from(margin.top);
+
+    // Size the child by its OWN box model within the cell (Python grid:
+    // `widget._get_box_model(cell_size)`), not by stretching it to the cell.
+    // Only `auto` dimensions need an intrinsic measurement.
+    let (own_h_chrome, own_v_chrome) = own_box_chrome(&style);
+    let intrinsic_w_outer = if matches!(style.width.as_ref(), Some(Scalar::Auto)) {
+        // `content_width()`/`auto_content_width()` and the container fallback
+        // both report PURE content width, so add the child's own chrome.
+        measure_intrinsic_content_width(tree, child, viewport)
+            .map(|w| w.saturating_add(own_h_chrome))
+    } else {
+        None
+    };
+    let intrinsic_h_outer = if matches!(style.height.as_ref(), Some(Scalar::Auto)) {
+        // Post-keystone `layout_height()` (surfaced via
+        // `measure_intrinsic_content_height`) is PURE content on both the leaf
+        // and drained-container paths; the grid adds the child's own
+        // (context-resolved) vertical chrome to get the OUTER cell height.
+        let avail_content_h = cell_h.saturating_sub(own_v_chrome);
+        measure_intrinsic_content_height(tree, child, viewport, avail_content_h)
+            .map(|h| h.saturating_add(own_v_chrome))
+    } else {
+        None
+    };
+    let mut layout_w = resolve_grid_box_dim(
+        style.width.as_ref(),
+        cell_w,
+        margin.left + margin.right,
+        viewport,
+        own_h_chrome,
+        box_sizing,
+        intrinsic_w_outer,
     );
-    let row_offsets: Vec<u16> = rows.iter().map(|&(o, _)| o).collect();
-    let row_heights: Vec<u16> = rows.iter().map(|&(_, l)| l).collect();
+    let mut layout_h = resolve_grid_box_dim(
+        style.height.as_ref(),
+        cell_h,
+        margin.top + margin.bottom,
+        viewport,
+        own_v_chrome,
+        box_sizing,
+        intrinsic_h_outer,
+    );
 
-    // --- Place children into their resolved cell rects ---
-    for p in &placements {
-        let child = p.child;
-        let style = get_node_style(tree, child);
-        let start_col = p.start_col;
-        let start_row = p.start_row;
-        let end_col = (start_col + p.col_span).min(num_cols);
-        let end_row = (start_row + p.row_span).min(num_rows);
+    clamp_grid_box(
+        &style,
+        (&mut layout_w, &mut layout_h),
+        available,
+        viewport,
+        (
+            bl + br + padding.left + padding.right,
+            bt + bb + padding.top + padding.bottom,
+        ),
+    );
 
-        // Compute spanned cell area (includes inter-span gutters), mirroring
-        // Python: cell_size = (cols[last][0] + cols[last][1] - cols[first][0]).
-        let cell_x = col_offsets[start_col];
-        let cell_y = row_offsets[start_row];
-        let last_col = end_col - 1;
-        let last_row = end_row - 1;
-        let cell_w = (col_offsets[last_col] + col_widths[last_col]).saturating_sub(cell_x);
-        let cell_h = (row_offsets[last_row] + row_heights[last_row]).saturating_sub(cell_y);
+    // Content rect: inner area after border + padding.
+    let content_x = layout_x + i32::from(bl + padding.left);
+    let content_y = layout_y + i32::from(bt + padding.top);
+    let content_w = layout_w.saturating_sub(bl + br + padding.left + padding.right);
+    let content_h = layout_h.saturating_sub(bt + bb + padding.top + padding.bottom);
 
-        // Child style for chrome.
-        let margin = style.effective_margin();
-        let padding = style.effective_padding();
-        let (bt, bb, bl, br) = border_spacing(&style);
-        let box_sizing = style.box_sizing.unwrap_or(BoxSizing::BorderBox);
+    if let Some(node) = tree.get_mut(child) {
+        node.layout_rect = Region::new(layout_x, layout_y, layout_w, layout_h).to_rect();
+        node.content_rect = Region::new(content_x, content_y, content_w, content_h).to_rect();
+    }
+}
 
-        // Layout rect: cell + available offset, margin inset. Positions are
-        // signed (the grid container itself may originate off-viewport).
-        let layout_x = grid_available.x + i32::from(cell_x) + i32::from(margin.left);
-        let layout_y = grid_available.y + i32::from(cell_y) + i32::from(margin.top);
-
-        // Size the child by its OWN box model within the cell (Python grid:
-        // `widget._get_box_model(cell_size)`), not by stretching it to the cell.
-        // Only `auto` dimensions need an intrinsic measurement.
-        let (own_h_chrome, own_v_chrome) = own_box_chrome(&style);
-        let intrinsic_w_outer = if matches!(style.width.as_ref(), Some(Scalar::Auto)) {
-            // `content_width()`/`auto_content_width()` and the container fallback
-            // both report PURE content width, so add the child's own chrome.
-            measure_intrinsic_content_width(tree, child, viewport)
-                .map(|w| w.saturating_add(own_h_chrome))
+/// Apply the child's min/max width and height to its outer box. Limits are
+/// content sizes unless `box-sizing: border-box`, so `chrome` (horizontal,
+/// vertical border + padding) is added for content-box sizing.
+fn clamp_grid_box(
+    style: &Style,
+    (layout_w, layout_h): (&mut u16, &mut u16),
+    available: Region,
+    viewport: (u16, u16),
+    (h_chrome, v_chrome): (u16, u16),
+) {
+    let box_sizing = style.box_sizing.unwrap_or(BoxSizing::BorderBox);
+    // Apply max-width constraint.
+    if let Some(ref s) = style.max_width {
+        let max_w = resolve_scalar_to_cells(*s, available.width, viewport);
+        let max_w_outer = if box_sizing == BoxSizing::BorderBox {
+            max_w
         } else {
-            None
+            max_w.saturating_add(h_chrome)
         };
-        let intrinsic_h_outer = if matches!(style.height.as_ref(), Some(Scalar::Auto)) {
-            // Post-keystone `layout_height()` (surfaced via
-            // `measure_intrinsic_content_height`) is PURE content on both the leaf
-            // and drained-container paths; the grid adds the child's own
-            // (context-resolved) vertical chrome to get the OUTER cell height.
-            let avail_content_h = cell_h.saturating_sub(own_v_chrome);
-            measure_intrinsic_content_height(tree, child, viewport, avail_content_h)
-                .map(|h| h.saturating_add(own_v_chrome))
+        *layout_w = (*layout_w).min(max_w_outer);
+    }
+    // Apply min-width constraint.
+    if let Some(ref s) = style.min_width {
+        let min_w = resolve_scalar_to_cells(*s, available.width, viewport);
+        let min_w_outer = if box_sizing == BoxSizing::BorderBox {
+            min_w
         } else {
-            None
+            min_w.saturating_add(h_chrome)
         };
-        let mut layout_w = resolve_grid_box_dim(
-            style.width.as_ref(),
-            cell_w,
-            margin.left + margin.right,
-            viewport,
-            own_h_chrome,
-            box_sizing,
-            intrinsic_w_outer,
-        );
-        let mut layout_h = resolve_grid_box_dim(
-            style.height.as_ref(),
-            cell_h,
-            margin.top + margin.bottom,
-            viewport,
-            own_v_chrome,
-            box_sizing,
-            intrinsic_h_outer,
-        );
-
-        // Apply max-width constraint.
-        if let Some(ref s) = style.max_width {
-            let max_w = resolve_scalar_to_cells(*s, available.width, viewport);
-            let max_w_outer = if box_sizing == BoxSizing::BorderBox {
-                max_w
-            } else {
-                max_w.saturating_add(bl + br + padding.left + padding.right)
-            };
-            layout_w = layout_w.min(max_w_outer);
-        }
-        // Apply min-width constraint.
-        if let Some(ref s) = style.min_width {
-            let min_w = resolve_scalar_to_cells(*s, available.width, viewport);
-            let min_w_outer = if box_sizing == BoxSizing::BorderBox {
-                min_w
-            } else {
-                min_w.saturating_add(bl + br + padding.left + padding.right)
-            };
-            layout_w = layout_w.max(min_w_outer);
-        }
-        // Apply max-height constraint.
-        if let Some(ref s) = style.max_height {
-            let max_h = resolve_scalar_to_cells(*s, available.height, viewport);
-            let max_h_outer = if box_sizing == BoxSizing::BorderBox {
-                max_h
-            } else {
-                max_h.saturating_add(bt + bb + padding.top + padding.bottom)
-            };
-            layout_h = layout_h.min(max_h_outer);
-        }
-        // Apply min-height constraint.
-        if let Some(ref s) = style.min_height {
-            let min_h = resolve_scalar_to_cells(*s, available.height, viewport);
-            let min_h_outer = if box_sizing == BoxSizing::BorderBox {
-                min_h
-            } else {
-                min_h.saturating_add(bt + bb + padding.top + padding.bottom)
-            };
-            layout_h = layout_h.max(min_h_outer);
-        }
-
-        // Content rect: inner area after border + padding.
-        let content_x = layout_x + i32::from(bl + padding.left);
-        let content_y = layout_y + i32::from(bt + padding.top);
-        let content_w = layout_w.saturating_sub(bl + br + padding.left + padding.right);
-        let content_h = layout_h.saturating_sub(bt + bb + padding.top + padding.bottom);
-
-        if let Some(node) = tree.get_mut(child) {
-            node.layout_rect = Region::new(layout_x, layout_y, layout_w, layout_h).to_rect();
-            node.content_rect = Region::new(content_x, content_y, content_w, content_h).to_rect();
-        }
+        *layout_w = (*layout_w).max(min_w_outer);
+    }
+    // Apply max-height constraint.
+    if let Some(ref s) = style.max_height {
+        let max_h = resolve_scalar_to_cells(*s, available.height, viewport);
+        let max_h_outer = if box_sizing == BoxSizing::BorderBox {
+            max_h
+        } else {
+            max_h.saturating_add(v_chrome)
+        };
+        *layout_h = (*layout_h).min(max_h_outer);
+    }
+    // Apply min-height constraint.
+    if let Some(ref s) = style.min_height {
+        let min_h = resolve_scalar_to_cells(*s, available.height, viewport);
+        let min_h_outer = if box_sizing == BoxSizing::BorderBox {
+            min_h
+        } else {
+            min_h.saturating_add(v_chrome)
+        };
+        *layout_h = (*layout_h).max(min_h_outer);
     }
 }
 
