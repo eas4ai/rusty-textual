@@ -676,6 +676,39 @@ fn inl_016_inline02_renders_its_inline_rule() {
 }
 
 #[test]
+fn inl_017_a_pushed_screen_keeps_its_border_inside_the_frame() {
+    // The command palette is a pushed screen; the default `Screen:inline`
+    // rule gives it a top and a bottom border, which INL-004 counts in the
+    // inline height. They belong on the frame's first and last rows.
+    let term = Term::spawn(
+        SHELL_THEN_EXEC,
+        &docs_example("inline01"),
+        &[],
+        Answers::TERMINAL,
+    );
+    term.wait_for("clock", |s| !painted_rows(s).is_empty());
+    term.settle();
+    term.send(b"\x10"); // ctrl+p
+    term.wait_for("the palette", has_text("Search for commands"));
+    let screen = term.settle();
+    let rows = painted_rows(&screen);
+    let text = lines(&screen);
+    let (_, cols) = screen.size();
+    let edge = |row: u16, glyph: char| {
+        text[usize::from(row)]
+            .chars()
+            .filter(|&c| c == glyph)
+            .count()
+            >= usize::from(cols - 2)
+    };
+    assert!(
+        edge(rows[0], '\u{2594}') && edge(rows[rows.len() - 1], '\u{2581}'),
+        "the palette's border is not on the frame's first and last rows:\n{}",
+        dump(&screen)
+    );
+}
+
+#[test]
 fn inl_017_the_inline_screen_scrolls_to_its_last_line() {
     // The body, then the status line, then the `inline-css` marker: the
     // marker is the last line, so it shows only once the screen has
