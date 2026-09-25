@@ -41,6 +41,57 @@ impl Frame {
         self.border = border;
         self
     }
+
+    /// Tree mode: the border chrome around blank content (the child renders
+    /// as its own node).
+    fn render_chrome_only(&self, options: &ConsoleOptions) -> Segments {
+        let border_width: usize = usize::from(self.border);
+        let total_padding = self.padding * 2;
+        let width = options.size.0.max(1);
+        let height = options.size.1.max(1);
+        let inner_width = width
+            .saturating_sub(border_width * 2 + total_padding)
+            .max(1);
+        let inner_total = inner_width + total_padding;
+        let content_height = height.saturating_sub(border_width * 2).max(1);
+
+        let mut out = Segments::new();
+        if self.border {
+            let b = rich_rs::r#box::SQUARE;
+            let top = format!(
+                "{}{}{}",
+                b.top_left,
+                std::iter::repeat_n(b.top, inner_total).collect::<String>(),
+                b.top_right
+            );
+            out.push(Segment::new(top));
+            out.push(Segment::line());
+            for idx in 0..content_height {
+                out.push(Segment::new(b.mid_left.to_string()));
+                out.push(Segment::new(" ".repeat(inner_total)));
+                out.push(Segment::new(b.mid_right.to_string()));
+                if idx + 1 < content_height {
+                    out.push(Segment::line());
+                }
+            }
+            out.push(Segment::line());
+            let bottom = format!(
+                "{}{}{}",
+                b.bottom_left,
+                std::iter::repeat_n(b.bottom, inner_total).collect::<String>(),
+                b.bottom_right
+            );
+            out.push(Segment::new(bottom));
+        } else {
+            for idx in 0..height {
+                out.push(Segment::new(" ".repeat(width)));
+                if idx + 1 < height {
+                    out.push(Segment::line());
+                }
+            }
+        }
+        out
+    }
 }
 
 impl crate::widgets::Focus for Frame {
@@ -160,52 +211,7 @@ impl crate::widgets::Render for Frame {
         if self.child_extracted {
             // Tree-mode: render border chrome only, with blank content inside.
             // The tree pipeline renders children separately.
-            let border_width: usize = usize::from(self.border);
-            let total_padding = self.padding * 2;
-            let width = options.size.0.max(1);
-            let height = options.size.1.max(1);
-            let inner_width = width
-                .saturating_sub(border_width * 2 + total_padding)
-                .max(1);
-            let inner_total = inner_width + total_padding;
-            let content_height = height.saturating_sub(border_width * 2).max(1);
-
-            let mut out = Segments::new();
-            if self.border {
-                let b = rich_rs::r#box::SQUARE;
-                let top = format!(
-                    "{}{}{}",
-                    b.top_left,
-                    std::iter::repeat_n(b.top, inner_total).collect::<String>(),
-                    b.top_right
-                );
-                out.push(Segment::new(top));
-                out.push(Segment::line());
-                for idx in 0..content_height {
-                    out.push(Segment::new(b.mid_left.to_string()));
-                    out.push(Segment::new(" ".repeat(inner_total)));
-                    out.push(Segment::new(b.mid_right.to_string()));
-                    if idx + 1 < content_height {
-                        out.push(Segment::line());
-                    }
-                }
-                out.push(Segment::line());
-                let bottom = format!(
-                    "{}{}{}",
-                    b.bottom_left,
-                    std::iter::repeat_n(b.bottom, inner_total).collect::<String>(),
-                    b.bottom_right
-                );
-                out.push(Segment::new(bottom));
-            } else {
-                for idx in 0..height {
-                    out.push(Segment::new(" ".repeat(width)));
-                    if idx + 1 < height {
-                        out.push(Segment::line());
-                    }
-                }
-            }
-            return out;
+            return self.render_chrome_only(options);
         }
 
         let border_width: usize = usize::from(self.border);
