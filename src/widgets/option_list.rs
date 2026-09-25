@@ -1363,6 +1363,100 @@ impl crate::widgets::Scrollable for OptionList {
     }
 }
 
+impl OptionList {
+    /// The rich style for option `index`: `option-list--option` plus its
+    /// state class (disabled > highlighted > hover), resolved over the
+    /// widget surface `surface_flat`.
+    fn option_rich_style(
+        &self,
+        index: usize,
+        disabled: bool,
+        surface_flat: crate::style::Color,
+        base_style: rich_rs::Style,
+    ) -> rich_rs::Style {
+        let resolve_comp = |classes: &[&str]| -> crate::style::Style {
+            crate::css::resolve_component_style_merged(self, classes)
+        };
+        let highlighted = self.cursor.highlighted() == Some(index);
+        let hovered = self.hovered_index == Some(index);
+        // Mirror Python `_get_option_style`: combine the base
+        // `option-list--option` with the state-specific
+        // component class (disabled > highlighted > hover).
+        // The `:focus` variant of the highlighted colours is
+        // supplied by the `OptionList:focus > ...` CSS rule,
+        // matched via the focused OptionList meta on the stack.
+        let mut classes = vec!["option-list--option"];
+        if disabled {
+            classes.push("option-list--option-disabled");
+        } else if highlighted {
+            classes.push("option-list--option-highlighted");
+        } else if hovered {
+            classes.push("option-list--option-hover");
+        }
+        let mut style_crate = resolve_comp(&classes);
+        // Resolve an auto-contrast foreground (e.g.
+        // `$text-disabled` = `auto 38%`) against the widget
+        // surface. `to_rich_over` only handles concrete `fg`;
+        // the compositor resolves `fg_auto` but only from the
+        // WIDGET style, not per-option component styles, so a
+        // disabled option would otherwise fall back to the
+        // widget foreground. Mirror the compositor's math over
+        // the (tinted) surface.
+        if style_crate.fg.is_none() {
+            if let Some(auto) = style_crate.fg_auto {
+                let contrast = crate::style::contrast_text(surface_flat);
+                style_crate.fg = Some(contrast.blend_over_float(surface_flat, auto.alpha()));
+                style_crate.fg_auto = None;
+            }
+        }
+        // Compose the highlighted option's (possibly
+        // semi-transparent) background over the widget surface,
+        // matching Python's `background_colors` compositing.
+        if highlighted {
+            if let Some(bg) = style_crate.bg {
+                style_crate.bg = Some(bg.flatten_over(surface_flat));
+            }
+        }
+        style_crate.to_rich_over(surface_flat).unwrap_or(base_style)
+    }
+
+    /// The rendered lines of one option's content (or its plain-text
+    /// prompt), before the left padding. `content_w` is the wrap width for
+    /// text; renderables render at `renderable_width` minus `pad_left`.
+    fn option_content_lines(
+        content: Option<&OptionContent>,
+        prompt: &str,
+        style: rich_rs::Style,
+        (content_w, renderable_width, pad_left): (usize, usize, usize),
+        console: &Console,
+        options: &ConsoleOptions,
+    ) -> Vec<Vec<Segment>> {
+        match content {
+            Some(OptionContent::Text(rich)) => {
+                Self::render_rich_lines(rich, style, content_w, console, options)
+            }
+            Some(OptionContent::Renderable(r)) => {
+                // Render at renderable_width (< width when scrollbar
+                // is visible) so the table/renderable doesn't bleed
+                // into the scrollbar overlay zone. Python uses
+                // scrollable_content_region.width which already
+                // subtracts scrollbar_size_vertical (default 2).
+                let rw = renderable_width.saturating_sub(pad_left).max(1);
+                Self::render_renderable_lines(r.as_ref(), style, rw, console, options)
+            }
+            None => {
+                // Plain text, word-wrapped to the (inset)
+                // content width (Python OptionList wraps long
+                // prompts). Routed through the rich-text line
+                // renderer so wrapping matches `item_height`'s
+                // measurement exactly.
+                let text = rich_rs::Text::from(prompt);
+                Self::render_rich_lines(&text, style, content_w, console, options)
+            }
+        }
+    }
+}
+
 impl crate::widgets::Render for OptionList {
     fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
         let width = options.size.0.max(1);
@@ -1447,46 +1541,6 @@ impl crate::widgets::Render for OptionList {
                             ..
                         } => {
                             let highlighted = self.cursor.highlighted() == Some(index);
-                            let hovered = self.hovered_index == Some(index);
-                            // Mirror Python `_get_option_style`: combine the base
-                            // `option-list--option` with the state-specific
-                            // component class (disabled > highlighted > hover).
-                            // The `:focus` variant of the highlighted colours is
-                            // supplied by the `OptionList:focus > ...` CSS rule,
-                            // matched via the focused OptionList meta on the stack.
-                            let mut classes = vec!["option-list--option"];
-                            if *disabled {
-                                classes.push("option-list--option-disabled");
-                            } else if highlighted {
-                                classes.push("option-list--option-highlighted");
-                            } else if hovered {
-                                classes.push("option-list--option-hover");
-                            }
-                            let mut style_crate = resolve_comp(&classes);
-                            // Resolve an auto-contrast foreground (e.g.
-                            // `$text-disabled` = `auto 38%`) against the widget
-                            // surface. `to_rich_over` only handles concrete `fg`;
-                            // the compositor resolves `fg_auto` but only from the
-                            // WIDGET style, not per-option component styles, so a
-                            // disabled option would otherwise fall back to the
-                            // widget foreground. Mirror the compositor's math over
-                            // the (tinted) surface.
-                            if style_crate.fg.is_none() {
-                                if let Some(auto) = style_crate.fg_auto {
-                                    let contrast = crate::style::contrast_text(surface_flat);
-                                    style_crate.fg =
-                                        Some(contrast.blend_over_float(surface_flat, auto.alpha()));
-                                    style_crate.fg_auto = None;
-                                }
-                            }
-                            // Compose the highlighted option's (possibly
-                            // semi-transparent) background over the widget surface,
-                            // matching Python's `background_colors` compositing.
-                            if highlighted {
-                                if let Some(bg) = style_crate.bg {
-                                    style_crate.bg = Some(bg.flatten_over(surface_flat));
-                                }
-                            }
                             // Per-option left inset (Python `.option-list--option
                             // { padding }`), inside the option background and on top
                             // of the container padding. Sourced from the explicit
@@ -1495,40 +1549,17 @@ impl crate::widgets::Render for OptionList {
                             let pad_left = self.option_pad_left;
                             let content_w = width.saturating_sub(pad_left).max(1);
                             let style =
-                                style_crate.to_rich_over(surface_flat).unwrap_or(base_style);
+                                self.option_rich_style(index, *disabled, surface_flat, base_style);
 
                             let lines = rendered_items.entry(index).or_insert_with(|| {
-                                let mut raw = match content {
-                                    Some(OptionContent::Text(rich)) => Self::render_rich_lines(
-                                        rich, style, content_w, console, options,
-                                    ),
-                                    Some(OptionContent::Renderable(r)) => {
-                                        // Render at renderable_width (< width when scrollbar
-                                        // is visible) so the table/renderable doesn't bleed
-                                        // into the scrollbar overlay zone. Python uses
-                                        // scrollable_content_region.width which already
-                                        // subtracts scrollbar_size_vertical (default 2).
-                                        let rw = renderable_width.saturating_sub(pad_left).max(1);
-                                        Self::render_renderable_lines(
-                                            r.as_ref(),
-                                            style,
-                                            rw,
-                                            console,
-                                            options,
-                                        )
-                                    }
-                                    None => {
-                                        // Plain text, word-wrapped to the (inset)
-                                        // content width (Python OptionList wraps long
-                                        // prompts). Routed through the rich-text line
-                                        // renderer so wrapping matches `item_height`'s
-                                        // measurement exactly.
-                                        let text = rich_rs::Text::from(prompt.as_str());
-                                        Self::render_rich_lines(
-                                            &text, style, content_w, console, options,
-                                        )
-                                    }
-                                };
+                                let mut raw = Self::option_content_lines(
+                                    content.as_ref(),
+                                    prompt,
+                                    style,
+                                    (content_w, renderable_width, pad_left),
+                                    console,
+                                    options,
+                                );
                                 // Prepend the option's left padding as styled blanks so
                                 // the (highlighted) option background covers the inset,
                                 // bringing each line back up to full `width`.
