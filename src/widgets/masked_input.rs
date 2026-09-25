@@ -855,6 +855,112 @@ impl MaskedInput {
     }
 }
 
+impl MaskedInput {
+    /// Apply one edit command. Returns `(changed, value_changed)`: whether
+    /// the widget needs a repaint and whether its value changed.
+    fn apply_edit_command(
+        &mut self,
+        cmd: EditCommand,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> (bool, bool) {
+        let mut changed = false;
+        let mut value_changed = false;
+        match cmd {
+            EditCommand::DeleteToStart => {
+                self.action_delete_left_all();
+                changed = true;
+                value_changed = true;
+            }
+            EditCommand::InsertChar(ch) => {
+                if self.action_insert_text(&ch.to_string()) {
+                    changed = true;
+                    value_changed = true;
+                }
+            }
+            EditCommand::Submit => {
+                ctx.post_message(InputSubmitted {
+                    value: self.value_str(),
+                });
+            }
+            EditCommand::Copy => {
+                if let Some(text) = self.copy_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
+                }
+            }
+            EditCommand::Cut => {
+                if let Some(text) = self.copy_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
+                    self.clear();
+                    changed = true;
+                    value_changed = true;
+                }
+            }
+            EditCommand::Paste => {
+                ctx.post_message(TextEditClipboardPasteRequested {
+                    target: self.node_id(),
+                });
+            }
+            EditCommand::Backspace { unit } => {
+                match unit {
+                    MoveUnit::Grapheme => self.action_delete_left(),
+                    MoveUnit::Word => self.action_delete_left_word(),
+                }
+                changed = true;
+                value_changed = true;
+            }
+            EditCommand::Delete { unit } => {
+                match unit {
+                    MoveUnit::Grapheme => self.action_delete_right(),
+                    MoveUnit::Word => self.action_delete_right_word(),
+                }
+                changed = true;
+                value_changed = true;
+            }
+            EditCommand::MoveLeft { unit, .. } => {
+                match unit {
+                    MoveUnit::Grapheme => self.action_cursor_left(),
+                    MoveUnit::Word => self.action_cursor_left_word(),
+                }
+                changed = true;
+            }
+            EditCommand::MoveRight { unit, .. } => {
+                match unit {
+                    MoveUnit::Grapheme => self.action_cursor_right(),
+                    MoveUnit::Word => self.action_cursor_right_word(),
+                }
+                changed = true;
+            }
+            EditCommand::MoveHome { .. } => {
+                self.action_home();
+                changed = true;
+            }
+            EditCommand::MoveEnd { .. } => {
+                self.action_end();
+                changed = true;
+            }
+            EditCommand::DeleteToEnd => {
+                self.action_delete_right_all();
+                changed = true;
+                value_changed = true;
+            }
+            // `SelectAll` (ctrl+shift+a) is intentionally not wired:
+            // `MaskedInput` has no selection model — copy already
+            // yields the full value and cut already clears it — so
+            // there is no selection state for select-all to set.
+            // (Python inherits `Input.action_select_all`, but its
+            // cursor-action overrides drop the `select` parameter, so
+            // shift-selection is broken there too.)
+            EditCommand::InsertNewline
+            | EditCommand::MoveUp { .. }
+            | EditCommand::MoveDown { .. }
+            | EditCommand::DeleteLine
+            | EditCommand::SelectAll
+            | EditCommand::SelectLine => {}
+        }
+        (changed, value_changed)
+    }
+}
+
 impl crate::widgets::Focus for MaskedInput {
     fn focusable(&self) -> bool {
         true
@@ -1000,100 +1106,7 @@ impl crate::widgets::Interactive for MaskedInput {
                 let Some(cmd) = edit_command_from_key(key, false) else {
                     return;
                 };
-                let mut changed = false;
-                let mut value_changed = false;
-                match cmd {
-                    EditCommand::DeleteToStart => {
-                        self.action_delete_left_all();
-                        changed = true;
-                        value_changed = true;
-                    }
-                    EditCommand::InsertChar(ch) => {
-                        if self.action_insert_text(&ch.to_string()) {
-                            changed = true;
-                            value_changed = true;
-                        }
-                    }
-                    EditCommand::Submit => {
-                        ctx.post_message(InputSubmitted {
-                            value: self.value_str(),
-                        });
-                    }
-                    EditCommand::Copy => {
-                        if let Some(text) = self.copy_text() {
-                            ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
-                        }
-                    }
-                    EditCommand::Cut => {
-                        if let Some(text) = self.copy_text() {
-                            ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
-                            self.clear();
-                            changed = true;
-                            value_changed = true;
-                        }
-                    }
-                    EditCommand::Paste => {
-                        ctx.post_message(TextEditClipboardPasteRequested {
-                            target: self.node_id(),
-                        });
-                    }
-                    EditCommand::Backspace { unit } => {
-                        match unit {
-                            MoveUnit::Grapheme => self.action_delete_left(),
-                            MoveUnit::Word => self.action_delete_left_word(),
-                        }
-                        changed = true;
-                        value_changed = true;
-                    }
-                    EditCommand::Delete { unit } => {
-                        match unit {
-                            MoveUnit::Grapheme => self.action_delete_right(),
-                            MoveUnit::Word => self.action_delete_right_word(),
-                        }
-                        changed = true;
-                        value_changed = true;
-                    }
-                    EditCommand::MoveLeft { unit, .. } => {
-                        match unit {
-                            MoveUnit::Grapheme => self.action_cursor_left(),
-                            MoveUnit::Word => self.action_cursor_left_word(),
-                        }
-                        changed = true;
-                    }
-                    EditCommand::MoveRight { unit, .. } => {
-                        match unit {
-                            MoveUnit::Grapheme => self.action_cursor_right(),
-                            MoveUnit::Word => self.action_cursor_right_word(),
-                        }
-                        changed = true;
-                    }
-                    EditCommand::MoveHome { .. } => {
-                        self.action_home();
-                        changed = true;
-                    }
-                    EditCommand::MoveEnd { .. } => {
-                        self.action_end();
-                        changed = true;
-                    }
-                    EditCommand::DeleteToEnd => {
-                        self.action_delete_right_all();
-                        changed = true;
-                        value_changed = true;
-                    }
-                    // `SelectAll` (ctrl+shift+a) is intentionally not wired:
-                    // `MaskedInput` has no selection model — copy already
-                    // yields the full value and cut already clears it — so
-                    // there is no selection state for select-all to set.
-                    // (Python inherits `Input.action_select_all`, but its
-                    // cursor-action overrides drop the `select` parameter, so
-                    // shift-selection is broken there too.)
-                    EditCommand::InsertNewline
-                    | EditCommand::MoveUp { .. }
-                    | EditCommand::MoveDown { .. }
-                    | EditCommand::DeleteLine
-                    | EditCommand::SelectAll
-                    | EditCommand::SelectLine => {}
-                }
+                let (changed, value_changed) = self.apply_edit_command(cmd, ctx);
 
                 if value_changed {
                     self.revalidate();
