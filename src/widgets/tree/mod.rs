@@ -1436,6 +1436,119 @@ impl crate::widgets::Focus for Tree {
     }
 }
 
+impl Tree {
+    /// A press on a row: toggle it when the press is on its twisty, else
+    /// select it and remember it for activation on release.
+    fn on_tree_mouse_down(
+        &mut self,
+        mouse: &crate::event::MouseDownEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
+        let nodes = self.visible_nodes();
+        let index = self.offset.saturating_add(mouse.y as usize);
+        if let Some(node) = nodes.get(index) {
+            if node.disabled {
+                return;
+            }
+            let twist_col =
+                Self::twisty_hit_max_x(node, self.show_guides, self.guide_depth, self.hide_twisty);
+            if node.expandable && (mouse.x as usize) <= twist_col {
+                self.pressed_activation_index = None;
+                self.toggle_index(index, ctx);
+            } else {
+                self.select_index(index, ctx);
+                self.pressed_activation_index = Some(index);
+                if self.hovered_index != Some(index) {
+                    self.hovered_index = Some(index);
+                    ctx.request_repaint();
+                }
+            }
+            ctx.set_handled();
+        }
+    }
+
+    /// Cursor movement, expand/collapse and activation keys (Shift+arrows
+    /// move between siblings and to the parent).
+    fn on_tree_key(&mut self, key: &crate::keys::KeyEventData, ctx: &mut crate::event::WidgetCtx) {
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+        let shift_handled = if shift {
+            match key.code {
+                KeyCode::Up => {
+                    self.cursor_previous_sibling(ctx);
+                    true
+                }
+                KeyCode::Down => {
+                    self.cursor_next_sibling(ctx);
+                    true
+                }
+                KeyCode::Left => {
+                    self.cursor_parent(ctx);
+                    true
+                }
+                KeyCode::Right | KeyCode::Char(' ') => {
+                    self.toggle_expand_all_selected(ctx);
+                    true
+                }
+                _ => false,
+            }
+        } else {
+            false
+        };
+        if shift_handled {
+            ctx.set_handled();
+        } else {
+            match key.code {
+                KeyCode::Up => {
+                    self.move_selection(-1, ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::Down => {
+                    self.move_selection(1, ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::PageUp => {
+                    self.move_selection(-self.page_step().to_isize_sat(), ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::PageDown => {
+                    self.move_selection(self.page_step().to_isize_sat(), ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::Home => {
+                    self.select_index(0, ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::End => {
+                    let total = self.visible_count();
+                    if total > 0 {
+                        self.select_index(total - 1, ctx);
+                    }
+                    ctx.set_handled();
+                }
+                KeyCode::Left => {
+                    self.collapse_or_parent(ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::Right => {
+                    self.expand_or_child(ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::Enter => {
+                    let nodes = self.visible_nodes();
+                    let selected = self.selected_line_in(&nodes);
+                    Self::emit_activated(ctx, selected, &nodes);
+                    ctx.set_handled();
+                }
+                KeyCode::Char(' ') => {
+                    self.toggle_selected(ctx);
+                    ctx.set_handled();
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 impl crate::widgets::Interactive for Tree {
     fn on_node_state_changed(
         &mut self,
@@ -1455,31 +1568,7 @@ impl crate::widgets::Interactive for Tree {
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
         match event {
             Event::MouseDown(mouse) if mouse.target == self.node_id() => {
-                let nodes = self.visible_nodes();
-                let index = self.offset.saturating_add(mouse.y as usize);
-                if let Some(node) = nodes.get(index) {
-                    if node.disabled {
-                        return;
-                    }
-                    let twist_col = Self::twisty_hit_max_x(
-                        node,
-                        self.show_guides,
-                        self.guide_depth,
-                        self.hide_twisty,
-                    );
-                    if node.expandable && (mouse.x as usize) <= twist_col {
-                        self.pressed_activation_index = None;
-                        self.toggle_index(index, ctx);
-                    } else {
-                        self.select_index(index, ctx);
-                        self.pressed_activation_index = Some(index);
-                        if self.hovered_index != Some(index) {
-                            self.hovered_index = Some(index);
-                            ctx.request_repaint();
-                        }
-                    }
-                    ctx.set_handled();
-                }
+                self.on_tree_mouse_down(mouse, ctx);
             }
             Event::MouseUp(mouse) if mouse.target.is_some_and(|t| t == self.node_id()) => {
                 let index = self.offset.saturating_add(mouse.y as usize);
@@ -1514,82 +1603,7 @@ impl crate::widgets::Interactive for Tree {
                 _ => {}
             },
             Event::Key(key) if self.node_state().focused => {
-                let shift = key.modifiers.contains(KeyModifiers::SHIFT);
-                let shift_handled = if shift {
-                    match key.code {
-                        KeyCode::Up => {
-                            self.cursor_previous_sibling(ctx);
-                            true
-                        }
-                        KeyCode::Down => {
-                            self.cursor_next_sibling(ctx);
-                            true
-                        }
-                        KeyCode::Left => {
-                            self.cursor_parent(ctx);
-                            true
-                        }
-                        KeyCode::Right | KeyCode::Char(' ') => {
-                            self.toggle_expand_all_selected(ctx);
-                            true
-                        }
-                        _ => false,
-                    }
-                } else {
-                    false
-                };
-                if shift_handled {
-                    ctx.set_handled();
-                } else {
-                    match key.code {
-                        KeyCode::Up => {
-                            self.move_selection(-1, ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::Down => {
-                            self.move_selection(1, ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::PageUp => {
-                            self.move_selection(-self.page_step().to_isize_sat(), ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::PageDown => {
-                            self.move_selection(self.page_step().to_isize_sat(), ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::Home => {
-                            self.select_index(0, ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::End => {
-                            let total = self.visible_count();
-                            if total > 0 {
-                                self.select_index(total - 1, ctx);
-                            }
-                            ctx.set_handled();
-                        }
-                        KeyCode::Left => {
-                            self.collapse_or_parent(ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::Right => {
-                            self.expand_or_child(ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::Enter => {
-                            let nodes = self.visible_nodes();
-                            let selected = self.selected_line_in(&nodes);
-                            Self::emit_activated(ctx, selected, &nodes);
-                            ctx.set_handled();
-                        }
-                        KeyCode::Char(' ') => {
-                            self.toggle_selected(ctx);
-                            ctx.set_handled();
-                        }
-                        _ => {}
-                    }
-                }
+                self.on_tree_key(key, ctx);
             }
             Event::AppFocus(false) => {
                 self.pressed_activation_index = None;
