@@ -2233,8 +2233,7 @@ fn outcome_from_action(handled: bool, ctx: &mut EventCtx) -> DispatchOutcome {
 }
 
 /// Merge the side effects staged on `ctx` ahead of the outcome's own (root
-/// key capture runs before tree dispatch). Style animation requests stay on
-/// `ctx`.
+/// key capture runs before tree dispatch).
 fn prepend_ctx_effects(outcome: &mut DispatchOutcome, ctx: &mut EventCtx) {
     outcome.handled |= ctx.handled();
     outcome.repaint_requested |= ctx.repaint_requested();
@@ -2251,6 +2250,12 @@ fn prepend_ctx_effects(outcome: &mut DispatchOutcome, ctx: &mut EventCtx) {
     if !root_animation_requests.is_empty() {
         root_animation_requests.extend(std::mem::take(&mut outcome.animation_requests));
         outcome.animation_requests = root_animation_requests;
+    }
+
+    let mut root_style_animation_requests = ctx.take_style_animation_requests();
+    if !root_style_animation_requests.is_empty() {
+        root_style_animation_requests.extend(std::mem::take(&mut outcome.style_animation_requests));
+        outcome.style_animation_requests = root_style_animation_requests;
     }
 
     let mut root_worker_requests = ctx.take_worker_requests();
@@ -2271,8 +2276,7 @@ fn prepend_ctx_effects(outcome: &mut DispatchOutcome, ctx: &mut EventCtx) {
     }
 }
 
-/// Merge the side effects staged on `ctx` after the outcome's own. Style
-/// animation requests stay on `ctx`.
+/// Merge the side effects staged on `ctx` after the outcome's own.
 fn append_ctx_effects(outcome: &mut DispatchOutcome, ctx: &mut EventCtx) {
     outcome.handled |= ctx.handled();
     outcome.repaint_requested |= ctx.repaint_requested();
@@ -2282,6 +2286,9 @@ fn append_ctx_effects(outcome: &mut DispatchOutcome, ctx: &mut EventCtx) {
     outcome
         .animation_requests
         .extend(ctx.take_animation_requests());
+    outcome
+        .style_animation_requests
+        .extend(ctx.take_style_animation_requests());
     outcome.worker_requests.extend(ctx.take_worker_requests());
     outcome.recompose_nodes.extend(ctx.take_recompose_nodes());
     outcome.class_ops.extend(ctx.take_class_ops());
@@ -7961,6 +7968,80 @@ mod tests {
         assert!(outcome.handled);
         assert_eq!(root_key_hits.load(Ordering::SeqCst), 0);
         assert_eq!(tree_capture_hits.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn dispatch_event_auto_keeps_style_animations_from_the_root_hooks() {
+        // The root widget's key-capture, event-bridge and app-action hooks can
+        // animate any node's style. Their requests must reach the outcome, as
+        // their messages and animations do, whether or not the hook handles
+        // the event.
+        struct StyleAnimationRootProbe;
+
+        fn stage(ctx: &mut crate::event::WidgetCtx, property: &str) {
+            ctx.request_style_animation(crate::event::StyleAnimationRequest::new(
+                node_id_from_ffi(1),
+                property,
+                crate::event::StyleValue::Float(0.0),
+                crate::event::StyleValue::Float(100.0),
+                std::time::Duration::from_millis(100),
+            ));
+        }
+
+        fn properties(requests: &[crate::event::StyleAnimationRequest]) -> Vec<&str> {
+            requests.iter().map(|r| r.property.as_str()).collect()
+        }
+
+        impl Widget for StyleAnimationRootProbe {
+            fn render(&self, _console: &Console, _options: &ConsoleOptions) -> Segments {
+                Segments::new()
+            }
+
+            fn on_event_capture(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
+                if matches!(event, Event::Key(..)) {
+                    stage(ctx, "capture");
+                }
+            }
+
+            fn on_event(&mut self, _event: &Event, ctx: &mut crate::event::WidgetCtx) {
+                stage(ctx, "bridge");
+            }
+
+            fn on_app_action(
+                &mut self,
+                _app: &mut App,
+                _action: Action,
+                ctx: &mut crate::event::WidgetCtx,
+            ) {
+                stage(ctx, "app_action");
+            }
+        }
+
+        let mut tree = crate::widget_tree::WidgetTree::new();
+        let probe_root = tree.set_root(Box::new(TreeEventProbe {
+            capture_hits: Arc::new(AtomicUsize::new(0)),
+        }));
+        tree.set_focus_state(probe_root, true);
+        let mut app = test_app_with_tree(tree);
+        let mut runtime_root = StyleAnimationRootProbe;
+
+        let outcome = app.dispatch_event_auto(
+            &mut runtime_root,
+            &Event::Key(KeyEventData::from_crossterm(KeyEvent::new(
+                KeyCode::Char('k'),
+                KeyModifiers::NONE,
+            ))),
+        );
+        assert_eq!(
+            properties(&outcome.style_animation_requests),
+            ["capture", "bridge"]
+        );
+
+        let outcome = app.dispatch_event_auto(&mut runtime_root, &Event::Action(Action::HelpQuit));
+        assert_eq!(
+            properties(&outcome.style_animation_requests),
+            ["bridge", "app_action"]
+        );
     }
 
     #[test]

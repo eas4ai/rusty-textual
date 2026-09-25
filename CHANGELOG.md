@@ -52,6 +52,10 @@ until the API stabilizes.
 - In headless runs (`run_test` / `Pilot`), a key bound with `App::bind_key` to
   `Action::CopySelectedText` or `Action::HelpQuit` now copies the app's text
   selection or shows the quit hint, as in a live run.
+- Style animations requested from the app root's key-capture, event and
+  app-action hooks (for example `ctx.animate_style` in a `TextualApp` key
+  handler) now run. They were dropped unless the hook marked the event
+  handled.
 
 ## [1.1.0] - 2026-07-16
 
