@@ -12,7 +12,10 @@ import re
 import subprocess
 import sys
 
-from mechanism_env import clean_env
+# No __pycache__ next to the scripts: Sudus counts it as an undeclared change.
+sys.dont_write_bytecode = True
+
+from mechanism_env import clean_env  # noqa: E402
 
 RUNS = [
     [
