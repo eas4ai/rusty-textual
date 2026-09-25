@@ -39,7 +39,6 @@ Screen {
     layout: vertical;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 1;
     bg: $background;
     color: $foreground;
     /* System layers (`_loading`, `_toastrack`, `_tooltips`) are deliberately
