@@ -1006,77 +1006,79 @@ pub(crate) fn match_binding_chain(
     // Phase 1: priority bindings, root→focused (Python: `reversed(binding_chain)`
     // = app → screen → ... → focused). The app-root chain comes first so
     // App-level priority bindings beat screen/widget priority bindings.
-    if let Some(app_tree) = app_root {
-        for (node_id, bindings) in &app_chain {
-            for binding in bindings {
-                if binding.priority
-                    && key_matches_binding(key, &binding.key)
-                    && binding_check_allows(
-                        app_tree,
-                        *node_id,
-                        Some(*node_id) == app_tree.root(),
-                        &binding.action,
-                        app_check,
-                    )
-                {
-                    return Some((*node_id, binding.action.clone(), BindingSource::AppRoot));
-                }
-            }
-        }
-    }
-    for (node_id, bindings) in &active_chain {
+    app_root
+        .and_then(|app_tree| {
+            first_binding_match(
+                app_chain.iter(),
+                app_tree,
+                (true, true),
+                key,
+                app_check,
+                BindingSource::AppRoot,
+            )
+        })
+        .or_else(|| {
+            first_binding_match(
+                active_chain.iter(),
+                active,
+                (true, active_root_is_app),
+                key,
+                app_check,
+                BindingSource::Active,
+            )
+        })
+        // Phase 2: normal bindings, active chain then app-root.
+        .or_else(|| {
+            first_binding_match(
+                active_chain.iter().rev(),
+                active,
+                (false, active_root_is_app),
+                key,
+                app_check,
+                BindingSource::Active,
+            )
+        })
+        .or_else(|| {
+            app_root.and_then(|app_tree| {
+                first_binding_match(
+                    app_chain.iter().rev(),
+                    app_tree,
+                    (false, true),
+                    key,
+                    app_check,
+                    BindingSource::AppRoot,
+                )
+            })
+        })
+}
+
+/// The first binding in `chain` (walked in the given order) with the given
+/// `priority` that matches `key` and passes its `check_action`.
+/// `root_is_app` says whether `tree`'s root node is the app node.
+fn first_binding_match<'a>(
+    chain: impl Iterator<Item = &'a (NodeId, Vec<BindingDecl>)>,
+    tree: &WidgetTree,
+    (priority, root_is_app): (bool, bool),
+    key: &KeyEventData,
+    app_check: Option<AppCheckAction<'_>>,
+    source: BindingSource,
+) -> Option<BindingMatch> {
+    for (node_id, bindings) in chain {
         for binding in bindings {
-            if binding.priority
+            if binding.priority == priority
                 && key_matches_binding(key, &binding.key)
                 && binding_check_allows(
-                    active,
+                    tree,
                     *node_id,
-                    active_root_is_app && Some(*node_id) == active.root(),
+                    root_is_app && Some(*node_id) == tree.root(),
                     &binding.action,
                     app_check,
                 )
             {
-                return Some((*node_id, binding.action.clone(), BindingSource::Active));
+                return Some((*node_id, binding.action.clone(), source));
             }
         }
     }
-
-    // Phase 2: normal bindings, active chain then app-root.
-    for (node_id, bindings) in active_chain.iter().rev() {
-        for binding in bindings {
-            if !binding.priority
-                && key_matches_binding(key, &binding.key)
-                && binding_check_allows(
-                    active,
-                    *node_id,
-                    active_root_is_app && Some(*node_id) == active.root(),
-                    &binding.action,
-                    app_check,
-                )
-            {
-                return Some((*node_id, binding.action.clone(), BindingSource::Active));
-            }
-        }
-    }
-    if let Some(app_tree) = app_root {
-        for (node_id, bindings) in app_chain.iter().rev() {
-            for binding in bindings {
-                if !binding.priority
-                    && key_matches_binding(key, &binding.key)
-                    && binding_check_allows(
-                        app_tree,
-                        *node_id,
-                        Some(*node_id) == app_tree.root(),
-                        &binding.action,
-                        app_check,
-                    )
-                {
-                    return Some((*node_id, binding.action.clone(), BindingSource::AppRoot));
-                }
-            }
-        }
-    }
-
     None
 }
 
