@@ -1,6 +1,6 @@
 use crate::node_id::NodeId;
 use crate::num::Cast;
-use crate::style::{BoxSizing, OffsetValue, Scalar};
+use crate::style::{BoxSizing, OffsetValue, Scalar, Style};
 use crate::widget_tree::WidgetTree;
 
 use super::common::{
@@ -75,85 +75,8 @@ pub(crate) fn compute_carve_box(
     // border/padding), so a reported value is treated exactly like any other
     // content size and the full vertical chrome is added below — symmetric with
     // the width axis and with `common::measure_child_outer_height`.
-    let child_h = match style.height.as_ref() {
-        None => {
-            // Unset: use widget intrinsic content height if available, fall back to
-            // full available height (fill behaviour for unset height, same as
-            // `extract_child_spec` for None with no intrinsic).
-            match tree
-                .get(child)
-                .and_then(|node| node.widget.layout_height())
-                .and_then(|h| u16::try_from(h).ok())
-            {
-                Some(h) => h,
-                None => current_h,
-            }
-        }
-        Some(Scalar::Auto) => {
-            // Explicit `height: auto`: size to content, NOT to the remaining
-            // available height. Python parity (`_get_box_model`: `is_auto_height`
-            // branch calls `get_content_height` instead of filling the container).
-            //
-            // Try intrinsic leaf content height first (Button/Checkbox report their
-            // own pure content height). Fall back to `measure_intrinsic_content_height`
-            // for containers whose children were drained into the arena tree
-            // (layout_height == None). Only if measurement also yields nothing
-            // (truly empty / unmeasurable) do we fall back to filling the height.
-            let leaf = tree
-                .get(child)
-                .and_then(|node| node.widget.layout_height())
-                .and_then(|h| u16::try_from(h).ok());
-            if let Some(h) = leaf {
-                h
-            } else {
-                measure_intrinsic_content_height(tree, child, viewport, current_h)
-                    .unwrap_or(current_h)
-            }
-        }
-        // A docked/split widget sized in `fr` on an axis fills that axis: Python's
-        // box model resolves a lone `1fr` against the available size (the dock
-        // region's own extent), so it behaves like `100%`. `resolve_scalar_to_cells`
-        // cannot do this — it has no sibling-fr context and returns 0 — so resolve
-        // it to the full available height here.
-        Some(Scalar::Fraction(_)) => current_h,
-        Some(s) => resolve_scalar_to_cells(*s, current_h, viewport),
-    };
-    let child_w = match style.width.as_ref() {
-        Some(Scalar::Auto) => {
-            // Explicit `width: auto`: size to content, NOT to the remaining
-            // available width (the mirror of the `height: auto` branch above).
-            // Python parity (`_get_box_model`: `is_auto_width` branch calls
-            // `get_content_width` instead of filling the container).
-            //
-            // Try the widget's own intrinsic width first (fast path for leaf
-            // widgets that report `content_width()`). When the widget reports
-            // None — true for a docked *container* whose children were drained
-            // into the arena tree (e.g. `Container(Label("left"))` docked left
-            // with `width: auto`) — recursively measure the intrinsic content
-            // width of its subtree. Only if measurement also yields nothing do
-            // we fall back to `layout.max_width`, then to the available width.
-            let intrinsic = tree
-                .get(child)
-                .and_then(|node| node.widget.content_width())
-                .and_then(|w| u16::try_from(w).ok());
-            if let Some(w) = intrinsic {
-                w
-            } else if let Some(w) = measure_intrinsic_content_width(tree, child, viewport) {
-                w
-            } else {
-                let max_w = tree
-                    .styles(child)
-                    .and_then(|s| s.layout.max_width)
-                    .and_then(|w| u16::try_from(w).ok());
-                max_w.unwrap_or(current_w)
-            }
-        }
-        // Unset width, or `width: 1fr` on a dock/split widget, fills the
-        // available width (see the height `Fraction` arm above for the
-        // rationale).
-        None | Some(Scalar::Fraction(_)) => current_w,
-        Some(s) => resolve_scalar_to_cells(*s, current_w, viewport),
-    };
+    let child_h = carve_content_height(tree, child, &style, current_h, viewport);
+    let child_w = carve_content_width(tree, child, &style, current_w, viewport);
 
     // Apply min/max width constraints from CSS style.
     let child_w = {
@@ -216,6 +139,109 @@ pub(crate) fn compute_carve_box(
         padding_left: padding.left,
         chrome_w,
         chrome_h,
+    }
+}
+
+/// The content height of a carving child against `current_h`: its
+/// intrinsic height when unset or `auto`, the full height for `fr`, else the
+/// resolved scalar.
+fn carve_content_height(
+    tree: &WidgetTree,
+    child: NodeId,
+    style: &Style,
+    current_h: u16,
+    viewport: (u16, u16),
+) -> u16 {
+    match style.height.as_ref() {
+        None => {
+            // Unset: use widget intrinsic content height if available, fall back to
+            // full available height (fill behaviour for unset height, same as
+            // `extract_child_spec` for None with no intrinsic).
+            match tree
+                .get(child)
+                .and_then(|node| node.widget.layout_height())
+                .and_then(|h| u16::try_from(h).ok())
+            {
+                Some(h) => h,
+                None => current_h,
+            }
+        }
+        Some(Scalar::Auto) => {
+            // Explicit `height: auto`: size to content, NOT to the remaining
+            // available height. Python parity (`_get_box_model`: `is_auto_height`
+            // branch calls `get_content_height` instead of filling the container).
+            //
+            // Try intrinsic leaf content height first (Button/Checkbox report their
+            // own pure content height). Fall back to `measure_intrinsic_content_height`
+            // for containers whose children were drained into the arena tree
+            // (layout_height == None). Only if measurement also yields nothing
+            // (truly empty / unmeasurable) do we fall back to filling the height.
+            let leaf = tree
+                .get(child)
+                .and_then(|node| node.widget.layout_height())
+                .and_then(|h| u16::try_from(h).ok());
+            if let Some(h) = leaf {
+                h
+            } else {
+                measure_intrinsic_content_height(tree, child, viewport, current_h)
+                    .unwrap_or(current_h)
+            }
+        }
+        // A docked/split widget sized in `fr` on an axis fills that axis: Python's
+        // box model resolves a lone `1fr` against the available size (the dock
+        // region's own extent), so it behaves like `100%`. `resolve_scalar_to_cells`
+        // cannot do this — it has no sibling-fr context and returns 0 — so resolve
+        // it to the full available height here.
+        Some(Scalar::Fraction(_)) => current_h,
+        Some(s) => resolve_scalar_to_cells(*s, current_h, viewport),
+    }
+}
+
+/// The content width of a carving child against `current_w`: its intrinsic
+/// width when `auto`, the full width when unset or `fr`, else the resolved
+/// scalar.
+fn carve_content_width(
+    tree: &WidgetTree,
+    child: NodeId,
+    style: &Style,
+    current_w: u16,
+    viewport: (u16, u16),
+) -> u16 {
+    match style.width.as_ref() {
+        Some(Scalar::Auto) => {
+            // Explicit `width: auto`: size to content, NOT to the remaining
+            // available width (the mirror of the `height: auto` branch above).
+            // Python parity (`_get_box_model`: `is_auto_width` branch calls
+            // `get_content_width` instead of filling the container).
+            //
+            // Try the widget's own intrinsic width first (fast path for leaf
+            // widgets that report `content_width()`). When the widget reports
+            // None — true for a docked *container* whose children were drained
+            // into the arena tree (e.g. `Container(Label("left"))` docked left
+            // with `width: auto`) — recursively measure the intrinsic content
+            // width of its subtree. Only if measurement also yields nothing do
+            // we fall back to `layout.max_width`, then to the available width.
+            let intrinsic = tree
+                .get(child)
+                .and_then(|node| node.widget.content_width())
+                .and_then(|w| u16::try_from(w).ok());
+            if let Some(w) = intrinsic {
+                w
+            } else if let Some(w) = measure_intrinsic_content_width(tree, child, viewport) {
+                w
+            } else {
+                let max_w = tree
+                    .styles(child)
+                    .and_then(|s| s.layout.max_width)
+                    .and_then(|w| u16::try_from(w).ok());
+                max_w.unwrap_or(current_w)
+            }
+        }
+        // Unset width, or `width: 1fr` on a dock/split widget, fills the
+        // available width (see the height `Fraction` arm above for the
+        // rationale).
+        None | Some(Scalar::Fraction(_)) => current_w,
+        Some(s) => resolve_scalar_to_cells(*s, current_w, viewport),
     }
 }
 
@@ -370,145 +396,177 @@ pub(crate) fn layout_absolute(
     viewport: (u16, u16),
 ) {
     for &child in children {
-        let style = get_node_style(tree, child);
-        let margin = style.effective_margin();
-        let padding = style.effective_padding();
-        let (bt, bb, bl, br) = border_spacing(&style);
-        let box_sizing = style.box_sizing.unwrap_or(BoxSizing::BorderBox);
-
-        let chrome_w = bl + br + padding.left + padding.right;
-        let chrome_h = bt + bb + padding.top + padding.bottom;
-
-        let height_is_explicit = style.height.is_some();
-        let width_is_explicit = style.width.is_some();
-
-        // Resolve width/height. Mirrors Python `_get_box_model`: an `auto`
-        // dimension shrinks to the child's intrinsic content (plus its own
-        // chrome), NOT the full available region. Only a `None` (unset)
-        // dimension falls back to filling the available region. This makes an
-        // absolutely-positioned `Label` (default `width: auto`) size to its
-        // text instead of stretching across the screen.
-        let mut layout_w = match style.width.as_ref() {
-            Some(Scalar::Auto) => measure_intrinsic_content_width(tree, child, viewport)
-                .map_or_else(
-                    || available.width.saturating_sub(margin.left + margin.right),
-                    |w| w.saturating_add(chrome_w),
-                ),
-            Some(s) => {
-                let content_w = resolve_scalar_to_cells(*s, available.width, viewport);
-                if box_sizing == BoxSizing::BorderBox && width_is_explicit {
-                    content_w
-                } else {
-                    content_w.saturating_add(chrome_w)
-                }
-            }
-            None => available.width.saturating_sub(margin.left + margin.right),
-        };
-        let mut layout_h = match style.height.as_ref() {
-            Some(Scalar::Auto) => {
-                // `measure_intrinsic_content_height` returns PURE content height
-                // (post-keystone; symmetric with `auto_content_width` on the width
-                // arm above), so this widget's own vertical chrome is added here to
-                // get the outer box height. Mirrors Python `_get_box_model` sizing
-                // an auto-height widget to its content box + chrome.
-                let avail_content_h = available
-                    .height
-                    .saturating_sub(margin.top + margin.bottom)
-                    .saturating_sub(chrome_h);
-                measure_intrinsic_content_height(tree, child, viewport, avail_content_h)
-                    .map_or_else(
-                        || available.height.saturating_sub(margin.top + margin.bottom),
-                        |h| h.saturating_add(chrome_h),
-                    )
-            }
-            Some(s) => {
-                let content_h = resolve_scalar_to_cells(*s, available.height, viewport);
-                if box_sizing == BoxSizing::BorderBox && height_is_explicit {
-                    content_h
-                } else {
-                    content_h.saturating_add(chrome_h)
-                }
-            }
-            None => available.height.saturating_sub(margin.top + margin.bottom),
-        };
-
-        // Apply min/max constraints for absolute children (P2-24 follow-up).
-        if let Some(ref s) = style.min_width {
-            let min_w = resolve_scalar_to_cells(*s, available.width, viewport);
-            let min_w_outer = if box_sizing == BoxSizing::BorderBox {
-                min_w
-            } else {
-                min_w.saturating_add(chrome_w)
-            };
-            layout_w = layout_w.max(min_w_outer);
-        }
-        if let Some(ref s) = style.max_width {
-            let max_w = resolve_scalar_to_cells(*s, available.width, viewport);
-            let max_w_outer = if box_sizing == BoxSizing::BorderBox {
-                max_w
-            } else {
-                max_w.saturating_add(chrome_w)
-            };
-            layout_w = layout_w.min(max_w_outer);
-        }
-        if let Some(ref s) = style.min_height {
-            let min_h = resolve_scalar_to_cells(*s, available.height, viewport);
-            let min_h_outer = if box_sizing == BoxSizing::BorderBox {
-                min_h
-            } else {
-                min_h.saturating_add(chrome_h)
-            };
-            layout_h = layout_h.max(min_h_outer);
-        }
-        if let Some(ref s) = style.max_height {
-            let max_h = resolve_scalar_to_cells(*s, available.height, viewport);
-            let max_h_outer = if box_sizing == BoxSizing::BorderBox {
-                max_h
-            } else {
-                max_h.saturating_add(chrome_h)
-            };
-            layout_h = layout_h.min(max_h_outer);
-        }
-
-        // Position: at parent origin + margin + absolute_offset + offset.
-        // Positions are signed so a negative offset (`position: absolute; offset:
-        // -x -y`) survives to the render clip instead of being clamped to 0.
-        //
-        // `absolute_offset` is a runtime-supplied screen anchor (Python
-        // `Widget._absolute_offset`, e.g. the tooltip's `mouse_position`). It is
-        // added BEFORE the CSS `offset` so `offset-x: -50%` centers the box on the
-        // anchor. `None` for every node that does not opt in — those keep the
-        // exact prior `base = origin + margin` placement.
-        let offset = style.offset.unwrap_or_default();
-        let (abs_x, abs_y) = tree
-            .get(child)
-            .and_then(|n| n.absolute_offset)
-            .unwrap_or((0, 0));
-        let base_x = available.x + i32::from(margin.left) + abs_x;
-        let base_y = available.y + i32::from(margin.top) + abs_y;
-        let layout_x = {
-            let dx = match offset.x {
-                OffsetValue::Cells(c) => i32::from(c),
-                OffsetValue::Percent(p) => (f32::from(layout_w) * p / 100.0).round().to_i32_sat(),
-            };
-            base_x + dx
-        };
-        let layout_y = {
-            let dy = match offset.y {
-                OffsetValue::Cells(c) => i32::from(c),
-                OffsetValue::Percent(p) => (f32::from(layout_h) * p / 100.0).round().to_i32_sat(),
-            };
-            base_y + dy
-        };
-
-        let content_x = layout_x + i32::from(bl + padding.left);
-        let content_y = layout_y + i32::from(bt + padding.top);
-        let content_w = layout_w.saturating_sub(chrome_w);
-        let content_h = layout_h.saturating_sub(chrome_h);
-
-        if let Some(node) = tree.get_mut(child) {
-            node.layout_rect = Region::new(layout_x, layout_y, layout_w, layout_h).to_rect();
-            node.content_rect = Region::new(content_x, content_y, content_w, content_h).to_rect();
-        }
+        place_absolute_child(tree, child, available, viewport);
     }
+}
+
+/// Size and place one absolutely positioned child in `available`.
+fn place_absolute_child(
+    tree: &mut WidgetTree,
+    child: NodeId,
+    available: Region,
+    viewport: (u16, u16),
+) {
+    let style = get_node_style(tree, child);
+    let margin = style.effective_margin();
+    let padding = style.effective_padding();
+    let (bt, bb, bl, br) = border_spacing(&style);
+
+    let chrome_w = bl + br + padding.left + padding.right;
+    let chrome_h = bt + bb + padding.top + padding.bottom;
+
+    let (layout_w, layout_h) = absolute_box_size(
+        tree,
+        child,
+        &style,
+        available,
+        viewport,
+        (chrome_w, chrome_h),
+    );
+
+    // Position: at parent origin + margin + absolute_offset + offset.
+    // Positions are signed so a negative offset (`position: absolute; offset:
+    // -x -y`) survives to the render clip instead of being clamped to 0.
+    //
+    // `absolute_offset` is a runtime-supplied screen anchor (Python
+    // `Widget._absolute_offset`, e.g. the tooltip's `mouse_position`). It is
+    // added BEFORE the CSS `offset` so `offset-x: -50%` centers the box on the
+    // anchor. `None` for every node that does not opt in — those keep the
+    // exact prior `base = origin + margin` placement.
+    let offset = style.offset.unwrap_or_default();
+    let (abs_x, abs_y) = tree
+        .get(child)
+        .and_then(|n| n.absolute_offset)
+        .unwrap_or((0, 0));
+    let base_x = available.x + i32::from(margin.left) + abs_x;
+    let base_y = available.y + i32::from(margin.top) + abs_y;
+    let layout_x = {
+        let dx = match offset.x {
+            OffsetValue::Cells(c) => i32::from(c),
+            OffsetValue::Percent(p) => (f32::from(layout_w) * p / 100.0).round().to_i32_sat(),
+        };
+        base_x + dx
+    };
+    let layout_y = {
+        let dy = match offset.y {
+            OffsetValue::Cells(c) => i32::from(c),
+            OffsetValue::Percent(p) => (f32::from(layout_h) * p / 100.0).round().to_i32_sat(),
+        };
+        base_y + dy
+    };
+
+    let content_x = layout_x + i32::from(bl + padding.left);
+    let content_y = layout_y + i32::from(bt + padding.top);
+    let content_w = layout_w.saturating_sub(chrome_w);
+    let content_h = layout_h.saturating_sub(chrome_h);
+
+    if let Some(node) = tree.get_mut(child) {
+        node.layout_rect = Region::new(layout_x, layout_y, layout_w, layout_h).to_rect();
+        node.content_rect = Region::new(content_x, content_y, content_w, content_h).to_rect();
+    }
+}
+
+/// The outer (margin-excluded) size of an absolutely positioned child:
+/// its width/height (intrinsic when `auto`, the available region when
+/// unset), then its min/max limits. `chrome` is its horizontal and vertical
+/// border + padding.
+fn absolute_box_size(
+    tree: &WidgetTree,
+    child: NodeId,
+    style: &Style,
+    available: Region,
+    viewport: (u16, u16),
+    (chrome_w, chrome_h): (u16, u16),
+) -> (u16, u16) {
+    let margin = style.effective_margin();
+    let box_sizing = style.box_sizing.unwrap_or(BoxSizing::BorderBox);
+    let height_is_explicit = style.height.is_some();
+    let width_is_explicit = style.width.is_some();
+
+    // Resolve width/height. Mirrors Python `_get_box_model`: an `auto`
+    // dimension shrinks to the child's intrinsic content (plus its own
+    // chrome), NOT the full available region. Only a `None` (unset)
+    // dimension falls back to filling the available region. This makes an
+    // absolutely-positioned `Label` (default `width: auto`) size to its
+    // text instead of stretching across the screen.
+    let mut layout_w = match style.width.as_ref() {
+        Some(Scalar::Auto) => measure_intrinsic_content_width(tree, child, viewport).map_or_else(
+            || available.width.saturating_sub(margin.left + margin.right),
+            |w| w.saturating_add(chrome_w),
+        ),
+        Some(s) => {
+            let content_w = resolve_scalar_to_cells(*s, available.width, viewport);
+            if box_sizing == BoxSizing::BorderBox && width_is_explicit {
+                content_w
+            } else {
+                content_w.saturating_add(chrome_w)
+            }
+        }
+        None => available.width.saturating_sub(margin.left + margin.right),
+    };
+    let mut layout_h = match style.height.as_ref() {
+        Some(Scalar::Auto) => {
+            // `measure_intrinsic_content_height` returns PURE content height
+            // (post-keystone; symmetric with `auto_content_width` on the width
+            // arm above), so this widget's own vertical chrome is added here to
+            // get the outer box height. Mirrors Python `_get_box_model` sizing
+            // an auto-height widget to its content box + chrome.
+            let avail_content_h = available
+                .height
+                .saturating_sub(margin.top + margin.bottom)
+                .saturating_sub(chrome_h);
+            measure_intrinsic_content_height(tree, child, viewport, avail_content_h).map_or_else(
+                || available.height.saturating_sub(margin.top + margin.bottom),
+                |h| h.saturating_add(chrome_h),
+            )
+        }
+        Some(s) => {
+            let content_h = resolve_scalar_to_cells(*s, available.height, viewport);
+            if box_sizing == BoxSizing::BorderBox && height_is_explicit {
+                content_h
+            } else {
+                content_h.saturating_add(chrome_h)
+            }
+        }
+        None => available.height.saturating_sub(margin.top + margin.bottom),
+    };
+
+    // Apply min/max constraints for absolute children (P2-24 follow-up).
+    if let Some(ref s) = style.min_width {
+        let min_w = resolve_scalar_to_cells(*s, available.width, viewport);
+        let min_w_outer = if box_sizing == BoxSizing::BorderBox {
+            min_w
+        } else {
+            min_w.saturating_add(chrome_w)
+        };
+        layout_w = layout_w.max(min_w_outer);
+    }
+    if let Some(ref s) = style.max_width {
+        let max_w = resolve_scalar_to_cells(*s, available.width, viewport);
+        let max_w_outer = if box_sizing == BoxSizing::BorderBox {
+            max_w
+        } else {
+            max_w.saturating_add(chrome_w)
+        };
+        layout_w = layout_w.min(max_w_outer);
+    }
+    if let Some(ref s) = style.min_height {
+        let min_h = resolve_scalar_to_cells(*s, available.height, viewport);
+        let min_h_outer = if box_sizing == BoxSizing::BorderBox {
+            min_h
+        } else {
+            min_h.saturating_add(chrome_h)
+        };
+        layout_h = layout_h.max(min_h_outer);
+    }
+    if let Some(ref s) = style.max_height {
+        let max_h = resolve_scalar_to_cells(*s, available.height, viewport);
+        let max_h_outer = if box_sizing == BoxSizing::BorderBox {
+            max_h
+        } else {
+            max_h.saturating_add(chrome_h)
+        };
+        layout_h = layout_h.min(max_h_outer);
+    }
+    (layout_w, layout_h)
 }
