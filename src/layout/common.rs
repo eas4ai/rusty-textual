@@ -371,6 +371,35 @@ pub(crate) fn own_box_chrome(style: &Style) -> (u16, u16) {
     (h, v)
 }
 
+/// A screen tree's inline height (Python `Screen._get_inline_height`): its
+/// height rule (`auto` or unset means the content height at the full terminal
+/// width) plus its vertical padding and border, held within `min-height` and
+/// `max-height`, and never taller than the terminal. Scalars resolve against
+/// the terminal size. Expects a layout pass at the terminal size first, so
+/// display and visibility are current.
+pub(crate) fn inline_height(tree: &WidgetTree, terminal: (u16, u16)) -> u16 {
+    let Some(root) = tree.root() else {
+        return 0;
+    };
+    let style = get_node_style(tree, root);
+    let resolve = |scalar: Scalar| resolve_scalar_to_cells(scalar, terminal.1, terminal);
+    let content = match style.height {
+        None | Some(Scalar::Auto) => {
+            measure_intrinsic_content_height(tree, root, terminal, terminal.1).unwrap_or(0)
+        }
+        Some(scalar) => resolve(scalar),
+    };
+    let (_, gutter) = own_box_chrome(&style);
+    let mut height = content.saturating_add(gutter);
+    if let Some(min) = style.min_height {
+        height = height.max(resolve(min));
+    }
+    if let Some(max) = style.max_height {
+        height = height.min(resolve(max));
+    }
+    height.min(terminal.1)
+}
+
 /// Resolve a scalar to cells against an axis size.
 ///
 /// `parent_size` is the parent extent on the scalar's OWN axis (what `Percent`

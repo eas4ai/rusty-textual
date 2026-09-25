@@ -205,7 +205,8 @@ fn inl_004_height_is_the_screen_auto_height_capped_at_the_terminal() {
         &[("PROBE_LINES", "60")],
         Answers::TERMINAL,
     );
-    term.wait_for("probe status", has_text("keys:"));
+    // The status line is below the visible rows by design: wait for the body.
+    term.wait_for("probe body", has_text("line 20"));
     let screen = term.settle();
     assert_block(
         &screen,

@@ -3,9 +3,8 @@
 /// Displays a live clock (HH:MM:SS) using the `Digits` widget, centered on screen.
 /// Updates every second via the tick hook.
 ///
-/// Python original runs with `app.run(inline=True)` (inline/non-fullscreen terminal
-/// mode), which Rust does not yet support. This port runs in normal full-screen mode
-/// as the closest faithful equivalent.
+/// Runs inline like the Python original (`app.run(inline=True)`): below the
+/// shell prompt, 5 lines tall with the default inline CSS.
 ///
 /// NOTE: This example is non-deterministic — it displays the live current time, which
 /// changes every second and cannot be parity-verified by plain-text snapshot comparison.
@@ -77,7 +76,12 @@ impl TextualApp for ClockApp {
 }
 
 fn main() -> textual::Result<()> {
-    run_sync(ClockApp::default())
+    let options = RunOptions {
+        inline: true,
+        ..RunOptions::default()
+    };
+    run_sync_with_options(ClockApp::default(), options)?;
+    Ok(())
 }
 
 #[cfg(test)]

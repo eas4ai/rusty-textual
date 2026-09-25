@@ -35,24 +35,31 @@ impl PlatformDriver for PosixPlatformDriver {
         );
 
         terminal::enable_raw_mode()?;
-        if let Err(err) = execute!(
-            std::io::stdout(),
-            terminal::EnterAlternateScreen,
-            cursor::Hide,
-            terminal::DisableLineWrap
-        ) {
-            restore_terminal_best_effort();
+        // Inline mode stays on the main screen and leaves line wrap as it is
+        // (Python `LinuxInlineDriver.start_application_mode`).
+        let screen = if options.inline {
+            execute!(std::io::stdout(), cursor::Hide)
+        } else {
+            execute!(
+                std::io::stdout(),
+                terminal::EnterAlternateScreen,
+                cursor::Hide,
+                terminal::DisableLineWrap
+            )
+        };
+        if let Err(err) = screen {
+            restore_terminal_best_effort(options.inline);
             return Err(err);
         }
         if options.enable_focus_change {
             if let Err(err) = execute!(std::io::stdout(), EnableFocusChange) {
-                restore_terminal_best_effort();
+                restore_terminal_best_effort(options.inline);
                 return Err(err);
             }
         }
         if options.enable_mouse {
             if let Err(err) = execute!(std::io::stdout(), EnableMouseCapture) {
-                restore_terminal_best_effort();
+                restore_terminal_best_effort(options.inline);
                 return Err(err);
             }
         }
@@ -62,7 +69,7 @@ impl PlatformDriver for PosixPlatformDriver {
             std::io::stdout(),
             crate::driver::bracketed_paste_enable_command()
         ) {
-            restore_terminal_best_effort();
+            restore_terminal_best_effort(options.inline);
             return Err(err);
         }
 
@@ -119,12 +126,16 @@ impl PlatformDriver for PosixPlatformDriver {
             std::io::stdout(),
             crate::driver::bracketed_paste_disable_command()
         ));
-        record(execute!(
-            std::io::stdout(),
-            cursor::Show,
-            terminal::EnableLineWrap,
-            terminal::LeaveAlternateScreen
-        ));
+        if options.inline {
+            record(execute!(std::io::stdout(), cursor::Show));
+        } else {
+            record(execute!(
+                std::io::stdout(),
+                cursor::Show,
+                terminal::EnableLineWrap,
+                terminal::LeaveAlternateScreen
+            ));
+        }
         record(terminal::disable_raw_mode());
 
         if let Some(err) = first_err {
@@ -218,18 +229,22 @@ pub(crate) fn detect_pointer_shapes_enabled() -> bool {
     true
 }
 
-fn restore_terminal_best_effort() {
+fn restore_terminal_best_effort(inline: bool) {
     // Best-effort subset of stop(): leave no mode behind that start() may
     // have enabled before failing (PR-15a adds bracketed paste here).
     let _ = execute!(
         std::io::stdout(),
         crate::driver::bracketed_paste_disable_command()
     );
-    let _ = execute!(
-        std::io::stdout(),
-        cursor::Show,
-        terminal::EnableLineWrap,
-        terminal::LeaveAlternateScreen
-    );
+    if inline {
+        let _ = execute!(std::io::stdout(), cursor::Show);
+    } else {
+        let _ = execute!(
+            std::io::stdout(),
+            cursor::Show,
+            terminal::EnableLineWrap,
+            terminal::LeaveAlternateScreen
+        );
+    }
     let _ = terminal::disable_raw_mode();
 }

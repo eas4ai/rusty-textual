@@ -3737,13 +3737,33 @@ impl App {
         lp: &mut LiveLoop,
         mouse: crossterm::event::MouseEvent,
     ) -> crate::Result<LoopStep> {
+        // Inline mode: positions are relative to the app's origin, and events
+        // above or left of the app are dropped (Python
+        // `Driver.process_message`). Full-screen positions pass through.
+        let origin = self.inline.as_ref().map(|state| state.origin);
+        let relative = |mouse: crossterm::event::MouseEvent| match origin {
+            None => Some(mouse),
+            Some(origin) => super::inline::app_relative((mouse.column, mouse.row), origin).map(
+                |(column, row)| crossterm::event::MouseEvent {
+                    column,
+                    row,
+                    ..mouse
+                },
+            ),
+        };
+        let Some(first) = relative(mouse) else {
+            return Ok(LoopStep::Proceed);
+        };
         // Python `App.on_event`: every mouse event refreshes
         // `App.mouse_position`.
-        self.mouse_position = (mouse.column, mouse.row);
+        self.mouse_position = (first.column, first.row);
         let mouse = if matches!(mouse.kind, MouseEventKind::Moved | MouseEventKind::Drag(_)) {
             coalesce_mouse_motion_events(mouse, &mut lp.pending_input_event)?
         } else {
             mouse
+        };
+        let Some(mouse) = relative(mouse) else {
+            return Ok(LoopStep::Proceed);
         };
         Ok(match mouse.kind {
             MouseEventKind::Moved | MouseEventKind::Drag(_) => {

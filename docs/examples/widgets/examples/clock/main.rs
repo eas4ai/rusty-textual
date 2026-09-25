@@ -74,7 +74,13 @@ impl TextualApp for ClockApp {
 }
 
 fn main() -> textual::Result<()> {
-    run_sync(ClockApp)
+    // Python `app.run(inline=True)`.
+    let options = RunOptions {
+        inline: true,
+        ..RunOptions::default()
+    };
+    run_sync_with_options(ClockApp, options)?;
+    Ok(())
 }
 
 #[cfg(test)]

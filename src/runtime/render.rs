@@ -401,6 +401,9 @@ impl App {
         dirty_regions: Option<&[DirtyRegion]>,
         layout_invalidation: bool,
     ) -> crate::Result<()> {
+        if self.inline.is_some() {
+            return self.render_tree_composed_inline(widget);
+        }
         let (width, height) = self.options.size;
         let base_style = self.theme.base.to_rich();
         let mut next = FrameBuffer::new(width, height, base_style);
@@ -429,6 +432,127 @@ impl App {
             layout_invalidation,
             layout_affected_style_change,
         )
+    }
+
+    /// Inline render path (Python `Screen._compositor_refresh`, inline
+    /// branch): size the frame to the app's inline height, lay the layers out
+    /// at that size, and redraw the whole frame from the origin.
+    fn render_tree_composed_inline(&mut self, widget: &mut dyn Widget) -> crate::Result<()> {
+        let terminal = self.inline.as_ref().map_or((0, 0), |state| state.terminal);
+        let height = self.measure_inline_height(terminal);
+        super::helpers::apply_size(
+            &mut self.options,
+            crate::driver::Size {
+                width: terminal.0,
+                height,
+            },
+        );
+        let (width, rows) = self.options.size;
+        let base_style = self.theme.base.to_rich();
+        let mut next = FrameBuffer::new(width, rows, base_style);
+        let mut has_underlay = false;
+        for layer in self.collect_visible_render_layers() {
+            // The measurement laid every layer out at the terminal size, so
+            // each is laid out again at the inline size.
+            if self
+                .render_composed_layer(layer, widget, &mut next, true, has_underlay)
+                .is_some()
+            {
+                has_underlay = true;
+            }
+        }
+        self.present_inline_frame(widget, next)
+    }
+
+    /// The app's inline height (Python `App._get_inline_height`): the
+    /// tallest inline height of the app root and every pushed screen, each
+    /// laid out at the terminal size first.
+    fn measure_inline_height(&mut self, terminal: (u16, u16)) -> u16 {
+        let layers: Vec<CompositedLayer> = std::iter::once(CompositedLayer::AppRoot)
+            .chain((0..self.screen_stack.len()).map(CompositedLayer::Screen))
+            .collect();
+        let mut height = 0;
+        for layer in layers {
+            let screen_stylesheet = match layer {
+                CompositedLayer::AppRoot => None,
+                CompositedLayer::Screen(index) => self
+                    .screen_stack
+                    .get(index)
+                    .and_then(|entry| entry.stylesheet.as_ref()),
+            };
+            let sheet = self.stylesheet_for_layer(screen_stylesheet);
+            let _style_guard = set_style_context(sheet);
+            begin_style_render_pass();
+            let tree = match layer {
+                CompositedLayer::AppRoot => self.widget_tree.as_mut(),
+                CompositedLayer::Screen(index) => self
+                    .screen_stack
+                    .get_mut(index)
+                    .map(|entry| &mut entry.widget_tree),
+            };
+            let Some(tree) = tree else {
+                continue;
+            };
+            run_layout_pass(tree, terminal);
+            height = height.max(crate::layout::inline_height(tree, terminal));
+        }
+        height
+    }
+
+    /// Write an inline frame (Python `InlineUpdate` and `App._display`): the
+    /// whole frame from the origin, erasing below it when it got shorter,
+    /// then back to the origin; then ask the terminal where the origin is,
+    /// for mouse coordinates. A resize first erases the display.
+    fn present_inline_frame(
+        &mut self,
+        widget: &mut dyn Widget,
+        mut next: FrameBuffer,
+    ) -> crate::Result<()> {
+        next.preblend_dim();
+        let rows = next.height;
+        let mut resized = false;
+        let mut clear = false;
+        if let Some(state) = &mut self.inline {
+            resized = std::mem::take(&mut state.resized);
+            clear = state
+                .previous_height
+                .is_some_and(|previous| usize::from(previous) > rows);
+            state.previous_height = Some(rows.to_u16_sat());
+        }
+        if !self.headless && rows > 0 {
+            if resized {
+                self.console.write_str(super::inline::ERASE_DISPLAY)?;
+            }
+            self.console
+                .print_segments(&next.row_segments(super::inline::ROW_BREAK))?;
+            self.console
+                .write_str(&super::inline::frame_tail(rows, clear))?;
+            self.query_inline_origin();
+        }
+        self.resized_since_last_render = false;
+        self.clear_on_next_render = false;
+        self.hit_test = HitTestMap::from_frame(&next);
+        Self::apply_layout_info(widget, &self.hit_test);
+        self.frame = next;
+        Ok(())
+    }
+
+    /// Ask the terminal where the cursor, now at the app's origin, is. A
+    /// terminal that does not answer is not asked again.
+    fn query_inline_origin(&mut self) {
+        let Some(state) = &mut self.inline else {
+            return;
+        };
+        if !state.cursor_reports {
+            return;
+        }
+        match crossterm::cursor::position() {
+            Ok(origin) => state.origin = Some(origin),
+            Err(error) => {
+                state.cursor_reports = false;
+                debug_render(&format!("[inline] no cursor position report: {error}"));
+            }
+        }
     }
 
     /// Render one composited layer (the app root or a screen) into `next`.

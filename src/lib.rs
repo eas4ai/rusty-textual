@@ -53,10 +53,10 @@ pub use runtime::{App, DomQuery, DomQueryMut, ScreenRef, TimerHandle, TimerTick}
 pub use screen::{Screen, ScreenMessageCtx, ScreenResult, ScreenResultCallback, ScreenStack};
 pub use style::{Color, Style, Theme};
 pub use textual_app::{
-    OverlayScreenStack, TextualApp, run, run_snapshot, run_snapshot_with_output, run_sync,
-    run_sync_snapshot, run_sync_snapshot_with_output, run_sync_with_output, run_test,
-    run_test_sized, run_textual_app, run_textual_app_or_snapshot,
-    run_textual_app_or_snapshot_with_output, run_textual_app_with_output,
+    OverlayScreenStack, RunOptions, TextualApp, run, run_snapshot, run_snapshot_with_output,
+    run_sync, run_sync_snapshot, run_sync_snapshot_with_output, run_sync_with_options,
+    run_sync_with_output, run_test, run_test_sized, run_textual_app, run_textual_app_or_snapshot,
+    run_textual_app_or_snapshot_with_output, run_textual_app_with_output, run_with_options,
 };
 pub use textual_macros::Reactive;
 pub use textual_macros::on;
@@ -118,10 +118,11 @@ pub mod prelude {
     pub use crate::runtime::Pilot;
     pub use crate::style::{Color, Style, TextAlign, Theme};
     pub use crate::textual_app::{
-        OverlayScreenStack, TextualApp, run, run_snapshot, run_snapshot_with_output, run_sync,
-        run_sync_snapshot, run_sync_snapshot_with_output, run_sync_with_output, run_test,
-        run_test_sized, run_textual_app, run_textual_app_or_snapshot,
-        run_textual_app_or_snapshot_with_output, run_textual_app_with_output,
+        OverlayScreenStack, RunOptions, TextualApp, run, run_snapshot, run_snapshot_with_output,
+        run_sync, run_sync_snapshot, run_sync_snapshot_with_output, run_sync_with_options,
+        run_sync_with_output, run_test, run_test_sized, run_textual_app,
+        run_textual_app_or_snapshot, run_textual_app_or_snapshot_with_output,
+        run_textual_app_with_output, run_with_options,
     };
     pub use crate::theme::{NamedTheme, available_theme_names, get_theme, register_theme};
     pub use crate::validation::{
