@@ -5,6 +5,8 @@
 
 use std::io;
 
+#[cfg(target_os = "linux")]
+mod hangup;
 mod platform;
 
 pub use platform::CapabilityProfile;
@@ -96,6 +98,9 @@ pub struct TerminalDriver {
     capabilities: CapabilityProfile,
     negotiated: negotiate::NegotiatedModes,
     platform: Box<dyn platform::PlatformDriver>,
+    /// Runs while the driver is started; see [`hangup`].
+    #[cfg(target_os = "linux")]
+    hangup_watch: Option<hangup::HangupWatch>,
 }
 
 impl TerminalDriver {
@@ -116,6 +121,8 @@ impl TerminalDriver {
             capabilities: platform::capability_profile(),
             negotiated: negotiate::NegotiatedModes::default(),
             platform,
+            #[cfg(target_os = "linux")]
+            hangup_watch: None,
         })
     }
 
@@ -175,6 +182,12 @@ impl TerminalDriver {
         self.keyboard_enhanced = keyboard_enhanced;
         self.negotiated = negotiated;
         self.started = true;
+        // Best effort: without the watch, a terminal that closes without a
+        // SIGHUP leaves the process spinning inside crossterm (see `hangup`).
+        #[cfg(target_os = "linux")]
+        {
+            self.hangup_watch = hangup::HangupWatch::start().ok();
+        }
         Ok(())
     }
 
@@ -189,6 +202,10 @@ impl TerminalDriver {
     pub fn stop(&mut self) -> io::Result<()> {
         if !self.started {
             return Ok(());
+        }
+        #[cfg(target_os = "linux")]
+        {
+            self.hangup_watch = None;
         }
         let result = self.platform.stop(self.options, self.keyboard_enhanced);
         self.keyboard_enhanced = false;

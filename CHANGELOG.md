@@ -56,6 +56,13 @@ until the API stabilizes.
   app-action hooks (for example `ctx.animate_style` in a `TextualApp` key
   handler) now run. They were dropped unless the hook marked the event
   handled.
+- On Linux, an app whose terminal closes without a SIGHUP (for example one
+  with no controlling terminal) now exits instead of spinning at 100% CPU.
+  crossterm's input loop never returns once the terminal hangs up
+  (crossterm-rs/crossterm#793); a watchdog thread now waits for the hang-up
+  and raises SIGHUP, as the terminal would for its controlling process.
+  macOS and the BSDs are not covered: their `poll(2)` cannot watch a
+  terminal.
 
 ## [1.1.0] - 2026-07-16
 

@@ -44,12 +44,21 @@ textual-macros = { version = "1.1.0", path = "textual-macros" }
 pulldown-cmark = "0.13"
 tracing = { version = "0.1", optional = true }
 
+# The terminal hang-up watchdog (`src/driver/hangup.rs`). rustix 0.38 is
+# already in the dependency tree via crossterm, so this only adds features.
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "0.38", default-features = false, features = ["std", "event", "pipe", "process"] }
+
 [dev-dependencies]
 insta = { version = "1.41", features = ["glob"] }
 similar = "2"
 portable-pty = "0.9"
 serde_json = "1"
 vt100 = "0.15"
+
+# Pseudo-terminal pairs for the hang-up watchdog tests.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+rustix = { version = "0.38", default-features = false, features = ["std", "fs", "pty"] }
 
 [features]
 default = []
