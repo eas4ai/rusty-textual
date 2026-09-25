@@ -1805,8 +1805,13 @@ fn ensure_examples_built() {
 
         // The docs examples live in a separate workspace (docs/examples/) with
         // its own target dir; build them too so `docs_*` parity cases can run.
+        // `--target-dir` puts them where this file and visual_parity run them,
+        // whatever CARGO_TARGET_DIR or a cargo config's build.target-dir says.
+        let docs_target = repo_root().join("docs/examples/target");
         let docs_status = std::process::Command::new(&cargo)
             .args(["build", "--workspace", "--examples", "--keep-going"])
+            .arg("--target-dir")
+            .arg(&docs_target)
             .current_dir(repo_root().join("docs/examples"))
             .status()
             .expect("failed to spawn docs/examples build");
