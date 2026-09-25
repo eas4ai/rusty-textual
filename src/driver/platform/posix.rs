@@ -82,10 +82,12 @@ impl PlatformDriver for PosixPlatformDriver {
             false
         };
 
-        // Synchronous mode negotiation (PR-15b): bounded DECRQM round-trips
-        // before the input loop owns stdin. Never enables in-band resize
-        // (its reports are unparseable through crossterm) — records support
-        // only. Skipped entirely when piped or on Apple Terminal (SYNC).
+        // Synchronous mode negotiation (PR-15b): one bounded DECRQM exchange
+        // before the input loop owns stdin, read by the driver itself so no
+        // reply reaches crossterm (see `driver::live`). Linux only; skipped
+        // when piped, on Apple Terminal (SYNC) and on other Unix systems.
+        // Never enables in-band resize (its reports are unparseable through
+        // crossterm) — records support only.
         let negotiated = crate::driver::live::negotiate_live();
 
         Ok((keyboard_enhanced, negotiated))

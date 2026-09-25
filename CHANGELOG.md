@@ -63,6 +63,14 @@ until the API stabilizes.
   and raises SIGHUP, as the terminal would for its controlling process.
   macOS and the BSDs are not covered: their `poll(2)` cannot watch a
   terminal.
+- An app no longer freezes at startup in a terminal that answers the
+  synchronized-output and in-band-resize mode queries (DECRQM). The driver
+  waited for the reply through crossterm, which read the reply, could not
+  parse it, and then swallowed every later key. On Linux the driver now
+  reads the replies itself, fenced by a device attributes query so a late
+  reply is still consumed; startup takes one round trip instead of two.
+  macOS and the BSDs no longer send the queries (synchronized output stays
+  off there); Windows is unchanged.
 
 ## [1.1.0] - 2026-07-16
 
