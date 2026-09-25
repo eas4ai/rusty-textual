@@ -460,7 +460,7 @@ impl FrameBuffer {
         assert_eq!(self.height, previous.height, "buffer heights differ");
 
         let mut out = Segments::new();
-        // violating example: no home move
+        out.push(Segment::control(rich_rs::ControlType::Home));
 
         for y in 0..self.height {
             let mut x: usize = 0;
