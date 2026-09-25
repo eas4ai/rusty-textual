@@ -138,7 +138,7 @@ items now have no home outside Git history. Each was re-checked in code.
 
 | Item | Status | Citation |
 |---|---|---|
-| Inline terminal render mode (`run(inline=True)`): no inline region, alt-screen suppression or height clamp. | Exists (still missing) | No inline render path in `src/driver/`; only the `:inline` CSS pseudo flag (`src/runtime/mod.rs:728`) |
+| Inline terminal render mode (`run(inline=True)`): no inline region, alt-screen suppression or height clamp. | Exists (implemented 2026-09-25) | Was missing at the recon (no inline path in `src/driver/`; only the `:inline` CSS pseudo flag). Implemented under the Sudus commitment `inline-render-mode` (`docs/spec/inline.md`): `src/runtime/inline.rs`, the inline branch of `src/runtime/render.rs`, `RunOptions` in `src/textual_app.rs` |
 | OS-level SIGCONT resume: no `SignalResume` handling, so `suspend_process` never publishes a resume. | Exists (still missing) | No `SIGCONT`/`SignalResume` in `src/`; `SIGTSTP` only (`src/runtime/mod.rs:892,2633`) |
 | DataTable `--header-cursor` / `--fixed-cursor` classes are declared but not consumed by render. | Exists (still missing) | Declared only in `component_classes` (`src/widgets/data_table.rs:2301,2303`) |
 | `loading` is not consulted by the focus chain or hit-test. | Exists (still missing) | Focus chain checks `disabled` only (`src/runtime/helpers.rs:246,291`) |

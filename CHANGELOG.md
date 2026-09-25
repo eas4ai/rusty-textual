@@ -7,6 +7,25 @@ until the API stabilizes.
 
 ## [Unreleased]
 
+### Added
+
+- Inline mode (Python `App.run(inline=True)`): `run_sync_with_options` /
+  `run_with_options` with `RunOptions { inline, inline_no_clear }` run an
+  app below the shell prompt on the terminal's main screen instead of the
+  alternate screen. The app is as tall as its screen's `Screen:inline` rules
+  make it (content plus the default top and bottom borders), redrawn with
+  relative cursor moves so the shell output above it stays; mouse
+  coordinates are relative to the app. On exit the app is erased, or with
+  `inline_no_clear` its last frame stays. `TextualApp::inline_padding`
+  (Python `INLINE_PADDING`, default 1) sets the blank lines above it, and
+  `App::is_inline` reports the mode. Unix only: on Windows the app runs
+  full-screen, as in Python, and suspending an inline app is refused, as in
+  Python. The `how-to/inline01`, `how-to/inline02` and `widgets/clock`
+  examples now run inline, and inline02 carries its `Screen:inline` rule.
+- `DriverOptions::inline` and `TerminalDriver::set_inline`. `DriverOptions`
+  gained a field: code that builds it with a struct literal needs
+  `..DriverOptions::default()`.
+
 ### Changed
 
 - Strict clippy (`clippy::pedantic`) is on. 859 public functions and

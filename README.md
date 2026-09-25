@@ -83,6 +83,18 @@ tools/run-doc-example.sh widgets buttons       # button states, variants, focus
 tools/run-doc-example.sh widgets data_table    # sortable, keyboard-driven table
 ```
 
+### Run inline
+
+Like Python's `app.run(inline=True)`, an app can run below the shell prompt
+instead of taking over the screen. Unix only: on Windows it runs full-screen.
+
+```rust
+let options = RunOptions { inline: true, ..RunOptions::default() };
+run_sync_with_options(QuestionApp { reply: None }, options)?;
+```
+
+`tools/run-doc-example.sh how-to inline01` shows an inline clock.
+
 ## Reactive state
 
 Declare state as reactive fields and watchers run automatically whenever a value
