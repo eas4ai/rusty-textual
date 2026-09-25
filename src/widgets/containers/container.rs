@@ -8,6 +8,7 @@ use crate::css;
 use crate::debug::DebugLayout;
 use crate::event::Event;
 use crate::message::{MessageEvent, ScrollbarAxis, ScrollbarScrollTo};
+use crate::num::Cast;
 use crate::style::Overflow;
 use crate::widgets::{NodeSeed, Widget, helpers::apply_debug_box, scrollbar_max_offset};
 
@@ -23,7 +24,7 @@ fn clamp_offset_f32(offset: f32, content_len: usize, viewport_len: usize) -> f32
     if !offset.is_finite() {
         return 0.0;
     }
-    let max = scrollbar_max_offset(content_len.max(1), viewport_len.max(1)) as f32;
+    let max = scrollbar_max_offset(content_len.max(1), viewport_len.max(1)).to_f32_lossy();
     offset.clamp(0.0, max)
 }
 
@@ -36,7 +37,7 @@ pub struct Container {
     border_title: Option<String>,
     /// Optional text drawn on the bottom border (Python `widget.border_subtitle`).
     border_subtitle: Option<String>,
-    /// (index into `children`, css_id, classes) recorded by `with_compose` so
+    /// (index into `children`, `css_id`, classes) recorded by `with_compose` so
     /// `.with_id()`/`.with_classes()` metadata on declared children reaches the
     /// mounted node.
     child_decl_meta: Vec<crate::widgets::ChildDeclMeta>,
@@ -81,6 +82,7 @@ impl Default for Container {
 impl Container {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             children: Vec::new(),
@@ -158,21 +160,24 @@ impl Container {
             ScrollbarAxis::Vertical => self.offset_y = offset,
         }
         self.clamp_offsets();
-        self.offset_x != before_x || self.offset_y != before_y
+        super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y))
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(Box::new(child));
         self
     }
 
     /// Set the text rendered on the top border (Python `widget.border_title`).
+    #[must_use]
     pub fn with_border_title(mut self, title: impl Into<String>) -> Self {
         self.border_title = Some(title.into());
         self
     }
 
     /// Set the text rendered on the bottom border (Python `widget.border_subtitle`).
+    #[must_use]
     pub fn with_border_subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.border_subtitle = Some(subtitle.into());
         self
@@ -183,6 +188,7 @@ impl Container {
     /// Preserves each `ChildDecl`'s `id`/`classes` (so CSS id/class selectors
     /// match the mounted nodes) and any `handle_sink` bound via
     /// `HandleSlot::bind`, mirroring `App::mount_declarations`.
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         for decl in children {
             let crate::compose::ChildDecl {
@@ -219,7 +225,7 @@ impl Container {
         &mut self.children
     }
 
-    /// Mutable access to the pre-mount `NodeSeed` (css_id, classes, inline styles).
+    /// Mutable access to the pre-mount `NodeSeed` (`css_id`, classes, inline styles).
     ///
     /// Valid until the widget is mounted into the arena tree; after mount the
     /// node record is the single source of truth and seed changes have no effect.
@@ -275,40 +281,41 @@ impl crate::widgets::Interactive for Container {
                 self.offset_y = scrollbar_max_offset(
                     self.content_height.load(Ordering::Relaxed).max(1),
                     self.viewport_height.load(Ordering::Relaxed).max(1),
-                ) as f32;
+                )
+                .to_f32_lossy();
             }
             crate::event::Action::ScrollUp => {
-                self.offset_y = (self.offset_y - self.scroll_step_y as f32).max(0.0);
+                self.offset_y = (self.offset_y - self.scroll_step_y.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollDown => {
-                self.offset_y += self.scroll_step_y as f32;
+                self.offset_y += self.scroll_step_y.to_f32_lossy();
             }
             crate::event::Action::ScrollPageUp => {
                 let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                self.offset_y = (self.offset_y - page as f32).max(0.0);
+                self.offset_y = (self.offset_y - page.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollPageDown => {
                 let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                self.offset_y += page as f32;
+                self.offset_y += page.to_f32_lossy();
             }
             crate::event::Action::ScrollLeft => {
-                self.offset_x = (self.offset_x - self.scroll_step_x as f32).max(0.0);
+                self.offset_x = (self.offset_x - self.scroll_step_x.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollRight => {
-                self.offset_x += self.scroll_step_x as f32;
+                self.offset_x += self.scroll_step_x.to_f32_lossy();
             }
             crate::event::Action::ScrollPageLeft => {
                 let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                self.offset_x = (self.offset_x - page as f32).max(0.0);
+                self.offset_x = (self.offset_x - page.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollPageRight => {
                 let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                self.offset_x += page as f32;
+                self.offset_x += page.to_f32_lossy();
             }
             _ => return,
         }
         self.clamp_offsets();
-        if self.offset_x != before_x || self.offset_y != before_y {
+        if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {
             ctx.request_layout_invalidation();
             ctx.set_handled();
         }
@@ -375,10 +382,10 @@ impl crate::widgets::Layout for Container {
     }
 
     fn style(&self) -> Option<crate::style::Style> {
-        if self.seed.styles.style != Default::default() {
-            Some(self.seed.styles.style.clone())
-        } else {
+        if self.seed.styles.style == crate::style::Style::default() {
             None
+        } else {
+            Some(self.seed.styles.style.clone())
         }
     }
 }
@@ -391,13 +398,17 @@ impl crate::widgets::Scrollable for Container {
         let before_x = self.offset_x;
         let before_y = self.offset_y;
         if delta_y != 0 && self.scrollable_y() {
-            self.offset_y += delta_y.saturating_mul(self.scroll_step_y as i32) as f32;
+            self.offset_y += delta_y
+                .saturating_mul(self.scroll_step_y.to_i32_sat())
+                .to_f32_lossy();
         }
         if delta_x != 0 && self.scrollable_x() {
-            self.offset_x += delta_x.saturating_mul(self.scroll_step_x as i32) as f32;
+            self.offset_x += delta_x
+                .saturating_mul(self.scroll_step_x.to_i32_sat())
+                .to_f32_lossy();
         }
         self.clamp_offsets();
-        if self.offset_x != before_x || self.offset_y != before_y {
+        if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {
             ctx.request_layout_invalidation();
             ctx.set_handled();
         }
@@ -405,7 +416,7 @@ impl crate::widgets::Scrollable for Container {
 
     fn scroll_offset(&self) -> (usize, usize) {
         let (x, y) = crate::widgets::Scrollable::scroll_offset_f32(self);
-        (x.round() as usize, y.round() as usize)
+        (x.round().to_usize_sat(), y.round().to_usize_sat())
     }
 
     fn scroll_offset_f32(&self) -> (f32, f32) {

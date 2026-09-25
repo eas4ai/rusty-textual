@@ -16,7 +16,7 @@
 use rich_rs::Table;
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -25,7 +25,7 @@ OptionList {
     width: 70%;
     height: 80%;
 }
-"#;
+";
 
 const COLONIES: &[(&str, &str, &str, &str)] = &[
     ("Aerilon", "Demeter", "1.2 Billion", "Gaoth"),
@@ -120,7 +120,10 @@ mod tests {
         let text: String = segs.iter().map(|s| s.text.as_ref()).collect();
         assert!(text.contains("Patron God"), "missing 'Patron God' header");
         assert!(text.contains("Population"), "missing 'Population' header");
-        assert!(text.contains("Capital City"), "missing 'Capital City' header");
+        assert!(
+            text.contains("Capital City"),
+            "missing 'Capital City' header"
+        );
     }
 
     #[test]

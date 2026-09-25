@@ -5,7 +5,7 @@
 /// `Box` is a `Placeholder` subclass with fixed 16×8 dimensions.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 .with-border {
     border: heavy green;
     height: auto;
@@ -16,7 +16,7 @@ const CSS: &str = r#"
     width: 16;
     height: 8;
 }
-"#;
+";
 
 struct ContainerApp;
 

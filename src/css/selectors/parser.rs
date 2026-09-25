@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::num::Cast;
 use crate::style::{
     Align, BorderEdge, BorderType, BoxSizing, Constrain, ContentAlign, Display, Dock, Hatch,
     HorizontalAlign, Keyline, KeylineType, Layout, Margin, Offset, OffsetValue, Overflow,
@@ -28,6 +29,7 @@ struct CssParseIssue {
 }
 
 impl StyleSheet {
+    #[must_use]
     pub fn parse(input: &str) -> Self {
         let (sheet, issues) = parse_with_issues(input);
         emit_parse_issues(&issues);
@@ -138,7 +140,7 @@ fn parse_rule_block(
     let split = split_block_body(body, base_offset, source, issues);
     let style = parse_style_body(&split.declarations);
     if !style.is_empty() {
-        append_style_rules(sheet, selectors, style, issues, base_offset, source);
+        append_style_rules(sheet, selectors, &style, issues, base_offset, source);
     }
 
     for nested in split.nested_rules {
@@ -175,7 +177,7 @@ fn parse_rule_block(
 fn append_style_rules(
     sheet: &mut StyleSheet,
     selectors: &[String],
-    style: Style,
+    style: &Style,
     issues: &mut Vec<CssParseIssue>,
     base_offset: usize,
     source: &str,
@@ -563,6 +565,7 @@ fn strip_important(value: &str) -> (&str, bool) {
 /// Map a CSS property key to the [`StyleProperty`] variants it affects.
 ///
 /// Returns an empty slice for unknown keys.
+#[allow(clippy::too_many_lines)] // One arm per CSS property.
 fn importance_properties_for_key(key: &str) -> &'static [StyleProperty] {
     match key {
         "fg" | "color" => &[StyleProperty::Fg],
@@ -573,7 +576,7 @@ fn importance_properties_for_key(key: &str) -> &'static [StyleProperty] {
         "max-width" => &[StyleProperty::MaxWidth],
         "min-height" => &[StyleProperty::MinHeight],
         "max-height" => &[StyleProperty::MaxHeight],
-        "padding" => &[StyleProperty::Padding],
+        "padding" | "line-pad" => &[StyleProperty::Padding],
         "layout" => &[StyleProperty::Layout],
         "display" => &[StyleProperty::Display],
         "visibility" => &[StyleProperty::Visibility],
@@ -594,7 +597,6 @@ fn importance_properties_for_key(key: &str) -> &'static [StyleProperty] {
         "background-tint" => &[StyleProperty::BackgroundTint],
         "text-opacity" => &[StyleProperty::TextOpacity],
         "opacity" => &[StyleProperty::Opacity],
-        "line-pad" => &[StyleProperty::Padding],
         "transition-duration" => &[StyleProperty::TransitionDuration],
         "transition-delay" => &[StyleProperty::TransitionDelay],
         "transition-timing-function" => &[StyleProperty::TransitionTiming],
@@ -691,6 +693,7 @@ fn importance_properties_for_key(key: &str) -> &'static [StyleProperty] {
 
 /// Reset any `Option<T>` CSS property to `None` (the `initial` keyword).
 /// Returns `true` if the property was recognized and reset.
+#[allow(clippy::too_many_lines)] // One arm per CSS property; splitting would scatter the table.
 fn apply_initial(style: &mut Style, key: &str, is_important: bool) -> bool {
     macro_rules! reset {
         ($field:ident, $prop:expr) => {{
@@ -909,6 +912,7 @@ fn apply_initial(style: &mut Style, key: &str, is_important: bool) -> bool {
     }
 }
 
+#[allow(clippy::too_many_lines)] // One arm per CSS property; splitting would scatter the table.
 pub(super) fn parse_style_body(body: &str) -> Style {
     let mut style = Style::new();
     for decl in body.split(';') {
@@ -935,7 +939,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                     style = style.fg_auto(auto);
                 } else if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style = style.fg(color);
@@ -944,7 +948,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
             "bg" | "background" => {
                 if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style = style.bg(color);
@@ -1095,24 +1099,24 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                     }
                     // Try to extract a property name (first non-duration/non-timing token).
                     let mut prop_name: Option<String> = None;
-                    let mut dur: Option<std::time::Duration> = None;
-                    let mut del: Option<std::time::Duration> = None;
-                    let mut tim: Option<TransitionTiming> = None;
+                    let mut explicit_duration: Option<std::time::Duration> = None;
+                    let mut explicit_delay: Option<std::time::Duration> = None;
+                    let mut explicit_timing: Option<TransitionTiming> = None;
                     for token in item.split_whitespace() {
-                        if dur.is_none() {
+                        if explicit_duration.is_none() {
                             if let Some(d) = parse_duration(token) {
-                                dur = Some(d);
+                                explicit_duration = Some(d);
                                 continue;
                             }
-                        } else if del.is_none() {
+                        } else if explicit_delay.is_none() {
                             if let Some(d) = parse_duration(token) {
-                                del = Some(d);
+                                explicit_delay = Some(d);
                                 continue;
                             }
                         }
-                        if tim.is_none() {
+                        if explicit_timing.is_none() {
                             if let Some(t) = parse_transition_timing(token) {
-                                tim = Some(t);
+                                explicit_timing = Some(t);
                                 continue;
                             }
                         }
@@ -1120,9 +1124,10 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                             prop_name = Some(token.to_string());
                         }
                     }
-                    let duration = dur.unwrap_or(std::time::Duration::from_millis(250));
-                    let timing = tim.unwrap_or(TransitionTiming::Linear);
-                    let delay = del.unwrap_or(std::time::Duration::ZERO);
+                    let duration =
+                        explicit_duration.unwrap_or(std::time::Duration::from_millis(250));
+                    let timing = explicit_timing.unwrap_or(TransitionTiming::Linear);
+                    let delay = explicit_delay.unwrap_or(std::time::Duration::ZERO);
                     if let Some(name) = prop_name {
                         per_property.push(PropertyTransition {
                             property: name,
@@ -1134,19 +1139,19 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                     // First item: set global transition fields only for values
                     // explicitly present in the declaration (backward compat).
                     if idx == 0 {
-                        if let Some(d) = dur {
+                        if let Some(d) = explicit_duration {
                             style = style.transition_duration(d);
                             if is_important {
                                 style.importance.set(StyleProperty::TransitionDuration);
                             }
                         }
-                        if let Some(d) = del {
+                        if let Some(d) = explicit_delay {
                             style = style.transition_delay(d);
                             if is_important {
                                 style.importance.set(StyleProperty::TransitionDelay);
                             }
                         }
-                        if let Some(t) = tim {
+                        if let Some(t) = explicit_timing {
                             style = style.transition_timing(t);
                             if is_important {
                                 style.importance.set(StyleProperty::TransitionTiming);
@@ -1237,14 +1242,14 @@ pub(super) fn parse_style_body(body: &str) -> Style {
             "grid-columns" => {
                 let parsed: Vec<Option<Scalar>> =
                     value.split_whitespace().map(parse_scalar).collect();
-                if !parsed.is_empty() && parsed.iter().all(|s| s.is_some()) {
+                if !parsed.is_empty() && parsed.iter().all(std::option::Option::is_some) {
                     style.grid_columns = Some(parsed.into_iter().map(|s| s.unwrap()).collect());
                 }
             }
             "grid-rows" => {
                 let parsed: Vec<Option<Scalar>> =
                     value.split_whitespace().map(parse_scalar).collect();
-                if !parsed.is_empty() && parsed.iter().all(|s| s.is_some()) {
+                if !parsed.is_empty() && parsed.iter().all(std::option::Option::is_some) {
                     style.grid_rows = Some(parsed.into_iter().map(|s| s.unwrap()).collect());
                 }
             }
@@ -1286,7 +1291,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                 let names: Vec<String> = value
                     .split_whitespace()
                     .filter(|t| !t.is_empty())
-                    .map(|t| t.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect();
                 if !names.is_empty() {
                     style.layers = Some(names);
@@ -1633,7 +1638,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
                 }
                 if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style.link_color = Some(color);
@@ -1642,7 +1647,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
             "link-background" => {
                 if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style.link_background = Some(color);
@@ -1654,7 +1659,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
             "link-color-hover" => {
                 if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style.link_color_hover = Some(color);
@@ -1663,7 +1668,7 @@ pub(super) fn parse_style_body(body: &str) -> Style {
             "link-background-hover" => {
                 if let Some((color, alpha)) = parse_color_like_with_alpha(value) {
                     let color = match alpha {
-                        Some(p) => color.with_alpha(p as f32 / 100.0),
+                        Some(p) => color.with_alpha(f32::from(p) / 100.0),
                         None => color,
                     };
                     style.link_background_hover = Some(color);
@@ -1800,7 +1805,7 @@ fn parse_spacing(value: &str) -> Option<crate::style::Spacing> {
 /// Returns `None` if any token is invalid — Python raises a declaration error
 /// here; this parser's convention for invalid declaration values is "drop the
 /// declaration" (cf. `transition-duration`, this file), plus a style-debug log
-/// so the failure is observable via TEXTUAL_DEBUG_STYLE_FILE.
+/// so the failure is observable via `TEXTUAL_DEBUG_STYLE_FILE`.
 fn parse_border_value(value: &str) -> Option<BorderEdge> {
     let value = value.trim();
     if value.is_empty() {
@@ -1844,7 +1849,7 @@ fn parse_border_value(value: &str) -> Option<BorderEdge> {
     let border_type = border_type.unwrap_or(BorderType::Solid);
     let mut color = color.unwrap_or(crate::style::Color::rgb(0, 255, 0));
     if let Some(p) = alpha_percent {
-        color = color.with_alpha(p as f32 / 100.0);
+        color = color.with_alpha(f32::from(p) / 100.0);
     }
     Some(BorderEdge::Edge { border_type, color })
 }
@@ -1954,9 +1959,9 @@ fn parse_opacity_percent(value: &str) -> Option<u8> {
         return Some(0);
     }
     if value > 1.0 {
-        return Some((value.round() as i32).clamp(0, 100) as u8);
+        return Some(value.round().to_i32_sat().clamp(0, 100).to_u8_sat());
     }
-    Some((value * 100.0).round().clamp(0.0, 100.0) as u8)
+    Some((value * 100.0).round().clamp(0.0, 100.0).to_u8_sat())
 }
 
 /// Parse a single transition shorthand item (backward-compat helper).
@@ -2368,12 +2373,12 @@ fn apply_text_style_flag(style: &mut Style, flag: &str, value: bool, is_importan
 pub(super) fn parse_transition_timing(value: &str) -> Option<TransitionTiming> {
     match value.trim().to_lowercase().as_str() {
         "linear" => Some(TransitionTiming::Linear),
-        "ease" | "ease-in-out" => Some(TransitionTiming::InOutCubic),
-        "ease-out" => Some(TransitionTiming::OutCubic),
+        "ease" | "ease-in-out" | "in-out-cubic" | "in_out_cubic" => {
+            Some(TransitionTiming::InOutCubic)
+        }
+        "ease-out" | "out-cubic" | "out_cubic" => Some(TransitionTiming::OutCubic),
         "none" => Some(TransitionTiming::None),
         "round" | "step-end" | "steps(1,end)" => Some(TransitionTiming::Round),
-        "in-out-cubic" | "in_out_cubic" => Some(TransitionTiming::InOutCubic),
-        "out-cubic" | "out_cubic" => Some(TransitionTiming::OutCubic),
         _ => None,
     }
 }
@@ -2438,7 +2443,7 @@ mod tests {
         // The whole nesting02-style block must parse to the same rule set as
         // the equivalent flat (nesting01-style) stylesheet.
         let nested = StyleSheet::parse(
-            r#"
+            r"
             #questions {
                 border: heavy red;
                 .button {
@@ -2447,15 +2452,15 @@ mod tests {
                     &.negative { border: heavy blue; }
                 }
             }
-            "#,
+            ",
         );
         let flat = StyleSheet::parse(
-            r#"
+            r"
             #questions { border: heavy red; }
             #questions .button { width: 1fr; }
             #questions .button.affirmative { border: heavy green; }
             #questions .button.negative { border: heavy blue; }
-            "#,
+            ",
         );
         assert_eq!(
             nested.rules.len(),
@@ -3316,14 +3321,14 @@ mod tests {
     #[test]
     fn parse_stylesheet_with_alignment_properties() {
         use super::super::ast::StyleSheet;
-        let css = r#"
+        let css = r"
             Screen {
                 align: center middle;
                 content-align: right bottom;
                 text-align: justify;
                 offset: 3 -1;
             }
-        "#;
+        ";
         let sheet = StyleSheet::parse(css);
         assert_eq!(sheet.rules.len(), 1);
         let style = &sheet.rules[0].style;
@@ -3514,7 +3519,7 @@ mod tests {
     #[test]
     fn parse_markdown_fence_dark_defaults() {
         use super::super::ast::StyleSheet;
-        let css = r#"MarkdownFence { color: rgb(210, 210, 210); background: black 10%; }"#;
+        let css = r"MarkdownFence { color: rgb(210, 210, 210); background: black 10%; }";
         let sheet = StyleSheet::parse(css);
         assert_eq!(sheet.rules.len(), 1);
         let s = &sheet.rules[0].style;
@@ -3667,7 +3672,7 @@ mod tests {
 
     #[test]
     fn parse_nested_amp_and_descendant_rules() {
-        let css = r#"
+        let css = r"
         Screen {
             color: red;
             &.active {
@@ -3677,7 +3682,7 @@ mod tests {
                 underline: true;
             }
         }
-        "#;
+        ";
         let (sheet, issues) = parse_with_issues(css);
         assert!(issues.is_empty(), "unexpected parse issues: {issues:?}");
         assert_eq!(sheet.rules.len(), 3);
@@ -3693,13 +3698,13 @@ mod tests {
 
     #[test]
     fn parse_nested_selector_groups_cartesian_expansion() {
-        let css = r#"
+        let css = r"
         Label, Button {
             &.foo, &.bar {
                 bold: true;
             }
         }
-        "#;
+        ";
         let (sheet, issues) = parse_with_issues(css);
         assert!(issues.is_empty(), "unexpected parse issues: {issues:?}");
         let selectors: Vec<String> = sheet
@@ -3795,12 +3800,12 @@ mod tests {
 
     #[test]
     fn parse_unsupported_at_rule_records_issue() {
-        let css = r#"
+        let css = r"
         @media (max-width: 20) {
             Label { color: red; }
         }
         Label { underline: true; }
-        "#;
+        ";
         let (sheet, issues) = parse_with_issues(css);
         assert!(
             issues

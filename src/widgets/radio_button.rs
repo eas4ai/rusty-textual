@@ -2,17 +2,17 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 
 use crate::event::Event;
-use crate::message::*;
+use crate::message::RadioButtonChanged;
 
 use super::{NodeSeed, Widget, option_list::toggle_option::BinaryToggleState};
 
 /// A radio button widget that represents a boolean on/off value.
 ///
-/// RadioButton is very similar to Checkbox but uses radio semantics:
+/// `RadioButton` is very similar to Checkbox but uses radio semantics:
 /// - Circle glyph (`●` / `○`) instead of checkbox marks
 /// - Typically used inside a `RadioSet` for mutual exclusion
 ///
-/// On its own a RadioButton can be toggled freely. When placed inside a
+/// On its own a `RadioButton` can be toggled freely. When placed inside a
 /// `RadioSet`, the set enforces that only one button is selected at a time.
 #[derive(Debug, Clone)]
 #[widget(Focus, Interactive, Layout, Components)]
@@ -50,6 +50,7 @@ impl RadioButton {
     }
 
     /// Create a radio button with an initial value.
+    #[must_use]
     pub fn with_value(mut self, value: bool) -> Self {
         self.state.set_value(value);
         self.rebuild_classes();
@@ -57,22 +58,26 @@ impl RadioButton {
     }
 
     /// Builder method to set the disabled state.
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.state.set_disabled(disabled);
         self
     }
 
     /// Returns the current value (`true` = selected).
+    #[must_use]
     pub fn value(&self) -> bool {
         self.state.value()
     }
 
     /// Returns the label text.
+    #[must_use]
     pub fn label(&self) -> &str {
         &self.label
     }
 
     /// Returns `true` if this button is disabled.
+    #[must_use]
     pub fn is_disabled(&self) -> bool {
         self.state.disabled()
     }

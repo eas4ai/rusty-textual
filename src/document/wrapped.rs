@@ -6,6 +6,8 @@ use super::Location;
 use super::graphemes::{byte_index_from_cell_x, cell_len_prefix, prev_grapheme_boundary};
 use super::wrap::{compute_wrap_offsets, get_tab_widths};
 
+use crate::num::Cast;
+
 /// A view into a [`Document`] which wraps the document at a certain width
 /// and can be queried to retrieve lines from the *wrapped* version of the
 /// document. Allows for incremental updates, ensuring that we only re-wrap
@@ -40,6 +42,7 @@ pub struct WrappedDocument {
 
 impl WrappedDocument {
     /// Construct and wrap immediately (width 0 = no wrapping).
+    #[must_use]
     pub fn new(document: &Document, width: usize, tab_width: usize) -> Self {
         let mut wrapped = Self {
             wrap_offsets: Vec::new(),
@@ -54,16 +57,19 @@ impl WrappedDocument {
     }
 
     /// The width the document is wrapped at (0 = no wrapping).
+    #[must_use]
     pub fn width(&self) -> usize {
         self.width
     }
 
     /// The tab stop width (degenerate model: informational only).
+    #[must_use]
     pub fn tab_width(&self) -> usize {
         self.tab_width
     }
 
     /// The height (visual line count) of the wrapped document.
+    #[must_use]
     pub fn height(&self) -> usize {
         self.wrap_offsets
             .iter()
@@ -110,6 +116,7 @@ impl WrappedDocument {
 
     /// The wrapped content: for each document line, its wrapped sections.
     /// Expensive; intended for tests and debugging (Python `lines`).
+    #[must_use]
     pub fn wrapped_lines(&self, document: &Document) -> Vec<Vec<String>> {
         (0..document.line_count())
             .map(|line_index| {
@@ -128,6 +135,15 @@ impl WrappedDocument {
     /// - `start`: the start location of the edit (document-space).
     /// - `old_end`: the old end location of the edit.
     /// - `new_end`: the new end location of the edit.
+    ///
+    /// # Panics
+    ///
+    /// Does not panic in practice. The line indices are clamped to the bounds
+    /// of both the cached lines and `document`. The caches always hold at
+    /// least one line, because [`WrappedDocument::new`] wraps at once and a
+    /// [`Document`] always has at least one line. Each cached line has at
+    /// least one y-offset, so the `[0]` index and the `expect` on the last
+    /// y-offset succeed.
     pub fn wrap_range(
         &mut self,
         document: &Document,
@@ -204,14 +220,15 @@ impl WrappedDocument {
 
         // How much did the edit/rewrap alter the offsets?
         let old_height = old_bottom_y_offset - top_y_offset + 1;
-        let offset_shift = new_height as isize - old_height as isize;
-        let line_shift = new_bottom_line_index as isize - old_bottom_line_index as isize;
+        let offset_shift = new_height.to_isize_sat() - old_height.to_isize_sat();
+        let line_shift =
+            new_bottom_line_index.to_isize_sat() - old_bottom_line_index.to_isize_sat();
 
         // Update the line info at all offsets below the edit region.
         if line_shift != 0 {
             for y_offset in (top_y_offset + new_height)..self.offset_to_line_info.len() {
                 let (old_line_index, section_offset) = self.offset_to_line_info[y_offset];
-                let new_line_index = (old_line_index as isize + line_shift) as usize;
+                let new_line_index = (old_line_index.to_isize_sat() + line_shift).to_usize_sat();
                 self.offset_to_line_info[y_offset] = (new_line_index, section_offset);
             }
         }
@@ -220,7 +237,7 @@ impl WrappedDocument {
         if offset_shift != 0 {
             for line_index in (top_line_index + new_line_count)..self.line_index_to_offsets.len() {
                 for offset in &mut self.line_index_to_offsets[line_index] {
-                    *offset = (*offset as isize + offset_shift) as usize;
+                    *offset = (offset.to_isize_sat() + offset_shift).to_usize_sat();
                 }
             }
         }
@@ -232,9 +249,10 @@ impl WrappedDocument {
     /// Given an offset within the wrapped/visual display of the document,
     /// return the corresponding document location. Out-of-range offsets are
     /// clamped to valid locations.
+    #[must_use]
     pub fn offset_to_location(&self, document: &Document, x: isize, y: isize) -> Location {
-        let x = x.max(0) as usize;
-        let y = y.max(0) as usize;
+        let x = x.to_usize_sat();
+        let y = y.to_usize_sat();
 
         if self.width == 0 {
             // No wrapping: directly map the offset to a location and clamp.
@@ -251,12 +269,14 @@ impl WrappedDocument {
             .or_else(|| self.offset_to_line_info.last())
             .copied()
             .unwrap_or((0, 0));
-        let column = self.get_target_document_column(document, line_index, x, section_y as isize);
+        let column =
+            self.get_target_document_column(document, line_index, x, section_y.to_isize_sat());
         (line_index, column)
     }
 
     /// Convert a document location to an `(x, y)` offset within the wrapped
     /// visual display of the document.
+    #[must_use]
     pub fn location_to_offset(&self, document: &Document, location: Location) -> (usize, usize) {
         let (line_index, column_index) = location;
         let line_index = line_index.min(self.line_index_to_offsets.len().saturating_sub(1));
@@ -287,6 +307,7 @@ impl WrappedDocument {
     /// Given a line index and offsets within the wrapped version of that
     /// line, return the corresponding column index in the raw document.
     /// `y_offset` supports negative indexing (`-1` = the final section).
+    #[must_use]
     pub fn get_target_document_column(
         &self,
         document: &Document,
@@ -297,9 +318,9 @@ impl WrappedDocument {
         let sections = self.get_sections(document, line_index);
         let section_count = sections.len();
         let section_index = if y_offset < 0 {
-            (section_count as isize + y_offset).max(0) as usize
+            (section_count.to_isize_sat() + y_offset).to_usize_sat()
         } else {
-            (y_offset as usize).min(section_count - 1)
+            y_offset.to_usize_sat().min(section_count - 1)
         };
 
         let target_section = sections[section_index];
@@ -330,11 +351,7 @@ impl WrappedDocument {
     /// The wrapped sections of one document line (Python `get_sections`).
     pub fn get_sections<'a>(&self, document: &'a Document, line_index: usize) -> Vec<&'a str> {
         let line = document.line(line_index);
-        let offsets: &[usize] = self
-            .wrap_offsets
-            .get(line_index)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
+        let offsets: &[usize] = self.wrap_offsets.get(line_index).map_or(&[], Vec::as_slice);
         let mut sections = Vec::with_capacity(offsets.len() + 1);
         let mut start = 0usize;
         for &offset in offsets {
@@ -356,11 +373,11 @@ impl WrappedDocument {
     pub fn get_tab_widths(&self, line_index: usize) -> &[usize] {
         self.tab_width_cache
             .get(line_index)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+            .map_or(&[], Vec::as_slice)
     }
 
     /// The `(line_index, section_offset)` at a visual y-offset, if any.
+    #[must_use]
     pub fn offset_line_info(&self, y_offset: usize) -> Option<(usize, usize)> {
         self.offset_to_line_info.get(y_offset).copied()
     }
@@ -369,8 +386,7 @@ impl WrappedDocument {
     pub fn line_offsets(&self, line_index: usize) -> &[usize] {
         self.line_index_to_offsets
             .get(line_index)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+            .map_or(&[], Vec::as_slice)
     }
 }
 

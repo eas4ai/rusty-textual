@@ -45,38 +45,46 @@ impl StyleSelector {
     }
 
     /// Mark the selector impossible (unknown pseudo-class in source).
+    #[must_use]
     pub fn impossible(mut self) -> Self {
         self.impossible = true;
         self
     }
 
+    #[must_use]
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
         self
     }
 
+    #[must_use]
     pub fn class(mut self, class: impl Into<String>) -> Self {
         self.classes.push(class.into());
         self
     }
 
+    #[must_use]
     pub fn pseudo(mut self, pseudo: PseudoClass) -> Self {
         self.pseudos.push(pseudo);
         self
     }
 
+    #[must_use]
     pub fn type_name(&self) -> Option<&str> {
         self.type_name.as_deref()
     }
 
+    #[must_use]
     pub fn id_name(&self) -> Option<&str> {
         self.id.as_deref()
     }
 
+    #[must_use]
     pub fn classes(&self) -> &[String] {
         &self.classes
     }
 
+    #[must_use]
     pub fn pseudos(&self) -> &[PseudoClass] {
         &self.pseudos
     }
@@ -98,8 +106,8 @@ pub struct SelectorChain {
 pub struct StyleRule {
     pub(super) selector_chain: SelectorChain,
     pub(super) style: Style,
-    /// True for rules from widget DEFAULT_CSS. Python layers user CSS above
-    /// DEFAULT_CSS regardless of selector specificity (`Styles.extract_rules`
+    /// True for rules from widget `DEFAULT_CSS`. Python layers user CSS above
+    /// `DEFAULT_CSS` regardless of selector specificity (`Styles.extract_rules`
     /// leads the specificity key with `0 if is_default_rules else 1`), so e.g.
     /// a user `SelectionList { border: solid $accent }` beats the default
     /// `OptionList:focus { border: tall $border }`.
@@ -112,6 +120,7 @@ pub struct StyleSheet {
 }
 
 impl StyleSheet {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -151,16 +160,19 @@ impl StyleSheet {
         self.add_rule(StyleSelector::default().class(class), style);
     }
 
+    #[must_use]
     pub fn rules(&self) -> &[StyleRule] {
         &self.rules
     }
 }
 
 impl StyleRule {
+    #[must_use]
     pub fn selector_chain(&self) -> &SelectorChain {
         &self.selector_chain
     }
 
+    #[must_use]
     pub fn style(&self) -> Style {
         self.style.clone()
     }
@@ -211,6 +223,8 @@ impl SelectorMeta {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+// Separate widget and CSS pseudo-class states; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 pub(super) struct SelectorStates {
     pub(super) disabled: bool,
     pub(super) focused: bool,

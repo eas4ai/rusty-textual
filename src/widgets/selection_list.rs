@@ -1,7 +1,9 @@
 use rich_rs::{Console, ConsoleOptions, Renderable, Segment, Segments};
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    OptionHighlighted, SelectionListHighlighted, SelectionListSelectedChanged, SelectionListToggled,
+};
 
 use super::option_list::{OptionId, OptionItem, OptionList, OptionListError};
 use super::{NodeSeed, Widget, helpers::adjust_line_length_no_bg};
@@ -69,6 +71,7 @@ impl<T: Clone + PartialEq> Selection<T> {
     }
 
     /// Builder: attach a stable id to this selection.
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<OptionId>) -> Self {
         self.id = Some(id.into());
         self
@@ -129,6 +132,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     crate::seed_ident_methods!();
 
     /// Create an empty `SelectionList`.
+    #[must_use]
     pub fn new() -> Self {
         let seed = NodeSeed {
             classes: vec!["selection-list".to_string()],
@@ -152,14 +156,17 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     ///
     /// Panics if two selections carry the same id (same constructor policy as
     /// [`OptionList::with_items`]).
+    #[must_use]
     pub fn with_selections(selections: Vec<Selection<T>>) -> Self {
         let mut list = Self::new();
-        let items: Vec<OptionItem> = selections.iter().map(Selection::to_option_item).collect();
-        let values: Vec<T> = selections.iter().map(|s| s.value.clone()).collect();
-        let selected: Vec<bool> = selections
-            .iter()
-            .map(|s| s.initially_selected && !s.disabled)
-            .collect();
+        let mut items = Vec::with_capacity(selections.len());
+        let mut values = Vec::with_capacity(selections.len());
+        let mut selected = Vec::with_capacity(selections.len());
+        for selection in selections {
+            items.push(selection.to_option_item());
+            selected.push(selection.initially_selected && !selection.disabled);
+            values.push(selection.value);
+        }
         list.inner = OptionList::with_items(items);
         list.values = values;
         list.selected_order = selected
@@ -172,12 +179,14 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     }
 
     /// Builder: set a border title (rendered on the top border).
+    #[must_use]
     pub fn with_border_title(mut self, title: impl Into<String>) -> Self {
         self.border_title_text = Some(title.into());
         self
     }
 
     /// Builder: set disabled state for the entire list.
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
@@ -302,17 +311,20 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
 
     /// Returns a `Vec` of indices that are currently selected, in selection
     /// (insertion) order — Python `SelectionList.selected` parity.
+    #[must_use]
     pub fn selected(&self) -> Vec<usize> {
         self.selected_order.clone()
     }
 
     /// Whether the item at `index` is currently selected.
+    #[must_use]
     pub fn is_selected(&self, index: usize) -> bool {
         self.selected_set.get(index).copied().unwrap_or(false)
     }
 
     /// Returns the values of all currently selected items, in selection
     /// (insertion) order — Python `SelectionList.selected` parity.
+    #[must_use]
     pub fn selected_values(&self) -> Vec<&T> {
         self.selected_order
             .iter()
@@ -321,16 +333,19 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     }
 
     /// Returns the value associated with the item at `index`.
+    #[must_use]
     pub fn value_at(&self, index: usize) -> Option<&T> {
         self.values.get(index)
     }
 
     /// The currently highlighted index in the inner list.
+    #[must_use]
     pub fn highlighted(&self) -> Option<usize> {
         self.inner.highlighted()
     }
 
     /// Number of items.
+    #[must_use]
     pub fn item_count(&self) -> usize {
         self.inner.option_count()
     }
@@ -338,6 +353,8 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     // ── Identity CRUD (rides the inner OptionList registry) ───────────
 
     /// Add a selection to the end of the list (Python `add_option`).
+    ///
+    /// # Errors
     ///
     /// Returns `Err(OptionListError::DuplicateId)` on id collision; the list
     /// is not modified.
@@ -354,6 +371,12 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
 
     /// Add a batch of selections (Python `add_options`): the whole batch is
     /// validated first; a failing batch adds NOTHING.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::DuplicateId`] when a selection's id matches
+    /// an existing selection or another selection in the batch. The list is
+    /// not modified.
     pub fn add_selections(&mut self, selections: Vec<Selection<T>>) -> Result<(), OptionListError> {
         let items: Vec<OptionItem> = selections.iter().map(Selection::to_option_item).collect();
         self.inner.add_options(items)?;
@@ -369,16 +392,31 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     }
 
     /// Get a selection's option row by stable id.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no selection has the id
+    /// `id`.
     pub fn get_option_by_id(&self, id: &str) -> Result<&OptionItem, OptionListError> {
         self.inner.get_option_by_id(id)
     }
 
     /// Get the current index of the selection with the given id.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no selection has the id
+    /// `id`.
     pub fn get_option_index(&self, id: &str) -> Result<usize, OptionListError> {
         self.inner.get_option_index(id)
     }
 
     /// Get a selection's option row by index, with a typed error.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list.
     pub fn get_option_at_index(&self, index: usize) -> Result<&OptionItem, OptionListError> {
         self.inner.get_option_at_index(index)
     }
@@ -386,6 +424,11 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
     /// Remove the selection with the given id, repairing the parallel
     /// value/selected bookkeeping in lockstep (the Rust wrapper owns `inner`,
     /// so it IS Python's `_pre_remove_option` hook).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no selection has the id
+    /// `id`. The list is not modified.
     pub fn remove_option(&mut self, id: &str) -> Result<(), OptionListError> {
         let index = self.inner.get_option_index(id)?;
         self.remove_option_at_index(index)
@@ -393,6 +436,11 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
 
     /// Remove the selection at the given index, repairing the parallel
     /// value/selected bookkeeping in lockstep.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list. The list is not modified.
     pub fn remove_option_at_index(&mut self, index: usize) -> Result<(), OptionListError> {
         self.inner.remove_option_at_index(index)?;
         if index < self.values.len() {
@@ -402,7 +450,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> SelectionList<T> {
             self.selected_set.remove(index);
         }
         self.selected_order.retain(|&i| i != index);
-        for stored in self.selected_order.iter_mut() {
+        for stored in &mut self.selected_order {
             if *stored > index {
                 *stored -= 1;
             }
@@ -517,7 +565,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Widget for SelectionList<T> {
     /// Python `SelectionList.BINDINGS` adds `space → select` (show=False) on
     /// top of the `OptionList.BINDINGS` it inherits, so both enter (inherited)
     /// and space route to `select`. Declarative bindings are resolved
-    /// focused→root, so a focused SelectionList's `down → cursor_down` wins
+    /// focused→root, so a focused `SelectionList`'s `down → cursor_down` wins
     /// over an ancestor scroll container's `down → scroll_down` — exactly like
     /// Python's binding chain. Raw `on_event` key handling would LOSE to the
     /// ancestor binding (bindings dispatch first), so the keyboard behavior
@@ -855,7 +903,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(0, &mut __w)
+            list.toggle(0, &mut __w);
         };
         assert!(list.is_selected(0));
 
@@ -864,7 +912,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(0, &mut __w)
+            list.toggle(0, &mut __w);
         };
         assert!(!list.is_selected(0));
     }
@@ -884,7 +932,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(0, &mut __w)
+            list.toggle(0, &mut __w);
         };
         let messages = ctx.take_messages();
         let toggled = messages
@@ -905,7 +953,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(1, &mut __w)
+            list.toggle(1, &mut __w);
         };
         let messages = ctx.take_messages();
         let toggled = messages
@@ -926,15 +974,15 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(0, &mut __w)
+            list.toggle(0, &mut __w);
         };
         let messages = ctx.take_messages();
         let toggled_pos = messages
             .iter()
-            .position(|m| m.is::<crate::message::SelectionListToggled>());
-        let changed_pos = messages
-            .iter()
-            .position(|m| m.is::<crate::message::SelectionListSelectedChanged>());
+            .position(crate::message::MessageEvent::is::<crate::message::SelectionListToggled>);
+        let changed_pos = messages.iter().position(
+            crate::message::MessageEvent::is::<crate::message::SelectionListSelectedChanged>,
+        );
         assert!(toggled_pos.is_some() && changed_pos.is_some() && toggled_pos < changed_pos);
     }
 
@@ -964,7 +1012,7 @@ mod tests {
         assert!(
             !messages
                 .iter()
-                .any(|m| m.is::<crate::message::OptionHighlighted>()),
+                .any(crate::message::MessageEvent::is::<crate::message::OptionHighlighted>),
             "raw OptionHighlighted must not escape a SelectionList"
         );
     }
@@ -1039,11 +1087,11 @@ mod tests {
         let messages = ctx.take_messages();
         let highlighted_pos = messages
             .iter()
-            .position(|m| m.is::<crate::message::SelectionListHighlighted>())
+            .position(crate::message::MessageEvent::is::<crate::message::SelectionListHighlighted>)
             .expect("SelectionListHighlighted posted");
         let toggled_pos = messages
             .iter()
-            .position(|m| m.is::<crate::message::SelectionListToggled>())
+            .position(crate::message::MessageEvent::is::<crate::message::SelectionListToggled>)
             .expect("SelectionListToggled posted");
         assert!(highlighted_pos < toggled_pos);
         assert_eq!(
@@ -1070,7 +1118,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select_all(&mut __w)
+            list.select_all(&mut __w);
         };
         // Python parity: `selected` reports SELECTION (insertion) order — "C"
         // was selected at construction, so select_all appends the others after.
@@ -1081,7 +1129,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.deselect_all(&mut __w)
+            list.deselect_all(&mut __w);
         };
         assert!(list.selected().is_empty());
     }
@@ -1100,7 +1148,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select(1, &mut __w)
+            list.select(1, &mut __w);
         };
         assert!(list.is_selected(1));
 
@@ -1110,7 +1158,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select(1, &mut __w)
+            list.select(1, &mut __w);
         };
         assert!(list.is_selected(1));
 
@@ -1119,7 +1167,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.deselect(1, &mut __w)
+            list.deselect(1, &mut __w);
         };
         assert!(!list.is_selected(1));
     }
@@ -1136,21 +1184,21 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(99, &mut __w)
+            list.toggle(99, &mut __w);
         };
         {
             let mut __w = crate::event::WidgetCtx::__from_dispatch(
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select(99, &mut __w)
+            list.select(99, &mut __w);
         };
         {
             let mut __w = crate::event::WidgetCtx::__from_dispatch(
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.deselect(99, &mut __w)
+            list.deselect(99, &mut __w);
         };
         assert!(!list.is_selected(99));
     }
@@ -1170,21 +1218,21 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle(0, &mut __w)
+            list.toggle(0, &mut __w);
         };
         {
             let mut __w = crate::event::WidgetCtx::__from_dispatch(
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select(0, &mut __w)
+            list.select(0, &mut __w);
         };
         {
             let mut __w = crate::event::WidgetCtx::__from_dispatch(
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.deselect(0, &mut __w)
+            list.deselect(0, &mut __w);
         };
         assert!(!list.is_selected(0));
 
@@ -1193,7 +1241,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.select_all(&mut __w)
+            list.select_all(&mut __w);
         };
         assert!(!list.is_selected(0));
         assert!(list.is_selected(1));
@@ -1216,7 +1264,7 @@ mod tests {
         assert!(!list.focusable());
     }
 
-    /// Run a SelectionList binding action (the canonical keyboard path — keys
+    /// Run a `SelectionList` binding action (the canonical keyboard path — keys
     /// reach the list through its declarative `bindings()`, not raw `on_event`).
     fn run_action(list: &mut SelectionList<String>, name: &str, ctx: &mut EventCtx) -> bool {
         let parsed = crate::action::parse_action(name).expect("parse action");
@@ -1297,7 +1345,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle_all(&mut __w)
+            list.toggle_all(&mut __w);
         };
         // A=true, B=false, C=still false (disabled), D=true
         assert!(list.is_selected(0));
@@ -1310,7 +1358,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.toggle_all(&mut __w)
+            list.toggle_all(&mut __w);
         };
         // Back to: A=false, B=true, C=false, D=false
         assert!(!list.is_selected(0));

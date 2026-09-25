@@ -51,11 +51,7 @@ pub(crate) fn parse_markdown_blocks(markup: &str) -> Vec<MarkdownBlock> {
                 blocks.push(MarkdownBlock::Heading {
                     level: heading_level(level),
                     text: collapse_ws(&text),
-                    raw: markup
-                        .get(range.start..end_offset)
-                        .unwrap_or("")
-                        .trim()
-                        .to_string(),
+                    raw: raw_slice(markup, range.start, end_offset),
                 });
             }
             Event::Start(Tag::Paragraph) => {
@@ -64,155 +60,160 @@ pub(crate) fn parse_markdown_blocks(markup: &str) -> Vec<MarkdownBlock> {
                 if !text.trim().is_empty() {
                     blocks.push(MarkdownBlock::Paragraph {
                         text: collapse_ws(&text),
-                        raw: markup
-                            .get(range.start..end_offset)
-                            .unwrap_or("")
-                            .trim()
-                            .to_string(),
+                        raw: raw_slice(markup, range.start, end_offset),
                     });
                 }
             }
             Event::Start(Tag::List(first_number)) => {
-                let ordered = first_number.is_some();
-                let mut items = Vec::new();
-                let mut item_markups = Vec::new();
-                let mut end_offset = range.end;
-                while let Some((next, next_range)) = parser.next() {
-                    end_offset = next_range.end;
-                    match next {
-                        Event::Start(Tag::Item) => {
-                            let (item, item_end_offset) =
-                                collect_plain_text_until_with_end(&mut parser, TagEnd::Item);
-                            let item = collapse_ws(&item);
-                            if !item.is_empty() {
-                                let item_raw = markup
-                                    .get(next_range.start..item_end_offset)
-                                    .unwrap_or("")
-                                    .trim()
-                                    .to_string();
-                                items.push(item);
-                                item_markups.push(if item_raw.is_empty() {
-                                    items.last().cloned().unwrap_or_default()
-                                } else {
-                                    strip_list_item_marker(&item_raw, ordered)
-                                });
-                            }
-                            end_offset = end_offset.max(item_end_offset);
-                        }
-                        Event::End(TagEnd::List(_)) => break,
-                        _ => {}
-                    }
-                }
-                if !items.is_empty() {
-                    blocks.push(MarkdownBlock::List {
-                        ordered,
-                        items,
-                        item_markups,
-                        raw: markup
-                            .get(range.start..end_offset)
-                            .unwrap_or("")
-                            .trim()
-                            .to_string(),
-                    });
-                }
+                parse_list(&mut parser, markup, range, first_number, &mut blocks);
             }
             Event::Rule => blocks.push(MarkdownBlock::HorizontalRule),
             Event::Start(Tag::CodeBlock(kind)) => {
-                let language = match kind {
-                    pulldown_cmark::CodeBlockKind::Indented => String::new(),
-                    pulldown_cmark::CodeBlockKind::Fenced(lang) => lang.to_string(),
-                };
-                let mut code = String::new();
-                let mut end_offset = range.end;
-                for (next, next_range) in parser.by_ref() {
-                    end_offset = next_range.end;
-                    match next {
-                        Event::Text(text) => code.push_str(&text),
-                        Event::Code(text) => code.push_str(&text),
-                        Event::SoftBreak | Event::HardBreak => code.push('\n'),
-                        Event::End(TagEnd::CodeBlock) => break,
-                        _ => {}
-                    }
-                }
-                blocks.push(MarkdownBlock::CodeFence {
-                    language,
-                    code,
-                    raw: markup
-                        .get(range.start..end_offset)
-                        .unwrap_or("")
-                        .trim()
-                        .to_string(),
-                });
+                parse_code_block(&mut parser, markup, range, kind, &mut blocks);
             }
             Event::Start(Tag::Table(_)) => {
-                let mut headers = Vec::new();
-                let mut header_markups = Vec::new();
-                let mut rows = Vec::new();
-                let mut row_markups = Vec::new();
-                let mut current_row: Vec<(String, String)> = Vec::new();
-                let mut end_offset = range.end;
-                while let Some((next, next_range)) = parser.next() {
-                    end_offset = next_range.end;
-                    match next {
-                        Event::Start(Tag::TableHead) => current_row.clear(),
-                        Event::End(TagEnd::TableHead)
-                            if headers.is_empty() && !current_row.is_empty() =>
-                        {
-                            headers = current_row.iter().map(|(text, _)| text.clone()).collect();
-                            header_markups =
-                                current_row.iter().map(|(_, raw)| raw.clone()).collect();
-                            current_row.clear();
-                        }
-                        Event::Start(Tag::TableRow) => current_row.clear(),
-                        Event::End(TagEnd::TableRow) => {
-                            if headers.is_empty() {
-                                headers =
-                                    current_row.iter().map(|(text, _)| text.clone()).collect();
-                                header_markups =
-                                    current_row.iter().map(|(_, raw)| raw.clone()).collect();
-                            } else if !current_row.is_empty() {
-                                rows.push(
-                                    current_row.iter().map(|(text, _)| text.clone()).collect(),
-                                );
-                                row_markups
-                                    .push(current_row.iter().map(|(_, raw)| raw.clone()).collect());
-                            }
-                        }
-                        Event::Start(Tag::TableCell) => {
-                            let (cell, cell_end_offset) =
-                                collect_plain_text_until_with_end(&mut parser, TagEnd::TableCell);
-                            let text = collapse_ws(&cell);
-                            let raw = markup
-                                .get(next_range.start..cell_end_offset)
-                                .unwrap_or("")
-                                .trim()
-                                .to_string();
-                            current_row.push((text, raw));
-                            end_offset = end_offset.max(cell_end_offset);
-                        }
-                        Event::End(TagEnd::Table) => break,
-                        _ => {}
-                    }
-                }
-                if !headers.is_empty() || !rows.is_empty() {
-                    blocks.push(MarkdownBlock::Table {
-                        headers,
-                        header_markups,
-                        rows,
-                        row_markups,
-                        raw: markup
-                            .get(range.start..end_offset)
-                            .unwrap_or("")
-                            .trim()
-                            .to_string(),
-                    });
-                }
+                parse_table(&mut parser, markup, range, &mut blocks);
             }
             _ => {}
         }
     }
 
     blocks
+}
+
+/// Parse a list (after its start event) into a `MarkdownBlock::List`.
+fn parse_list(
+    parser: &mut std::iter::Peekable<pulldown_cmark::OffsetIter<'_>>,
+    markup: &str,
+    range: std::ops::Range<usize>,
+    first_number: Option<u64>,
+    blocks: &mut Vec<MarkdownBlock>,
+) {
+    let ordered = first_number.is_some();
+    let mut items = Vec::new();
+    let mut item_markups = Vec::new();
+    let mut end_offset = range.end;
+    while let Some((next, next_range)) = parser.next() {
+        end_offset = next_range.end;
+        match next {
+            Event::Start(Tag::Item) => {
+                let (item, item_end_offset) =
+                    collect_plain_text_until_with_end(parser, TagEnd::Item);
+                let item = collapse_ws(&item);
+                if !item.is_empty() {
+                    let item_raw = raw_slice(markup, next_range.start, item_end_offset);
+                    items.push(item);
+                    item_markups.push(if item_raw.is_empty() {
+                        items.last().cloned().unwrap_or_default()
+                    } else {
+                        strip_list_item_marker(&item_raw, ordered)
+                    });
+                }
+                end_offset = end_offset.max(item_end_offset);
+            }
+            Event::End(TagEnd::List(_)) => break,
+            _ => {}
+        }
+    }
+    if !items.is_empty() {
+        blocks.push(MarkdownBlock::List {
+            ordered,
+            items,
+            item_markups,
+            raw: raw_slice(markup, range.start, end_offset),
+        });
+    }
+}
+
+/// Parse a fenced or indented code block (after its start event) into a
+/// `MarkdownBlock::CodeFence`.
+fn parse_code_block(
+    parser: &mut std::iter::Peekable<pulldown_cmark::OffsetIter<'_>>,
+    markup: &str,
+    range: std::ops::Range<usize>,
+    kind: pulldown_cmark::CodeBlockKind<'_>,
+    blocks: &mut Vec<MarkdownBlock>,
+) {
+    let language = match kind {
+        pulldown_cmark::CodeBlockKind::Indented => String::new(),
+        pulldown_cmark::CodeBlockKind::Fenced(lang) => lang.to_string(),
+    };
+    let mut code = String::new();
+    let mut end_offset = range.end;
+    for (next, next_range) in parser.by_ref() {
+        end_offset = next_range.end;
+        match next {
+            Event::Text(text) | Event::Code(text) => code.push_str(&text),
+            Event::SoftBreak | Event::HardBreak => code.push('\n'),
+            Event::End(TagEnd::CodeBlock) => break,
+            _ => {}
+        }
+    }
+    blocks.push(MarkdownBlock::CodeFence {
+        language,
+        code,
+        raw: raw_slice(markup, range.start, end_offset),
+    });
+}
+
+/// Parse a table (after its start event) into a `MarkdownBlock::Table`.
+fn parse_table(
+    parser: &mut std::iter::Peekable<pulldown_cmark::OffsetIter<'_>>,
+    markup: &str,
+    range: std::ops::Range<usize>,
+    blocks: &mut Vec<MarkdownBlock>,
+) {
+    let mut headers = Vec::new();
+    let mut header_markups = Vec::new();
+    let mut rows = Vec::new();
+    let mut row_markups = Vec::new();
+    let mut current_row: Vec<(String, String)> = Vec::new();
+    let mut end_offset = range.end;
+    while let Some((next, next_range)) = parser.next() {
+        end_offset = next_range.end;
+        match next {
+            Event::End(TagEnd::TableHead) if headers.is_empty() && !current_row.is_empty() => {
+                headers = current_row.iter().map(|(text, _)| text.clone()).collect();
+                header_markups = current_row.iter().map(|(_, raw)| raw.clone()).collect();
+                current_row.clear();
+            }
+            Event::Start(Tag::TableHead | Tag::TableRow) => current_row.clear(),
+            Event::End(TagEnd::TableRow) => {
+                if headers.is_empty() {
+                    headers = current_row.iter().map(|(text, _)| text.clone()).collect();
+                    header_markups = current_row.iter().map(|(_, raw)| raw.clone()).collect();
+                } else if !current_row.is_empty() {
+                    rows.push(current_row.iter().map(|(text, _)| text.clone()).collect());
+                    row_markups.push(current_row.iter().map(|(_, raw)| raw.clone()).collect());
+                }
+            }
+            Event::Start(Tag::TableCell) => {
+                let (cell, cell_end_offset) =
+                    collect_plain_text_until_with_end(parser, TagEnd::TableCell);
+                let text = collapse_ws(&cell);
+                let raw = raw_slice(markup, next_range.start, cell_end_offset);
+                current_row.push((text, raw));
+                end_offset = end_offset.max(cell_end_offset);
+            }
+            Event::End(TagEnd::Table) => break,
+            _ => {}
+        }
+    }
+    if !headers.is_empty() || !rows.is_empty() {
+        blocks.push(MarkdownBlock::Table {
+            headers,
+            header_markups,
+            rows,
+            row_markups,
+            raw: raw_slice(markup, range.start, end_offset),
+        });
+    }
+}
+
+/// The trimmed source text of `markup[start..end]` (empty when the range
+/// is not valid for `markup`).
+fn raw_slice(markup: &str, start: usize, end: usize) -> String {
+    markup.get(start..end).unwrap_or("").trim().to_string()
 }
 
 pub(crate) fn parse_markdown_headings(markup: &str) -> Vec<(usize, String)> {
@@ -341,7 +342,7 @@ mod tests {
     #[test]
     fn parse_headings_lists_and_table() {
         let blocks = parse_markdown_blocks(
-            r#"# Title
+            r"# Title
 
 Some text here.
 
@@ -355,7 +356,7 @@ Some text here.
 ```rust
 fn x() {}
 ```
-"#,
+",
         );
         assert!(matches!(
             blocks.first(),

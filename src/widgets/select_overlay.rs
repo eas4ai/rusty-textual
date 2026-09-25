@@ -62,6 +62,7 @@ impl SelectOverlay {
     /// Also match `OptionList` in CSS so the base option-list rules (focused
     /// border + highlighted-row colours) resolve on this node, alongside the
     /// `SelectOverlay` / `Select > SelectOverlay` rules.
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn style_type_aliases(&self) -> &[&'static str] {
         &["OptionList"]
     }

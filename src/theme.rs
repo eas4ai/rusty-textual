@@ -14,13 +14,13 @@
 //! The hand-tuned `textual-dark` token table in `style.rs::resolve_textual_dark_token`
 //! is preserved as the default resolution path (so the styled/visual goldens that
 //! were calibrated against it never regress). When a *non-default* named theme is
-//! active, [`active_token`] / [`active_auto_token`] consult the generated map for
-//! that theme instead.
+//! active, `active_token` consults the generated map for that theme instead.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
+use crate::num::Cast;
 use crate::style::{
     Color, blend_channels_trunc, contrast_text, darken_lab, lighten_lab, parse_color_like,
 };
@@ -81,6 +81,7 @@ impl NamedTheme {
     /// Port of `ColorSystem._generate` (truecolor) — the ANSI themes
     /// (`ansi-dark`/`ansi-light`) are intentionally not generated here; they
     /// resolve through the default path which already handles `ansi_*` names.
+    #[must_use]
     pub fn generate(&self) -> HashMap<String, Color> {
         generate_tokens(self)
     }
@@ -134,6 +135,7 @@ fn add(base: Color, over: Color) -> Color {
     blend_alpha(base, over, over.a, 1.0)
 }
 
+#[allow(clippy::too_many_lines)] // One entry per theme token, in the order Python's `ColorSystem` builds them.
 fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
     let mut colors: HashMap<String, Color> = HashMap::new();
 
@@ -144,34 +146,39 @@ fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
         .collect();
 
     let primary = parse(&theme.primary);
-    let secondary = theme.secondary.as_deref().map(parse).unwrap_or(primary);
-    let warning = theme.warning.as_deref().map(parse).unwrap_or(primary);
-    let error = theme.error.as_deref().map(parse).unwrap_or(secondary);
-    let success = theme.success.as_deref().map(parse).unwrap_or(secondary);
-    let accent = theme.accent.as_deref().map(parse).unwrap_or(primary);
+    let secondary = theme.secondary.as_deref().map_or(primary, parse);
+    let warning = theme.warning.as_deref().map_or(primary, parse);
+    let error = theme.error.as_deref().map_or(secondary, parse);
+    let success = theme.success.as_deref().map_or(secondary, parse);
+    let accent = theme.accent.as_deref().map_or(primary, parse);
 
     let dark = theme.dark;
     let spread = theme.luminosity_spread;
 
-    let background = theme.background.as_deref().map(parse).unwrap_or_else(|| {
-        parse(if dark {
-            DEFAULT_DARK_BACKGROUND
-        } else {
-            DEFAULT_LIGHT_BACKGROUND
-        })
-    });
-    let surface = theme.surface.as_deref().map(parse).unwrap_or_else(|| {
-        parse(if dark {
-            DEFAULT_DARK_SURFACE
-        } else {
-            DEFAULT_LIGHT_SURFACE
-        })
-    });
+    let background = theme.background.as_deref().map_or_else(
+        || {
+            parse(if dark {
+                DEFAULT_DARK_BACKGROUND
+            } else {
+                DEFAULT_LIGHT_BACKGROUND
+            })
+        },
+        parse,
+    );
+    let surface = theme.surface.as_deref().map_or_else(
+        || {
+            parse(if dark {
+                DEFAULT_DARK_SURFACE
+            } else {
+                DEFAULT_LIGHT_SURFACE
+            })
+        },
+        parse,
+    );
     let foreground = theme
         .foreground
         .as_deref()
-        .map(parse)
-        .unwrap_or_else(|| background.inverse());
+        .map_or_else(|| background.inverse(), parse);
 
     // Colored text + panel/boost. (`background.ansi` is always None here — ANSI
     // themes are not generated.)
@@ -210,8 +217,7 @@ fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
             boost = theme
                 .boost
                 .as_deref()
-                .map(parse)
-                .unwrap_or_else(|| contrast_full.with_alpha(0.04));
+                .map_or_else(|| contrast_full.with_alpha(0.04), parse);
             panel = add(panel, boost);
         }
         panel
@@ -236,13 +242,13 @@ fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
 
     // f64 throughout the luminosity arithmetic so the delta fed into the LAB
     // lighten/darken is byte-exact with Python (`spread / 2`, `n * step` in f64).
-    let luminosity_step = spread as f64 / 2.0;
+    let luminosity_step = f64::from(spread) / 2.0;
     let dark_shades = ["primary-background", "secondary-background"];
 
     for (name, color) in shade_colors {
         let is_dark_shade = dark && dark_shades.contains(&name);
         for n in -NUMBER_OF_SHADES..=NUMBER_OF_SHADES {
-            let luminosity_delta = n as f64 * luminosity_step;
+            let luminosity_delta = f64::from(n) * luminosity_step;
             let key = shade_key(name, n);
             if is_dark_shade {
                 if let Some(v) = var.get(key.as_str()) {
@@ -255,7 +261,7 @@ fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
                 let shade_color = blend_alpha(
                     dark_background,
                     Color::rgb(255, 255, 255),
-                    (spread as f64 + luminosity_delta) as f32,
+                    (f64::from(spread) + luminosity_delta).to_f32_lossy(),
                     1.0,
                 )
                 .clamped();
@@ -329,7 +335,7 @@ fn generate_tokens(theme: &NamedTheme) -> HashMap<String, Color> {
         darken_lab(surface, 0.025).clamped()
     });
     insert_or_var(&mut colors, &var, "surface-active", || {
-        lighten_lab(surface, spread as f64 / 2.5).clamped()
+        lighten_lab(surface, f64::from(spread) / 2.5).clamped()
     });
 
     // Scrollbars: `background-darken-1 + primary.with_alpha(0.4/0.5)`.
@@ -478,8 +484,16 @@ fn registry() -> &'static Mutex<Registry> {
 }
 
 /// Register (or replace) a named theme.
+///
+/// # Panics
+///
+/// Does not panic. The `unwrap` looks up the theme that this call inserted
+/// under the same name, while it still holds the registry lock. A poisoned
+/// registry lock is recovered instead of causing a panic.
 pub fn register_theme(theme: NamedTheme) {
-    let mut reg = registry().lock().unwrap_or_else(|e| e.into_inner());
+    let mut reg = registry()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let name = theme.name.clone();
     reg.themes.insert(name.clone(), theme);
     // If the replaced theme is currently active, regenerate its tokens.
@@ -491,22 +505,31 @@ pub fn register_theme(theme: NamedTheme) {
 }
 
 /// Names of all registered themes, sorted.
+#[must_use]
 pub fn available_theme_names() -> Vec<String> {
-    let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
+    let reg = registry()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut names: Vec<String> = reg.themes.keys().cloned().collect();
     names.sort();
     names
 }
 
 /// Look up a registered theme by name.
+#[must_use]
 pub fn get_theme(name: &str) -> Option<NamedTheme> {
-    let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
+    let reg = registry()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     reg.themes.get(name).cloned()
 }
 
 /// The currently active theme name (`textual-dark` if the default path is in use).
+#[must_use]
 pub fn active_theme_name() -> String {
-    let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
+    let reg = registry()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     reg.active
         .clone()
         .unwrap_or_else(|| "textual-dark".to_string())
@@ -517,8 +540,11 @@ pub fn active_theme_name() -> String {
 /// When the activated theme is the default `textual-dark`, the global override
 /// is cleared so the hand-tuned static path in `style.rs` is used (preserving
 /// the calibrated goldens).
+#[must_use]
 pub fn set_active_theme(name: &str) -> bool {
-    let mut reg = registry().lock().unwrap_or_else(|e| e.into_inner());
+    let mut reg = registry()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let Some(theme) = reg.themes.get(name).cloned() else {
         return false;
     };
@@ -545,7 +571,9 @@ pub fn set_active_theme(name: &str) -> bool {
 /// Resolve a design token (e.g. `primary`, `text-error`) against the active
 /// non-default theme. Returns `None` when the default path should be used.
 pub(crate) fn active_token(name: &str) -> Option<Color> {
-    let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
+    let reg = registry()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     reg.active.as_ref()?;
     if let Some(color) = reg.active_tokens.get(name).copied() {
         return Some(color);
@@ -579,6 +607,8 @@ fn vars(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
 }
 
 /// The built-in named themes, ported exactly from Python `BUILTIN_THEMES`.
+#[must_use]
+#[allow(clippy::too_many_lines)] // The built-in theme definitions, one after another.
 pub fn builtin_themes() -> Vec<NamedTheme> {
     let mut out = Vec::new();
 

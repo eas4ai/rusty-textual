@@ -6,12 +6,12 @@
 /// class.
 ///
 /// Python original:
-///   - `Box` is a `Placeholder` subclass with `width: 16; height: 8` as DEFAULT_CSS.
+///   - `Box` is a `Placeholder` subclass with `width: 16; height: 8` as `DEFAULT_CSS`.
 ///   - App CSS: `.with-border { border: heavy green; }`
 ///   - compose: `Horizontal(classes="with-border")` containing 3 `Box()` instances.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Placeholder {
     width: 16;
     height: 8;
@@ -20,7 +20,7 @@ Placeholder {
 .with-border {
     border: heavy green;
 }
-"#;
+";
 
 struct ContainerApp;
 
@@ -31,12 +31,11 @@ impl TextualApp for ContainerApp {
     }
 
     fn compose(&mut self) -> AppRoot {
-        let horizontal = 
-            Horizontal::new()
-                .with_child(Placeholder::new(""))
-                .with_child(Placeholder::new(""))
-                .with_child(Placeholder::new(""))
-        .class("with-border");
+        let horizontal = Horizontal::new()
+            .with_child(Placeholder::new(""))
+            .with_child(Placeholder::new(""))
+            .with_child(Placeholder::new(""))
+            .class("with-border");
 
         AppRoot::new().with_child(horizontal)
     }

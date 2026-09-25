@@ -68,6 +68,7 @@ impl App {
     /// Resolve a screen reference to its widget tree (Python
     /// `app.get_screen(name)` / `app.screen`). `None` when no live tree
     /// matches.
+    #[must_use]
     pub fn screen_tree(&self, screen: ScreenRef<'_>) -> Option<&WidgetTree> {
         let tree_id = self.resolve_screen_ref(screen)?;
         self.tree_by_id(tree_id)
@@ -83,8 +84,15 @@ impl App {
     /// shape as [`App::query`] but screen-scoped. Python:
     /// `app.get_screen("main").query("...")`.
     ///
-    /// `Err(QueryError::Unmounted)` when the screen reference resolves to no
-    /// live tree (e.g. the named screen was popped).
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] when `selector` is not a valid selector.
+    ///   This check runs first.
+    /// - [`QueryError::Unmounted`] when the screen reference resolves to no
+    ///   live tree (e.g. the named screen was popped).
+    ///
+    /// A selector that matches nothing is not an error. It returns an empty
+    /// query.
     pub fn query_on(
         &self,
         screen: ScreenRef<'_>,
@@ -98,6 +106,13 @@ impl App {
     /// Query the first node matching `selector` on the addressed screen's tree
     /// (screen-scoped [`App::query_one`]). Python:
     /// `app.get_screen("main").query_one("#log")`.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] when `selector` is not a valid selector.
+    /// - [`QueryError::Unmounted`] when the screen reference resolves to no
+    ///   live tree.
+    /// - [`QueryError::NoMatch`] when no node on that tree matches `selector`.
     pub fn query_one_on(
         &self,
         screen: ScreenRef<'_>,
@@ -114,7 +129,7 @@ impl App {
     /// (`run_on_node_widget_r_in`), so the update converges identically to the
     /// deferred command path: dispatch-recipient guard, owning-tree stamp for
     /// commands enqueued from the closure, reactive fixpoint when the tree is
-    /// the active one, and EventCtx absorption. A mutation on a non-active
+    /// the active one, and `EventCtx` absorption. A mutation on a non-active
     /// tree requests a full relayout/repaint so the compositor repaints every
     /// visible layer (an update behind a translucent screen shows immediately;
     /// behind an opaque screen it is state-only until reveal, both matching
@@ -125,9 +140,13 @@ impl App {
     /// with a debug log; direct widget mutation, class ops, and repaint are
     /// fully applied.
     ///
-    /// Errors: `Unmounted` when the screen reference resolves to no live
-    /// tree, `NoMatch` when the selector misses or the matched widget is not
-    /// a `W`.
+    /// # Errors
+    ///
+    /// - [`QueryError::Unmounted`] when the screen reference resolves to no
+    ///   live tree.
+    /// - [`QueryError::ParseError`] when `selector` is not a valid selector.
+    /// - [`QueryError::NoMatch`] when the selector misses, or when the matched
+    ///   widget is not a `W`. `f` does not run in either case.
     pub fn with_widget_mut_on<W: Widget + 'static, R>(
         &mut self,
         screen: ScreenRef<'_>,

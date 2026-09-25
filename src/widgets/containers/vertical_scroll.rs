@@ -13,6 +13,7 @@ pub struct VerticalScroll {
 }
 
 impl VerticalScroll {
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn style_type_aliases(&self) -> &[&'static str] {
         &["ScrollableContainer"]
     }
@@ -20,6 +21,7 @@ impl VerticalScroll {
     crate::delegate_ident_methods!(inner);
     crate::delegate_border_title_methods!(inner);
 
+    #[must_use]
     pub fn new() -> Self {
         // Overflow is NOT set inline here: Python `containers.py::VerticalScroll`
         // declares `overflow-x: hidden; overflow-y: auto` via DEFAULT_CSS (an
@@ -30,11 +32,13 @@ impl VerticalScroll {
         Self { inner }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.inner = self.inner.with_child(child);
         self
     }
 
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         self.inner = self.inner.with_compose(children);
         self
@@ -44,6 +48,7 @@ impl VerticalScroll {
         self.inner.push(child);
     }
 
+    #[must_use]
     pub fn height(mut self, height: usize) -> Self {
         self.inner = self.inner.height(height);
         self
@@ -57,6 +62,7 @@ impl VerticalScroll {
         self.inner.scroll_to(offset_y);
     }
 
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.inner = self.inner.scroll_step(step);
         self

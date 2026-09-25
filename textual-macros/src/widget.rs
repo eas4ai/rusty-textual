@@ -69,10 +69,10 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
+    Ident, ItemStruct, LitStr, Path, Token, Type,
     parse::{Parse, ParseStream},
     parse2,
     punctuated::Punctuated,
-    Ident, ItemStruct, LitStr, Path, Token, Type,
 };
 
 /// Parsed `#[widget(..)]` arguments.
@@ -80,10 +80,10 @@ struct WidgetArgs {
     /// The `base = <Type>` type path (documentation + readability; forwarding is
     /// by field name, not type). `None` selects OWN-WIDGET mode (the widget
     /// implements the capability traits itself instead of delegating to a base).
-    _base: Option<Path>,
+    base: Option<Path>,
     /// Own-widget-mode capability opt-in list (e.g. `Layout`, `Interactive`).
     /// Each listed capability's `Widget` methods are forwarded to the widget's
-    /// own `impl <Capability>`. Only meaningful when `_base` is `None`.
+    /// own `impl <Capability>`. Only meaningful when `base` is `None`.
     capabilities: Vec<Ident>,
     /// Field name to forward to (default `base`).
     field: Ident,
@@ -150,7 +150,7 @@ impl Parse for WidgetArgs {
                             return Err(syn::Error::new_spanned(
                                 other,
                                 "`base` must be a type path, e.g. `base = VerticalGroup`",
-                            ))
+                            ));
                         }
                     };
                     base = Some(path);
@@ -181,7 +181,7 @@ impl Parse for WidgetArgs {
         }
 
         Ok(WidgetArgs {
-            _base: base,
+            base,
             capabilities,
             field: field.unwrap_or_else(|| format_ident!("base")),
             style_type,
@@ -200,6 +200,7 @@ struct MethodSpec {
     call: TokenStream,
 }
 
+#[allow(clippy::too_many_lines)] // One entry per forwarded `Widget` method.
 fn method_table() -> Vec<MethodSpec> {
     macro_rules! m {
         ($name:literal, $sig:expr, $call:expr) => {
@@ -240,8 +241,16 @@ fn method_table() -> Vec<MethodSpec> {
             quote! { compose() }
         ),
         // ── Focus / node state ─────────────────────────────────────────
-        m!("focusable", quote! { fn focusable(&self) -> bool }, quote! { focusable() }),
-        m!("can_focus", quote! { fn can_focus(&self) -> bool }, quote! { can_focus() }),
+        m!(
+            "focusable",
+            quote! { fn focusable(&self) -> bool },
+            quote! { focusable() }
+        ),
+        m!(
+            "can_focus",
+            quote! { fn can_focus(&self) -> bool },
+            quote! { can_focus() }
+        ),
         m!(
             "can_focus_children",
             quote! { fn can_focus_children(&self) -> bool },
@@ -263,8 +272,16 @@ fn method_table() -> Vec<MethodSpec> {
             quote! { fn on_mount(&mut self, ctx: &mut rusty_textual::event::WidgetCtx) },
             quote! { on_mount(ctx) }
         ),
-        m!("on_unmount", quote! { fn on_unmount(&mut self) }, quote! { on_unmount() }),
-        m!("on_tick", quote! { fn on_tick(&mut self, tick: u64) }, quote! { on_tick(tick) }),
+        m!(
+            "on_unmount",
+            quote! { fn on_unmount(&mut self) },
+            quote! { on_unmount() }
+        ),
+        m!(
+            "on_tick",
+            quote! { fn on_tick(&mut self, tick: u64) },
+            quote! { on_tick(tick) }
+        ),
         m!(
             "on_resize",
             quote! { fn on_resize(&mut self, width: u16, height: u16) },
@@ -402,7 +419,7 @@ fn method_table() -> Vec<MethodSpec> {
         ),
         m!(
             "action_namespace",
-            quote! { fn action_namespace(&self) -> &str },
+            quote! { fn action_namespace(&self) -> &'static str },
             quote! { action_namespace() }
         ),
         m!(
@@ -437,14 +454,22 @@ fn method_table() -> Vec<MethodSpec> {
             quote! { border_subtitle() }
         ),
         // ── State ──────────────────────────────────────────────────────
-        m!("is_active", quote! { fn is_active(&self) -> bool }, quote! { is_active() }),
+        m!(
+            "is_active",
+            quote! { fn is_active(&self) -> bool },
+            quote! { is_active() }
+        ),
         m!(
             "mouse_interactive",
             quote! { fn mouse_interactive(&self) -> bool },
             quote! { mouse_interactive() }
         ),
         // ── Tooltip / help ─────────────────────────────────────────────
-        m!("tooltip", quote! { fn tooltip(&self) -> Option<String> }, quote! { tooltip() }),
+        m!(
+            "tooltip",
+            quote! { fn tooltip(&self) -> Option<String> },
+            quote! { tooltip() }
+        ),
         m!(
             "tooltip_anchor",
             quote! { fn tooltip_anchor(&self) -> Option<(u16, u16)> },
@@ -456,7 +481,11 @@ fn method_table() -> Vec<MethodSpec> {
             quote! { help_markup() }
         ),
         // ── Selection ──────────────────────────────────────────────────
-        m!("allow_select", quote! { fn allow_select(&self) -> bool }, quote! { allow_select() }),
+        m!(
+            "allow_select",
+            quote! { fn allow_select(&self) -> bool },
+            quote! { allow_select() }
+        ),
         m!(
             "selection_at",
             quote! { fn selection_at(&self, x: u16, y: u16) -> Option<rusty_textual::widgets::WidgetSelectionAnchor> },
@@ -629,30 +658,67 @@ fn method_group(name: &str) -> Group {
     match name {
         "render" | "render_with_debug" | "compose" | "render_line" | "render_lines"
         | "style_type" | "style_type_aliases" | "border_title" | "border_subtitle" => Group::Render,
-        "on_mount" | "on_unmount" | "on_tick" | "on_resize" | "on_layout" | "on_event_capture"
-        | "on_event" | "on_message" | "on_mouse_move" | "on_node_state_changed" => {
-            Group::Interactive
-        }
-        "content_width" | "auto_content_width" | "layout_height" | "auto_content_height"
-        | "set_virtual_content_size" | "tree_child_content_inset" | "child_display_for_tree"
-        | "child_classes_for_tree" | "is_transparent_wrapper" | "preserve_underlay"
-        | "clips_descendants_to_content" | "style" => Group::Layout,
-        "scroll_offset" | "scroll_offset_f32" | "scroll_viewport_size"
-        | "scroll_virtual_content_size" | "on_mouse_scroll" => Group::Scrollable,
-        "focusable" | "can_focus" | "can_focus_children" | "traps_focus" | "mouse_interactive" | "is_active"
-        | "is_initially_disabled" | "is_initially_focused" | "bindings" | "binding_hints"
-        | "action_namespace" | "action_registry" | "execute_action" | "check_action"
+        "on_mount"
+        | "on_unmount"
+        | "on_tick"
+        | "on_resize"
+        | "on_layout"
+        | "on_event_capture"
+        | "on_event"
+        | "on_message"
+        | "on_mouse_move"
+        | "on_node_state_changed" => Group::Interactive,
+        "content_width"
+        | "auto_content_width"
+        | "layout_height"
+        | "auto_content_height"
+        | "set_virtual_content_size"
+        | "tree_child_content_inset"
+        | "child_display_for_tree"
+        | "child_classes_for_tree"
+        | "is_transparent_wrapper"
+        | "preserve_underlay"
+        | "clips_descendants_to_content"
+        | "style" => Group::Layout,
+        "scroll_offset"
+        | "scroll_offset_f32"
+        | "scroll_viewport_size"
+        | "scroll_virtual_content_size"
+        | "on_mouse_scroll" => Group::Scrollable,
+        "focusable"
+        | "can_focus"
+        | "can_focus_children"
+        | "traps_focus"
+        | "mouse_interactive"
+        | "is_active"
+        | "is_initially_disabled"
+        | "is_initially_focused"
+        | "bindings"
+        | "binding_hints"
+        | "action_namespace"
+        | "action_registry"
+        | "execute_action"
+        | "check_action"
         | "help_markup" => Group::Focus,
-        "allow_select" | "selection_at" | "selection_word_range_at" | "selection_all_range"
-        | "update_selection" | "clear_selection" | "get_selection" | "selection_updated" => {
-            Group::Selectable
-        }
+        "allow_select"
+        | "selection_at"
+        | "selection_word_range_at"
+        | "selection_all_range"
+        | "update_selection"
+        | "clear_selection"
+        | "get_selection"
+        | "selection_updated" => Group::Selectable,
         "tooltip" | "tooltip_anchor" => Group::HasTooltip,
         "component_classes" | "get_component_styles" | "get_component_rich_style" => {
             Group::Components
         }
-        "on_app_key" | "on_app_action" | "on_app_unhandled_action" | "on_app_message"
-        | "on_app_tick" | "on_app_timer" | "on_app_mount" => Group::AppHooks,
+        "on_app_key"
+        | "on_app_action"
+        | "on_app_unhandled_action"
+        | "on_app_message"
+        | "on_app_tick"
+        | "on_app_timer"
+        | "on_app_mount" => Group::AppHooks,
         "style_classes" | "style_id" | "is_hovered" | "set_seed_css_id" | "set_seed_classes" => {
             Group::StyleIdentity
         }
@@ -767,7 +833,7 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         Ok(a) => a,
         Err(e) => return e.to_compile_error(),
     };
-    let item_struct: ItemStruct = match parse2(item.clone()) {
+    let item_struct: ItemStruct = match parse2(item) {
         Ok(s) => s,
         Err(e) => return e.to_compile_error(),
     };
@@ -779,59 +845,17 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     // `impl Widget` forwards each opted-in capability's methods to the widget's
     // own capability-trait impl and lets every other method fall through to the
     // `Widget` default. Runtime dispatch stays monolithic through `dyn Widget`.
-    if args._base.is_none() {
+    if args.base.is_none() {
         return own_widget_impl(&item_struct, &args, &table);
     }
 
     // ── DELEGATION MODE (`base = <Type>`) ──────────────────────────────
     let field = &args.field;
 
-    // Validate `override(..)` names against the known surface.
-    let known: std::collections::HashSet<&str> = table.iter().map(|m| m.name).collect();
-    for ov in &args.overrides {
-        let ov_s = ov.to_string();
-        if !known.contains(ov_s.as_str()) {
-            return syn::Error::new_spanned(
-                ov,
-                format!(
-                    "`override({ov_s})` is not a delegated `Widget` method; \
-                     override an unknown method by hand-writing the full `impl Widget` instead"
-                ),
-            )
-            .to_compile_error();
-        }
-    }
-    let overrides: std::collections::HashSet<String> =
-        args.overrides.iter().map(|i| i.to_string()).collect();
-
-    // `on(..)` wires the generated `on_message`; `override(on_message)` replaces
-    // it. Both at once is contradictory.
-    if !args.on_handlers.is_empty() && overrides.contains("on_message") {
-        return syn::Error::new_spanned(
-            &args.on_handlers[0],
-            "`on(..)` cannot be combined with `override(on_message)`; the override \
-             replaces the generated `on_message` that `on(..)` would wire",
-        )
-        .to_compile_error();
-    }
-
-    // Validate the target field exists on the struct.
-    let field_exists = item_struct.fields.iter().any(|f| {
-        f.ident
-            .as_ref()
-            .map(|id| id == field)
-            .unwrap_or(false)
-    });
-    if !field_exists {
-        return syn::Error::new_spanned(
-            field,
-            format!(
-                "`#[widget]` expects a field named `{field}` to delegate to \
-                 (use `field = <name>` to point at a differently-named field)"
-            ),
-        )
-        .to_compile_error();
-    }
+    let overrides = match check_delegation_args(&item_struct, &args, &table) {
+        Ok(overrides) => overrides,
+        Err(err) => return err.to_compile_error(),
+    };
 
     let mut methods: Vec<TokenStream> = Vec::new();
     for spec in &table {
@@ -915,12 +939,109 @@ pub fn widget_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         // -> keep the trait default (own concrete type name).
     }
 
-    assemble_impl(&item_struct, methods)
+    assemble_impl(&item_struct, &methods)
+}
+
+/// Check the delegation-mode arguments: every `override(..)` names a
+/// delegated method, `on(..)` is not combined with `override(on_message)`,
+/// and the delegated field exists. Returns the override names.
+fn check_delegation_args(
+    item_struct: &ItemStruct,
+    args: &WidgetArgs,
+    table: &[MethodSpec],
+) -> syn::Result<std::collections::HashSet<String>> {
+    let field = &args.field;
+
+    // Validate `override(..)` names against the known surface.
+    let known: std::collections::HashSet<&str> = table.iter().map(|m| m.name).collect();
+    for ov in &args.overrides {
+        let ov_s = ov.to_string();
+        if !known.contains(ov_s.as_str()) {
+            return Err(syn::Error::new_spanned(
+                ov,
+                format!(
+                    "`override({ov_s})` is not a delegated `Widget` method; \
+                     override an unknown method by hand-writing the full `impl Widget` instead"
+                ),
+            ));
+        }
+    }
+    let overrides: std::collections::HashSet<String> = args
+        .overrides
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
+
+    // `on(..)` wires the generated `on_message`; `override(on_message)` replaces
+    // it. Both at once is contradictory.
+    if !args.on_handlers.is_empty() && overrides.contains("on_message") {
+        return Err(syn::Error::new_spanned(
+            &args.on_handlers[0],
+            "`on(..)` cannot be combined with `override(on_message)`; the override \
+             replaces the generated `on_message` that `on(..)` would wire",
+        ));
+    }
+
+    // Validate the target field exists on the struct.
+    let field_exists = item_struct
+        .fields
+        .iter()
+        .any(|f| f.ident.as_ref().is_some_and(|id| id == field));
+    if !field_exists {
+        return Err(syn::Error::new_spanned(
+            field,
+            format!(
+                "`#[widget]` expects a field named `{field}` to delegate to \
+                 (use `field = <name>` to point at a differently-named field)"
+            ),
+        ));
+    }
+    Ok(overrides)
+}
+
+/// Check the own-widget-mode arguments: known capability names, and no
+/// delegation-only `override(..)` / `on(..)`.
+fn check_own_mode_args(args: &WidgetArgs) -> syn::Result<()> {
+    // Validate capability names.
+    for cap in &args.capabilities {
+        let cap_s = cap.to_string();
+        if !is_known_capability(&cap_s) {
+            return Err(syn::Error::new_spanned(
+                cap,
+                format!(
+                    "unknown `#[widget]` capability `{cap_s}`; expected one of: \
+                     Interactive, Layout, Scrollable, Focus, Selectable, HasTooltip, \
+                     Components, AppHooks (own-widget mode), or `base = <Type>` (delegation)"
+                ),
+            ));
+        }
+    }
+
+    // `override(..)` / `on(..)` are delegation-mode features: in own-widget mode
+    // you implement the capability trait method directly (and, for typed
+    // handlers, call your `#[on(..)]` dispatch methods from your own
+    // `Interactive::on_message`).
+    if let Some(ov) = args.overrides.first() {
+        return Err(syn::Error::new_spanned(
+            ov,
+            "`override(..)` requires `base = <Type>` delegation mode; in own-widget \
+             mode implement the capability trait method directly",
+        ));
+    }
+    if let Some(on) = args.on_handlers.first() {
+        return Err(syn::Error::new_spanned(
+            on,
+            "`on(..)` requires `base = <Type>` delegation mode; in own-widget mode \
+             implement `Interactive::on_message` and call your `#[on(..)]` dispatch \
+             methods directly",
+        ));
+    }
+    Ok(())
 }
 
 /// Emit the widget struct plus its generated `impl Widget` (body = `methods`)
 /// and the always-present `impl Renderable` (both modes share this).
-fn assemble_impl(item_struct: &ItemStruct, methods: Vec<TokenStream>) -> TokenStream {
+fn assemble_impl(item_struct: &ItemStruct, methods: &[TokenStream]) -> TokenStream {
     let name = &item_struct.ident;
     let (impl_generics, ty_generics, where_clause) = item_struct.generics.split_for_impl();
     quote! {
@@ -943,50 +1064,24 @@ fn assemble_impl(item_struct: &ItemStruct, methods: Vec<TokenStream>) -> TokenSt
 /// the `Widget` default. See the LOUD authoring rule on the capability traits:
 /// implementing a capability trait AND listing it in `#[widget(..)]` are BOTH
 /// required for the methods to run.
-fn own_widget_impl(item_struct: &ItemStruct, args: &WidgetArgs, table: &[MethodSpec]) -> TokenStream {
-    // Validate capability names.
-    for cap in &args.capabilities {
-        let cap_s = cap.to_string();
-        if !is_known_capability(&cap_s) {
-            return syn::Error::new_spanned(
-                cap,
-                format!(
-                    "unknown `#[widget]` capability `{cap_s}`; expected one of: \
-                     Interactive, Layout, Scrollable, Focus, Selectable, HasTooltip, \
-                     Components, AppHooks (own-widget mode), or `base = <Type>` (delegation)"
-                ),
-            )
-            .to_compile_error();
-        }
+fn own_widget_impl(
+    item_struct: &ItemStruct,
+    args: &WidgetArgs,
+    table: &[MethodSpec],
+) -> TokenStream {
+    if let Err(err) = check_own_mode_args(args) {
+        return err.to_compile_error();
     }
 
-    // `override(..)` / `on(..)` are delegation-mode features: in own-widget mode
-    // you implement the capability trait method directly (and, for typed
-    // handlers, call your `#[on(..)]` dispatch methods from your own
-    // `Interactive::on_message`).
-    if let Some(ov) = args.overrides.first() {
-        return syn::Error::new_spanned(
-            ov,
-            "`override(..)` requires `base = <Type>` delegation mode; in own-widget \
-             mode implement the capability trait method directly",
-        )
-        .to_compile_error();
-    }
-    if let Some(on) = args.on_handlers.first() {
-        return syn::Error::new_spanned(
-            on,
-            "`on(..)` requires `base = <Type>` delegation mode; in own-widget mode \
-             implement `Interactive::on_message` and call your `#[on(..)]` dispatch \
-             methods directly",
-        )
-        .to_compile_error();
-    }
-
-    let enabled: std::collections::HashSet<String> =
-        args.capabilities.iter().map(|i| i.to_string()).collect();
-    let has_seed_field = item_struct.fields.iter().any(|f| {
-        f.ident.as_ref().map(|id| id == "seed").unwrap_or(false)
-    });
+    let enabled: std::collections::HashSet<String> = args
+        .capabilities
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
+    let has_seed_field = item_struct
+        .fields
+        .iter()
+        .any(|f| f.ident.as_ref().is_some_and(|id| id == "seed"));
 
     let mut methods: Vec<TokenStream> = Vec::new();
     for spec in table {
@@ -1066,7 +1161,7 @@ fn own_widget_impl(item_struct: &ItemStruct, args: &WidgetArgs, table: &[MethodS
         }
     }
 
-    assemble_impl(item_struct, methods)
+    assemble_impl(item_struct, &methods)
 }
 
 #[cfg(test)]
@@ -1091,7 +1186,11 @@ mod tests {
         assert_eq!(args.field.to_string(), "inner");
         assert_eq!(args.style_type.as_deref(), Some("Card"));
         assert!(args.reactive);
-        let ov: Vec<String> = args.overrides.iter().map(|i| i.to_string()).collect();
+        let ov: Vec<String> = args
+            .overrides
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         assert_eq!(ov, vec!["render".to_string(), "on_message".to_string()]);
     }
 
@@ -1099,7 +1198,11 @@ mod tests {
     fn parse_on_handler_list() {
         let args: WidgetArgs =
             parse2(quote! { base = Vertical, on(on_button, on_checkbox) }).unwrap();
-        let on: Vec<String> = args.on_handlers.iter().map(|i| i.to_string()).collect();
+        let on: Vec<String> = args
+            .on_handlers
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         assert_eq!(on, vec!["on_button".to_string(), "on_checkbox".to_string()]);
     }
 
@@ -1129,7 +1232,7 @@ mod tests {
     fn no_base_selects_own_widget_mode() {
         // No `base = ...` is now valid: it selects own-widget mode.
         let args: WidgetArgs = parse2(quote! { Layout }).unwrap();
-        assert!(args._base.is_none());
+        assert!(args.base.is_none());
     }
 
     #[test]
@@ -1142,14 +1245,19 @@ mod tests {
     #[test]
     fn own_mode_parses_capabilities() {
         let args: WidgetArgs = parse2(quote! { Layout, Interactive }).unwrap();
-        assert!(args._base.is_none());
-        let caps: Vec<String> = args.capabilities.iter().map(|i| i.to_string()).collect();
+        assert!(args.base.is_none());
+        let caps: Vec<String> = args
+            .capabilities
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         assert_eq!(caps, vec!["Layout".to_string(), "Interactive".to_string()]);
     }
 
     #[test]
     fn own_mode_forwards_render_seed_and_capability() {
-        let out = widget_impl(quote! { Layout }, quote! { struct W { seed: NodeSeed } }).to_string();
+        let out =
+            widget_impl(quote! { Layout }, quote! { struct W { seed: NodeSeed } }).to_string();
         // Render group is always forwarded (required core).
         assert!(out.contains("Render :: render"));
         // Opted-in Layout capability forwarded, including the own-mode-only
@@ -1173,15 +1281,17 @@ mod tests {
 
     #[test]
     fn own_mode_style_type_literal_wins() {
-        let out = widget_impl(quote! { style_type = "Foo" }, quote! { struct W { x: usize } })
-            .to_string();
+        let out = widget_impl(
+            quote! { style_type = "Foo" },
+            quote! { struct W { x: usize } },
+        )
+        .to_string();
         assert!(out.contains("\"Foo\""));
     }
 
     #[test]
     fn own_mode_reactive_exposes_self() {
-        let out =
-            widget_impl(quote! { reactive }, quote! { struct W { x: usize } }).to_string();
+        let out = widget_impl(quote! { reactive }, quote! { struct W { x: usize } }).to_string();
         assert!(out.contains("Some (self)"));
     }
 
@@ -1215,7 +1325,11 @@ mod tests {
         names.sort_unstable();
         let before = names.len();
         names.dedup();
-        assert_eq!(before, names.len(), "duplicate method name in the delegated surface table");
+        assert_eq!(
+            before,
+            names.len(),
+            "duplicate method name in the delegated surface table"
+        );
     }
 
     #[test]
@@ -1231,11 +1345,14 @@ mod tests {
         // failing — invisible to the gate, which runs `cargo test --no-run`). The
         // trait split adds 12 own-mode-only rows and excludes them from base
         // forwarding, so the base surface is UNCHANGED at 59.
+        //
+        // P-C (90b5dbe5) adds `traps_focus` to the forwarded Focus group, so a
+        // compound widget's focus trap scopes the chain: 59 -> 60.
         let forwarded = method_table()
             .iter()
             .filter(|m| is_default_forwarded(m.name))
             .count();
-        assert_eq!(forwarded, 59, "base delegation surface size");
+        assert_eq!(forwarded, 60, "base delegation surface size");
         // Own mode additionally forwards the own-mode-only rows through the
         // capability traits.
         let own_only = method_table()

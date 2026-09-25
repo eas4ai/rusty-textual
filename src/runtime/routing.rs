@@ -12,18 +12,18 @@ use super::types::DispatchOutcome;
 use crate::event::ClassOp;
 
 #[cfg(test)]
-pub(crate) fn dispatch_event(root: &mut dyn Widget, event: Event) -> DispatchOutcome {
+pub(crate) fn dispatch_event(root: &mut dyn Widget, event: &Event) -> DispatchOutcome {
     let event_debug = format!("{event:?}");
     let mut ctx = EventCtx::default();
     let always_bubble = matches!(&event, Event::MouseUp(..));
     {
         let mut wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
-        root.on_event_capture(&event, &mut wctx);
+        root.on_event_capture(event, &mut wctx);
         wctx.__enqueue_reactive_if_dirty();
     }
     if always_bubble || !ctx.handled() {
         let mut wctx = WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
-        root.on_event(&event, &mut wctx);
+        root.on_event(event, &mut wctx);
         wctx.__enqueue_reactive_if_dirty();
     }
     let outcome = DispatchOutcome {
@@ -121,6 +121,7 @@ fn build_path_to_node(tree: &WidgetTree, target: NodeId) -> Vec<NodeId> {
 /// Find the currently focused node by walking the entire tree depth-first.
 ///
 /// Returns the first node whose widget reports `has_focus() == true`.
+#[must_use]
 pub fn focused_node_id_tree(tree: &WidgetTree) -> Option<NodeId> {
     let root = tree.root()?;
     for node_id in tree.walk_depth_first(root) {
@@ -479,15 +480,15 @@ pub(crate) fn dispatch_mouse_scroll_to_target_tree(
 /// This keeps envelope-level override support while making replacement
 /// semantics message-driven (Python parity).
 pub(crate) fn coalesce_message_queue(queue: &mut std::collections::VecDeque<MessageEnvelope>) {
-    if queue.len() < 2 {
-        return;
-    }
-
     fn envelope_replaces_pending(newer: &MessageEnvelope, older: &MessageEnvelope) -> bool {
         if newer.can_replace() {
             return newer.event.payload_type_id() == older.event.payload_type_id();
         }
         newer.message().can_replace(older.message())
+    }
+
+    if queue.len() < 2 {
+        return;
     }
 
     // Front-to-back; when the newer entry replaces the older, drop the older
@@ -644,9 +645,8 @@ fn dispatch_message_bubble(
         }
         // Sender not in tree — fall back to depth-first broadcast so
         // globally-addressed messages (overlay commands, etc.) still work.
-        let root = match tree.root() {
-            Some(r) => r,
-            None => return,
+        let Some(root) = tree.root() else {
+            return;
         };
         let node_ids = tree.walk_depth_first(root);
         for node_id in node_ids {
@@ -917,8 +917,7 @@ fn binding_check_allows(
         return check(&parsed.name, &parsed.arguments) == Some(true);
     }
     tree.get(node_id)
-        .map(|node| node.widget.check_action(&parsed.name, &parsed.arguments) == Some(true))
-        .unwrap_or(true)
+        .is_none_or(|node| node.widget.check_action(&parsed.name, &parsed.arguments) == Some(true))
 }
 
 /// Match a key against the full active binding chain.
@@ -967,10 +966,10 @@ pub(crate) fn match_binding_chain(
     // clash semantics by construction.
     let mut collect_node =
         |node_id: NodeId, source: BindingSource, widget: &dyn Widget| -> Vec<BindingDecl> {
-            let mut clashed = Vec::new();
-            let bindings = effective_bindings(widget, keymap, &mut clashed);
+            let mut node_clashes = Vec::new();
+            let bindings = effective_bindings(widget, keymap, &mut node_clashes);
             if let Some(sink) = clashes.as_deref_mut() {
-                sink.extend(clashed.into_iter().map(|binding| BindingClash {
+                sink.extend(node_clashes.into_iter().map(|binding| BindingClash {
                     node: node_id,
                     source,
                     binding,
@@ -1007,77 +1006,79 @@ pub(crate) fn match_binding_chain(
     // Phase 1: priority bindings, root→focused (Python: `reversed(binding_chain)`
     // = app → screen → ... → focused). The app-root chain comes first so
     // App-level priority bindings beat screen/widget priority bindings.
-    if let Some(app_tree) = app_root {
-        for (node_id, bindings) in app_chain.iter() {
-            for binding in bindings {
-                if binding.priority
-                    && key_matches_binding(key, &binding.key)
-                    && binding_check_allows(
-                        app_tree,
-                        *node_id,
-                        Some(*node_id) == app_tree.root(),
-                        &binding.action,
-                        app_check,
-                    )
-                {
-                    return Some((*node_id, binding.action.clone(), BindingSource::AppRoot));
-                }
-            }
-        }
-    }
-    for (node_id, bindings) in active_chain.iter() {
+    app_root
+        .and_then(|app_tree| {
+            first_binding_match(
+                app_chain.iter(),
+                app_tree,
+                (true, true),
+                key,
+                app_check,
+                BindingSource::AppRoot,
+            )
+        })
+        .or_else(|| {
+            first_binding_match(
+                active_chain.iter(),
+                active,
+                (true, active_root_is_app),
+                key,
+                app_check,
+                BindingSource::Active,
+            )
+        })
+        // Phase 2: normal bindings, active chain then app-root.
+        .or_else(|| {
+            first_binding_match(
+                active_chain.iter().rev(),
+                active,
+                (false, active_root_is_app),
+                key,
+                app_check,
+                BindingSource::Active,
+            )
+        })
+        .or_else(|| {
+            app_root.and_then(|app_tree| {
+                first_binding_match(
+                    app_chain.iter().rev(),
+                    app_tree,
+                    (false, true),
+                    key,
+                    app_check,
+                    BindingSource::AppRoot,
+                )
+            })
+        })
+}
+
+/// The first binding in `chain` (walked in the given order) with the given
+/// `priority` that matches `key` and passes its `check_action`.
+/// `root_is_app` says whether `tree`'s root node is the app node.
+fn first_binding_match<'a>(
+    chain: impl Iterator<Item = &'a (NodeId, Vec<BindingDecl>)>,
+    tree: &WidgetTree,
+    (priority, root_is_app): (bool, bool),
+    key: &KeyEventData,
+    app_check: Option<AppCheckAction<'_>>,
+    source: BindingSource,
+) -> Option<BindingMatch> {
+    for (node_id, bindings) in chain {
         for binding in bindings {
-            if binding.priority
+            if binding.priority == priority
                 && key_matches_binding(key, &binding.key)
                 && binding_check_allows(
-                    active,
+                    tree,
                     *node_id,
-                    active_root_is_app && Some(*node_id) == active.root(),
+                    root_is_app && Some(*node_id) == tree.root(),
                     &binding.action,
                     app_check,
                 )
             {
-                return Some((*node_id, binding.action.clone(), BindingSource::Active));
+                return Some((*node_id, binding.action.clone(), source));
             }
         }
     }
-
-    // Phase 2: normal bindings, active chain then app-root.
-    for (node_id, bindings) in active_chain.iter().rev() {
-        for binding in bindings {
-            if !binding.priority
-                && key_matches_binding(key, &binding.key)
-                && binding_check_allows(
-                    active,
-                    *node_id,
-                    active_root_is_app && Some(*node_id) == active.root(),
-                    &binding.action,
-                    app_check,
-                )
-            {
-                return Some((*node_id, binding.action.clone(), BindingSource::Active));
-            }
-        }
-    }
-    if let Some(app_tree) = app_root {
-        for (node_id, bindings) in app_chain.iter().rev() {
-            for binding in bindings {
-                if !binding.priority
-                    && key_matches_binding(key, &binding.key)
-                    && binding_check_allows(
-                        app_tree,
-                        *node_id,
-                        Some(*node_id) == app_tree.root(),
-                        &binding.action,
-                        app_check,
-                    )
-                {
-                    return Some((*node_id, binding.action.clone(), BindingSource::AppRoot));
-                }
-            }
-        }
-    }
-
     None
 }
 
@@ -1339,7 +1340,7 @@ mod message_tests {
             KeyCode::Char('x'),
             KeyModifiers::empty(),
         ));
-        let outcome = dispatch_event(&mut root, Event::Key(key));
+        let outcome = dispatch_event(&mut root, &Event::Key(key));
         assert_eq!(outcome.messages.len(), 1);
 
         // Deliver message directly to root for this unit test.
@@ -1652,14 +1653,14 @@ mod message_tests {
             root_id,
             Box::new(HintNode::new(false, vec![BindingHint::new("left", "back")])),
         );
-        let _leaf_id = tree.mount(
+        let leaf_id = tree.mount(
             mid_id,
             Box::new(HintNode::new(
                 true,
                 vec![BindingHint::new("enter", "activate")],
             )),
         );
-        tree.set_focus_state(_leaf_id, true);
+        tree.set_focus_state(leaf_id, true);
 
         let (hints, _sources) = active_binding_hints_tree(&tree, None, &Keymap::new());
         assert_eq!(
@@ -1700,14 +1701,14 @@ mod message_tests {
             false,
             vec![BindingHint::new("tab", "next")],
         )));
-        let _child_id = tree.mount(
+        let child_id = tree.mount(
             root_id,
             Box::new(
                 HintNode::new(true, vec![BindingHint::new("enter", "activate")])
                     .with_help("## Focused help\nUse enter"),
             ),
         );
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let focused = focused_help_metadata_tree(&tree);
         assert!(matches!(
@@ -1778,14 +1779,14 @@ mod message_tests {
             false,
             vec![BindingHint::new("tab", "next focus")],
         )));
-        let _child_id = tree.mount(
+        let child_id = tree.mount(
             root_id,
             Box::new(
                 HintNode::new(true, vec![BindingHint::new("left/right", "switch tab")])
                     .with_help("## First"),
             ),
         );
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let first = focused_help_metadata_tree(&tree);
         assert!(matches!(
@@ -1795,12 +1796,12 @@ mod message_tests {
 
         // State 2: focus moves to root which has its own help markup.
         let mut tree2 = WidgetTree::new();
-        let _root_id2 = tree2.set_root(Box::new(
+        let root_id2 = tree2.set_root(Box::new(
             HintNode::new(true, vec![BindingHint::new("tab", "next focus")]).with_help("## Second"),
         ));
-        tree2.set_focus_state(_root_id2, true);
+        tree2.set_focus_state(root_id2, true);
         let _child_id2 = tree2.mount(
-            _root_id2,
+            root_id2,
             Box::new(
                 HintNode::new(false, vec![BindingHint::new("left/right", "switch tab")])
                     .with_help("## First"),
@@ -1825,14 +1826,14 @@ mod message_tests {
             root_id,
             Box::new(HintNode::new(false, vec![BindingHint::new("left", "back")])),
         );
-        let _leaf_id = tree.mount(
+        let leaf_id = tree.mount(
             mid_id,
             Box::new(HintNode::new(
                 true,
                 vec![BindingHint::new("enter", "activate")],
             )),
         );
-        tree.set_focus_state(_leaf_id, true);
+        tree.set_focus_state(leaf_id, true);
 
         let (hints, sources) = active_binding_hints_tree(&tree, None, &Keymap::new());
         assert_eq!(
@@ -1927,8 +1928,8 @@ mod message_tests {
             false,
             vec![BindingHint::new("a", "Add node")],
         )));
-        let _tree_id = tree.mount(root_id, Box::new(HintNode::new(true, vec![])));
-        tree.set_focus_state(_tree_id, true);
+        let tree_id = tree.mount(root_id, Box::new(HintNode::new(true, vec![])));
+        tree.set_focus_state(tree_id, true);
 
         let (hints, sources) = active_binding_hints_tree(&tree, None, &Keymap::new());
         assert!(
@@ -1990,7 +1991,7 @@ mod envelope_tests {
         }
     }
 
-    /// Helper: build a MessageEvent from a sender FFI id and a typed message.
+    /// Helper: build a `MessageEvent` from a sender FFI id and a typed message.
     fn msg_event<M: Message>(sender_ffi: u64, message: M) -> MessageEvent {
         MessageEvent::new(node_id_from_ffi(sender_ffi), message)
     }
@@ -2318,6 +2319,7 @@ mod envelope_tests {
     // DescendantBlur, bubble=True). Dispatched at the focused/blurred node,
     // they bubble to ancestors carrying the node — and never touch focus
     // state (unlike Focus/Blur).
+    #[allow(clippy::struct_field_names)] // Each field records one thing the probe saw.
     struct DescendantProbe {
         seen_focus: Arc<AtomicUsize>,
         seen_blur: Arc<AtomicUsize>,
@@ -2333,11 +2335,17 @@ mod envelope_tests {
             match event {
                 Event::DescendantFocus(e) => {
                     self.seen_focus.fetch_add(1, Ordering::Relaxed);
-                    *self.seen_node.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.node);
+                    *self
+                        .seen_node
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(e.node);
                 }
                 Event::DescendantBlur(e) => {
                     self.seen_blur.fetch_add(1, Ordering::Relaxed);
-                    *self.seen_node.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.node);
+                    *self
+                        .seen_node
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(e.node);
                 }
                 _ => {}
             }
@@ -2386,7 +2394,9 @@ mod envelope_tests {
         assert_eq!(mid_seen.load(Ordering::Relaxed), 1, "bubbles to mid");
         assert_eq!(root_seen.load(Ordering::Relaxed), 1, "bubbles to root");
         assert_eq!(
-            *seen_node.lock().unwrap_or_else(|e| e.into_inner()),
+            *seen_node
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
             Some(leaf_id),
             "carries the focused node"
         );
@@ -2422,7 +2432,9 @@ mod envelope_tests {
         );
         assert_eq!(seen.load(Ordering::Relaxed), 2, "leaf + root see it");
         assert_eq!(
-            *seen_node.lock().unwrap_or_else(|e| e.into_inner()),
+            *seen_node
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
             Some(leaf_id)
         );
         assert_eq!(
@@ -2447,12 +2459,12 @@ mod envelope_tests {
     fn pump_has_no_message_cap() {
         // Review §1.1 (PR-02): the pump previously dropped everything past a
         // 1024-message cap with only a debug log. Python drains until empty.
+        const N: usize = 3000;
         let count = Arc::new(AtomicUsize::new(0));
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(MessageCounter::new(count.clone())));
         let leaf_id = tree.mount(root_id, Box::new(MessageCounter::new(count.clone())));
 
-        const N: usize = 3000;
         let messages: Vec<MessageEvent> = (0..N)
             .map(|i| {
                 MessageEvent::new(
@@ -2999,7 +3011,7 @@ mod envelope_tests {
     use crate::node_id::NodeId;
     use std::sync::Mutex;
 
-    /// Widget that captures the `control` value from the MessageEvent it receives.
+    /// Widget that captures the `control` value from the `MessageEvent` it receives.
     struct ControlCapture {
         captured: Arc<Mutex<Vec<Option<NodeId>>>>,
     }
@@ -3206,21 +3218,21 @@ mod binding_tests {
         // Tree: root → child (focused, binding "enter" → "submit")
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(Root));
-        let _child_id = tree.mount(
+        let child_id = tree.mount(
             root_id,
             Box::new(BindingWidget::new(
                 true,
                 vec![BindingDecl::new("enter", "submit", "Submit")],
             )),
         );
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let key = KeyEventData::from_crossterm(key_event(KeyCode::Enter, KeyModifiers::empty()));
         let result = match_binding_tree(&tree, &key);
         assert!(result.is_some());
         let (node_id, action) = result.unwrap();
         assert_eq!(action, "submit");
-        assert_eq!(node_id, _child_id);
+        assert_eq!(node_id, child_id);
     }
 
     #[test]
@@ -3231,9 +3243,9 @@ mod binding_tests {
             false,
             vec![BindingDecl::new("q", "app.quit", "Quit")],
         )));
-        let _child_id = tree.mount(root_id, Box::new(BindingWidget::new(false, vec![])));
+        let child_id = tree.mount(root_id, Box::new(BindingWidget::new(false, vec![])));
         // Focus the child
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let key =
             KeyEventData::from_crossterm(key_event(KeyCode::Char('q'), KeyModifiers::empty()));
@@ -3253,14 +3265,14 @@ mod binding_tests {
             false,
             vec![BindingDecl::new("escape", "close_app", "Close app").priority()],
         )));
-        let _child_id = tree.mount(
+        let child_id = tree.mount(
             root_id,
             Box::new(BindingWidget::new(
                 true,
                 vec![BindingDecl::new("escape", "cancel", "Cancel")],
             )),
         );
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let key = KeyEventData::from_crossterm(key_event(KeyCode::Esc, KeyModifiers::empty()));
         let result = match_binding_tree(&tree, &key);
@@ -3302,8 +3314,8 @@ mod binding_tests {
             false,
             vec![BindingDecl::new("enter", "submit", "Submit")],
         )));
-        let _child_id = tree.mount(root_id, Box::new(BindingWidget::new(true, vec![])));
-        tree.set_focus_state(_child_id, true);
+        let child_id = tree.mount(root_id, Box::new(BindingWidget::new(true, vec![])));
+        tree.set_focus_state(child_id, true);
 
         let key =
             KeyEventData::from_crossterm(key_event(KeyCode::Char('z'), KeyModifiers::empty()));
@@ -3327,7 +3339,7 @@ mod binding_tests {
         assert_eq!(action, "submit");
     }
 
-    /// Parity regression (radio_set_changed): a focused `RadioSet` inside a
+    /// Parity regression (`radio_set_changed)`: a focused `RadioSet` inside a
     /// scroll container must win the `down` key with its own
     /// `down,right → next_button` binding — NOT the ancestor's
     /// `down → scroll_down`. Python resolves BINDINGS focused→root, so the
@@ -3366,7 +3378,7 @@ mod binding_tests {
         );
     }
 
-    /// Same parity regression as RadioSet, for `OptionList`: a focused list
+    /// Same parity regression as `RadioSet`, for `OptionList`: a focused list
     /// inside a scroll container must win the arrows with its own
     /// `down → cursor_down` / `up → cursor_up` bindings — NOT the ancestor's
     /// `down → scroll_down` (Python resolves BINDINGS focused→root).
@@ -3414,9 +3426,9 @@ mod binding_tests {
         );
     }
 
-    /// Same parity regression as RadioSet, for `SelectionList`: a focused list
+    /// Same parity regression as `RadioSet`, for `SelectionList`: a focused list
     /// inside a scroll container must win the arrows (inherited
-    /// OptionList bindings) and space (`space → select`) — NOT the ancestor's
+    /// `OptionList` bindings) and space (`space → select`) — NOT the ancestor's
     /// `down → scroll_down` (Python resolves BINDINGS focused→root).
     #[test]
     fn match_binding_focused_selection_list_beats_ancestor_scroll_binding() {
@@ -3643,7 +3655,7 @@ mod binding_tests {
             false,
             vec![BindingDecl::new("q", "quit", "Quit application")],
         )));
-        let _child_id = tree.mount(
+        let child_id = tree.mount(
             root_id,
             Box::new(BindingWidget::new(
                 true,
@@ -3653,7 +3665,7 @@ mod binding_tests {
                 ],
             )),
         );
-        tree.set_focus_state(_child_id, true);
+        tree.set_focus_state(child_id, true);
 
         let (hints, _sources) = active_binding_hints_tree(&tree, None, &Keymap::new());
         // Root has 1 binding, child has 2 bindings = 3 total hints.

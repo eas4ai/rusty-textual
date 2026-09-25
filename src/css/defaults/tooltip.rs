@@ -17,7 +17,7 @@
 //   system tooltip node is mounted with `runtime_display = false` and the hover
 //   path toggles it, so no inline display override is needed.
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 Tooltip {
     layer: _tooltips;
     overlay: screen;
@@ -31,4 +31,4 @@ Tooltip {
     max-width: 40;
     offset-x: -50%;
 }
-"#;
+";

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::ThreadId;
 
 #[derive(Debug)]
@@ -139,13 +139,7 @@ impl AsyncTaskRuntime {
 
     pub(crate) fn drain_completed(&mut self) -> Vec<MessageEvent> {
         let mut out = Vec::new();
-        loop {
-            let completion = match self.completion_rx.try_recv() {
-                Ok(completion) => completion,
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => break,
-            };
-
+        while let Ok(completion) = self.completion_rx.try_recv() {
             let Some(active) = self.running.get(&completion.task_id) else {
                 continue;
             };
@@ -234,7 +228,10 @@ fn call_from_thread_bridge() -> &'static CallFromThreadBridge {
 /// detect (and reject) calls made from the UI thread itself.
 pub(crate) fn register_ui_thread() {
     let bridge = call_from_thread_bridge();
-    *bridge.ui_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::thread::current().id());
+    *bridge
+        .ui_thread
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(std::thread::current().id());
     bridge.generation.fetch_add(1, Ordering::SeqCst);
     bridge.running.store(true, Ordering::SeqCst);
 }
@@ -247,7 +244,10 @@ pub(crate) fn register_ui_thread() {
 pub(crate) fn unregister_ui_thread() {
     let bridge = call_from_thread_bridge();
     bridge.running.store(false, Ordering::SeqCst);
-    *bridge.ui_thread.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *bridge
+        .ui_thread
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     // Drop any pending jobs so blocked workers unblock (their result senders
     // are dropped inside the job closures we discard here).
     bridge
@@ -261,7 +261,7 @@ pub(crate) fn unregister_ui_thread() {
 pub(crate) fn is_ui_thread() -> bool {
     let bridge = call_from_thread_bridge();
     matches!(
-        *bridge.ui_thread.lock().unwrap_or_else(|e| e.into_inner()),
+        *bridge.ui_thread.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
         Some(id) if id == std::thread::current().id()
     )
 }
@@ -506,7 +506,9 @@ fn read_directory_request(path: String, show_hidden: bool) -> AsyncTaskResult {
         if !show_hidden && name.starts_with('.') {
             continue;
         }
-        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+        // `Path::is_dir` follows symlinks, like Python's `_safe_is_dir`;
+        // `DirEntry::file_type` does not.
+        let is_dir = entry_path.is_dir();
         entries.push(AsyncDirectoryEntry {
             path: entry_path.display().to_string(),
             label: name.to_string(),
@@ -608,6 +610,40 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn read_directory_request_lists_a_symlinked_directory_as_a_directory() {
+        let temp = TempTreeDir::new("async-task-symlink");
+        fs::create_dir_all(temp.path.join("real")).expect("create real dir");
+        std::os::unix::fs::symlink(temp.path.join("real"), temp.path.join("link"))
+            .expect("create directory symlink");
+        std::os::unix::fs::symlink(temp.path.join("missing"), temp.path.join("dangling"))
+            .expect("create dangling symlink");
+        fs::write(temp.path.join("alpha.txt"), "alpha").expect("write file");
+
+        let crate::message::AsyncTaskResult::DirectoryEntries { entries, .. } =
+            super::read_directory_request(temp.path.display().to_string(), false)
+        else {
+            panic!("expected directory entries");
+        };
+        let listed: Vec<(&str, bool)> = entries
+            .iter()
+            .map(|entry| (entry.label.as_str(), entry.is_dir))
+            .collect();
+        // Python's `_safe_is_dir` uses `Path.is_dir()`, which follows the link,
+        // so a linked directory sorts with the directories. A dangling link is
+        // a file.
+        assert_eq!(
+            listed,
+            [
+                ("link", true),
+                ("real", true),
+                ("alpha.txt", false),
+                ("dangling", false)
+            ]
+        );
+    }
+
     // ── call_from_thread bridge ───────────────────────────────────────
 
     use super::{
@@ -620,7 +656,7 @@ mod tests {
     fn call_from_thread_not_running_returns_error_without_blocking() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Ensure no app registered.
         unregister_ui_thread();
         assert!(!ui_thread_running());
@@ -632,7 +668,7 @@ mod tests {
     fn call_from_thread_same_thread_is_rejected() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         register_ui_thread();
         assert!(is_ui_thread());
         // Calling on the UI thread itself must not deadlock; it errors instead.
@@ -645,7 +681,7 @@ mod tests {
     fn call_from_thread_round_trips_value_and_runs_with_app() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         // This thread plays the role of the UI/event-loop thread, holding the
         // single `&mut App`.
@@ -700,7 +736,7 @@ mod tests {
     fn unregister_drops_pending_jobs_and_unblocks_worker() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         register_ui_thread();
 
         // Worker posts a job but the UI thread never drains it — instead the app
@@ -720,7 +756,7 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(CallFromThreadError::Disconnected) | Err(CallFromThreadError::NotRunning)
+                Err(CallFromThreadError::Disconnected | CallFromThreadError::NotRunning)
             ),
             "worker must unblock on shutdown, got {result:?}"
         );
@@ -765,6 +801,9 @@ mod tests {
     struct AnswerScreen;
 
     impl Screen for AnswerScreen {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "AnswerScreen"
         }
@@ -801,7 +840,7 @@ mod tests {
     fn push_screen_wait_not_running_errors() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         unregister_ui_thread();
         assert!(!ui_thread_running());
         let result = push_screen_wait(Box::new(AnswerScreen));
@@ -814,7 +853,7 @@ mod tests {
     fn push_screen_wait_on_ui_thread_is_rejected() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         register_ui_thread();
         assert!(is_ui_thread());
         let result = push_screen_wait(Box::new(AnswerScreen));
@@ -823,11 +862,11 @@ mod tests {
     }
 
     /// End-to-end: a worker thread calls `push_screen_wait`, the UI thread drives
-    /// the push (via the call_from_thread queue) and then a button press on the
+    /// the push (via the `call_from_thread` queue) and then a button press on the
     /// screen dismisses it with a value; the worker must resume with that value.
     ///
     /// This plays the role of the event loop on the test (UI) thread: it drains
-    /// the call_from_thread queue (running the push with `&mut App`), then
+    /// the `call_from_thread` queue (running the push with `&mut App`), then
     /// dispatches a real `ButtonPressed` into the active screen tree — exercising
     /// `Screen::on_button_pressed` → `ctx.dismiss(..)` — and drains screen
     /// dismissals, which pops the screen and fires the result callback that
@@ -836,7 +875,7 @@ mod tests {
     fn push_screen_wait_resumes_worker_with_dismiss_value() {
         let _guard = UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let mut app = crate::runtime::App::new().expect("app should initialize");
         register_ui_thread();

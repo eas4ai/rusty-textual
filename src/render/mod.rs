@@ -8,11 +8,14 @@
 
 use std::cmp;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 use rich_rs::{
     Console, ConsoleOptions, MetaValue, Renderable, Segment, Segments, Style, StyleMeta,
 };
 use unicode_width::UnicodeWidthChar;
+
+use crate::num::Cast;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
@@ -23,6 +26,7 @@ pub struct Cell {
 }
 
 impl Cell {
+    #[must_use]
     pub fn blank(style: Option<Style>) -> Self {
         Self {
             text: " ".to_string(),
@@ -32,6 +36,7 @@ impl Cell {
         }
     }
 
+    #[must_use]
     pub fn continuation(style: Option<Style>, meta: Option<StyleMeta>) -> Self {
         Self {
             text: String::new(),
@@ -41,6 +46,7 @@ impl Cell {
         }
     }
 
+    #[must_use]
     pub fn width(&self) -> usize {
         if self.continuation {
             0
@@ -76,6 +82,7 @@ pub struct DirtyRegion {
 }
 
 impl FrameBuffer {
+    #[must_use]
     pub fn new(width: usize, height: usize, style: Option<Style>) -> Self {
         let width = width.max(1);
         let height = height.max(1);
@@ -92,6 +99,7 @@ impl FrameBuffer {
         y * self.width + x
     }
 
+    #[must_use]
     pub fn get(&self, x: usize, y: usize) -> &Cell {
         &self.cells[self.idx(x, y)]
     }
@@ -107,6 +115,7 @@ impl FrameBuffer {
         self.cells[idx] = cell;
     }
 
+    #[must_use]
     pub fn owner_bounds(&self) -> HashMap<i64, OwnerRect> {
         let mut out = HashMap::new();
         for y in 0..self.height {
@@ -114,8 +123,8 @@ impl FrameBuffer {
                 let Some(owner_id) = self.owner_ids[self.idx(x, y)] else {
                     continue;
                 };
-                let xu = x as u16;
-                let yu = y as u16;
+                let xu = x.to_u16_sat();
+                let yu = y.to_u16_sat();
                 out.entry(owner_id)
                     .and_modify(|r: &mut OwnerRect| {
                         r.x0 = r.x0.min(xu);
@@ -134,6 +143,7 @@ impl FrameBuffer {
         out
     }
 
+    #[must_use]
     pub fn as_plain_lines(&self) -> Vec<String> {
         let mut lines = Vec::with_capacity(self.height);
         for y in 0..self.height {
@@ -154,11 +164,13 @@ impl FrameBuffer {
         lines
     }
 
+    #[must_use]
     pub fn debug_dump(&self) -> String {
         let mut out = String::new();
         out.push_str("lines:\n");
         for (y, line) in self.as_plain_lines().iter().enumerate() {
-            out.push_str(&format!("{y}: \"{line}\"\n"));
+            // Writing to a `String` cannot fail.
+            let _ = writeln!(out, "{y}: \"{line}\"");
         }
         out.push_str("meta:\n");
         for y in 0..self.height {
@@ -172,13 +184,14 @@ impl FrameBuffer {
                             continue;
                         }
                     }
-                    out.push_str(&format!("({x},{y}): {:?}\n", meta));
+                    let _ = writeln!(out, "({x},{y}): {meta:?}");
                 }
             }
         }
         out
     }
 
+    #[must_use]
     pub fn to_segments(&self) -> Segments {
         let mut out = Segments::new();
         for y in 0..self.height {
@@ -194,7 +207,7 @@ impl FrameBuffer {
                 };
                 let mut seg = Segment::new(text);
                 seg.style = cell.style;
-                seg.meta = cell.meta.clone();
+                seg.meta.clone_from(&cell.meta);
                 out.push(seg);
             }
             if y + 1 < self.height {
@@ -219,7 +232,7 @@ impl FrameBuffer {
     /// default 0.66); see [`FrameBuffer::preblend_dim_with`] for the
     /// testable seam.
     pub(crate) fn preblend_dim(&mut self) {
-        self.preblend_dim_with(crate::style::dim_factor() as f32);
+        self.preblend_dim_with(crate::style::dim_factor().to_f32_lossy());
     }
 
     /// [`FrameBuffer::preblend_dim`] with an explicit factor (unit-test seam;
@@ -245,8 +258,9 @@ impl FrameBuffer {
             let Some(bg) = style.bgcolor.or(default_bg).and_then(rgb_of) else {
                 continue;
             };
-            let blend =
-                |b: u8, f: u8| -> u8 { (b as f32 + (f as f32 - b as f32) * dim_factor) as u8 };
+            let blend = |b: u8, f: u8| -> u8 {
+                (f32::from(b) + (f32::from(f) - f32::from(b)) * dim_factor).to_u8_sat()
+            };
             style.color = Some(rich_rs::SimpleColor::Rgb {
                 r: blend(bg.0, fg.0),
                 g: blend(bg.1, fg.1),
@@ -256,7 +270,7 @@ impl FrameBuffer {
         }
     }
 
-    /// Render a renderable to a FrameBuffer.
+    /// Render a renderable to a `FrameBuffer`.
     pub fn from_renderable(
         console: &Console,
         options: &ConsoleOptions,
@@ -269,7 +283,8 @@ impl FrameBuffer {
         Self::from_lines(&lines, width, height, style)
     }
 
-    /// Build a FrameBuffer from pre-rendered lines.
+    /// Build a `FrameBuffer` from pre-rendered lines.
+    #[must_use]
     pub fn from_lines(
         lines: &[Vec<Segment>],
         width: usize,
@@ -295,9 +310,9 @@ impl FrameBuffer {
         self.write_line_at(0, y, line, true);
     }
 
-    /// Write a line of segments at position (x_offset, y) in the buffer.
+    /// Write a line of segments at position (`x_offset`, y) in the buffer.
     ///
-    /// If `clear_first` is true, the region from x_offset to width is cleared
+    /// If `clear_first` is true, the region from `x_offset` to width is cleared
     /// to blank cells before writing. When painting tree nodes at arbitrary
     /// positions, pass `false` to composite over existing content.
     pub(crate) fn write_line_at(
@@ -399,6 +414,15 @@ impl FrameBuffer {
     /// - Start with `Home` (cursor to 0,0)
     /// - Use cursor controls (no `\n`) for positioning
     /// - Emit styled text + metadata for changed spans
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` and `previous` have different widths or different
+    /// heights. It can also panic on an out-of-bounds cell index when a
+    /// caller has changed the public `width` or `height` field of either
+    /// buffer after [`FrameBuffer::new`], so the field no longer matches the
+    /// cell storage.
+    #[must_use]
     pub fn diff_to_segments(&self, previous: &FrameBuffer) -> Segments {
         assert_eq!(self.width, previous.width, "buffer widths differ");
         assert_eq!(self.height, previous.height, "buffer heights differ");
@@ -448,8 +472,8 @@ impl FrameBuffer {
                 }
 
                 out.push(Segment::control(rich_rs::ControlType::MoveTo {
-                    x: x as u16,
-                    y: y as u16,
+                    x: x.to_u16_sat(),
+                    y: y.to_u16_sat(),
                 }));
 
                 let mut run_x = x;
@@ -467,7 +491,7 @@ impl FrameBuffer {
                     };
                     let mut seg = Segment::new(text);
                     seg.style = cell.style;
-                    seg.meta = cell.meta.clone();
+                    seg.meta.clone_from(&cell.meta);
                     out.push(seg);
                     run_x += w;
                 }
@@ -482,6 +506,16 @@ impl FrameBuffer {
     /// Compute an update sequence limited to the given dirty regions.
     ///
     /// Cells outside `dirty_regions` are treated as unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` and `previous` have different widths or different
+    /// heights. It can also panic on an out-of-bounds cell index when a
+    /// caller has changed the public `width` or `height` field of either
+    /// buffer after [`FrameBuffer::new`], so the field no longer matches the
+    /// cell storage. Region bounds are clamped to the buffer and never cause
+    /// a panic.
+    #[must_use]
     pub fn diff_to_segments_in_regions(
         &self,
         previous: &FrameBuffer,

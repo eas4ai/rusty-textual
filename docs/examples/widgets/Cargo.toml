@@ -11,3 +11,5 @@ crossterm = "0.28"
 tree-sitter-java = "0.23"
 chrono = "0.4"
 
+[lints]
+workspace = true

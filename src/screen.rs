@@ -31,6 +31,9 @@ use crate::event::Event;
 /// Screens are stacked — only the topmost screen is active (receives events, renders).
 pub trait Screen: Send + Sync {
     /// Human-readable name for this screen (used in debug/logging).
+    // `Screen::name` returns `&str` so names may be runtime values; an impl
+    // cannot narrow it to `&'static str`, whatever clippy suggests.
+    #[allow(clippy::unnecessary_literal_bound)]
     fn name(&self) -> &str {
         "Screen"
     }
@@ -451,6 +454,7 @@ fn resolve_screen_css(css: &str) -> crate::error::Result<String> {
 
 impl ScreenStack {
     /// Create an empty screen stack.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             screens: Vec::new(),
@@ -463,6 +467,14 @@ impl ScreenStack {
     /// - Builds the widget tree from `screen.compose()`.
     /// - Parses the screen's CSS (if any).
     /// - Calls `on_mount` on the new screen.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::error::Error::StylesheetError`] when `screen.css()`
+    /// names a stylesheet file (the value has no newline and no `{`) and
+    /// reading that file fails, for example because it does not exist. The
+    /// check runs first, so on error the stack is unchanged and no lifecycle
+    /// hook runs.
     pub fn push(&mut self, screen: Box<dyn Screen>) -> crate::error::Result<()> {
         self.push_inner(screen, None, None)
     }
@@ -471,6 +483,13 @@ impl ScreenStack {
     ///
     /// The callback is invoked with the `ScreenResult` when the screen is
     /// popped (either via `pop()` or via `dismiss()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::error::Error::StylesheetError`] when `screen.css()`
+    /// names a stylesheet file and reading that file fails. See
+    /// [`ScreenStack::push`]. On error the stack is unchanged and `callback`
+    /// is dropped without being called.
     pub fn push_with_callback(
         &mut self,
         screen: Box<dyn Screen>,
@@ -483,6 +502,12 @@ impl ScreenStack {
     ///
     /// The mode name is stored in the entry so that `pop_mode()` can identify
     /// and remove the correct screen even if transient screens are on top.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::error::Error::StylesheetError`] when `screen.css()`
+    /// names a stylesheet file and reading that file fails. See
+    /// [`ScreenStack::push`]. On error the stack is unchanged.
     pub fn push_mode(
         &mut self,
         screen: Box<dyn Screen>,
@@ -524,6 +549,7 @@ impl ScreenStack {
     }
 
     /// Return the mode name of the topmost screen (if it has one).
+    #[must_use]
     pub fn top_mode_name(&self) -> Option<&str> {
         self.screens.last().and_then(|e| e.mode_name.as_deref())
     }
@@ -700,16 +726,19 @@ impl ScreenStack {
     }
 
     /// Number of screens on the stack.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.screens.len()
     }
 
     /// Whether the stack is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.screens.is_empty()
     }
 
     /// Get the title from the topmost screen (if it defines one).
+    #[must_use]
     pub fn active_title(&self) -> Option<String> {
         self.top()
             .and_then(|e| e.with_screen(|s| s.title().map(str::to_string)))
@@ -717,6 +746,7 @@ impl ScreenStack {
     }
 
     /// Get the sub-title from the topmost screen (if it defines one).
+    #[must_use]
     pub fn active_sub_title(&self) -> Option<String> {
         self.top()
             .and_then(|e| e.with_screen(|s| s.sub_title().map(str::to_string)))
@@ -739,7 +769,7 @@ impl ScreenStack {
     /// last drain, or `None`. The runtime uses this to pop the active screen and
     /// deliver the result to its callback on the next loop pass.
     pub(crate) fn take_active_dismissal(&self) -> Option<ScreenResult> {
-        self.top().and_then(|e| e.take_pending_dismissal())
+        self.top().and_then(ScreenEntry::take_pending_dismissal)
     }
 }
 
@@ -1061,7 +1091,7 @@ mod tests {
                 let num = val.downcast_ref::<i32>().unwrap();
                 assert_eq!(*num, 42);
             }
-            _ => panic!("expected Value variant"),
+            ScreenResult::Dismissed => panic!("expected Value variant"),
         }
     }
 
@@ -1073,7 +1103,7 @@ mod tests {
                 let s = val.downcast_ref::<String>().unwrap();
                 assert_eq!(s, "hello");
             }
-            _ => panic!("expected Value variant"),
+            ScreenResult::Dismissed => panic!("expected Value variant"),
         }
     }
 
@@ -1567,13 +1597,16 @@ mod tests {
     use crate::node_id::NodeId;
     use crate::runtime::dispatch_message_queue_tree;
 
-    /// A modal QuitScreen mirroring `modal03.py`:
+    /// A modal `QuitScreen` mirroring `modal03.py`:
     /// - owns a `("escape", "dismiss", "Cancel")` binding,
     /// - dismisses with `true` when a `#quit` button is pressed and `false`
     ///   otherwise, via its own `on_button_pressed` handler.
     struct QuitScreen;
 
     impl Screen for QuitScreen {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "QuitScreen"
         }
@@ -1652,7 +1685,7 @@ mod tests {
             let root_id = entry.widget_tree.root().expect("root");
             // Sender doesn't need to be in the tree for bubble-to-root; the
             // bubble path falls back to a depth-first walk that includes root.
-            (root_id, crate::node_id::node_id_from_ffi(424242))
+            (root_id, crate::node_id::node_id_from_ffi(424_242))
         };
 
         let message = MessageEvent::new(

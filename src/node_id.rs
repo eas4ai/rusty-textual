@@ -18,6 +18,7 @@ pub type NodeId = slotmap::DefaultKey;
 /// The returned value is an opaque encoding of the key's version and index.
 /// Use [`node_id_from_ffi`] to recover the original `NodeId`.
 #[inline]
+#[must_use]
 pub fn node_id_to_ffi(id: NodeId) -> u64 {
     use slotmap::Key;
     id.data().as_ffi()
@@ -31,8 +32,26 @@ pub fn node_id_to_ffi(id: NodeId) -> u64 {
 /// Passing arbitrary integers produces a syntactically valid but semantically
 /// bogus key — any subsequent `SlotMap` lookup will simply return `None`.
 #[inline]
+#[must_use]
 pub fn node_id_from_ffi(ffi: u64) -> NodeId {
     slotmap::KeyData::from_ffi(ffi).into()
+}
+
+/// Encode a `NodeId` as the `i64` that segment metadata (`MetaValue::Int`)
+/// stores.
+///
+/// Reuses the bits of [`node_id_to_ffi`] unchanged, so an id whose top bit
+/// is set becomes a negative `i64` and still decodes exactly with
+/// [`node_id_from_meta`].
+#[inline]
+pub(crate) fn node_id_to_meta(id: NodeId) -> i64 {
+    i64::from_ne_bytes(node_id_to_ffi(id).to_ne_bytes())
+}
+
+/// Decode a value written by [`node_id_to_meta`].
+#[inline]
+pub(crate) fn node_id_from_meta(meta: i64) -> NodeId {
+    node_id_from_ffi(u64::from_ne_bytes(meta.to_ne_bytes()))
 }
 
 #[cfg(test)]
@@ -49,6 +68,22 @@ mod tests {
         let decoded = node_id_from_ffi(encoded);
         assert_eq!(id, decoded);
         assert_eq!(sm[decoded], "hello");
+    }
+
+    #[test]
+    fn round_trip_through_meta_keeps_top_bit() {
+        // Version 0x8000_0001 (odd, as slotmap requires), index 5.
+        let id = node_id_from_ffi(0x8000_0001_0000_0005);
+        let meta = node_id_to_meta(id);
+        assert!(
+            meta < 0,
+            "an id with the top bit set encodes as a negative i64"
+        );
+        assert_eq!(node_id_from_meta(meta), id);
+
+        let small = node_id_from_ffi(0x0000_0001_0000_0002);
+        assert_eq!(node_id_to_meta(small), 0x0000_0001_0000_0002);
+        assert_eq!(node_id_from_meta(node_id_to_meta(small)), small);
     }
 
     #[test]

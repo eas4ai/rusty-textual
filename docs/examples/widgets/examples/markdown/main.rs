@@ -5,7 +5,7 @@
 /// - No explicit title set; no stylesheet.
 ///
 /// Python: `Markdown(EXAMPLE_MARKDOWN)` with `markdown.code_indent_guides = False`.
-/// Rust: `Markdown::new(EXAMPLE_MARKDOWN)` (code_indent_guides not applicable).
+/// Rust: `Markdown::new(EXAMPLE_MARKDOWN)` (`code_indent_guides` not applicable).
 use textual::prelude::*;
 
 const EXAMPLE_MARKDOWN: &str = r#"## Markdown

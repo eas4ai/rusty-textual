@@ -5,7 +5,10 @@ use rich_rs::{Console, ConsoleOptions, Renderable, Segments};
 use crate::action::ParsedAction;
 use crate::compose::{ChildDecl, ComposeResult};
 use crate::event::WidgetCtx;
-use crate::message::*;
+use crate::message::{
+    AppFocus, MessageEvent, OptionSelected, SelectChanged, SelectCurrentToggle,
+    SelectOverlayDismiss,
+};
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
 
 use super::option_list::OptionItem;
@@ -22,8 +25,8 @@ static NEXT_SELECT_ID: AtomicU64 = AtomicU64::new(1);
 /// A dropdown select control.
 ///
 /// Port of Python Textual's `Select` (`textual/widgets/_select.py`). It is a
-/// composed-children ARENA widget: `compose()` emits a [`SelectCurrent`] bar and
-/// a [`SelectOverlay`] pop-up as real child nodes (state-pure, so a recompose —
+/// composed-children ARENA widget: `compose()` emits a `SelectCurrent` bar and
+/// a `SelectOverlay` pop-up as real child nodes (state-pure, so a recompose —
 /// used to reflect a value/options change — rebuilds an identical subtree). The
 /// overlay resolves `overlay: screen; display: block` when the Select carries
 /// `-expanded`, so it floats UNCLIPPED at the top z via the Mechanism-A deferred
@@ -90,14 +93,16 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
 
     /// Set this widget's CSS id (Python `id=`). Also becomes the id it re-focuses
     /// itself by after a dismiss.
+    #[must_use]
     pub fn id(mut self, value: impl Into<String>) -> Self {
         let v = value.into();
-        self.focus_id = v.clone();
+        self.focus_id.clone_from(&v);
         self.seed.css_id = Some(v);
         self
     }
 
     /// Add a CSS class (Python `classes=`). Idempotent.
+    #[must_use]
     pub fn class(mut self, value: impl Into<String>) -> Self {
         let v = value.into();
         if !self.seed.classes.iter().any(|c| c == &v) {
@@ -109,6 +114,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
     // ── Public API ──────────────────────────────────────────────────
 
     /// The currently selected value, or `None`.
+    #[must_use]
     pub fn value(&self) -> Option<&T> {
         self.cursor
             .selected()
@@ -143,11 +149,13 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
     }
 
     /// Whether the dropdown overlay is currently open.
+    #[must_use]
     pub fn is_open(&self) -> bool {
         self.expanded
     }
 
     /// Whether blank (no selection) is allowed.
+    #[must_use]
     pub fn allow_blank(&self) -> bool {
         self.allow_blank
     }
@@ -196,6 +204,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
     /// When `true` (default, Python parity), the initial state is no selection
     /// (placeholder shown) and the user can deselect. When `false` the first
     /// option is auto-selected and the user cannot clear the selection.
+    #[must_use]
     pub fn with_allow_blank(mut self, allow: bool) -> Self {
         self.allow_blank = allow;
         if allow {
@@ -207,6 +216,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
     }
 
     /// Builder: set disabled state for the entire select.
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         if disabled {
@@ -238,6 +248,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
 
     // ── Watchers ─────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_allow_blank(&mut self, _old: &bool, new: &bool) {
         if !new && self.cursor.selected().is_none() && !self.options.is_empty() {
             self.cursor.set_selected(Some(0));
@@ -253,7 +264,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Select<T> {
             .map(|index| self.options[index].0.clone())
     }
 
-    /// Whether a real value is selected (drives SelectCurrent's `-has-value`).
+    /// Whether a real value is selected (drives `SelectCurrent`'s `-has-value`).
     fn has_value(&self) -> bool {
         self.cursor.selected().is_some()
     }
@@ -390,7 +401,7 @@ impl<T: Clone + PartialEq + Send + Sync + 'static> Widget for Select<T> {
         }
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "select"
     }
 

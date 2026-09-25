@@ -4,6 +4,7 @@ use textual_macros::widget;
 use crate::debug::DebugLayout;
 use crate::event::Event;
 use crate::message::MessageEvent;
+use crate::num::Cast;
 
 use crate::widgets::{
     LayoutConstraints, NodeSeed, Spacer, Widget,
@@ -34,21 +35,25 @@ impl Constrained {
         }
     }
 
+    #[must_use]
     pub fn min_width(mut self, value: usize) -> Self {
         self.constraints = self.constraints.min_width(value);
         self
     }
 
+    #[must_use]
     pub fn max_width(mut self, value: usize) -> Self {
         self.constraints = self.constraints.max_width(value);
         self
     }
 
+    #[must_use]
     pub fn min_height(mut self, value: usize) -> Self {
         self.constraints = self.constraints.min_height(value);
         self
     }
 
+    #[must_use]
     pub fn max_height(mut self, value: usize) -> Self {
         self.constraints = self.constraints.max_height(value);
         self
@@ -100,13 +105,15 @@ impl crate::widgets::Interactive for Constrained {
             constraints.min_width,
             constraints.max_width,
             usize::from(width.max(1)),
-        ) as u16;
+        )
+        .to_u16_sat();
         let height = clamp_with_constraints(
             usize::from(height.max(1)),
             constraints.min_height,
             constraints.max_height,
             usize::from(height.max(1)),
-        ) as u16;
+        )
+        .to_u16_sat();
         self.child.on_layout(width, height);
     }
 

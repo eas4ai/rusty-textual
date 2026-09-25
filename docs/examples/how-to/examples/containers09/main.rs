@@ -6,7 +6,7 @@
 ///
 /// Python layout:
 ///   class Box(Placeholder):
-///       DEFAULT_CSS = "Box { width: 16; height: 5; }"
+///       `DEFAULT_CSS` = "Box { width: 16; height: 5; }"
 ///
 ///   class ContainerApp(App):
 ///       CSS = ".with-border { border: heavy green; }"
@@ -18,7 +18,7 @@
 ///               yield Box("Box 3.")
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 .box {
     width: 16;
     height: 5;
@@ -27,7 +27,7 @@ const CSS: &str = r#"
 .with-border {
     border: heavy green;
 }
-"#;
+";
 
 struct ContainerApp;
 
@@ -38,12 +38,11 @@ impl TextualApp for ContainerApp {
     }
 
     fn compose(&mut self) -> AppRoot {
-        let middle = 
-            Middle::new()
-                .with_child(Placeholder::new("Box 1.").class("box"))
-                .with_child(Placeholder::new("Box 2.").class("box"))
-                .with_child(Placeholder::new("Box 3.").class("box"))
-        .class("with-border");
+        let middle = Middle::new()
+            .with_child(Placeholder::new("Box 1.").class("box"))
+            .with_child(Placeholder::new("Box 2.").class("box"))
+            .with_child(Placeholder::new("Box 3.").class("box"))
+            .class("with-border");
 
         AppRoot::new().with_child(middle)
     }

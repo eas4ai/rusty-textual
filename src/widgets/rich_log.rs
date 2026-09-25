@@ -8,7 +8,8 @@ use rich_rs::{Console, ConsoleOptions, Renderable, Segment, Segments, Text};
 use textual_macros::widget;
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{MessageEvent, RichLogScrolled, ScrollbarAxis, ScrollbarScrollTo};
+use crate::num::Cast;
 
 use super::helpers::adjust_line_length_no_bg;
 
@@ -50,7 +51,7 @@ impl LineCache {
             self.order.retain(|k| *k != key);
         } else if self.entries.len() >= self.max_size {
             // Evict least recently used
-            if let Some(evicted) = self.order.first().cloned() {
+            if let Some(evicted) = self.order.first().copied() {
                 self.entries.remove(&evicted);
                 self.order.remove(0);
             }
@@ -72,6 +73,8 @@ impl LineCache {
 
 #[derive(Debug)]
 #[widget(Focus, Interactive, Scrollable)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct RichLog {
     lines: Vec<LogLine>,
     max_lines: Option<usize>,
@@ -144,6 +147,7 @@ impl Default for RichLog {
 impl RichLog {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             lines: Vec::new(),
@@ -169,51 +173,68 @@ impl RichLog {
         }
     }
 
+    #[must_use]
     pub fn cache_size(mut self, max_entries: usize) -> Self {
         self.cache = Mutex::new(LineCache::new(max_entries));
         self
     }
 
+    #[must_use]
     pub fn max_lines(mut self, max_lines: usize) -> Self {
         self.max_lines = Some(max_lines.max(1));
         self.trim_to_max_lines();
         self
     }
 
+    #[must_use]
     pub fn auto_scroll(mut self, auto_scroll: bool) -> Self {
         self.auto_scroll = auto_scroll;
         self
     }
 
+    #[must_use]
     pub fn wrap(mut self, wrap: bool) -> Self {
         if self.wrap != wrap {
             self.wrap = wrap;
-            self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            self.cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
         }
         self
     }
 
+    #[must_use]
     pub fn highlight(mut self, highlight: bool) -> Self {
         if self.highlight != highlight {
             self.highlight = highlight;
-            self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            self.cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
         }
         self
     }
 
+    #[must_use]
     pub fn markup(mut self, markup: bool) -> Self {
         if self.markup != markup {
             self.markup = markup;
-            self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            self.cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
         }
         self
     }
 
+    #[must_use]
     pub fn min_width(mut self, min_width: usize) -> Self {
         self.min_width = min_width;
         self
     }
 
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);
         self
@@ -326,25 +347,37 @@ impl RichLog {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_wrap(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_highlight(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_markup(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     /// Returns true if the widget has been rendered at least once (size is known).
-    /// After first render, widget_width is set to actual width (>= min_width).
+    /// After first render, `widget_width` is set to actual width (>= `min_width`).
     fn is_sized(&self) -> bool {
         self.sized || self.widget_width.load(Ordering::Relaxed) > 1
     }
 
-    /// Lazily mark sized=true once widget_width indicates a render happened.
+    /// Lazily mark sized=true once `widget_width` indicates a render happened.
     fn mark_sized_if_ready(&mut self) {
         if !self.sized && self.widget_width.load(Ordering::Relaxed) > 1 {
             self.sized = true;
@@ -367,7 +400,7 @@ impl RichLog {
         }
         self.cache
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .invalidate_from(insert_from);
         self.trim_to_max_lines();
         if self.auto_scroll {
@@ -391,7 +424,7 @@ impl RichLog {
         self.lines.push(LogLine::Styled(segments));
         self.cache
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .invalidate_from(insert_from);
         self.trim_to_max_lines();
         if self.auto_scroll {
@@ -422,7 +455,7 @@ impl RichLog {
         }
         self.cache
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .invalidate_from(insert_from);
         self.trim_to_max_lines();
         if self.auto_scroll {
@@ -445,7 +478,7 @@ impl RichLog {
         self.lines.push(LogLine::Renderable(Box::new(renderable)));
         self.cache
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .invalidate_from(insert_from);
         self.trim_to_max_lines();
         if self.auto_scroll {
@@ -497,7 +530,10 @@ impl RichLog {
         self.lines.clear();
         self.offset_y = 0;
         self.content_height.store(1, Ordering::Relaxed);
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
         self
     }
 
@@ -508,7 +544,10 @@ impl RichLog {
                 self.lines.drain(0..excess);
                 self.offset_y = self.offset_y.saturating_sub(excess);
                 // Indices shifted — clear the whole cache
-                self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+                self.cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clear();
             }
         }
     }
@@ -577,7 +616,10 @@ impl RichLog {
         // Invalidate cache if width changed
         let prev_width = self.cache_width.swap(width, Ordering::Relaxed);
         if prev_width != width {
-            self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            self.cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
         }
 
         let mut out: Vec<Vec<Segment>> = Vec::new();
@@ -591,7 +633,10 @@ impl RichLog {
 
                 // Try cache first
                 {
-                    let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut cache = self
+                        .cache
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     if let Some(cached) = cache.get(&cache_key) {
                         out.extend(cached.iter().cloned());
                         continue;
@@ -602,7 +647,10 @@ impl RichLog {
 
                 // Store in cache
                 {
-                    let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut cache = self
+                        .cache
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     cache.insert(cache_key, rendered_lines.clone());
                 }
 
@@ -765,15 +813,15 @@ impl crate::widgets::Interactive for RichLog {
         if let Event::Action(action) = event {
             let before = self.offset_y;
             match action {
-                Action::ScrollUp => self.scroll_by(-(self.scroll_step as i32)),
-                Action::ScrollDown => self.scroll_by(self.scroll_step as i32),
+                Action::ScrollUp => self.scroll_by(-self.scroll_step.to_i32_sat()),
+                Action::ScrollDown => self.scroll_by(self.scroll_step.to_i32_sat()),
                 Action::ScrollPageUp => {
                     let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                    self.scroll_by(-(page as i32));
+                    self.scroll_by(-page.to_i32_sat());
                 }
                 Action::ScrollPageDown => {
                     let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                    self.scroll_by(page as i32);
+                    self.scroll_by(page.to_i32_sat());
                 }
                 _ => return,
             }
@@ -799,7 +847,7 @@ impl crate::widgets::Interactive for RichLog {
         let viewport_h = self.viewport_height.load(Ordering::Relaxed).max(1);
         let content_h = self.content_height.load(Ordering::Relaxed).max(1);
         let next = ScrollView::line_clamp_offset(
-            payload.offset.max(0.0).round() as usize,
+            payload.offset.max(0.0).round().to_usize_sat(),
             content_h,
             viewport_h,
         );
@@ -818,7 +866,7 @@ impl crate::widgets::Scrollable for RichLog {
             return;
         }
         let before = self.offset_y;
-        self.scroll_by(delta_y.saturating_mul(self.scroll_step as i32));
+        self.scroll_by(delta_y.saturating_mul(self.scroll_step.to_i32_sat()));
         if self.offset_y != before {
             ctx.request_repaint();
             self.emit_scroll_changed_message(ctx);
@@ -831,7 +879,7 @@ impl crate::widgets::Scrollable for RichLog {
     }
 
     fn scroll_offset_f32(&self) -> (f32, f32) {
-        (0.0, self.offset_y as f32)
+        (0.0, self.offset_y.to_f32_lossy())
     }
 
     fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {
@@ -862,14 +910,6 @@ impl crate::widgets::Render for RichLog {
     }
 
     fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
-        let width = options.size.0.max(self.min_width).max(1);
-        let height = options.size.1.max(1);
-        self.widget_width.store(width, Ordering::Relaxed);
-        self.widget_height.store(height, Ordering::Relaxed);
-
-        let viewport_width = width;
-        let physical = self.physical_lines(console, options, viewport_width);
-        let content_height = physical.len().max(1);
         // Measure each physical line's CONTENT width (Python
         // `_widest_line_width`): rendered lines are padded to the render
         // width, so strip only the TRAILING blank run before measuring.
@@ -894,6 +934,15 @@ impl crate::widgets::Render for RichLog {
             }
             widths.into_iter().sum()
         }
+
+        let width = options.size.0.max(self.min_width).max(1);
+        let height = options.size.1.max(1);
+        self.widget_width.store(width, Ordering::Relaxed);
+        self.widget_height.store(height, Ordering::Relaxed);
+
+        let viewport_width = width;
+        let physical = self.physical_lines(console, options, viewport_width);
+        let content_height = physical.len().max(1);
         let widest = physical
             .iter()
             .map(|line| line_content_width(line))
@@ -1092,7 +1141,11 @@ mod tests {
             log.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<RichLogScrolled>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<RichLogScrolled>)
+        );
     }
 
     #[test]

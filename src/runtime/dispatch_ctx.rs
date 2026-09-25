@@ -23,6 +23,7 @@ impl Drop for DispatchRecipientGuard {
 /// Returns a guard that restores the previous recipient when dropped.
 /// Primarily used by the runtime event loop and renderer; exposed for
 /// widget-render tests that need to simulate hover/focus/disabled state.
+#[must_use]
 pub fn set_dispatch_recipient(node_id: NodeId, state: NodeState) -> DispatchRecipientGuard {
     let previous = DISPATCH_NODE.with(|cell| {
         let prev = cell.get();
@@ -77,5 +78,5 @@ pub(crate) fn set_dispatch_tree(tree_id: u64) -> DispatchTreeGuard {
 /// a dispatch scope; enqueue sites then stamp `None` = "active tree at drain",
 /// today's (pre-stamp) resolution.
 pub(crate) fn dispatch_tree_id() -> Option<u64> {
-    DISPATCH_TREE.with(|cell| cell.get())
+    DISPATCH_TREE.with(std::cell::Cell::get)
 }

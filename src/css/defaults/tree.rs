@@ -1,6 +1,6 @@
 // Tree and DirectoryTree widget defaults
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 Tree {
     bg: $surface;
     fg: $foreground;
@@ -83,4 +83,4 @@ DirectoryTree:ansi > .tree--guides { fg: transparent; }
 DirectoryTree:ansi > .directory-tree--folder { text-style: bold; }
 DirectoryTree:ansi > .directory-tree--extension { text-style: italic; }
 DirectoryTree:ansi > .directory-tree--hidden { fg: ansi_default; text-style: dim; }
-"#;
+";

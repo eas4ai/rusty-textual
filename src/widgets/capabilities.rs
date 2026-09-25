@@ -48,6 +48,7 @@ use crate::action::{ActionDecl, ParsedAction};
 use crate::compose::ComposeResult;
 use crate::event::{Action, BindingHint, Event, WidgetCtx};
 use crate::message::MessageEvent;
+use crate::num::Cast;
 use crate::style::Style;
 
 use super::{BindingDecl, NodeState, Widget, WidgetSelectionAnchor};
@@ -216,7 +217,7 @@ pub trait Scrollable {
     /// Content scroll offset (float precision).
     fn scroll_offset_f32(&self) -> (f32, f32) {
         let (x, y) = self.scroll_offset();
-        (x as f32, y as f32)
+        (x.to_f32_lossy(), y.to_f32_lossy())
     }
     /// Effective visible scroll viewport size `(width, height)`.
     fn scroll_viewport_size(&self) -> Option<(usize, usize)> {
@@ -278,7 +279,7 @@ pub trait Focus {
         Vec::new()
     }
     /// The namespace this widget owns for action routing.
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         ""
     }
     /// List of actions this widget can handle.

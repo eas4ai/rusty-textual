@@ -5,7 +5,11 @@ use std::path::{Path, PathBuf};
 use textual_macros::widget;
 
 use crate::event::{Event, MouseDownEvent};
-use crate::message::*;
+use crate::message::{
+    AsyncDirectoryEntry, AsyncTaskCancel, AsyncTaskCancelled, AsyncTaskCompleted, AsyncTaskRequest,
+    AsyncTaskResult, AsyncTaskSpawn, DirectoryTreeDirectorySelected, DirectoryTreeFileSelected,
+    MessageEvent, TreeNodeSelected, TreeNodeToggled,
+};
 
 use crate::node_id::NodeId;
 
@@ -37,7 +41,7 @@ impl DirectoryNode {
         let label = path
             .file_name()
             .and_then(|name| name.to_str())
-            .map(|name| name.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_default();
         Self {
             path,
@@ -150,6 +154,7 @@ impl DirectoryTree {
         this
     }
 
+    #[must_use]
     pub fn show_hidden(mut self, show_hidden: bool) -> Self {
         self.show_hidden = show_hidden;
         self.refresh();
@@ -164,18 +169,22 @@ impl DirectoryTree {
         self.refresh();
     }
 
+    #[must_use]
     pub fn showing_hidden(&self) -> bool {
         self.show_hidden
     }
 
+    #[must_use]
     pub fn root_path(&self) -> &Path {
         &self.root_path
     }
 
+    #[must_use]
     pub fn tree_id(&self) -> NodeId {
         self.node_id()
     }
 
+    #[must_use]
     pub fn selected_path(&self) -> Option<&Path> {
         self.visible_entries
             .get(self.tree.selected())
@@ -385,19 +394,20 @@ impl DirectoryTree {
         }
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn focusable(&self) -> bool {
         true
     }
 
     fn on_node_state_changed(
         &mut self,
-        _old: crate::widgets::NodeState,
+        old: crate::widgets::NodeState,
         new: crate::widgets::NodeState,
     ) {
         // Propagate hover state changes to the inner Tree so hover highlighting clears
         // when DirectoryTree loses hover.
         if !new.hovered {
-            self.tree.on_node_state_changed(_old, new);
+            self.tree.on_node_state_changed(old, new);
         }
     }
 
@@ -487,6 +497,7 @@ impl DirectoryTree {
         self.tree.layout_height()
     }
 
+    #[allow(clippy::unnecessary_wraps)] // `#[widget(override(..))]` forwards the trait method here.
     fn content_width(&self) -> Option<usize> {
         let content_width = self.tree.content_width().unwrap_or(1);
         let meta = crate::css::selector_meta_generic(self);
@@ -499,6 +510,7 @@ impl DirectoryTree {
         Some(content_width.saturating_add(chrome_lr).max(1))
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn style_type(&self) -> &'static str {
         "DirectoryTree"
     }
@@ -538,7 +550,9 @@ fn read_children(
             continue;
         }
 
-        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+        // `Path::is_dir` follows symlinks, like Python's `_safe_is_dir`;
+        // `DirEntry::file_type` does not.
+        let is_dir = path.is_dir();
         entries.push(DirectoryNode {
             path,
             label,
@@ -952,5 +966,35 @@ mod tests {
                 .downcast_ref::<AsyncTaskCancel>()
                 .is_some_and(|m| m.task_id == 1)
         }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_children_lists_a_symlinked_directory_as_a_directory() {
+        let temp = TempTreeDir::new("directory-tree-symlink");
+        fs::create_dir_all(temp.path.join("real")).expect("create real dir");
+        std::os::unix::fs::symlink(temp.path.join("real"), temp.path.join("link"))
+            .expect("create directory symlink");
+        std::os::unix::fs::symlink(temp.path.join("missing"), temp.path.join("dangling"))
+            .expect("create dangling symlink");
+        fs::write(temp.path.join("alpha.txt"), "alpha").expect("write file");
+
+        let children = read_children(&temp.path, false, None);
+        let listed: Vec<(&str, bool, bool)> = children
+            .iter()
+            .map(|child| (child.label.as_str(), child.is_dir, child.loaded))
+            .collect();
+        // Python's `_safe_is_dir` uses `Path.is_dir()`, which follows the link,
+        // so a linked directory sorts with the directories and can be expanded
+        // (not yet loaded). A dangling link is a file.
+        assert_eq!(
+            listed,
+            [
+                ("link", true, false),
+                ("real", true, false),
+                ("alpha.txt", false, true),
+                ("dangling", false, true)
+            ]
+        );
     }
 }

@@ -15,6 +15,7 @@ use slotmap::SlotMap;
 
 use crate::css::{Combinator, SelectorChain, SelectorMeta, parse_selector_list};
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::style::{Style, Visibility};
 use crate::widgets::{NodeSeed, NodeState, Widget, WidgetStyles};
 
@@ -89,7 +90,7 @@ pub enum LifecycleEvent {
 /// Axis-aligned rectangle in terminal cells.
 ///
 /// A separate copy from `runtime::types::Rect` because that module is private.
-/// The two will be unified when the render pipeline migrates to WidgetTree (P1-12).
+/// The two will be unified when the render pipeline migrates to `WidgetTree` (P1-12).
 ///
 /// Coordinates are **signed** (`i32`) so a placement can carry a negative
 /// position (for example a widget with `offset: 0 -3` whose top border sits
@@ -116,12 +117,12 @@ impl Rect {
 
     /// Width of the rectangle (`x1 - x0`), clamped to be non-negative.
     pub(crate) fn width(self) -> u16 {
-        (self.x1 - self.x0).max(0) as u16
+        (self.x1 - self.x0).to_u16_sat()
     }
 
     /// Height of the rectangle (`y1 - y0`), clamped to be non-negative.
     pub(crate) fn height(self) -> u16 {
-        (self.y1 - self.y0).max(0) as u16
+        (self.y1 - self.y0).to_u16_sat()
     }
 }
 
@@ -130,6 +131,8 @@ impl Rect {
 // ---------------------------------------------------------------------------
 
 /// A single node in the arena-based widget tree.
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct WidgetNode {
     /// The widget's behavior (render, events, messages).
     pub(crate) widget: Box<dyn Widget>,
@@ -232,6 +235,7 @@ impl WidgetTree {
     }
 
     /// Process-unique identity of this tree.
+    #[must_use]
     pub fn tree_id(&self) -> u64 {
         self.tree_id
     }
@@ -239,11 +243,13 @@ impl WidgetTree {
     // -- Accessors ----------------------------------------------------------
 
     /// The root node, if any.
+    #[must_use]
     pub fn root(&self) -> Option<NodeId> {
         self.root
     }
 
     /// Immutable access to a node.
+    #[must_use]
     pub fn get(&self, node: NodeId) -> Option<&WidgetNode> {
         self.arena.get(node)
     }
@@ -254,16 +260,19 @@ impl WidgetTree {
     }
 
     /// Whether a node is present in the arena.
+    #[must_use]
     pub fn contains(&self, node: NodeId) -> bool {
         self.arena.contains_key(node)
     }
 
     /// Number of live nodes.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.arena.len()
     }
 
     /// Whether the tree has no nodes.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.arena.is_empty()
     }
@@ -279,6 +288,7 @@ impl WidgetTree {
     }
 
     /// Whether there are pending lifecycle events waiting to be drained.
+    #[must_use]
     pub fn has_pending_lifecycle(&self) -> bool {
         !self.pending_lifecycle.is_empty()
     }
@@ -380,14 +390,6 @@ impl WidgetTree {
         id
     }
 
-    /// Mount a child widget under `parent`. Returns the new node's `NodeId`.
-    ///
-    /// Emits a `Mount` lifecycle event for the new node.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `parent` is not in the tree (removed or never added).
-    /// Use [`set_root`](Self::set_root) for an empty tree.
     /// Internal helper: build a `WidgetNode` from a boxed widget, consuming its seed.
     fn make_node_from_seed(widget: Box<dyn Widget>, seed: NodeSeed) -> WidgetNode {
         let initial_disabled = widget.is_initially_disabled();
@@ -403,6 +405,15 @@ impl WidgetTree {
         node
     }
 
+    /// Mount a child widget under `parent`. Returns the new node's `NodeId`.
+    ///
+    /// Emits a `Mount` lifecycle event for the new node.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `parent` is not in the tree, because it was removed or
+    /// never added. The check runs before the tree changes. Use
+    /// [`set_root`](Self::set_root) for an empty tree.
     pub fn mount(&mut self, parent: NodeId, mut widget: Box<dyn Widget>) -> NodeId {
         // PR-05: mounting under a removed (or never-added) parent used to
         // insert a detached orphan and still emit Mount. That is always a
@@ -438,6 +449,12 @@ impl WidgetTree {
     /// Behaves exactly like [`mount`](Self::mount) (same seed consumption,
     /// `mounted` flag, and `Mount` lifecycle event) but lets callers insert
     /// before/after an existing sibling (Python's `mount(..., before=/after=)`).
+    ///
+    /// # Panics
+    ///
+    /// Panics when `parent` is not in the tree, because it was removed or
+    /// never added. The check runs before the tree changes. An out-of-range
+    /// `index` does not panic; it is clamped.
     pub fn mount_at(
         &mut self,
         parent: NodeId,
@@ -464,6 +481,7 @@ impl WidgetTree {
     }
 
     /// Position of `child` within `parent`'s children list, if present.
+    #[must_use]
     pub fn child_index(&self, parent: NodeId, child: NodeId) -> Option<usize> {
         self.arena
             .get(parent)
@@ -576,11 +594,11 @@ impl WidgetTree {
     }
 
     /// Check whether a node has a CSS class.
+    #[must_use]
     pub fn has_class(&self, node: NodeId, class: &str) -> bool {
         self.arena
             .get(node)
-            .map(|n| n.classes.contains(class))
-            .unwrap_or(false)
+            .is_some_and(|n| n.classes.contains(class))
     }
 
     /// Replace all CSS classes on a node.
@@ -596,16 +614,15 @@ impl WidgetTree {
     // -- Traversal (P1-09) --------------------------------------------------
 
     /// The parent of `node`, if any.
+    #[must_use]
     pub fn parent(&self, node: NodeId) -> Option<NodeId> {
         self.arena.get(node).and_then(|n| n.parent)
     }
 
     /// Ordered children of `node`.
+    #[must_use]
     pub fn children(&self, node: NodeId) -> &[NodeId] {
-        self.arena
-            .get(node)
-            .map(|n| n.children.as_slice())
-            .unwrap_or(&[])
+        self.arena.get(node).map_or(&[], |n| n.children.as_slice())
     }
 
     /// Whether `ancestor` is a proper ancestor of `descendant`.
@@ -614,6 +631,7 @@ impl WidgetTree {
     /// `ancestor` is found along the way, `false` if the root is reached
     /// without a match.  Returns `false` when `ancestor == descendant`
     /// (self is not an ancestor of self).
+    #[must_use]
     pub fn is_ancestor_of(&self, ancestor: NodeId, descendant: NodeId) -> bool {
         if ancestor == descendant {
             return false;
@@ -630,6 +648,7 @@ impl WidgetTree {
 
     /// Ancestor chain from `node` upward (not including `node` itself).
     /// Returns `[parent, grandparent, …, root]`.
+    #[must_use]
     pub fn ancestors(&self, node: NodeId) -> Vec<NodeId> {
         let mut result = Vec::new();
         let mut current = self.parent(node);
@@ -642,6 +661,7 @@ impl WidgetTree {
 
     /// Depth-first (pre-order) walk starting at `root`.
     /// Includes `root` as the first element.
+    #[must_use]
     pub fn walk_depth_first(&self, root: NodeId) -> Vec<NodeId> {
         let mut result = Vec::new();
         let mut stack = vec![root];
@@ -661,6 +681,7 @@ impl WidgetTree {
 
     /// Breadth-first walk starting at `root`.
     /// Includes `root` as the first element.
+    #[must_use]
     pub fn walk_breadth_first(&self, root: NodeId) -> Vec<NodeId> {
         let mut result = Vec::new();
         let mut queue = VecDeque::new();
@@ -719,14 +740,15 @@ impl WidgetTree {
 
     /// Backwards-compatible alias for runtime-controlled display visibility.
     ///
-    /// Prefer [`set_runtime_display`] for new code.
+    /// Prefer [`set_runtime_display`](Self::set_runtime_display) for new code.
     pub fn set_display(&mut self, node: NodeId, visible: bool) {
         self.set_runtime_display(node, visible);
     }
 
     /// Whether a node is displayed (default: `true`).
+    #[must_use]
     pub fn is_displayed(&self, node: NodeId) -> bool {
-        self.arena.get(node).map(|n| n.display).unwrap_or(false)
+        self.arena.get(node).is_some_and(|n| n.display)
     }
 
     // -- Visibility toggle (P2-14) ------------------------------------------
@@ -740,16 +762,17 @@ impl WidgetTree {
     }
 
     /// Returns the CSS visibility of a node (default: `Visible`).
+    #[must_use]
     pub fn visibility(&self, node: NodeId) -> Visibility {
         self.arena
             .get(node)
-            .map(|n| n.visibility)
-            .unwrap_or(Visibility::Visible)
+            .map_or(Visibility::Visible, |n| n.visibility)
     }
 
     // -- CSS id (T-4) --------------------------------------------------------
 
     /// Return the CSS id for a node (e.g. the part after `#` in `#foo`).
+    #[must_use]
     pub fn css_id(&self, node: NodeId) -> Option<&str> {
         self.arena.get(node).and_then(|n| n.css_id.as_deref())
     }
@@ -763,10 +786,10 @@ impl WidgetTree {
 
     /// Apply a collapsed structural wrapper's identity onto `node`'s record.
     ///
-    /// Used when a transparent wrapper (a bare [`Node`](crate::widgets::Node)) is
-    /// collapsed out of the tree and its single inner child is mounted in its
-    /// place (see
-    /// [`Widget::elide_transparent_wrapper`](crate::widgets::Widget::elide_transparent_wrapper)).
+    /// Written for the transparent `Node` wrapper, which was collapsed out of
+    /// the tree with its single inner child mounted in its place. `Node` and
+    /// that collapse pass have since been removed, and nothing in the crate
+    /// calls this now.
     /// The id replaces any existing id; classes are merged in; the wrapper's
     /// inline styles are folded onto the child's existing inline styles.
     pub fn apply_forwarded_seed(&mut self, node: NodeId, seed: NodeSeed) {
@@ -794,6 +817,7 @@ impl WidgetTree {
     // -- Inline styles (T-4) ------------------------------------------------
 
     /// Return the inline styles for a node.
+    #[must_use]
     pub fn styles(&self, node: NodeId) -> Option<&WidgetStyles> {
         self.arena.get(node).map(|n| &n.styles)
     }
@@ -808,6 +832,7 @@ impl WidgetTree {
     // -- Interaction state (T-4) --------------------------------------------
 
     /// Return the interaction state for a node (default: `NodeState::default()`).
+    #[must_use]
     pub fn node_state(&self, node: NodeId) -> NodeState {
         self.arena.get(node).map(|n| n.state).unwrap_or_default()
     }
@@ -877,6 +902,14 @@ impl WidgetTree {
     /// combinators (`Container > Button`, `Panel .item`).
     ///
     /// Comma-separated selector lists are supported (`Button, Input`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` holds no usable
+    /// selector: it is empty, holds only whitespace and commas, or each
+    /// comma-separated group holds only `>` combinators. The parser is
+    /// lenient, so other malformed input does not return an error. A tree
+    /// with no root returns `Ok` with an empty list.
     pub fn query(&self, selector: &str) -> Result<Vec<NodeId>, QueryError> {
         let chains = parse_selector_list(selector);
         if chains.is_empty() {
@@ -884,9 +917,8 @@ impl WidgetTree {
                 "invalid selector: {selector}"
             )));
         }
-        let root = match self.root {
-            Some(r) => r,
-            None => return Ok(Vec::new()),
+        let Some(root) = self.root else {
+            return Ok(Vec::new());
         };
         let all_nodes = self.walk_depth_first(root);
         let mut result = Vec::new();
@@ -905,6 +937,14 @@ impl WidgetTree {
     ///
     /// Returns `Err(QueryError::NoMatch)` if nothing matches, or
     /// `Err(QueryError::TooManyMatches(n))` if more than one node matches.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` holds no usable
+    /// selector (see [`query`](Self::query)). Returns [`QueryError::NoMatch`]
+    /// when no node matches, including when the tree has no root. Returns
+    /// [`QueryError::TooManyMatches`] with the match count when more than one
+    /// node matches.
     pub fn query_one(&self, selector: &str) -> Result<NodeId, QueryError> {
         let matches = self.query(selector)?;
         match matches.len() {
@@ -917,6 +957,13 @@ impl WidgetTree {
     /// Find nodes matching a CSS selector within the subtree rooted at `root`,
     /// **excluding `root` itself** (Python `widget.query(...)` searches
     /// descendants). Used by drain-time `CommandTarget::Selector` resolution.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` holds no usable
+    /// selector: it is empty, holds only whitespace and commas, or each
+    /// comma-separated group holds only `>` combinators. The parser is
+    /// lenient, so other malformed input does not return an error.
     pub fn query_within(&self, root: NodeId, selector: &str) -> Result<Vec<NodeId>, QueryError> {
         let chains = parse_selector_list(selector);
         if chains.is_empty() {
@@ -925,7 +972,7 @@ impl WidgetTree {
             )));
         }
         let mut result = Vec::new();
-        for &node in self.walk_depth_first(root).iter() {
+        for &node in &self.walk_depth_first(root) {
             if node == root {
                 continue;
             }
@@ -943,6 +990,14 @@ impl WidgetTree {
     ///
     /// `Err(QueryError::NoMatch)` if nothing matches, `TooManyMatches(n)` if more
     /// than one does.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` holds no usable
+    /// selector (see [`query_within`](Self::query_within)). Returns
+    /// [`QueryError::NoMatch`] when no descendant of `root` matches. Returns
+    /// [`QueryError::TooManyMatches`] with the match count when more than one
+    /// descendant matches.
     pub fn query_one_within(&self, root: NodeId, selector: &str) -> Result<NodeId, QueryError> {
         let matches = self.query_within(root, selector)?;
         match matches.len() {
@@ -955,6 +1010,13 @@ impl WidgetTree {
     /// Find direct children of `parent` that match a CSS selector.
     ///
     /// Only considers immediate children — not deeper descendants.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` holds no usable
+    /// selector: it is empty, holds only whitespace and commas, or each
+    /// comma-separated group holds only `>` combinators. The parser is
+    /// lenient, so other malformed input does not return an error.
     pub fn query_children(
         &self,
         parent: NodeId,
@@ -999,9 +1061,8 @@ impl WidgetTree {
         if parts.is_empty() {
             return false;
         }
-        let meta = match self.node_selector_meta(node) {
-            Some(m) => m,
-            None => return false,
+        let Some(meta) = self.node_selector_meta(node) else {
+            return false;
         };
         // The last part of the chain must match the node itself.
         if !parts[parts.len() - 1].matches(&meta) {
@@ -1017,13 +1078,11 @@ impl WidgetTree {
             let comb = combinators[combinators.len() - 1 - i];
             match comb {
                 Combinator::Child => {
-                    let parent = match self.parent(current) {
-                        Some(p) => p,
-                        None => return false,
+                    let Some(parent) = self.parent(current) else {
+                        return false;
                     };
-                    let parent_meta = match self.node_selector_meta(parent) {
-                        Some(m) => m,
-                        None => return false,
+                    let Some(parent_meta) = self.node_selector_meta(parent) else {
+                        return false;
                     };
                     if !selector.matches(&parent_meta) {
                         return false;
@@ -1474,6 +1533,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::many_single_char_names)] // Single letters name the nodes of the test tree.
     fn walk_depth_first_order() {
         //       R
         //      / \
@@ -1492,6 +1552,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::many_single_char_names)] // Single letters name the nodes of the test tree.
     fn walk_breadth_first_order() {
         //       R
         //      / \
@@ -2037,7 +2098,7 @@ mod tests {
 
     // -- Step 1: NodeState / NodeSeed / writer API tests ---------------------
 
-    /// Widget that implements take_node_seed() for testing seed consumption.
+    /// Widget that implements `take_node_seed()` for testing seed consumption.
     struct SeededWidget {
         seed: NodeSeed,
     }
@@ -2152,15 +2213,12 @@ mod tests {
         // The selector parser may or may not support id selectors in query
         // (this tests the node_selector_meta integration).
         // If id selectors are supported, child is the single match.
-        match result {
-            Ok(matches) => {
-                if !matches.is_empty() {
-                    assert!(matches.contains(&child));
-                }
+        if let Ok(matches) = result {
+            if !matches.is_empty() {
+                assert!(matches.contains(&child));
             }
-            Err(_) => {
-                // id selectors may not be implemented in parse_selector_list yet; skip
-            }
+        } else {
+            // id selectors may not be implemented in parse_selector_list yet; skip
         }
     }
 

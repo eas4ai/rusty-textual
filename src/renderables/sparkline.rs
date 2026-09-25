@@ -1,6 +1,7 @@
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 
+use crate::num::Cast;
 use crate::reactive::{ReactiveCtx, ReactiveFlags, ReactiveWidget};
 use crate::style::Color;
 use crate::widgets::{NodeSeed, adjust_line_length_no_bg};
@@ -13,6 +14,7 @@ pub type SummaryFunction = fn(&[f64]) -> f64;
 
 /// Returns the maximum value in the slice (default summary function).
 /// Returns 0.0 for empty input or if all values are non-finite.
+#[must_use]
 pub fn summary_max(data: &[f64]) -> f64 {
     data.iter()
         .copied()
@@ -25,6 +27,7 @@ pub fn summary_max(data: &[f64]) -> f64 {
 
 /// Returns the minimum value in the slice.
 /// Returns 0.0 for empty input or if all values are non-finite.
+#[must_use]
 pub fn summary_min(data: &[f64]) -> f64 {
     data.iter()
         .copied()
@@ -37,12 +40,13 @@ pub fn summary_min(data: &[f64]) -> f64 {
 
 /// Returns the mean of the slice.
 /// Returns 0.0 for empty input; non-finite values are excluded.
+#[must_use]
 pub fn summary_mean(data: &[f64]) -> f64 {
     let finite: Vec<f64> = data.iter().copied().filter(|v| v.is_finite()).collect();
     if finite.is_empty() {
         return 0.0;
     }
-    finite.iter().sum::<f64>() / finite.len() as f64
+    finite.iter().sum::<f64>() / finite.len().to_f64_lossy()
 }
 
 /// A sparkline widget that renders numerical data as a bar chart using Unicode
@@ -80,6 +84,7 @@ pub struct Sparkline {
 
 impl Sparkline {
     /// Create a new `Sparkline` with the given data.
+    #[must_use]
     pub fn new(data: Vec<f64>) -> Self {
         let mut seed = NodeSeed::default();
         seed.classes.push("sparkline".to_string());
@@ -93,18 +98,21 @@ impl Sparkline {
     }
 
     /// Set the summary function used to reduce each bucket to a single value.
+    #[must_use]
     pub fn summary_function(mut self, f: SummaryFunction) -> Self {
         self.summary_function = f;
         self
     }
 
     /// Override the minimum color (normally resolved from CSS `sparkline--min-color`).
+    #[must_use]
     pub fn min_color(mut self, color: Color) -> Self {
         self.min_color = Some(color);
         self
     }
 
     /// Override the maximum color (normally resolved from CSS `sparkline--max-color`).
+    #[must_use]
     pub fn max_color(mut self, color: Color) -> Self {
         self.max_color = Some(color);
         self
@@ -113,11 +121,13 @@ impl Sparkline {
     // ── Reactive getters ─────────────────────────────────────────────────
 
     /// Reactive getter for `data`.
+    #[must_use]
     pub fn get_data(&self) -> &[f64] {
         &self.data
     }
 
     /// Reactive getter for `summary_function`.
+    #[must_use]
     pub fn get_summary_function(&self) -> SummaryFunction {
         self.summary_function
     }
@@ -291,13 +301,15 @@ impl crate::widgets::Render for Sparkline {
             let current_bar_part_high = (row + 1) * bar_line_segments;
 
             let mut bucket_index = 0.0_f64;
-            let step = buckets.len() as f64 / width as f64;
+            let step = buckets.len().to_f64_lossy() / width.to_f64_lossy();
             let mut line_segs: Vec<Segment> = Vec::with_capacity(width);
 
             for _ in 0..width {
-                let bi = (bucket_index as usize).min(buckets.len().saturating_sub(1));
+                let bi = bucket_index
+                    .to_usize_sat()
+                    .min(buckets.len().saturating_sub(1));
                 let height_ratio = height_ratios[bi];
-                let bar_index = (height_ratio * bar_segments as f64) as usize;
+                let bar_index = (height_ratio * bar_segments.to_f64_lossy()).to_usize_sat();
 
                 let (bar_char, with_color) = if bar_index < current_bar_part_low {
                     (' ', false)
@@ -339,11 +351,11 @@ impl ReactiveWidget for Sparkline {}
 
 /// Linear RGB blend between two colors. `t` in 0.0..=1.0.
 fn blend_rgb(a: Color, b: Color, t: f64) -> Color {
-    let t = t.clamp(0.0, 1.0) as f32;
+    let t = t.clamp(0.0, 1.0).to_f32_lossy();
     let mix = |x: u8, y: u8| -> u8 {
-        let xf = x as f32;
-        let yf = y as f32;
-        (xf + (yf - xf) * t).round().clamp(0.0, 255.0) as u8
+        let xf = f32::from(x);
+        let yf = f32::from(y);
+        (xf + (yf - xf) * t).round().clamp(0.0, 255.0).to_u8_sat()
     };
     Color::rgb(mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b))
 }
@@ -355,6 +367,9 @@ impl crate::widgets::Components for Sparkline {
 }
 
 #[cfg(test)]
+// These tests assert exact float results (endpoints and values a float holds
+// exactly); a tolerance would hide off-by-epsilon regressions.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::node_id::NodeId;
@@ -400,7 +415,7 @@ mod tests {
         let b = Sparkline::buckets(&data, 3);
         assert_eq!(b.len(), 3);
         // 5 items / 3 buckets: bucket sizes should be 1,2,2 or 2,1,2 etc.
-        let total: usize = b.iter().map(|x| x.len()).sum();
+        let total: usize = b.iter().map(std::vec::Vec::len).sum();
         assert_eq!(total, 5);
     }
 
@@ -530,7 +545,7 @@ mod tests {
         // [42.0] into 3 buckets → only one non-empty partition survives.
         let b = Sparkline::buckets(&[42.0], 3);
         assert_eq!(b.len(), 1);
-        let total: usize = b.iter().map(|x| x.len()).sum();
+        let total: usize = b.iter().map(std::vec::Vec::len).sum();
         assert_eq!(total, 1);
     }
 
@@ -539,7 +554,7 @@ mod tests {
         // [1,2] into 5 buckets → empties dropped, 2 partitions survive.
         let b = Sparkline::buckets(&[1.0, 2.0], 5);
         assert_eq!(b.len(), 2);
-        let total: usize = b.iter().map(|x| x.len()).sum();
+        let total: usize = b.iter().map(std::vec::Vec::len).sum();
         assert_eq!(total, 2);
     }
 

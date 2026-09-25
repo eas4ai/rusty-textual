@@ -51,6 +51,7 @@ pub struct ControlMeta {
 impl ControlMeta {
     /// An empty meta (no id, no classes, no type). Matches only the empty
     /// (universal) selector.
+    #[must_use]
     pub fn empty() -> Self {
         Self::default()
     }
@@ -65,18 +66,21 @@ impl ControlMeta {
     }
 
     /// Builder: set the type name.
+    #[must_use]
     pub fn type_named(mut self, type_name: impl Into<String>) -> Self {
         self.type_name = Some(type_name.into());
         self
     }
 
     /// Builder: add a class.
+    #[must_use]
     pub fn class(mut self, class: impl Into<String>) -> Self {
         self.classes.push(class.into());
         self
     }
 
     /// Builder: add several classes.
+    #[must_use]
     pub fn classes<I, S>(mut self, classes: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -156,11 +160,13 @@ impl std::error::Error for SelectorParseError {}
 
 impl Selector {
     /// A universal selector that matches every control (the `@on(Message)` form).
+    #[must_use]
     pub fn any() -> Self {
         Self::default()
     }
 
     /// Whether this is the universal (matches-everything) selector.
+    #[must_use]
     pub fn is_universal(&self) -> bool {
         self.groups.is_empty()
     }
@@ -168,6 +174,17 @@ impl Selector {
     /// Parse a selector string (`#id`, `.class`, `Type`, compound, or
     /// comma-separated groups). An empty/whitespace string yields the universal
     /// selector.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SelectorParseError`] when:
+    ///
+    /// - a comma-separated term is empty (for example `"#a,,#b"` or `"#a,"`);
+    /// - `#` or `.` is not followed by an identifier;
+    /// - one term has more than one `#id`;
+    /// - a term has any other character outside an identifier, such as a
+    ///   space, `>`, `*`, or `:`. Identifiers use ASCII letters, digits, `_`,
+    ///   and `-`.
     pub fn parse(input: &str) -> Result<Self, SelectorParseError> {
         let trimmed = input.trim();
         if trimmed.is_empty() {
@@ -190,6 +207,7 @@ impl Selector {
     ///
     /// The universal selector matches everything. Otherwise the meta must match
     /// at least one comma-separated compound term.
+    #[must_use]
     pub fn matches(&self, meta: &ControlMeta) -> bool {
         if self.is_universal() {
             return true;
@@ -305,6 +323,7 @@ impl<S> Default for MessageRouter<S> {
 
 impl<S> MessageRouter<S> {
     /// Create an empty router.
+    #[must_use]
     pub fn new() -> Self {
         Self { routes: Vec::new() }
     }
@@ -330,6 +349,12 @@ impl<S> MessageRouter<S> {
 
     /// Fallible variant of [`on`][MessageRouter::on]: returns the parse error
     /// instead of panicking on a malformed selector.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SelectorParseError`] when `selector` is not a valid selector
+    /// string. See [`Selector::parse`] for the rules. On error, no route is
+    /// registered.
     pub fn try_on<M, F>(
         &mut self,
         selector: &str,
@@ -391,11 +416,13 @@ impl<S> MessageRouter<S> {
     }
 
     /// Number of registered routes.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.routes.len()
     }
 
     /// Whether the router has no registered routes.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.routes.is_empty()
     }
@@ -497,7 +524,7 @@ mod tests {
             node_id_from_ffi(1),
             ButtonPressed {
                 description: "x".into(),
-                button_id: id.map(|s| s.to_string()),
+                button_id: id.map(std::string::ToString::to_string),
             },
         )
     }

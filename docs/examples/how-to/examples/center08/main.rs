@@ -5,13 +5,13 @@
 /// semi-transparent background and a wide white border, sized to their content.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 .words {
     background: blue 50%;
     border: wide white;
     width: auto;
 }
-"#;
+";
 
 struct CenterApp;
 

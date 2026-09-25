@@ -183,11 +183,11 @@ mod tests {
     #[test]
     fn live_stack_id_class_and_pseudo_qualified_rules_match() {
         let _guard = super::super::context::set_style_context(StyleSheet::parse(
-            r#"
+            r"
             #the-id > .part { color: #ff0000; }
             CheckerBoard.the-class > .part { background: #0000ff; }
             CheckerBoard:focus > .part { text-style: bold; }
-            "#,
+            ",
         ));
         let style = resolve_part_live(live_board_meta(true, false));
         assert_eq!(
@@ -211,7 +211,7 @@ mod tests {
     /// inline while the OUTER live meta is still marked on top. Resolving
     /// `Board`'s component must NOT use the outer stack: it must fall back to
     /// pushing `Board`'s own seed meta so `CheckerBoard > .part` still matches
-    /// (Footer -> FooterKey inline-render shape). Without the identity guard
+    /// (Footer -> `FooterKey` inline-render shape). Without the identity guard
     /// this resolved `.part` against the `Wrapper` stack and lost the rule.
     #[test]
     fn inline_nested_render_does_not_misfire_live_context() {

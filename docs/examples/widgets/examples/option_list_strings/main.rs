@@ -10,7 +10,7 @@
 /// `OptionList` occupies 70% width × 80% height.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -19,7 +19,7 @@ OptionList {
     width: 70%;
     height: 80%;
 }
-"#;
+";
 
 struct OptionListApp;
 

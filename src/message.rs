@@ -429,7 +429,7 @@ crate::impl_message!(HelpPanelFocusedHelpChanged);
 pub struct TreeNodeSelected {
     pub index: usize,
     pub label: String,
-    /// Optional user data from the selected TreeNode.
+    /// Optional user data from the selected `TreeNode`.
     pub data: Option<String>,
     /// Stable id of the selected node (Python carries the node object; the
     /// id is the ownable Rust equivalent). `TreeNodeId::default()` (the null
@@ -442,7 +442,7 @@ crate::impl_message!(TreeNodeSelected);
 pub struct TreeNodeActivated {
     pub index: usize,
     pub label: String,
-    /// Optional user data from the activated TreeNode.
+    /// Optional user data from the activated `TreeNode`.
     pub data: Option<String>,
     /// Stable id of the activated node.
     pub node_id: crate::widgets::TreeNodeId,
@@ -959,7 +959,7 @@ crate::impl_message!(WorkerStateChanged);
 /// Canonical open message trait. Every message — built-in or third-party —
 /// is a plain struct implementing this trait. Dispatch is by `TypeId`.
 ///
-/// Use [`impl_message!`] to implement this trait for your types.
+/// Use [`impl_message!`](crate::impl_message!) to implement this trait for your types.
 pub trait Message: std::any::Any + Send + Sync + std::fmt::Debug + 'static {
     /// Downcast support.
     fn as_any(&self) -> &dyn std::any::Any;
@@ -1163,6 +1163,7 @@ impl MessageEvent {
     }
 
     /// Construct a `MessageEvent` from a pre-boxed [`Message`] trait object.
+    #[must_use]
     pub fn from_boxed(sender: NodeId, message: Box<dyn Message>) -> Self {
         Self {
             sender,
@@ -1180,6 +1181,7 @@ impl MessageEvent {
     }
 
     /// Builder: set the control node.
+    #[must_use]
     pub fn with_control(mut self, control: NodeId) -> Self {
         self.control = Some(control);
         self
@@ -1187,11 +1189,13 @@ impl MessageEvent {
 
     /// Whether this message bubbles sender→root (Python `Message.bubble`).
     /// A `false` payload is delivered to the sender node only.
+    #[must_use]
     pub fn bubbles(&self) -> bool {
         self.message.bubble()
     }
 
     /// A reference to the message payload as a [`Message`] trait object.
+    #[must_use]
     pub fn payload(&self) -> &dyn Message {
         self.message.as_ref()
     }
@@ -1199,16 +1203,19 @@ impl MessageEvent {
     /// Downcast the payload to a concrete type `T`.
     ///
     /// Returns `Some(&T)` if the payload is of type `T`, `None` otherwise.
+    #[must_use]
     pub fn downcast_ref<T: Message>(&self) -> Option<&T> {
         self.payload().as_any().downcast_ref::<T>()
     }
 
     /// Returns `true` if the payload is of type `T`.
+    #[must_use]
     pub fn is<T: Message>(&self) -> bool {
         self.downcast_ref::<T>().is_some()
     }
 
     /// The `TypeId` of the concrete payload type.
+    #[must_use]
     pub fn payload_type_id(&self) -> std::any::TypeId {
         self.payload().as_any().type_id()
     }
@@ -1241,6 +1248,7 @@ impl MessageEnvelope {
     ///
     /// The `control` field is initialised to `Some(event.sender)` — the
     /// originating widget is the sender by default.
+    #[must_use]
     pub fn new(event: MessageEvent) -> Self {
         let control = event.control.or(Some(event.sender));
         Self {
@@ -1258,6 +1266,7 @@ impl MessageEnvelope {
     }
 
     /// Whether bubbling has been stopped.
+    #[must_use]
     pub fn is_stopped(&self) -> bool {
         self.stopped
     }
@@ -1268,6 +1277,7 @@ impl MessageEnvelope {
     }
 
     /// Whether the default handler should be skipped.
+    #[must_use]
     pub fn is_default_prevented(&self) -> bool {
         self.prevented
     }
@@ -1279,6 +1289,7 @@ impl MessageEnvelope {
     }
 
     /// Whether this envelope can replace a queued duplicate.
+    #[must_use]
     pub fn can_replace(&self) -> bool {
         self.replaceable
     }
@@ -1288,6 +1299,7 @@ impl MessageEnvelope {
     /// Returns `Some(node_id)` — by default the sender.  Stays constant as
     /// the message bubbles up the tree (it always refers to the widget that
     /// *originated* the message, not the current handler).
+    #[must_use]
     pub fn control(&self) -> Option<NodeId> {
         self.control
     }
@@ -1301,21 +1313,25 @@ impl MessageEnvelope {
     }
 
     /// Convenience accessor: the sender [`NodeId`].
+    #[must_use]
     pub fn sender(&self) -> NodeId {
         self.event.sender
     }
 
     /// A reference to the message payload.
+    #[must_use]
     pub fn message(&self) -> &dyn Message {
         self.event.payload()
     }
 
     /// Downcast the envelope's payload to a concrete type `T`.
+    #[must_use]
     pub fn downcast_ref<T: Message>(&self) -> Option<&T> {
         self.event.downcast_ref::<T>()
     }
 
     /// Returns `true` if the envelope's payload is of type `T`.
+    #[must_use]
     pub fn is<T: Message>(&self) -> bool {
         self.event.is::<T>()
     }
@@ -1680,8 +1696,7 @@ mod tests {
             pending
                 .as_any()
                 .downcast_ref::<ReplaceableCustom>()
-                .map(|older| older.key == self.key)
-                .unwrap_or(false)
+                .is_some_and(|older| older.key == self.key)
         }
     }
 

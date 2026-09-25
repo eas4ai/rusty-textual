@@ -1,4 +1,5 @@
 use crate::compose::ComposeResult;
+use crate::num::Cast;
 use crate::widgets::{BindingDecl, Container, Widget};
 use textual_macros::widget;
 
@@ -35,6 +36,7 @@ impl ScrollableContainer {
     crate::delegate_ident_methods!(inner);
     crate::delegate_border_title_methods!(inner);
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             inner: ScrollView::new(Container::new()),
@@ -45,11 +47,13 @@ impl ScrollableContainer {
         }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.inner = self.inner.with_child(child);
         self
     }
 
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         self.inner = self.inner.with_compose(children);
         self
@@ -59,16 +63,19 @@ impl ScrollableContainer {
         self.inner.push(child);
     }
 
+    #[must_use]
     pub fn height(mut self, height: usize) -> Self {
         self.inner = self.inner.height(height);
         self
     }
 
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.inner = self.inner.scroll_step(step);
         self
     }
 
+    #[must_use]
     pub fn scroll_step_x(mut self, step: usize) -> Self {
         self.inner = self.inner.scroll_step_x(step);
         self
@@ -102,26 +109,31 @@ impl ScrollableContainer {
         self.inner.scroll_home();
     }
 
+    #[must_use]
     pub fn with_can_focus(mut self, can_focus: bool) -> Self {
         self.can_focus = can_focus;
         self
     }
 
+    #[must_use]
     pub fn with_can_focus_children(mut self, can_focus_children: bool) -> Self {
         self.can_focus_children = can_focus_children;
         self
     }
 
+    #[must_use]
     pub fn with_can_maximize(mut self, can_maximize: Option<bool>) -> Self {
         self.can_maximize = can_maximize;
         self
     }
 
+    #[must_use]
     pub fn with_overflow_x(mut self, overflow: crate::style::Overflow) -> Self {
         self.inner = self.inner.with_overflow_x(overflow);
         self
     }
 
+    #[must_use]
     pub fn with_overflow_y(mut self, overflow: crate::style::Overflow) -> Self {
         self.inner = self.inner.with_overflow_y(overflow);
         self
@@ -190,7 +202,7 @@ impl ScrollableContainer {
             "page_left" => {
                 let before = self.inner.offset_x();
                 let page = self.inner.layout_height().unwrap_or(1).max(1);
-                self.inner.scroll_by_x(-(page as i32));
+                self.inner.scroll_by_x(-page.to_i32_sat());
                 if self.inner.offset_x() != before {
                     ctx.request_repaint();
                 }
@@ -200,7 +212,7 @@ impl ScrollableContainer {
             "page_right" => {
                 let before = self.inner.offset_x();
                 let page = self.inner.layout_height().unwrap_or(1).max(1);
-                self.inner.scroll_by_x(page as i32);
+                self.inner.scroll_by_x(page.to_i32_sat());
                 if self.inner.offset_x() != before {
                     ctx.request_repaint();
                 }

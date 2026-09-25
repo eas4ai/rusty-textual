@@ -28,6 +28,7 @@ impl Styled {
         }
     }
 
+    #[must_use]
     pub fn style(mut self, style: Style) -> Self {
         self.seed.styles.style = style;
         self
@@ -75,11 +76,7 @@ impl crate::widgets::Layout for Styled {
 
     fn style(&self) -> Option<Style> {
         let s = self.seed.styles.style.clone();
-        if s == Default::default() {
-            None
-        } else {
-            Some(s)
-        }
+        if s == Style::default() { None } else { Some(s) }
     }
 }
 

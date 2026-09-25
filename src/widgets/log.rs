@@ -7,7 +7,10 @@ use rich_rs::{Console, ConsoleOptions, Renderable, Segment, Segments, Style as R
 use textual_macros::widget;
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    MessageEvent, RichLogScrolled, ScrollbarAxis, ScrollbarScrollTo, TextEditClipboardCopyRequested,
+};
+use crate::num::Cast;
 
 use super::helpers::adjust_line_length_no_bg;
 
@@ -19,7 +22,7 @@ pub(crate) const LOG_SCROLLBAR_CORNER_ID: &str = "__log_scrollbar_corner";
 
 // ── WP-25: LRU render cache ────────────────────────────────────────────────
 
-/// Simple LRU cache for rendered line segments, keyed by (line_index, content_hash).
+/// Simple LRU cache for rendered line segments, keyed by (`line_index`, `content_hash`).
 #[derive(Debug)]
 struct LogLineCache {
     entries: HashMap<(usize, u64), Vec<Segment>>,
@@ -50,7 +53,7 @@ impl LogLineCache {
         if self.entries.contains_key(&key) {
             self.order.retain(|k| *k != key);
         } else if self.entries.len() >= self.max_size {
-            if let Some(evicted) = self.order.first().cloned() {
+            if let Some(evicted) = self.order.first().copied() {
                 self.entries.remove(&evicted);
                 self.order.remove(0);
             }
@@ -72,7 +75,7 @@ impl LogLineCache {
 
 // ── WP-24: Selection state ─────────────────────────────────────────────────
 
-/// A position in the log: (line_index, column).
+/// A position in the log: (`line_index`, column).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct LogPos {
     line: usize,
@@ -108,6 +111,8 @@ struct SelectionRange {
 
 #[derive(Debug)]
 #[widget(Focus, Interactive, Layout, Scrollable, Selectable)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Log {
     lines: Vec<String>,
     max_lines: Option<usize>,
@@ -140,6 +145,7 @@ impl Default for Log {
 impl Log {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             lines: Vec::new(),
@@ -163,11 +169,13 @@ impl Log {
         }
     }
 
+    #[must_use]
     pub fn with_highlight(mut self, highlight: bool) -> Self {
         self.highlight = highlight;
         self
     }
 
+    #[must_use]
     pub fn with_highlighter(mut self, _name: impl Into<String>) -> Self {
         // Language-specific highlighting is reserved for future use.
         // Currently enables the default repr highlighter.
@@ -175,17 +183,20 @@ impl Log {
         self
     }
 
+    #[must_use]
     pub fn max_lines(mut self, max_lines: usize) -> Self {
         self.max_lines = Some(max_lines.max(1));
         self.prune_max_lines();
         self
     }
 
+    #[must_use]
     pub fn auto_scroll(mut self, auto_scroll: bool) -> Self {
         self.auto_scroll = auto_scroll;
         self
     }
 
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);
         self
@@ -195,7 +206,8 @@ impl Log {
         if self.lines.is_empty() {
             0
         } else {
-            self.lines.len() - usize::from(self.lines.last().is_some_and(|line| line.is_empty()))
+            self.lines.len()
+                - usize::from(self.lines.last().is_some_and(std::string::String::is_empty))
         }
     }
 
@@ -228,7 +240,7 @@ impl Log {
 
         self.cache
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .invalidate_from(insert_from);
         self.prune_max_lines();
         if self.auto_scroll {
@@ -263,7 +275,7 @@ impl Log {
 
         self.cache
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .invalidate_from(insert_from);
         self.prune_max_lines();
         if self.auto_scroll {
@@ -280,7 +292,10 @@ impl Log {
         self.offset_y = 0;
         self.content_height.store(1, Ordering::Relaxed);
         self.clear_selection();
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
         self
     }
 
@@ -296,7 +311,10 @@ impl Log {
                     .map(|line| Self::processed_width(line))
                     .max()
                     .unwrap_or(0);
-                self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+                self.cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clear();
             }
         }
     }
@@ -402,7 +420,10 @@ impl Log {
         let content_hash = Self::line_content_hash(line);
         let cache_key = (line_index, content_hash);
         {
-            let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+            let mut cache = self
+                .cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(cached) = cache.get(&cache_key) {
                 return cached.clone();
             }
@@ -412,7 +433,10 @@ impl Log {
 
         // Store in cache
         {
-            let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+            let mut cache = self
+                .cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             cache.insert(cache_key, result.clone());
         }
 
@@ -445,7 +469,7 @@ impl Log {
 
     // ── WP-24: Selection helpers ────────────────────────────────────────
 
-    /// Convert mouse coordinates (content-local) to a LogPos.
+    /// Convert mouse coordinates (content-local) to a `LogPos`.
     fn mouse_to_pos(&self, x: usize, y: usize) -> LogPos {
         let line = (self.offset_y + y).min(self.line_count().saturating_sub(1));
         let col = if line < self.lines.len() {
@@ -649,15 +673,15 @@ impl crate::widgets::Interactive for Log {
         if let Event::Action(action) = event {
             let before = self.offset_y;
             match action {
-                Action::ScrollUp => self.scroll_by(-(self.scroll_step as i32)),
-                Action::ScrollDown => self.scroll_by(self.scroll_step as i32),
+                Action::ScrollUp => self.scroll_by(-self.scroll_step.to_i32_sat()),
+                Action::ScrollDown => self.scroll_by(self.scroll_step.to_i32_sat()),
                 Action::ScrollPageUp => {
                     let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                    self.scroll_by(-(page as i32));
+                    self.scroll_by(-page.to_i32_sat());
                 }
                 Action::ScrollPageDown => {
                     let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                    self.scroll_by(page as i32);
+                    self.scroll_by(page.to_i32_sat());
                 }
                 _ => return,
             }
@@ -691,7 +715,7 @@ impl crate::widgets::Interactive for Log {
         let viewport_h = self.viewport_height.load(Ordering::Relaxed).max(1);
         let content_h = self.content_height.load(Ordering::Relaxed).max(1);
         let next = ScrollView::line_clamp_offset(
-            payload.offset.max(0.0).round() as usize,
+            payload.offset.max(0.0).round().to_usize_sat(),
             content_h,
             viewport_h,
         );
@@ -724,7 +748,7 @@ impl crate::widgets::Scrollable for Log {
             return;
         }
         let before = self.offset_y;
-        self.scroll_by(delta_y.saturating_mul(self.scroll_step as i32));
+        self.scroll_by(delta_y.saturating_mul(self.scroll_step.to_i32_sat()));
         if self.offset_y != before {
             ctx.request_repaint();
             self.emit_scroll_changed_message(ctx);
@@ -737,7 +761,7 @@ impl crate::widgets::Scrollable for Log {
     }
 
     fn scroll_offset_f32(&self) -> (f32, f32) {
-        (0.0, self.offset_y as f32)
+        (0.0, self.offset_y.to_f32_lossy())
     }
 
     fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {
@@ -781,7 +805,10 @@ impl crate::widgets::Render for Log {
         // WP-25: invalidate cache if width changed
         let prev_width = self.cache_width.swap(width, Ordering::Relaxed);
         if prev_width != width {
-            self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            self.cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
         }
 
         let viewport_width = width;
@@ -867,7 +894,11 @@ mod tests {
             log.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<RichLogScrolled>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<RichLogScrolled>)
+        );
     }
 
     #[test]

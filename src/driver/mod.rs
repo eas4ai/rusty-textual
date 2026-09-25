@@ -5,6 +5,8 @@
 
 use std::io;
 
+#[cfg(target_os = "linux")]
+mod hangup;
 mod platform;
 
 pub use platform::CapabilityProfile;
@@ -18,6 +20,7 @@ pub enum PointerShape {
 }
 
 impl PointerShape {
+    #[must_use]
     pub fn as_kitty_name(self) -> &'static str {
         match self {
             PointerShape::Default => "default",
@@ -95,9 +98,18 @@ pub struct TerminalDriver {
     capabilities: CapabilityProfile,
     negotiated: negotiate::NegotiatedModes,
     platform: Box<dyn platform::PlatformDriver>,
+    /// Runs while the driver is started; see [`hangup`].
+    #[cfg(target_os = "linux")]
+    hangup_watch: Option<hangup::HangupWatch>,
 }
 
 impl TerminalDriver {
+    /// Create a driver for the current platform and read the terminal size.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when the terminal size cannot be read, for
+    /// example when no terminal is attached.
     pub fn new(options: DriverOptions) -> io::Result<Self> {
         let mut platform = platform::make_platform_driver();
         let size = platform.refresh_size()?;
@@ -109,27 +121,34 @@ impl TerminalDriver {
             capabilities: platform::capability_profile(),
             negotiated: negotiate::NegotiatedModes::default(),
             platform,
+            #[cfg(target_os = "linux")]
+            hangup_watch: None,
         })
     }
 
+    #[must_use]
     pub fn size(&self) -> Size {
         self.size
     }
 
+    #[must_use]
     pub fn started(&self) -> bool {
         self.started
     }
 
+    #[must_use]
     pub fn options(&self) -> DriverOptions {
         self.options
     }
 
     /// Terminal capability profile for the active platform driver.
+    #[must_use]
     pub fn capabilities(&self) -> CapabilityProfile {
         self.capabilities
     }
 
     /// Whether the Kitty keyboard enhancement protocol is currently active.
+    #[must_use]
     pub fn keyboard_enhanced(&self) -> bool {
         self.keyboard_enhanced
     }
@@ -137,10 +156,22 @@ impl TerminalDriver {
     /// Outcome of the startup mode negotiation (PR-15b): DECRQM answers for
     /// SYNC (2026) and in-band resize (2048), or defaults when skipped
     /// (piped, Apple Terminal for SYNC) or unanswered.
+    #[must_use]
     pub fn negotiated_modes(&self) -> negotiate::NegotiatedModes {
         self.negotiated
     }
 
+    /// Put the terminal into application mode. Does nothing when the driver
+    /// has already started.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when raw mode cannot be enabled, or when
+    /// writing a mode command to stdout fails (alternate screen, hidden
+    /// cursor, no line wrap, focus reporting, mouse capture, or bracketed
+    /// paste). On a write failure the driver first restores the terminal on a
+    /// best-effort basis. A failure to enable the Kitty keyboard protocol is
+    /// not an error.
     pub fn start(&mut self) -> io::Result<()> {
         if self.started {
             return Ok(());
@@ -151,12 +182,30 @@ impl TerminalDriver {
         self.keyboard_enhanced = keyboard_enhanced;
         self.negotiated = negotiated;
         self.started = true;
+        // Best effort: without the watch, a terminal that closes without a
+        // SIGHUP leaves the process spinning inside crossterm (see `hangup`).
+        #[cfg(target_os = "linux")]
+        {
+            self.hangup_watch = hangup::HangupWatch::start().ok();
+        }
         Ok(())
     }
 
+    /// Restore the terminal to its normal mode. Does nothing when the driver
+    /// has not started.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`io::Error`] from the restore steps: writing a mode
+    /// command to stdout, or disabling raw mode. All steps still run after a
+    /// failure, and the driver is marked as stopped either way.
     pub fn stop(&mut self) -> io::Result<()> {
         if !self.started {
             return Ok(());
+        }
+        #[cfg(target_os = "linux")]
+        {
+            self.hangup_watch = None;
         }
         let result = self.platform.stop(self.options, self.keyboard_enhanced);
         self.keyboard_enhanced = false;
@@ -164,12 +213,24 @@ impl TerminalDriver {
         result
     }
 
+    /// Read the current terminal size, store it, and return it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when the terminal size cannot be read. The
+    /// stored size is left unchanged in that case.
     pub fn refresh_size(&mut self) -> io::Result<Size> {
         self.size = self.platform.refresh_size()?;
         Ok(self.size)
     }
 
     /// Re-apply runtime modes that some terminals may reset on resize.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when writing the mode commands to stdout
+    /// fails. When the driver has not started, it writes nothing and returns
+    /// `Ok(())`.
     pub fn reassert_runtime_modes(&mut self) -> io::Result<()> {
         self.platform.reassert_runtime_modes(self.started)
     }
@@ -179,6 +240,12 @@ impl TerminalDriver {
     /// Best effort: terminals that don't support it should ignore the OSC sequence.
     ///
     /// Protocol: `ESC ] 22 ; <shape> BEL`
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when writing or flushing the sequence to
+    /// stdout fails. When pointer shapes are not supported or not enabled, or
+    /// the driver has not started, it writes nothing and returns `Ok(())`.
     pub fn set_pointer_shape(&mut self, shape: PointerShape) -> io::Result<()> {
         if !self.capabilities.supports_pointer_shapes {
             return Ok(());

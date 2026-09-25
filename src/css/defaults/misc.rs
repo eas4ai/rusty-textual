@@ -3,7 +3,7 @@
 // ProgressBar, Collapsible, ContentSwitcher, Link, Toast, LoadingIndicator,
 // Sparkline, Digits, CommandPalette
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 Markdown {
     height: auto;
     padding: 0 2 0 2;
@@ -895,4 +895,4 @@ CommandList > .option-list--option-hover {
 CommandList:nocolor > .option-list--option-highlighted {
     text-style: reverse;
 }
-"#;
+";

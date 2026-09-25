@@ -7,6 +7,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::num::Cast;
+
 #[derive(Debug, Clone)]
 pub struct DebugLayout {
     pub enabled: bool,
@@ -15,6 +17,7 @@ pub struct DebugLayout {
 }
 
 impl DebugLayout {
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             enabled: false,
@@ -23,6 +26,7 @@ impl DebugLayout {
         }
     }
 
+    #[must_use]
     pub fn enabled() -> Self {
         let mut layout = Self::disabled();
         layout.enabled = true;
@@ -30,6 +34,7 @@ impl DebugLayout {
         layout
     }
 
+    #[must_use]
     pub fn style_for(&self, index: usize) -> Style {
         let color = self.colors[index % self.colors.len()];
         Style::color(Color::from_ansi(color).into())
@@ -79,6 +84,7 @@ impl DebugChannel {
 
     /// Stable lowercase name used on the wire (`LOGS` records, `CHANNELS`
     /// listings, `DEBUG_CHANNEL` toggles).
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             DebugChannel::Input => "input",
@@ -93,6 +99,7 @@ impl DebugChannel {
     }
 
     /// Parse a wire name back into a channel (case-insensitive).
+    #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         let name = name.trim().to_ascii_lowercase();
         Self::ALL.into_iter().find(|channel| channel.name() == name)
@@ -185,6 +192,7 @@ pub(crate) fn activate_log_stream() {
 }
 
 /// Whether `channel` currently streams to the devtools log sink.
+#[must_use]
 pub fn channel_streaming(channel: DebugChannel) -> bool {
     log_hub().streaming[channel.index()].load(Ordering::Relaxed)
 }
@@ -197,6 +205,7 @@ pub fn set_channel_streaming(channel: DebugChannel, enabled: bool) {
 
 /// Introspection listing for every channel: `(name, file_path, streaming)`.
 /// Backs the devtools `CHANNELS` request.
+#[must_use]
 pub fn channel_states() -> Vec<(&'static str, Option<&'static str>, bool)> {
     DebugChannel::ALL
         .into_iter()
@@ -232,12 +241,12 @@ fn format_log_record(channel: DebugChannel, line: &str) -> String {
     let ts_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_millis() as u64;
+        .as_millis()
+        .to_u64_sat();
     let sanitized: String = line
         .chars()
         .map(|c| match c {
-            '\t' => ' ',
-            '\n' | '\r' => ' ',
+            '\t' | '\n' | '\r' => ' ',
             other => other,
         })
         .collect();
@@ -330,10 +339,10 @@ pub(crate) fn debug_border(line: &str) {
 }
 
 pub(crate) fn border_debug_matches(label: &str) -> bool {
+    static FILTERS: OnceLock<Vec<String>> = OnceLock::new();
     if !channel_enabled(DebugChannel::Border) {
         return false;
     }
-    static FILTERS: OnceLock<Vec<String>> = OnceLock::new();
     let filters = FILTERS.get_or_init(|| {
         std::env::var("TEXTUAL_DEBUG_BORDER_FILTER")
             .ok()

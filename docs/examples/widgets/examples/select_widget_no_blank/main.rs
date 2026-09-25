@@ -1,7 +1,7 @@
 /// Port of Python Textual `docs/examples/widgets/select_widget_no_blank.py`.
 ///
 /// Demonstrates `Select<String>` with `allow_blank=false`:
-/// - A `Select` widget populated with lines from a poem (allow_blank=false).
+/// - A `Select` widget populated with lines from a poem (`allow_blank=false`).
 /// - When a selection changes, the app title is updated.
 /// - Pressing `s` swaps the options with alternate lines.
 ///
@@ -29,7 +29,7 @@ const ALTERNATE_LINES: &[&str] = &[
     "How I wonder what you are!",
 ];
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center top;
 }
@@ -38,7 +38,7 @@ Select {
     width: 60;
     margin: 2;
 }
-"#;
+";
 
 struct SelectApp;
 
@@ -65,7 +65,12 @@ impl TextualApp for SelectApp {
         AppRoot::new().with_child(Header::new()).with_child(select)
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if key.name() == "s" {
             let new_options: Vec<(String, String)> = ALTERNATE_LINES
                 .iter()
@@ -153,7 +158,10 @@ mod tests {
                 let before = pilot.app().frame_fingerprint();
                 pilot.press(&["s"])?;
                 let after = pilot.app().frame_fingerprint();
-                assert_ne!(before, after, "pressing `s` must swap options (frame changes)");
+                assert_ne!(
+                    before, after,
+                    "pressing `s` must swap options (frame changes)"
+                );
                 // Confirm the underlying value snapped to a new first line.
                 let app = pilot.app();
                 let value = app

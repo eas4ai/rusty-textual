@@ -8,7 +8,7 @@ struct ModalApp {
 }
 
 impl ModalApp {
-    fn set_overlay_visible(&self, app: &mut App, visible: bool, ctx: &mut textual::event::WidgetCtx) {
+    fn set_overlay_visible(app: &mut App, visible: bool, ctx: &mut textual::event::WidgetCtx) {
         let Ok(overlay) = app.query_one("Overlay") else {
             return;
         };
@@ -24,26 +24,31 @@ impl ModalApp {
 
 impl TextualApp for ModalApp {
     fn compose(&mut self) -> AppRoot {
-        let base = Vertical::new().with_compose(compose![
-            Static::new("Modal Overlay Debug Harness").class("title"),
-            Static::new("Click 'Open modal' to show the modal layer."),
-            Static::new("Click 'Close modal' (inside modal) or press Escape to dismiss."),
-            Button::primary("Open modal"),
-            Static::new("Background content should remain visible behind the modal.").class("hint"),
-        ])
-        .class("base");
+        let base = Vertical::new()
+            .with_compose(compose![
+                Static::new("Modal Overlay Debug Harness").class("title"),
+                Static::new("Click 'Open modal' to show the modal layer."),
+                Static::new("Click 'Close modal' (inside modal) or press Escape to dismiss."),
+                Button::primary("Open modal"),
+                Static::new("Background content should remain visible behind the modal.")
+                    .class("hint"),
+            ])
+            .class("base");
 
-        let modal = 
-            Container::new().with_child(
-                Vertical::new().with_compose(compose![
-                    Static::new("Modal Title").class("modal-title"),
-                    Static::new("This is a standalone overlay verification example."),
-                    Static::new("If overlay composition is correct, base UI remains underneath."),
-                    Button::error("Close modal"),
-                ])
-                .class("modal-card"),
+        let modal = Container::new()
+            .with_child(
+                Vertical::new()
+                    .with_compose(compose![
+                        Static::new("Modal Title").class("modal-title"),
+                        Static::new("This is a standalone overlay verification example."),
+                        Static::new(
+                            "If overlay composition is correct, base UI remains underneath."
+                        ),
+                        Button::error("Close modal"),
+                    ])
+                    .class("modal-card"),
             )
-        .class("modal-layer");
+            .class("modal-layer");
 
         AppRoot::new().with_compose(compose![
             Overlay::new(base, modal).visible(false),
@@ -64,21 +69,26 @@ impl TextualApp for ModalApp {
         }
         self.initialized = true;
         // Ensure initial state is hidden in tree mode.
-        self.set_overlay_visible(app, false, ctx);
+        Self::set_overlay_visible(app, false, ctx);
         self.overlay_open = false;
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if let Some(ButtonPressed { description, .. }) = message.downcast_ref::<ButtonPressed>() {
             // `description` is the button label (Python `event.button.label`).
             match description.as_str() {
                 "Open modal" => {
                     self.overlay_open = true;
-                    self.set_overlay_visible(app, true, ctx);
+                    Self::set_overlay_visible(app, true, ctx);
                 }
                 "Close modal" => {
                     self.overlay_open = false;
-                    self.set_overlay_visible(app, false, ctx);
+                    Self::set_overlay_visible(app, false, ctx);
                 }
                 _ => {}
             }

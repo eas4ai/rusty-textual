@@ -35,6 +35,8 @@ fn rainbow_gradient() -> LinearGradient {
         Color::rgb(0x66, 0x33, 0x99),
     ];
     let n = colors.len() - 1;
+    // Twelve stops: every index is exact in f32.
+    #[allow(clippy::cast_precision_loss)]
     let stops: Vec<(f32, Color)> = colors
         .iter()
         .enumerate()
@@ -49,9 +51,7 @@ impl TextualApp for ProgressApp {
     fn compose(&mut self) -> AppRoot {
         let bar = ProgressBar::new(Some(100.0)).with_gradient(rainbow_gradient());
 
-        AppRoot::new().with_child(
-            Center::new().with_child(Middle::new().with_child(bar)),
-        )
+        AppRoot::new().with_child(Center::new().with_child(Middle::new().with_child(bar)))
     }
 
     fn on_mount_with_app(&mut self, app: &mut App, ctx: &mut textual::event::WidgetCtx) {

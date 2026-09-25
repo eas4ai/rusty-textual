@@ -766,6 +766,7 @@ checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
 dependencies = [
  "bitflags 2.11.0",
  "errno",
+ "itoa",
  "libc",
  "linux-raw-sys 0.4.15",
  "windows-sys 0.59.0",
@@ -795,6 +796,7 @@ dependencies = [
  "pulldown-cmark 0.13.1",
  "regex",
  "rich-rs",
+ "rustix 0.38.44",
  "serde_json",
  "similar",
  "slotmap",

@@ -5,7 +5,7 @@
 ///
 /// Layout:
 /// - `VerticalScroll` (centered)
-///   - `Horizontal` containing a `RadioSet` (id="focus_me") with 9 buttons
+///   - `Horizontal` containing a `RadioSet` (`id="focus_me`") with 9 buttons
 ///   - `Horizontal` containing a `Label` (id="pressed") for the button label
 ///   - `Horizontal` containing a `Label` (id="index") for the button index
 ///
@@ -13,7 +13,7 @@
 /// labels update via `on_radio_set_changed` (mapped to `on_message_with_app`).
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 VerticalScroll {
     align: center middle;
 }
@@ -26,7 +26,7 @@ Horizontal {
 RadioSet {
     width: 45%;
 }
-"#;
+";
 
 struct RadioSetChangedApp;
 
@@ -45,9 +45,7 @@ impl TextualApp for RadioSetChangedApp {
             .with_button(RadioButton::new("Star Trek: The Motion Picture"))
             .with_button(RadioButton::new("Star Wars: A New Hope"))
             .with_button(RadioButton::new("The Last Starfighter"))
-            .with_button(RadioButton::new(
-                "Total Recall \u{1F449} \u{1F534}",
-            ))
+            .with_button(RadioButton::new("Total Recall \u{1F449} \u{1F534}"))
             .with_button(RadioButton::new("Wing Commander"));
 
         let radio_set_with_id = ChildDecl::from(radio_set).with_id("focus_me");
@@ -70,7 +68,7 @@ impl TextualApp for RadioSetChangedApp {
     }
 
     fn on_mount_with_app(&mut self, app: &mut App, _ctx: &mut textual::event::WidgetCtx) {
-        let _ = app.query_mut("#focus_me").map(|q| q.focus());
+        let _ = app.query_mut("#focus_me").map(textual::DomQueryMut::focus);
     }
 
     fn on_message_with_app(
@@ -91,8 +89,8 @@ impl TextualApp for RadioSetChangedApp {
                 })
                 .unwrap_or_default();
 
-            let pressed_text = format!("Pressed button label: {}", label_text);
-            let index_text = format!("Pressed button index: {}", index);
+            let pressed_text = format!("Pressed button label: {label_text}");
+            let index_text = format!("Pressed button index: {index}");
 
             let _ = app.with_query_one_mut_as::<Label, _>("#pressed", |label| {
                 label.set_text(pressed_text);
@@ -137,12 +135,14 @@ mod tests {
             .with_button(RadioButton::new("Star Trek: The Motion Picture"))
             .with_button(RadioButton::new("Star Wars: A New Hope"))
             .with_button(RadioButton::new("The Last Starfighter"))
-            .with_button(RadioButton::new(
-                "Total Recall \u{1F449} \u{1F534}",
-            ))
+            .with_button(RadioButton::new("Total Recall \u{1F449} \u{1F534}"))
             .with_button(RadioButton::new("Wing Commander"));
 
-        assert_eq!(set.pressed_index(), Some(3), "Serenity should be at index 3");
+        assert_eq!(
+            set.pressed_index(),
+            Some(3),
+            "Serenity should be at index 3"
+        );
         assert_eq!(set.len(), 9);
     }
 

@@ -70,6 +70,7 @@ pub struct Rule {
 impl Rule {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new(orientation: RuleOrientation) -> Self {
         let class = match orientation {
             RuleOrientation::Horizontal => "-horizontal",
@@ -89,16 +90,19 @@ impl Rule {
     }
 
     /// Create a horizontal rule (default).
+    #[must_use]
     pub fn horizontal() -> Self {
         Self::new(RuleOrientation::Horizontal)
     }
 
     /// Create a vertical rule.
+    #[must_use]
     pub fn vertical() -> Self {
         Self::new(RuleOrientation::Vertical)
     }
 
     /// Set the line drawing style.
+    #[must_use]
     pub fn line_style(mut self, style: LineStyle) -> Self {
         self.line_style = style;
         self
@@ -106,11 +110,13 @@ impl Rule {
 
     // ── Reactive getters ─────────────────────────────────────────────────
 
+    #[must_use]
     pub fn orientation(&self) -> RuleOrientation {
         self.orientation
     }
 
     /// Get the current line style.
+    #[must_use]
     pub fn get_line_style(&self) -> LineStyle {
         self.line_style
     }
@@ -149,6 +155,7 @@ impl Rule {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_orientation(
         &mut self,
         old: &RuleOrientation,
@@ -400,8 +407,7 @@ mod tests {
             let ch = s.horizontal_char();
             assert!(
                 !ch.is_empty(),
-                "horizontal_char for {:?} should not be empty",
-                s
+                "horizontal_char for {s:?} should not be empty"
             );
         }
     }
@@ -423,8 +429,7 @@ mod tests {
             let ch = s.vertical_char();
             assert!(
                 !ch.is_empty(),
-                "vertical_char for {:?} should not be empty",
-                s
+                "vertical_char for {s:?} should not be empty"
             );
         }
     }

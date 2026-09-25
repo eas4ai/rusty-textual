@@ -1,4 +1,4 @@
-//! Regression: click-to-focus (Python `Screen._forward_event`, MouseDown).
+//! Regression: click-to-focus (Python `Screen._forward_event`, `MouseDown`).
 //!
 //! Python focuses the first focusable widget in the ancestry of the widget
 //! under a mouse press BEFORE the widget receives the event

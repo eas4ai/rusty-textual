@@ -11,10 +11,12 @@ pub struct Blank {
 }
 
 impl Blank {
+    #[must_use]
     pub fn new(color: Color) -> Self {
         Self { color: Some(color) }
     }
 
+    #[must_use]
     pub fn transparent() -> Self {
         Self { color: None }
     }
@@ -27,6 +29,7 @@ impl Blank {
     }
 
     /// Render this blank surface for a fixed width/height.
+    #[must_use]
     pub fn render_for_size(&self, width: usize, height: usize) -> Segments {
         let width = width.max(1);
         let height = height.max(1);
@@ -43,6 +46,7 @@ impl Blank {
     }
 
     /// Render a single blank line with the given width.
+    #[must_use]
     pub fn line_for_width(&self, width: usize) -> Vec<Segment> {
         Segment::split_lines(self.render_for_size(width.max(1), 1))
             .into_iter()

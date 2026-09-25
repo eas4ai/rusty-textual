@@ -57,10 +57,12 @@ impl Tooltip {
     }
 
     /// The single system tooltip mounted by the runtime on every screen.
+    #[must_use]
     pub fn system() -> Self {
         Self::new("")
     }
 
+    #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
@@ -69,6 +71,7 @@ impl Tooltip {
         self.text = text.into();
     }
 
+    #[must_use]
     pub fn is_visible(&self) -> bool {
         self.visible
     }

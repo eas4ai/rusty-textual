@@ -5,7 +5,8 @@ use textual_macros::widget;
 
 use crate::debug::debug_message;
 use crate::event::Event;
-use crate::message::*;
+use crate::message::FooterBindingsUpdated;
+use crate::num::Cast;
 use crate::renderables::Styled;
 
 use super::NodeSeed;
@@ -50,16 +51,19 @@ impl FooterBinding {
         }
     }
 
+    #[must_use]
     pub fn with_group(mut self, group: impl Into<String>) -> Self {
         self.group = Some(group.into());
         self
     }
 
+    #[must_use]
     pub fn with_action_key(mut self, action_key: impl Into<String>) -> Self {
         self.action_key = Some(action_key.into());
         self
     }
 
+    #[must_use]
     pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
         self.tooltip = Some(tooltip.into());
         self
@@ -96,38 +100,45 @@ impl FooterKey {
         }
     }
 
+    #[must_use]
     pub fn with_compact(mut self, compact: bool) -> Self {
         self.compact = compact;
         set_class_flag(&mut self.classes, "-compact", compact);
         self
     }
 
+    #[must_use]
     pub fn with_grouped(mut self, grouped: bool) -> Self {
         set_class_flag(&mut self.classes, "-grouped", grouped);
         self
     }
 
+    #[must_use]
     pub fn with_command_palette(mut self, command_palette: bool) -> Self {
         set_class_flag(&mut self.classes, "-command-palette", command_palette);
         self
     }
 
+    #[must_use]
     pub fn with_hovered(mut self, hovered: bool) -> Self {
         self.hovered = hovered;
         self
     }
 
+    #[must_use]
     pub fn with_disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         set_class_flag(&mut self.classes, "-disabled", disabled);
         self
     }
 
+    #[must_use]
     pub fn with_parent_bg(mut self, parent_bg: crate::style::Color) -> Self {
         self.parent_bg = parent_bg;
         self
     }
 
+    #[must_use]
     pub fn key_only(mut self) -> Self {
         self.description.clear();
         self
@@ -145,8 +156,7 @@ impl FooterKey {
         } else {
             let effective_bg = component
                 .bg
-                .map(|bg| bg.flatten_over(self.parent_bg))
-                .unwrap_or(self.parent_bg);
+                .map_or(self.parent_bg, |bg| bg.flatten_over(self.parent_bg));
             component.to_rich_over(effective_bg).unwrap_or(fallback)
         }
     }
@@ -304,6 +314,7 @@ impl Default for Footer {
 impl Footer {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             bindings: Vec::new(),
@@ -316,6 +327,7 @@ impl Footer {
         }
     }
 
+    #[must_use]
     pub fn with_binding(mut self, key: impl Into<String>, description: impl Into<String>) -> Self {
         self.bindings.push(FooterBinding::new(key, description));
         self
@@ -329,6 +341,7 @@ impl Footer {
         self.bindings.clear();
     }
 
+    #[must_use]
     pub fn compact(mut self, compact: bool) -> Self {
         self.compact = compact;
         set_class_flag(&mut self.seed.classes, "-compact", compact);
@@ -338,6 +351,7 @@ impl Footer {
     // ── Reactive getters ─────────────────────────────────────────────────
 
     /// Reactive getter for `compact`.
+    #[must_use]
     pub fn is_compact(&self) -> bool {
         self.compact
     }
@@ -366,6 +380,7 @@ impl Footer {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_compact(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Class op is queued in set_compact; layout invalidation via ReactiveFlags.
     }
@@ -380,8 +395,7 @@ impl Footer {
             let parent_bg = self
                 .resolved_base_style()
                 .bg
-                .map(|bg| bg.flatten_over(fallback_bg))
-                .unwrap_or(fallback_bg);
+                .map_or(fallback_bg, |bg| bg.flatten_over(fallback_bg));
             style.to_rich_over(parent_bg).unwrap_or(fallback)
         }
     }
@@ -404,8 +418,7 @@ impl Footer {
             .unwrap_or(crate::style::Color::rgb(0, 0, 0));
         self.resolved_base_style()
             .bg
-            .map(|bg| bg.flatten_over(fallback_bg))
-            .unwrap_or(fallback_bg)
+            .map_or(fallback_bg, |bg| bg.flatten_over(fallback_bg))
     }
 
     fn palette_separator_style(&self) -> rich_rs::Style {
@@ -426,12 +439,10 @@ impl Footer {
             let base_bg = key
                 .resolved_base_style()
                 .bg
-                .map(|bg| bg.flatten_over(row_bg))
-                .unwrap_or(row_bg);
+                .map_or(row_bg, |bg| bg.flatten_over(row_bg));
             let key_bg = crate::css::resolve_component_style(&key, &["footer-key--key"])
                 .bg
-                .map(|bg| bg.flatten_over(base_bg))
-                .unwrap_or(base_bg);
+                .map_or(base_bg, |bg| bg.flatten_over(base_bg));
             style = style.with_bgcolor(key_bg.to_simple_opaque());
         }
         style
@@ -564,7 +575,7 @@ impl Footer {
     /// instances (`Binding.make_bindings`), and `Footer.compose` shows one
     /// `FooterKey` per action using the FIRST binding's key
     /// (`multi_bindings[0]` + `app.get_key_display`), so the footer renders
-    /// `↑ Increment` — never `↑ k Increment`. (The KeyPanel, by contrast, joins
+    /// `↑ Increment` — never `↑ k Increment`. (The `KeyPanel`, by contrast, joins
     /// ALL keys of the action; it keeps its own formatter.)
     fn footer_key_display(key_spec: &str) -> String {
         let first = key_spec
@@ -593,8 +604,8 @@ impl Footer {
                         .unwrap_or_else(|| Self::footer_key_display(&hint.key)),
                     hint.description.clone(),
                 );
-                binding.tooltip = hint.tooltip.clone();
-                binding.group = hint.group.clone();
+                binding.tooltip.clone_from(&hint.tooltip);
+                binding.group.clone_from(&hint.group);
                 // Store the raw key spec for click-to-invoke dispatch.
                 binding.action_key = Some(hint.key.clone());
                 // Propagate check_action enabled state for dimming.
@@ -746,7 +757,7 @@ impl Footer {
         None
     }
 
-    /// Look up the `FooterBinding` at a flat index (skipping command_palette bindings).
+    /// Look up the `FooterBinding` at a flat index (skipping `command_palette` bindings).
     fn binding_at_flat_index(&self, flat_index: usize) -> Option<&FooterBinding> {
         self.bindings
             .iter()
@@ -784,7 +795,7 @@ impl Footer {
         let start = range.start.min(max_x);
         let end = range.end.saturating_sub(1).min(max_x);
         let center = start.saturating_add(end.saturating_sub(start) / 2);
-        Some((center.min(u16::MAX as usize) as u16, 0))
+        Some((center.to_u16_sat(), 0))
     }
 }
 
@@ -1012,6 +1023,7 @@ mod tests {
     use crate::event::{BindingHint, Event, EventCtx, MouseDownEvent};
     use crate::message::*;
     use crate::node_id::NodeId;
+    use crate::num::Cast;
     use crate::render::FrameBuffer;
     use crate::widgets::Widget;
 
@@ -1349,7 +1361,7 @@ mod tests {
         let clicks = regions
             .iter()
             .take(3)
-            .map(|(range, idx)| ((range.start + range.end) / 2, *idx))
+            .map(|(range, idx)| (usize::midpoint(range.start, range.end), *idx))
             .collect::<Vec<_>>();
         for (x, idx) in clicks {
             let expected_key = match idx {
@@ -1367,9 +1379,9 @@ mod tests {
                 footer.on_event(
                     &Event::MouseDown(MouseDownEvent {
                         target: NodeId::default(),
-                        screen_x: x as u16,
+                        screen_x: x.to_u16_sat(),
                         screen_y: 0,
-                        x: x as u16,
+                        x: x.to_u16_sat(),
                         y: 0,
                     }),
                     &mut __w,
@@ -1410,7 +1422,7 @@ mod tests {
             .into_iter()
             .find(|(_, idx)| *idx == 1)
             .expect("second grouped binding region should exist");
-        let x = ((second_region.0.start + second_region.0.end) / 2) as u16;
+        let x = usize::midpoint(second_region.0.start, second_region.0.end).to_u16_sat();
 
         let mut ctx = EventCtx::default();
         {
@@ -1463,7 +1475,7 @@ mod tests {
         let palette_range = footer
             .command_palette_region(64)
             .expect("palette region should exist");
-        let x = ((palette_range.start + palette_range.end) / 2) as u16;
+        let x = usize::midpoint(palette_range.start, palette_range.end).to_u16_sat();
 
         let mut ctx = EventCtx::default();
         {
@@ -1587,8 +1599,8 @@ mod tests {
             .expect("second binding region")
             .0
             .clone();
-        let first_mid = ((first.start + first.end) / 2) as u16;
-        let second_mid = ((second.start + second.end) / 2) as u16;
+        let first_mid = usize::midpoint(first.start, first.end).to_u16_sat();
+        let second_mid = usize::midpoint(second.start, second.end).to_u16_sat();
         assert_eq!(footer.binding_index_at_x(first_mid), Some(0));
         assert_eq!(footer.binding_index_at_x(second_mid), Some(1));
     }
@@ -1695,8 +1707,8 @@ mod tests {
         let range = footer
             .command_palette_region(64)
             .expect("command palette region should exist");
-        let sep_x = range.start as u16;
-        let key_x = (range.start + 1) as u16;
+        let sep_x = range.start.to_u16_sat();
+        let key_x = (range.start + 1).to_u16_sat();
         assert!(footer.on_mouse_move(key_x, 0), "hover should update state");
 
         let console = Console::new();
@@ -1744,13 +1756,13 @@ mod tests {
             .find(|(_, idx)| *idx == 0)
             .expect("first binding region should exist")
             .0;
-        let hover_x = ((first_region.start + first_region.end) / 2) as u16;
+        let hover_x = usize::midpoint(first_region.start, first_region.end).to_u16_sat();
         assert!(footer.on_mouse_move(hover_x, 0));
         let anchor = footer
             .tooltip_anchor()
             .expect("hovered binding should expose tooltip anchor");
-        let expected_x = (first_region.start + first_region.end.saturating_sub(1)) / 2;
-        assert_eq!(anchor, (expected_x as u16, 0));
+        let expected_x = usize::midpoint(first_region.start, first_region.end.saturating_sub(1));
+        assert_eq!(anchor, (expected_x.to_u16_sat(), 0));
     }
 
     #[test]
@@ -1777,13 +1789,13 @@ mod tests {
         let range = footer
             .command_palette_region(80)
             .expect("command palette region should exist");
-        let hover_x = ((range.start + range.end) / 2) as u16;
+        let hover_x = usize::midpoint(range.start, range.end).to_u16_sat();
         assert!(footer.on_mouse_move(hover_x, 0));
         let anchor = footer
             .tooltip_anchor()
             .expect("hovered command palette should expose tooltip anchor");
-        let expected_x = (range.start + range.end.saturating_sub(1)) / 2;
-        assert_eq!(anchor, (expected_x as u16, 0));
+        let expected_x = usize::midpoint(range.start, range.end.saturating_sub(1));
+        assert_eq!(anchor, (expected_x.to_u16_sat(), 0));
     }
 
     // ── check_action / enabled state tests ──────────────────────────────

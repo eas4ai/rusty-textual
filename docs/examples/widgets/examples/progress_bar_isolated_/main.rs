@@ -5,7 +5,7 @@
 /// - Pressing `s` sets total=100 and starts advancing the bar by 1 step per tick.
 /// - Keys `f`, `t`, `u` are test helpers for freezing to known states.
 ///
-/// Layout: Center > Middle > ProgressBar, Footer at bottom.
+/// Layout: Center > Middle > `ProgressBar`, Footer at bottom.
 use textual::prelude::*;
 
 struct IndeterminateProgressBar {
@@ -30,11 +30,9 @@ impl TextualApp for IndeterminateProgressBar {
 
     fn compose(&mut self) -> AppRoot {
         AppRoot::new()
-            .with_child(
-                CenterMiddle::new().with_compose(vec![
-                    ChildDecl::from(ProgressBar::new(None)).with_id("progress_bar"),
-                ]),
-            )
+            .with_child(CenterMiddle::new().with_compose(vec![
+                ChildDecl::from(ProgressBar::new(None)).with_id("progress_bar"),
+            ]))
             .with_child(Footer::new())
     }
 
@@ -47,7 +45,12 @@ impl TextualApp for IndeterminateProgressBar {
         }
     }
 
-    fn on_app_action_str(&mut self, app: &mut App, action: &str, ctx: &mut textual::event::WidgetCtx) {
+    fn on_app_action_str(
+        &mut self,
+        app: &mut App,
+        action: &str,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         if action == "start" {
             if let Ok(handle) = app.query_one_typed::<ProgressBar>("#progress_bar") {
                 let _ = handle.update(app, |bar, rctx| {
@@ -60,7 +63,12 @@ impl TextualApp for IndeterminateProgressBar {
         }
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         match key.key.as_str() {
             "f" => {
                 // Freeze time for indeterminate progress bar (Python: clock.set_time(5))

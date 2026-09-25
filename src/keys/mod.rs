@@ -19,7 +19,7 @@
 //!   `character` is `None` and `is_printable` is `false`.
 //! - **Symbols:** shift is consumed (the symbol itself encodes the shift).
 //!   Named via a built-in ASCII table (e.g. `'!'` → `"exclamation_mark"`).
-//! - **BackTab:** treated as `shift+tab` regardless of whether crossterm sets
+//! - **`BackTab`:** treated as `shift+tab` regardless of whether crossterm sets
 //!   the SHIFT modifier.
 //!
 //! # Aliases
@@ -57,11 +57,11 @@
 //! |-------------|-------|------------|
 //! | **tmux** | Kitty keyboard protocol not forwarded (tmux ≤ 3.4) | Use `KeyboardProtocol::Off` or run outside tmux |
 //! | **screen** | No Kitty protocol; limited modifier reporting | Legacy mode only |
-//! | **macOS Terminal.app** | No Kitty protocol; limited Alt modifier reporting (sends ESC prefix) | Avoid Alt bindings or use a modern terminal (kitty, WezTerm, iTerm2, Ghostty) |
-//! | **PuTTY / Windows Console** | Partial modifier support; no Kitty protocol | Legacy mode; crossterm handles translation |
+//! | **macOS Terminal.app** | No Kitty protocol; limited Alt modifier reporting (sends ESC prefix) | Avoid Alt bindings or use a modern terminal (kitty, `WezTerm`, iTerm2, Ghostty) |
+//! | **`PuTTY` / Windows Console** | Partial modifier support; no Kitty protocol | Legacy mode; crossterm handles translation |
 //! | **SSH** | Protocol support depends on the local terminal, not the remote shell | Enable on the local terminal |
 //! | **Ctrl+Shift+letter** | Some terminals report `KeyCode::Char(uppercase)` with CTRL+SHIFT; we normalize to `ctrl+shift+lowercase` | Covered by normalization |
-//! | **BackTab** | Crossterm may or may not set the SHIFT modifier alongside `KeyCode::BackTab` | We unconditionally add SHIFT, producing `shift+tab` |
+//! | **`BackTab`** | Crossterm may or may not set the SHIFT modifier alongside `KeyCode::BackTab` | We unconditionally add SHIFT, producing `shift+tab` |
 //!
 //! The `examples/keys.rs` diagnostic harness is the recommended tool for
 //! verifying input behavior in any terminal environment.
@@ -139,6 +139,7 @@ impl Deref for KeyEventData {
 
 impl KeyEventData {
     /// Create a [`KeyEventData`] by normalizing a crossterm [`KeyEvent`].
+    #[must_use]
     pub fn from_crossterm(raw: KeyEvent) -> Self {
         let (key, character, is_printable) = normalize_key_code(raw.code, raw.modifiers);
         Self {
@@ -150,6 +151,7 @@ impl KeyEventData {
     }
 
     /// Returns the canonical key name (borrows from `self.key`).
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.key
     }
@@ -157,12 +159,14 @@ impl KeyEventData {
     /// Returns a Python-identifier-friendly form of the key name.
     ///
     /// Examples: `"ctrl+p"` -> `"ctrl_p"`, `"A"` -> `"upper_a"`.
+    #[must_use]
     pub fn identifier(&self) -> String {
         key_to_identifier(&self.key)
     }
 
     /// Returns aliases for this key, computed on demand from the
-    /// [`KEY_ALIASES`] table.  The canonical name is always the first element.
+    /// `KEY_ALIASES` table.  The canonical name is always the first element.
+    #[must_use]
     pub fn aliases(&self) -> Vec<&str> {
         let mut result = vec![self.key.as_str()];
         for &(canonical, aliases) in KEY_ALIASES {
@@ -182,11 +186,13 @@ impl KeyEventData {
     /// Human-friendly display form of the key.
     ///
     /// Examples: `"ctrl+p"` -> `"^p"`, `"left"` -> `"←"`.
+    #[must_use]
     pub fn display(&self) -> String {
         format_key_display(&self.key)
     }
 
     /// Explicit accessor for the raw crossterm [`KeyEvent`].
+    #[must_use]
     pub fn raw(&self) -> &KeyEvent {
         &self.raw
     }
@@ -198,6 +204,7 @@ impl KeyEventData {
 
 /// Core normalization logic.  Maps a crossterm [`KeyCode`] + [`KeyModifiers`]
 /// to a canonical `(key_name, character, is_printable)` triple.
+#[allow(clippy::too_many_lines)] // One arm per key name.
 fn normalize_key_code(code: KeyCode, modifiers: KeyModifiers) -> (String, Option<char>, bool) {
     // We will strip SHIFT from the modifier set when the character already
     // encodes it (e.g. uppercase letter, or symbol produced by Shift).
@@ -442,6 +449,12 @@ fn apply_key_name_replacements(name: &str) -> String {
 /// assert_eq!(key_to_identifier("A"), "upper_a");
 /// assert_eq!(key_to_identifier("shift+left"), "shift_left");
 /// ```
+///
+/// # Panics
+///
+/// Does not panic. The `unwrap` on the first character runs only when `key`
+/// is exactly one byte long, so the string has a first character.
+#[must_use]
 pub fn key_to_identifier(key: &str) -> String {
     // Single uppercase character (e.g. "A", "Z").
     if key.len() == 1 {
@@ -469,7 +482,7 @@ pub fn key_to_identifier(key: &str) -> String {
 /// assert_eq!(format_key_display("alt+ctrl+x"), "alt+^x");
 /// ```
 /// Inverse of `character_to_key_name` for the punctuation set: maps a canonical
-/// key identifier (e.g. "question_mark") back to its display character ("?").
+/// key identifier (e.g. "`question_mark`") back to its display character ("?").
 /// Used by `format_key_display` so punctuation bindings render as their symbol
 /// in footers/hints, matching Python Textual.
 fn punctuation_name_to_char(name: &str) -> Option<&'static str> {
@@ -502,6 +515,7 @@ fn punctuation_name_to_char(name: &str) -> Option<&'static str> {
     })
 }
 
+#[must_use]
 pub fn format_key_display(key: &str) -> String {
     let parts: Vec<&str> = key.split('+').collect();
     if parts.is_empty() {
@@ -557,7 +571,7 @@ mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
-    /// Helper to create a KeyEvent for testing.
+    /// Helper to create a `KeyEvent` for testing.
     fn key_event(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
         KeyEvent {
             code,

@@ -4,14 +4,14 @@
 /// - An always-off switch (animate=False in Python; Rust always animates but
 ///   starts in the off position).
 /// - An on switch (value=True).
-/// - A focused switch (third switch receives initial focus via on_mount_with_app).
+/// - A focused switch (third switch receives initial focus via `on_mount_with_app`).
 /// - A custom-styled switch (#custom-design with a custom slider color/background).
 ///
 /// Python: `focused_switch.focus()` called before yielding. Rust: uses
 /// `on_mount_with_app` to call `app.action_focus("focused-switch")`.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -40,7 +40,7 @@ Switch {
     color: dodgerblue;
     background: darkslateblue;
 }
-"#;
+";
 
 struct SwitchApp;
 

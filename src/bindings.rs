@@ -108,7 +108,7 @@ fn normalize_single_char_key(alt: &str) -> String {
 ///
 /// Order fidelity matters beyond insertion order: `apply_keymap` ends with a
 /// Python-`dict.update` step whose positional semantics are replicated by
-/// [`BindingsMap::update_entries`] (existing keys keep their position and get
+/// `BindingsMap::update_entries` (existing keys keep their position and get
 /// their value replaced; new keys append at the end; a key deleted
 /// mid-algorithm and re-added lands at the end).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -119,6 +119,7 @@ pub struct BindingsMap {
 
 impl BindingsMap {
     /// Create an empty bindings map.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -129,6 +130,12 @@ impl BindingsMap {
     /// Returns [`InvalidBinding`] on an empty comma-list alternative; Python
     /// raises this at class-definition time, and `from_decls` is the earliest
     /// structured place in Rust.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidBinding`] when a declaration's `key` has an empty
+    /// alternative after trimming, for example `"a,,b"`, `"a, "`, or `""`.
+    /// The first invalid alternative stops the build.
     pub fn from_decls(
         decls: impl IntoIterator<Item = BindingDecl>,
     ) -> Result<Self, InvalidBinding> {
@@ -180,12 +187,18 @@ impl BindingsMap {
 
     /// The ordered `(key, bindings)` entries (Python exposes
     /// `key_to_bindings` publicly; this is the read-only Rust analog).
+    #[must_use]
     pub fn entries(&self) -> &[(String, Vec<BindingDecl>)] {
         &self.key_to_bindings
     }
 
     /// Get the bindings for a key, or a typed [`NoBinding`] error on a miss
     /// (Python `get_bindings_for_key`, which raises).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NoBinding`] when the map has no entry for `key`. The error
+    /// carries the missing key.
     pub fn get_bindings_for_key(&self, key: &str) -> Result<&[BindingDecl], NoBinding> {
         self.get(key).map(Vec::as_slice).ok_or_else(|| NoBinding {
             key: key.to_string(),
@@ -193,6 +206,7 @@ impl BindingsMap {
     }
 
     /// Bindings with `show == true`, in map order (Python `shown_keys`).
+    #[must_use]
     pub fn shown_keys(&self) -> Vec<&BindingDecl> {
         self.key_to_bindings
             .iter()
@@ -276,11 +290,10 @@ impl BindingsMap {
                                 .id
                                 .as_deref()
                                 .filter(|id| !id.is_empty())
-                                .map(|id| {
+                                .is_some_and(|id| {
                                     keymap.get(id).map(String::as_str)
                                         != Some(clashed_binding.key.as_str())
-                                })
-                                .unwrap_or(false);
+                                });
                             if !rebound_away && !clashed_bindings.contains(&clashed_binding) {
                                 clashed_bindings.push(clashed_binding);
                             }
@@ -330,12 +343,11 @@ impl BindingsMap {
 
     /// Append a binding under its key (`dict.setdefault(key, []).append(..)`).
     fn push_binding(&mut self, binding: BindingDecl) {
-        match self.position(&binding.key) {
-            Some(idx) => self.key_to_bindings[idx].1.push(binding),
-            None => {
-                let key = binding.key.clone();
-                self.key_to_bindings.push((key, vec![binding]));
-            }
+        if let Some(idx) = self.position(&binding.key) {
+            self.key_to_bindings[idx].1.push(binding);
+        } else {
+            let key = binding.key.clone();
+            self.key_to_bindings.push((key, vec![binding]));
         }
     }
 

@@ -1,7 +1,7 @@
 // Checkbox / ToggleButton widget defaults
 // DC-35: aligned with Python Textual _toggle_button.py DEFAULT_CSS
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 ToggleButton {
     width: auto;
     border: tall $border-blurred;
@@ -107,4 +107,4 @@ Checkbox {
         }
     }
 }
-"#;
+";

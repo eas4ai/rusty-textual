@@ -29,9 +29,7 @@ const SWIM_ROWS: &[&[&str]] = &[
 ];
 
 fn write_key_line(log: &mut RichLog, key_name: &str, character: Option<char>, is_printable: bool) {
-    let character = character
-        .map(|ch| format!("'{ch}'"))
-        .unwrap_or_else(|| "None".to_string());
+    let character = character.map_or_else(|| "None".to_string(), |ch| format!("'{ch}'"));
     let printable = if is_printable { "True" } else { "False" };
     // Python: `RichLog.write(event)` wraps the Key event in `Pretty`, coloured
     // by rich's `ReprHighlighter` (ANSI-standard colours mapped to the terminal
@@ -73,7 +71,12 @@ impl TextualApp for RichLogApp {
         AppRoot::new().with_child(build_rich_log())
     }
 
-    fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut textual::event::WidgetCtx) {
+    fn on_key_with_app(
+        &mut self,
+        app: &mut App,
+        key: &KeyEventData,
+        ctx: &mut textual::event::WidgetCtx,
+    ) {
         let key_name = key.name().to_string();
         let _ = app.with_query_one_mut_as::<RichLog, _>("RichLog", |log| {
             write_key_line(log, &key_name, key.character, key.is_printable);

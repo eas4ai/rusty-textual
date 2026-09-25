@@ -2,7 +2,10 @@ use rich_rs::{Console, ConsoleOptions, MetaValue, Renderable, Segment, Segments,
 use textual_macros::widget;
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    MessageEvent, OptionHighlighted, OptionSelected, ScrollbarAxis, ScrollbarScrollTo,
+};
+use crate::num::Cast;
 
 #[path = "toggle_option.rs"]
 pub(crate) mod toggle_option;
@@ -57,7 +60,7 @@ fn dim_fg_toward_bg(
     let f = crate::style::color_from_simple(fg);
     let b = crate::style::color_from_simple(bg);
     let blend = |bc: u8, fc: u8| -> u8 {
-        (f64::from(bc) + (f64::from(fc) - f64::from(bc)) * dim_factor) as u8
+        (f64::from(bc) + (f64::from(fc) - f64::from(bc)) * dim_factor).to_u8_sat()
     };
     rich_rs::SimpleColor::Rgb {
         r: blend(b.r, f.r),
@@ -158,6 +161,7 @@ impl OptionList {
     crate::seed_ident_methods!();
 
     /// Create an empty `OptionList`.
+    #[must_use]
     pub fn new() -> Self {
         let seed = NodeSeed {
             classes: vec!["option-list".to_string()],
@@ -194,6 +198,7 @@ impl OptionList {
     /// raises `DuplicateID` out of `__init__`; construction-time duplicates are
     /// programmer error, not recoverable state. Use the incremental
     /// [`Self::add_option`] / [`Self::add_options`] family for fallible adds.
+    #[must_use]
     pub fn with_items(items: Vec<OptionItem>) -> Self {
         let mut list = Self::new();
         list.id_to_index = match Self::build_registry(&items) {
@@ -225,12 +230,14 @@ impl OptionList {
     }
 
     /// Builder: set the scroll step (number of rows per scroll tick).
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);
         self
     }
 
     /// Builder: set disabled state for the entire list.
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
@@ -259,6 +266,8 @@ impl OptionList {
 
     /// Add a selectable option.
     ///
+    /// # Errors
+    ///
     /// Returns `Err(OptionListError::DuplicateId)` if an option with the same
     /// id already exists (Python `DuplicateID`); the list is not modified.
     pub fn add_option(
@@ -277,6 +286,8 @@ impl OptionList {
 
     /// Add a pre-built [`OptionItem`] (option or separator).
     ///
+    /// # Errors
+    ///
     /// Returns `Err(OptionListError::DuplicateId)` if the item's id collides
     /// with an existing option; the list is not modified.
     pub fn add_item(&mut self, item: OptionItem) -> Result<(), OptionListError> {
@@ -288,6 +299,17 @@ impl OptionList {
     /// The whole batch is validated before any mutation (duplicate ids within
     /// the batch or against existing options): a failing batch adds NOTHING
     /// (Python parity, `_option_list.py` whole-batch pre-check).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::DuplicateId`] when an item's id matches an
+    /// existing option or another item in the batch. The list is not
+    /// modified.
+    ///
+    /// # Panics
+    ///
+    /// Does not panic. The `expect` on each append cannot fail because the
+    /// batch is checked for duplicate ids before any item is added.
     pub fn add_options(&mut self, items: Vec<OptionItem>) -> Result<(), OptionListError> {
         {
             let mut incoming: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -307,6 +329,8 @@ impl OptionList {
     }
 
     /// Add a selectable option with rich [`Text`] content.
+    ///
+    /// # Errors
     ///
     /// Returns `Err(OptionListError::DuplicateId)` on id collision; the list
     /// is not modified.
@@ -330,6 +354,8 @@ impl OptionList {
     /// The renderable is stored as `Arc<dyn Renderable>` and rendered live at
     /// the runtime widget width. Use this for `Table`, `Panel`, and other
     /// multi-row or dynamically-sized renderables.
+    ///
+    /// # Errors
     ///
     /// Returns `Err(OptionListError::DuplicateId)` on id collision; the list
     /// is not modified.
@@ -363,26 +389,31 @@ impl OptionList {
     }
 
     /// Number of items (including separators).
+    #[must_use]
     pub fn option_count(&self) -> usize {
         self.items.len()
     }
 
     /// Get a reference to an item by index.
+    #[must_use]
     pub fn get_option(&self, index: usize) -> Option<&OptionItem> {
         self.items.get(index)
     }
 
     /// The currently highlighted index, or `None`.
+    #[must_use]
     pub fn highlighted(&self) -> Option<usize> {
         self.cursor.highlighted()
     }
 
     /// The currently hovered option index, or `None`.
+    #[must_use]
     pub fn hovered_index(&self) -> Option<usize> {
         self.hovered_index
     }
 
     /// The current scroll offset (first visible item index).
+    #[must_use]
     pub fn offset_for_click(&self) -> usize {
         self.offset
     }
@@ -403,11 +434,14 @@ impl OptionList {
     }
 
     /// Return the first selectable index, if any.
+    #[must_use]
     pub fn first_selectable_index(&self) -> Option<usize> {
         self.first_selectable()
     }
 
     /// Replace all items at once.
+    ///
+    /// # Errors
     ///
     /// Returns `Err(OptionListError::DuplicateId)` if two items carry the same
     /// id (Python `DuplicateID`); the list is left unmodified.
@@ -427,6 +461,10 @@ impl OptionList {
     // ── Key-based CRUD (Python `_option_list.py` identity API) ─────────
 
     /// Get an option by its id (Python `get_option`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn get_option_by_id(&self, id: &str) -> Result<&OptionItem, OptionListError> {
         let index = self.get_option_index(id)?;
         Ok(&self.items[index])
@@ -434,6 +472,10 @@ impl OptionList {
 
     /// Get the current index of the option with the given id
     /// (Python `get_option_index`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn get_option_index(&self, id: &str) -> Result<usize, OptionListError> {
         self.id_to_index
             .get(id)
@@ -444,6 +486,11 @@ impl OptionList {
     /// Get an option by index, with a typed error for a bad index
     /// (Python `get_option_at_index`). The `Option`-returning
     /// [`Self::get_option`] remains for source compatibility.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list.
     pub fn get_option_at_index(&self, index: usize) -> Result<&OptionItem, OptionListError> {
         self.items
             .get(index)
@@ -451,6 +498,10 @@ impl OptionList {
     }
 
     /// Remove the option with the given id (Python `remove_option`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn remove_option(&mut self, id: &str) -> Result<(), OptionListError> {
         let index = self.get_option_index(id)?;
         self.remove_option_inner(index);
@@ -458,6 +509,11 @@ impl OptionList {
     }
 
     /// Remove the option at the given index (Python `remove_option_at_index`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list.
     pub fn remove_option_at_index(&mut self, index: usize) -> Result<(), OptionListError> {
         if index >= self.items.len() {
             return Err(OptionListError::IndexOutOfBounds(index));
@@ -502,6 +558,10 @@ impl OptionList {
     /// Replace the prompt of the option with the given id
     /// (Python `replace_option_prompt`). Clears any rich content so the new
     /// prompt is the option's visual.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn replace_option_prompt(
         &mut self,
         id: &str,
@@ -514,6 +574,11 @@ impl OptionList {
 
     /// Replace the prompt of the option at the given index
     /// (Python `replace_option_prompt_at_index`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list or points at a separator.
     pub fn replace_option_prompt_at_index(
         &mut self,
         index: usize,
@@ -529,6 +594,10 @@ impl OptionList {
     }
 
     /// Enable the option with the given id (Python `enable_option`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn enable_option(&mut self, id: &str) -> Result<(), OptionListError> {
         let index = self.get_option_index(id)?;
         self.set_option_disabled(index, false);
@@ -536,6 +605,10 @@ impl OptionList {
     }
 
     /// Disable the option with the given id (Python `disable_option`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::UnknownId`] when no option has the id `id`.
     pub fn disable_option(&mut self, id: &str) -> Result<(), OptionListError> {
         let index = self.get_option_index(id)?;
         self.set_option_disabled(index, true);
@@ -543,6 +616,11 @@ impl OptionList {
     }
 
     /// Enable the option at the given index (Python `enable_option_at_index`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list or points at a separator.
     pub fn enable_option_at_index(&mut self, index: usize) -> Result<(), OptionListError> {
         if index >= self.items.len() || self.items[index].is_separator() {
             return Err(OptionListError::IndexOutOfBounds(index));
@@ -552,6 +630,11 @@ impl OptionList {
     }
 
     /// Disable the option at the given index (Python `disable_option_at_index`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptionListError::IndexOutOfBounds`] when `index` is past the
+    /// end of the list or points at a separator.
     pub fn disable_option_at_index(&mut self, index: usize) -> Result<(), OptionListError> {
         if index >= self.items.len() || self.items[index].is_separator() {
             return Err(OptionListError::IndexOutOfBounds(index));
@@ -591,7 +674,6 @@ impl OptionList {
     /// containing newlines) are preserved as multiple lines — mirroring Python
     /// `OptionList`, where each option occupies as many lines as its visual height.
     fn render_rich_lines(
-        &self,
         content: &Text,
         line_style: rich_rs::Style,
         width: usize,
@@ -656,7 +738,6 @@ impl OptionList {
     /// the content is rendered live at the runtime `width` rather than being
     /// pre-rendered into a `Text`.
     fn render_renderable_lines(
-        &self,
         renderable: &dyn Renderable,
         line_style: rich_rs::Style,
         width: usize,
@@ -727,7 +808,7 @@ impl OptionList {
             ..Default::default()
         };
         let text = rich_rs::Text::from(prompt);
-        self.render_rich_lines(
+        Self::render_rich_lines(
             &text,
             rich_rs::Style::default(),
             content_w,
@@ -826,7 +907,9 @@ impl OptionList {
     }
 
     fn first_selectable(&self) -> Option<usize> {
-        self.items.iter().position(|item| item.is_selectable())
+        self.items
+            .iter()
+            .position(toggle_option::OptionItem::is_selectable)
     }
 
     fn last_selectable(&self) -> Option<usize> {
@@ -877,8 +960,7 @@ impl OptionList {
         let height = self
             .items
             .get(highlighted)
-            .map(|item| self.item_height(item))
-            .unwrap_or(1);
+            .map_or(1, |item| self.item_height(item));
         let last_line = first_line + height.saturating_sub(1);
         if first_line < self.offset {
             self.offset = first_line;
@@ -948,13 +1030,13 @@ impl OptionList {
             }
             return;
         };
-        let len = self.items.len() as isize;
+        let len = self.items.len().to_isize_sat();
         let step: isize = if direction.is_negative() { -1 } else { 1 };
-        let mut index = current as isize;
+        let mut index = current.to_isize_sat();
         for _ in 0..len {
             index = (index + step).rem_euclid(len);
-            if self.items[index as usize].is_selectable() {
-                self.highlight_index(index as usize, ctx);
+            if self.items[index.to_usize_sat()].is_selectable() {
+                self.highlight_index(index.to_usize_sat(), ctx);
                 return;
             }
         }
@@ -980,19 +1062,19 @@ impl OptionList {
             }
             return;
         }
-        let current = self.cursor.highlighted().unwrap_or(0) as isize;
-        let max = (self.items.len() - 1) as isize;
-        let mut target = (current + delta).clamp(0, max) as usize;
+        let current = self.cursor.highlighted().unwrap_or(0).to_isize_sat();
+        let max = (self.items.len() - 1).to_isize_sat();
+        let mut target = (current + delta).clamp(0, max).to_usize_sat();
 
         // Walk in the direction of delta to find the next selectable item.
         let step: isize = if delta >= 0 { 1 } else { -1 };
         while target < self.items.len() && !self.items[target].is_selectable() {
-            let next = target as isize + step;
+            let next = target.to_isize_sat() + step;
             if next < 0 || next > max {
                 // Can't move further; stay at current position.
                 return;
             }
-            target = next as usize;
+            target = next.to_usize_sat();
         }
         self.highlight_index(target, ctx);
     }
@@ -1009,7 +1091,7 @@ impl OptionList {
                 self.highlight_index(first, ctx);
             }
         } else {
-            self.move_highlight(-(self.page_step() as isize), ctx);
+            self.move_highlight(-self.page_step().to_isize_sat(), ctx);
         }
     }
 
@@ -1021,7 +1103,7 @@ impl OptionList {
                 self.highlight_index(last, ctx);
             }
         } else {
-            self.move_highlight(self.page_step() as isize, ctx);
+            self.move_highlight(self.page_step().to_isize_sat(), ctx);
         }
     }
 
@@ -1030,7 +1112,7 @@ impl OptionList {
         if delta_rows.is_negative() {
             self.offset = self.offset.saturating_sub(delta_rows.unsigned_abs());
         } else {
-            self.offset = self.offset.saturating_add(delta_rows as usize);
+            self.offset = self.offset.saturating_add(delta_rows.to_usize_sat());
         }
         self.offset = self.offset.min(self.max_offset());
         if self.offset != before {
@@ -1057,7 +1139,7 @@ impl crate::widgets::Focus for OptionList {
     }
 
     /// Python `OptionList.BINDINGS` (all `show=False`). Declarative bindings
-    /// are resolved focused→root, so a focused OptionList's `down →
+    /// are resolved focused→root, so a focused `OptionList`'s `down →
     /// cursor_down` wins over an ancestor scroll container's `down →
     /// scroll_down` — exactly like Python's binding chain. Raw `on_event` key
     /// handling would LOSE to the ancestor binding (bindings dispatch first),
@@ -1216,7 +1298,12 @@ impl crate::widgets::Interactive for OptionList {
         if payload.axis != ScrollbarAxis::Vertical {
             return;
         }
-        let next = (payload.offset.max(0.0).round() as usize).min(self.max_offset());
+        let next = payload
+            .offset
+            .max(0.0)
+            .round()
+            .to_usize_sat()
+            .min(self.max_offset());
         if next != self.offset {
             self.offset = next;
             ctx.request_repaint();
@@ -1253,7 +1340,7 @@ impl crate::widgets::Scrollable for OptionList {
             return;
         }
         self.scroll_by_rows(
-            delta_y.saturating_mul(self.scroll_step as i32) as isize,
+            delta_y.saturating_mul(self.scroll_step.to_i32_sat()) as isize,
             ctx,
         );
     }
@@ -1263,7 +1350,7 @@ impl crate::widgets::Scrollable for OptionList {
     }
 
     fn scroll_offset_f32(&self) -> (f32, f32) {
-        (0.0, self.offset as f32)
+        (0.0, self.offset.to_f32_lossy())
     }
 
     fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {
@@ -1273,6 +1360,100 @@ impl crate::widgets::Scrollable for OptionList {
         // the viewport. OptionList renders its own content (no child widgets),
         // so the host falls back to this for the virtual extent.
         Some((self.content_width_inner().max(1), self.total_lines().max(1)))
+    }
+}
+
+impl OptionList {
+    /// The rich style for option `index`: `option-list--option` plus its
+    /// state class (disabled > highlighted > hover), resolved over the
+    /// widget surface `surface_flat`.
+    fn option_rich_style(
+        &self,
+        index: usize,
+        disabled: bool,
+        surface_flat: crate::style::Color,
+        base_style: rich_rs::Style,
+    ) -> rich_rs::Style {
+        let resolve_comp = |classes: &[&str]| -> crate::style::Style {
+            crate::css::resolve_component_style_merged(self, classes)
+        };
+        let highlighted = self.cursor.highlighted() == Some(index);
+        let hovered = self.hovered_index == Some(index);
+        // Mirror Python `_get_option_style`: combine the base
+        // `option-list--option` with the state-specific
+        // component class (disabled > highlighted > hover).
+        // The `:focus` variant of the highlighted colours is
+        // supplied by the `OptionList:focus > ...` CSS rule,
+        // matched via the focused OptionList meta on the stack.
+        let mut classes = vec!["option-list--option"];
+        if disabled {
+            classes.push("option-list--option-disabled");
+        } else if highlighted {
+            classes.push("option-list--option-highlighted");
+        } else if hovered {
+            classes.push("option-list--option-hover");
+        }
+        let mut style_crate = resolve_comp(&classes);
+        // Resolve an auto-contrast foreground (e.g.
+        // `$text-disabled` = `auto 38%`) against the widget
+        // surface. `to_rich_over` only handles concrete `fg`;
+        // the compositor resolves `fg_auto` but only from the
+        // WIDGET style, not per-option component styles, so a
+        // disabled option would otherwise fall back to the
+        // widget foreground. Mirror the compositor's math over
+        // the (tinted) surface.
+        if style_crate.fg.is_none() {
+            if let Some(auto) = style_crate.fg_auto {
+                let contrast = crate::style::contrast_text(surface_flat);
+                style_crate.fg = Some(contrast.blend_over_float(surface_flat, auto.alpha()));
+                style_crate.fg_auto = None;
+            }
+        }
+        // Compose the highlighted option's (possibly
+        // semi-transparent) background over the widget surface,
+        // matching Python's `background_colors` compositing.
+        if highlighted {
+            if let Some(bg) = style_crate.bg {
+                style_crate.bg = Some(bg.flatten_over(surface_flat));
+            }
+        }
+        style_crate.to_rich_over(surface_flat).unwrap_or(base_style)
+    }
+
+    /// The rendered lines of one option's content (or its plain-text
+    /// prompt), before the left padding. `content_w` is the wrap width for
+    /// text; renderables render at `renderable_width` minus `pad_left`.
+    fn option_content_lines(
+        content: Option<&OptionContent>,
+        prompt: &str,
+        style: rich_rs::Style,
+        (content_w, renderable_width, pad_left): (usize, usize, usize),
+        console: &Console,
+        options: &ConsoleOptions,
+    ) -> Vec<Vec<Segment>> {
+        match content {
+            Some(OptionContent::Text(rich)) => {
+                Self::render_rich_lines(rich, style, content_w, console, options)
+            }
+            Some(OptionContent::Renderable(r)) => {
+                // Render at renderable_width (< width when scrollbar
+                // is visible) so the table/renderable doesn't bleed
+                // into the scrollbar overlay zone. Python uses
+                // scrollable_content_region.width which already
+                // subtracts scrollbar_size_vertical (default 2).
+                let rw = renderable_width.saturating_sub(pad_left).max(1);
+                Self::render_renderable_lines(r.as_ref(), style, rw, console, options)
+            }
+            None => {
+                // Plain text, word-wrapped to the (inset)
+                // content width (Python OptionList wraps long
+                // prompts). Routed through the rich-text line
+                // renderer so wrapping matches `item_height`'s
+                // measurement exactly.
+                let text = rich_rs::Text::from(prompt);
+                Self::render_rich_lines(&text, style, content_w, console, options)
+            }
+        }
     }
 }
 
@@ -1360,46 +1541,6 @@ impl crate::widgets::Render for OptionList {
                             ..
                         } => {
                             let highlighted = self.cursor.highlighted() == Some(index);
-                            let hovered = self.hovered_index == Some(index);
-                            // Mirror Python `_get_option_style`: combine the base
-                            // `option-list--option` with the state-specific
-                            // component class (disabled > highlighted > hover).
-                            // The `:focus` variant of the highlighted colours is
-                            // supplied by the `OptionList:focus > ...` CSS rule,
-                            // matched via the focused OptionList meta on the stack.
-                            let mut classes = vec!["option-list--option"];
-                            if *disabled {
-                                classes.push("option-list--option-disabled");
-                            } else if highlighted {
-                                classes.push("option-list--option-highlighted");
-                            } else if hovered {
-                                classes.push("option-list--option-hover");
-                            }
-                            let mut style_crate = resolve_comp(&classes);
-                            // Resolve an auto-contrast foreground (e.g.
-                            // `$text-disabled` = `auto 38%`) against the widget
-                            // surface. `to_rich_over` only handles concrete `fg`;
-                            // the compositor resolves `fg_auto` but only from the
-                            // WIDGET style, not per-option component styles, so a
-                            // disabled option would otherwise fall back to the
-                            // widget foreground. Mirror the compositor's math over
-                            // the (tinted) surface.
-                            if style_crate.fg.is_none() {
-                                if let Some(auto) = style_crate.fg_auto {
-                                    let contrast = crate::style::contrast_text(surface_flat);
-                                    style_crate.fg =
-                                        Some(contrast.blend_over_float(surface_flat, auto.alpha()));
-                                    style_crate.fg_auto = None;
-                                }
-                            }
-                            // Compose the highlighted option's (possibly
-                            // semi-transparent) background over the widget surface,
-                            // matching Python's `background_colors` compositing.
-                            if highlighted {
-                                if let Some(bg) = style_crate.bg {
-                                    style_crate.bg = Some(bg.flatten_over(surface_flat));
-                                }
-                            }
                             // Per-option left inset (Python `.option-list--option
                             // { padding }`), inside the option background and on top
                             // of the container padding. Sourced from the explicit
@@ -1408,46 +1549,23 @@ impl crate::widgets::Render for OptionList {
                             let pad_left = self.option_pad_left;
                             let content_w = width.saturating_sub(pad_left).max(1);
                             let style =
-                                style_crate.to_rich_over(surface_flat).unwrap_or(base_style);
+                                self.option_rich_style(index, *disabled, surface_flat, base_style);
 
                             let lines = rendered_items.entry(index).or_insert_with(|| {
-                                let mut raw = match content {
-                                    Some(OptionContent::Text(rich)) => self.render_rich_lines(
-                                        rich, style, content_w, console, options,
-                                    ),
-                                    Some(OptionContent::Renderable(r)) => {
-                                        // Render at renderable_width (< width when scrollbar
-                                        // is visible) so the table/renderable doesn't bleed
-                                        // into the scrollbar overlay zone. Python uses
-                                        // scrollable_content_region.width which already
-                                        // subtracts scrollbar_size_vertical (default 2).
-                                        let rw = renderable_width.saturating_sub(pad_left).max(1);
-                                        self.render_renderable_lines(
-                                            r.as_ref(),
-                                            style,
-                                            rw,
-                                            console,
-                                            options,
-                                        )
-                                    }
-                                    None => {
-                                        // Plain text, word-wrapped to the (inset)
-                                        // content width (Python OptionList wraps long
-                                        // prompts). Routed through the rich-text line
-                                        // renderer so wrapping matches `item_height`'s
-                                        // measurement exactly.
-                                        let text = rich_rs::Text::from(prompt.as_str());
-                                        self.render_rich_lines(
-                                            &text, style, content_w, console, options,
-                                        )
-                                    }
-                                };
+                                let mut raw = Self::option_content_lines(
+                                    content.as_ref(),
+                                    prompt,
+                                    style,
+                                    (content_w, renderable_width, pad_left),
+                                    console,
+                                    options,
+                                );
                                 // Prepend the option's left padding as styled blanks so
                                 // the (highlighted) option background covers the inset,
                                 // bringing each line back up to full `width`.
                                 if pad_left > 0 {
                                     let indent = Segment::styled(" ".repeat(pad_left), style);
-                                    for line in raw.iter_mut() {
+                                    for line in &mut raw {
                                         line.insert(0, indent.clone());
                                     }
                                 }
@@ -1528,7 +1646,7 @@ mod tests {
         }
     }
 
-    /// Run an OptionList binding action (the canonical keyboard path — keys
+    /// Run an `OptionList` binding action (the canonical keyboard path — keys
     /// reach the list through its declarative `bindings()`, not raw `on_event`).
     fn run_action(list: &mut OptionList, name: &str, ctx: &mut EventCtx) -> bool {
         let parsed = crate::action::parse_action(name).expect("parse action");
@@ -1657,7 +1775,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.step_highlight(1, &mut __w)
+            list.step_highlight(1, &mut __w);
         };
         // Should skip the separator and land on Beta (index 2).
         assert_eq!(list.highlighted(), Some(2));
@@ -1681,7 +1799,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.step_highlight(1, &mut __w)
+            list.step_highlight(1, &mut __w);
         };
         assert_eq!(list.highlighted(), Some(2));
     }
@@ -1705,7 +1823,7 @@ mod tests {
                     crate::node_id::NodeId::default(),
                     &mut ctx,
                 );
-                list.highlight_index(last, &mut __w)
+                list.highlight_index(last, &mut __w);
             };
         }
         assert_eq!(list.highlighted(), Some(3));
@@ -1717,7 +1835,7 @@ mod tests {
                     crate::node_id::NodeId::default(),
                     &mut ctx,
                 );
-                list.highlight_index(first, &mut __w)
+                list.highlight_index(first, &mut __w);
             };
         }
         assert_eq!(list.highlighted(), Some(0));
@@ -1735,7 +1853,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.confirm_selection(&mut __w)
+            list.confirm_selection(&mut __w);
         };
         let messages = ctx.take_messages();
         assert!(messages.iter().any(|m| {
@@ -1817,7 +1935,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            list.step_highlight(-1, &mut __w)
+            list.step_highlight(-1, &mut __w);
         };
         assert_eq!(list.highlighted(), Some(2));
     }
@@ -1941,7 +2059,10 @@ mod tests {
     fn option_item_with_content_builder() {
         let item = OptionItem::new("Plain").with_content(rich_rs::Text::plain("Rich"));
         assert!(item.content().is_some());
-        assert_eq!(item.text_content().map(|t| t.plain_text()), Some("Rich"));
+        assert_eq!(
+            item.text_content().map(rich_rs::Text::plain_text),
+            Some("Rich")
+        );
     }
 
     #[test]

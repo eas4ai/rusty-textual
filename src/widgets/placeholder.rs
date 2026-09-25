@@ -4,7 +4,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 
 use crate::event::Event;
-use crate::message::*;
+use crate::message::PlaceholderVariantChanged;
 use crate::style::Color;
 
 use super::{NodeSeed, Widget};
@@ -15,7 +15,7 @@ use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget
 pub enum PlaceholderVariant {
     /// Shows the label or widget identifier.
     Default,
-    /// Shows the WxH dimensions.
+    /// Shows the `WxH` dimensions.
     Size,
     /// Shows Lorem Ipsum text.
     Text,
@@ -79,6 +79,7 @@ impl Placeholder {
     /// Python `_placeholder.py`, where `label = label or (f"#{id}" if id else
     /// "Placeholder")`. The label is fixed at build time (the id seed is consumed
     /// at mount, so it can't be recovered at render).
+    #[must_use]
     pub fn id(mut self, value: impl Into<String>) -> Self {
         let id = value.into();
         if self.label.is_empty() {
@@ -89,6 +90,7 @@ impl Placeholder {
     }
 
     /// Add a CSS class (Python `classes=`). Idempotent.
+    #[must_use]
     pub fn class(mut self, value: impl Into<String>) -> Self {
         let v = value.into();
         if !self.seed.classes.iter().any(|c| c == &v) {
@@ -115,6 +117,7 @@ impl Placeholder {
         ph
     }
 
+    #[must_use]
     pub fn with_variant(mut self, variant: PlaceholderVariant) -> Self {
         // Remove old variant class and add new one in seed.
         let old_class = self.variant.class_name().to_string();
@@ -128,6 +131,7 @@ impl Placeholder {
 
     // ── Reactive getters ─────────────────────────────────────────────────
 
+    #[must_use]
     pub fn variant(&self) -> PlaceholderVariant {
         self.variant
     }
@@ -151,6 +155,7 @@ impl Placeholder {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_variant(
         &mut self,
         old: &PlaceholderVariant,
@@ -186,7 +191,7 @@ impl Placeholder {
                 }
             }
             PlaceholderVariant::Size => {
-                format!("{} x {}", width, height)
+                format!("{width} x {height}")
             }
             PlaceholderVariant::Text => {
                 // Repeat the lorem ipsum with paragraph breaks (matches Python Textual).

@@ -1,7 +1,8 @@
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 
-use crate::message::*;
+use crate::message::{MessageEvent, RadioButtonChanged, RadioSetChanged};
+use crate::num::Cast;
 
 use super::{
     NodeSeed, Widget, option_list::toggle_option::OptionCursorState, radio_button::RadioButton,
@@ -13,12 +14,12 @@ use crate::reactive::{ReactiveCtx, ReactiveFlags, ReactiveWidget};
 ///
 /// When one radio button is toggled on, all others are automatically deselected.
 /// The set itself is focusable and handles keyboard navigation (Up/Down) between
-/// its children. Individual RadioButtons inside a set do not receive independent
+/// its children. Individual `RadioButtons` inside a set do not receive independent
 /// focus — the set has `can_focus_children = false` and drives each child's
 /// `-on` (pressed) and `-selected` (navigation cursor) classes onto the real
 /// arena child nodes via [`Widget::child_classes_for_tree`]. Because the cascade
 /// resolves on the live child nodes (their `-on`/`-selected` classes plus the
-/// `RadioSet:focus`/`:blur` ancestor), the RadioButtons style themselves — the
+/// `RadioSet:focus`/`:blur` ancestor), the `RadioButtons` style themselves — the
 /// set owns no per-glyph compensation.
 #[derive(Debug, Clone)]
 #[widget(Focus, Interactive, Layout)]
@@ -47,7 +48,8 @@ impl Default for RadioSet {
 impl RadioSet {
     crate::seed_ident_methods!();
 
-    /// Create a new empty RadioSet.
+    /// Create a new empty `RadioSet`.
+    #[must_use]
     pub fn new() -> Self {
         let seed = NodeSeed {
             classes: vec!["radio-set".to_string()],
@@ -62,7 +64,8 @@ impl RadioSet {
         }
     }
 
-    /// Create a RadioSet from string labels. Each label becomes a RadioButton.
+    /// Create a `RadioSet` from string labels. Each label becomes a `RadioButton`.
+    #[must_use]
     pub fn from_labels(labels: &[&str]) -> Self {
         let mut set = Self::new();
         for label in labels {
@@ -73,6 +76,7 @@ impl RadioSet {
     }
 
     /// Builder: set disabled state for the entire set.
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
@@ -95,15 +99,16 @@ impl RadioSet {
         }
     }
 
-    /// Builder: add a RadioButton to the set.
+    /// Builder: add a `RadioButton` to the set.
     /// If the button is pre-selected (value=true), it becomes the pressed button
     /// and any previously pressed button is deselected.
+    #[must_use]
     pub fn with_button(mut self, button: RadioButton) -> Self {
         self.add_button(button);
         self
     }
 
-    /// Add a RadioButton after construction.
+    /// Add a `RadioButton` after construction.
     /// If the button is pre-selected (value=true), it becomes the pressed button
     /// and any previously pressed button is deselected.
     pub fn add_button(&mut self, button: RadioButton) {
@@ -124,16 +129,19 @@ impl RadioSet {
     }
 
     /// Returns the index of the currently pressed (on) button, or `None`.
+    #[must_use]
     pub fn pressed_index(&self) -> Option<usize> {
         self.cursor.selected()
     }
 
     /// Returns the currently selected (highlighted) index.
+    #[must_use]
     pub fn selected_index(&self) -> usize {
         self.cursor.highlighted().unwrap_or(0)
     }
 
     /// Returns a reference to the button at `index`, if it exists.
+    #[must_use]
     pub fn button(&self, index: usize) -> Option<&RadioButton> {
         self.buttons.get(index)
     }
@@ -144,11 +152,13 @@ impl RadioSet {
     }
 
     /// Returns the number of buttons in the set.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.buttons.len()
     }
 
     /// Returns `true` if the set contains no buttons.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.buttons.is_empty()
     }
@@ -173,15 +183,15 @@ impl RadioSet {
             .highlighted()
             .and_then(|idx| enabled_indices.iter().position(|&enabled| enabled == idx));
         let next_pos = if let Some(pos) = current_pos {
-            let len = enabled_indices.len() as isize;
-            ((pos as isize + if delta.is_negative() { -1 } else { 1 }) % len + len) % len
+            let len = enabled_indices.len().to_isize_sat();
+            ((pos.to_isize_sat() + if delta.is_negative() { -1 } else { 1 }) % len + len) % len
         } else if delta.is_negative() {
-            enabled_indices.len() as isize - 1
+            enabled_indices.len().to_isize_sat() - 1
         } else {
             0
         };
         self.cursor
-            .set_highlighted(Some(enabled_indices[next_pos as usize]));
+            .set_highlighted(Some(enabled_indices[next_pos.to_usize_sat()]));
     }
 
     /// Toggle the currently selected button. Enforces mutual exclusion:
@@ -194,8 +204,7 @@ impl RadioSet {
         if self
             .buttons
             .get(index)
-            .map(|b| b.is_disabled())
-            .unwrap_or(true)
+            .is_none_or(super::radio_button::RadioButton::is_disabled)
         {
             return;
         }
@@ -236,6 +245,7 @@ impl RadioSet {
     }
 
     /// Read-only access to the radio buttons.
+    #[must_use]
     pub fn children(&self) -> &[RadioButton] {
         &self.buttons
     }
@@ -262,9 +272,9 @@ impl crate::widgets::Focus for RadioSet {
     }
 
     /// Python `RadioSet.BINDINGS` (all `show=False`). Declarative bindings are
-    /// resolved focused→root, so a focused RadioSet's `down → next_button` wins
+    /// resolved focused→root, so a focused `RadioSet`'s `down → next_button` wins
     /// over an ancestor scroll container's `down → scroll_down` — exactly like
-    /// Python's binding chain (radio_set_changed parity). Raw `on_event` key
+    /// Python's binding chain (`radio_set_changed` parity). Raw `on_event` key
     /// handling would LOSE to the ancestor binding (bindings dispatch first),
     /// so the keyboard behavior lives here, not in `on_event`.
     fn bindings(&self) -> Vec<super::BindingDecl> {
@@ -349,7 +359,7 @@ impl crate::widgets::Interactive for RadioSet {
 }
 
 impl crate::widgets::Layout for RadioSet {
-    /// Drive each child RadioButton's `-on` (pressed) and `-selected`
+    /// Drive each child `RadioButton`'s `-on` (pressed) and `-selected`
     /// (navigation cursor) classes onto its arena node. This is the canonical
     /// arena mechanism (mirrors Python's `watch__selected` adding `-selected`
     /// and `watch_value` toggling `-on`), letting the CSS cascade resolve on the
@@ -360,8 +370,7 @@ impl crate::widgets::Layout for RadioSet {
             && self
                 .buttons
                 .get(child_index)
-                .map(|b| !b.is_disabled())
-                .unwrap_or(false);
+                .is_some_and(|b| !b.is_disabled());
         vec![("-on", pressed), ("-selected", selected)]
     }
 
@@ -402,12 +411,12 @@ impl crate::widgets::Layout for RadioSet {
 }
 
 impl crate::widgets::Render for RadioSet {
-    /// Emit the RadioButtons as real arena children.
+    /// Emit the `RadioButtons` as real arena children.
     ///
     /// State-pure and idempotent: every call regenerates the children from the
     /// authoritative `buttons` metadata (cloned, with their ordinal stamped), so
     /// a recompose of this node rebuilds an identical child set rather than
-    /// clearing it. RadioSet never *requests* a recompose for selection changes
+    /// clearing it. `RadioSet` never *requests* a recompose for selection changes
     /// (those are driven onto the existing children via `child_classes_for_tree`),
     /// so it stays clear of the recompose-under-draining-compose trap.
     fn compose(&mut self) -> ComposeResult {
@@ -475,7 +484,7 @@ mod tests {
         }
     }
 
-    /// Run a RadioSet binding action (the canonical keyboard path — keys reach
+    /// Run a `RadioSet` binding action (the canonical keyboard path — keys reach
     /// the set through its declarative `bindings()`, not raw `on_event`).
     fn run_action(set: &mut RadioSet, name: &str, ctx: &mut EventCtx) -> bool {
         let parsed = crate::action::parse_action(name).expect("parse action");

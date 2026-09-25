@@ -1,4 +1,6 @@
 /// Edge descriptor for the 1D resolver.
+use crate::num::Cast;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Edge {
     /// Fixed size in cells, or `None` for flexible.
@@ -59,8 +61,13 @@ pub fn layout_resolve_1d_exact(
         .iter()
         .enumerate()
         .map(|(i, e)| {
-            e.size
-                .map(|sz| fixed_exact.get(i).copied().flatten().unwrap_or(sz as f64))
+            e.size.map(|sz| {
+                fixed_exact
+                    .get(i)
+                    .copied()
+                    .flatten()
+                    .unwrap_or(f64::from(sz))
+            })
         })
         .collect();
 
@@ -74,8 +81,8 @@ pub fn layout_resolve_1d_exact(
 
     if !flexible.is_empty() {
         let fixed_sum: f64 = exact.iter().map(|s| s.unwrap_or(0.0)).sum();
-        let mut remaining = (total as f64 - fixed_sum).max(0.0);
-        let mut total_fraction: f64 = flexible.iter().map(|&(_, f, _)| f as f64).sum();
+        let mut remaining = (f64::from(total) - fixed_sum).max(0.0);
+        let mut total_fraction: f64 = flexible.iter().map(|&(_, f, _)| f64::from(f)).sum();
 
         // Iteratively pin flexible edges that would underflow their min_size.
         loop {
@@ -86,10 +93,10 @@ pub fn layout_resolve_1d_exact(
             let mut pinned = false;
             for idx in 0..flexible.len() {
                 let (edge_idx, fraction, min_size) = flexible[idx];
-                if min_size > 0 && unit * (fraction as f64) < (min_size as f64) {
-                    exact[edge_idx] = Some(min_size as f64);
-                    remaining = (remaining - min_size as f64).max(0.0);
-                    total_fraction -= fraction as f64;
+                if min_size > 0 && unit * f64::from(fraction) < f64::from(min_size) {
+                    exact[edge_idx] = Some(f64::from(min_size));
+                    remaining = (remaining - f64::from(min_size)).max(0.0);
+                    total_fraction -= f64::from(fraction);
                     flexible.remove(idx);
                     pinned = true;
                     break;
@@ -102,13 +109,13 @@ pub fn layout_resolve_1d_exact(
                     0.0
                 };
                 for &(edge_idx, fraction, _) in &flexible {
-                    exact[edge_idx] = Some(unit * fraction as f64);
+                    exact[edge_idx] = Some(unit * f64::from(fraction));
                 }
                 break;
             }
         }
         // Any flexible edge left unresolved (e.g. total_fraction hit 0) → 0.
-        for e in exact.iter_mut() {
+        for e in &mut exact {
             if e.is_none() {
                 *e = Some(0.0);
             }
@@ -122,7 +129,7 @@ pub fn layout_resolve_1d_exact(
         .iter()
         .map(|s| {
             let e = s.unwrap_or(0.0);
-            let disp = ((cum + e).floor() - cum.floor()) as u16;
+            let disp = ((cum + e).floor() - cum.floor()).to_u16_sat();
             cum += e;
             disp
         })
@@ -132,13 +139,22 @@ pub fn layout_resolve_1d_exact(
 /// Core 1D space allocation algorithm.
 ///
 /// Divides `total` cells among `edges` according to their size, fraction, and
-/// min_size constraints. Port of Python Textual's `_layout_resolve.layout_resolve()`.
+/// `min_size` constraints. Port of Python Textual's `_layout_resolve.layout_resolve()`.
 ///
 /// Uses deterministic integer arithmetic — no floating point.
 ///
 /// The returned sizes normally sum to `total`, but may exceed it when minimum
-/// constraints force it (e.g. two edges with min_size=20 in 30 cells of space).
+/// constraints force it (e.g. two edges with `min_size=20` in 30 cells of space).
+///
+/// # Panics
+///
+/// Does not panic in practice. The `unwrap` in the fast path runs only after
+/// a check that every edge has a fixed size. Each division by
+/// `total_fraction` runs only when it is nonzero. The integer arithmetic can
+/// overflow only when the fixed sizes sum to 2^31 or more, which needs more
+/// than 32,768 edges at the maximum `u16` size.
 #[allow(clippy::manual_checked_ops)] // guarded by if total_fraction > 0
+#[must_use]
 pub fn layout_resolve_1d(total: u16, edges: &[Edge]) -> Vec<u16> {
     if edges.is_empty() {
         return Vec::new();
@@ -148,7 +164,7 @@ pub fn layout_resolve_1d(total: u16, edges: &[Edge]) -> Vec<u16> {
     let mut sizes: Vec<Option<u16>> = edges.iter().map(|e| e.size).collect();
 
     // Fast path: all edges are fixed.
-    if sizes.iter().all(|s| s.is_some()) {
+    if sizes.iter().all(std::option::Option::is_some) {
         return sizes.iter().map(|s| s.unwrap()).collect();
     }
 
@@ -161,8 +177,8 @@ pub fn layout_resolve_1d(total: u16, edges: &[Edge]) -> Vec<u16> {
     }
 
     // Remaining space after fixed edges.
-    let fixed_sum: u32 = sizes.iter().map(|s| s.unwrap_or(0) as u32).sum();
-    let remaining_signed = total as i32 - fixed_sum as i32;
+    let fixed_sum: u32 = sizes.iter().map(|s| u32::from(s.unwrap_or(0))).sum();
+    let remaining_signed = i32::from(total) - fixed_sum.to_i32_sat();
 
     if remaining_signed <= 0 {
         // No room for flexible edges — assign min_size (at least 1).
@@ -177,8 +193,8 @@ pub fn layout_resolve_1d(total: u16, edges: &[Edge]) -> Vec<u16> {
             .collect();
     }
 
-    let mut remaining = remaining_signed as u64;
-    let mut total_fraction: u64 = flexible.iter().map(|&(_, f, _)| f as u64).sum();
+    let mut remaining = remaining_signed.to_u64_sat();
+    let mut total_fraction: u64 = flexible.iter().map(|&(_, f, _)| u64::from(f)).sum();
 
     // Iteratively fix edges whose proportional share falls below their min_size.
     loop {
@@ -192,13 +208,13 @@ pub fn layout_resolve_1d(total: u16, edges: &[Edge]) -> Vec<u16> {
         let mut fixed_one = false;
         for idx in 0..flexible.len() {
             let (edge_idx, fraction, min_size) = flexible[idx];
-            let lhs = remaining * (fraction as u64);
-            let rhs = (min_size as u64) * total_fraction;
+            let lhs = remaining * u64::from(fraction);
+            let rhs = u64::from(min_size) * total_fraction;
             if min_size > 0 && lhs < rhs {
                 // Fix this edge at its minimum size.
                 sizes[edge_idx] = Some(min_size);
-                remaining = remaining.saturating_sub(min_size as u64);
-                total_fraction -= fraction as u64;
+                remaining = remaining.saturating_sub(u64::from(min_size));
+                total_fraction -= u64::from(fraction);
                 flexible.remove(idx);
                 fixed_one = true;
                 break;
@@ -215,8 +231,8 @@ pub fn layout_resolve_1d(total: u16, edges: &[Edge]) -> Vec<u16> {
             if total_fraction > 0 {
                 let mut rem_num: u64 = 0;
                 for &(edge_idx, fraction, _) in &flexible {
-                    let raw = remaining * fraction as u64 + rem_num;
-                    sizes[edge_idx] = Some((raw / total_fraction) as u16);
+                    let raw = remaining * u64::from(fraction) + rem_num;
+                    sizes[edge_idx] = Some((raw / total_fraction).to_u16_sat());
                     rem_num = raw % total_fraction;
                 }
             }

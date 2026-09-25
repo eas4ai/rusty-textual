@@ -3,7 +3,7 @@ use textual_macros::widget;
 
 use crate::content::{Content, ContentPart};
 use crate::event::Event;
-use crate::message::*;
+use crate::message::NotificationExpired;
 
 use super::{NodeSeed, Widget};
 
@@ -85,21 +85,25 @@ impl Toast {
         }
     }
 
+    #[must_use]
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self
     }
 
     /// Set the notification id this toast is a view of (used by the rack).
+    #[must_use]
     pub fn with_notification_id(mut self, id: u64) -> Self {
         self.id = id;
         self
     }
 
+    #[must_use]
     pub fn severity(&self) -> ToastSeverity {
         self.severity
     }
 
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -180,11 +184,7 @@ impl crate::widgets::Layout for Toast {
             .map(Self::markup_cell_len)
             .max()
             .unwrap_or(0);
-        let title_width = self
-            .title
-            .as_ref()
-            .map(|t| rich_rs::cell_len(t))
-            .unwrap_or(0);
+        let title_width = self.title.as_ref().map_or(0, |t| rich_rs::cell_len(t));
         let meta = crate::css::selector_meta_generic(self);
         let resolved = crate::css::resolve_style(self, &meta);
         let padding = resolved.effective_padding();
@@ -196,7 +196,7 @@ impl crate::widgets::Layout for Toast {
     }
 
     fn layout_height(&self) -> Option<usize> {
-        let title_lines = if self.title.is_some() { 1 } else { 0 };
+        let title_lines = usize::from(self.title.is_some());
         let content_width = self.content_box_width();
         let message_lines = if self.message.is_empty() {
             0
@@ -240,8 +240,7 @@ impl crate::widgets::Render for Toast {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
         let mut render_style = visual_style.clone();
         render_style.bg = Some(effective_bg);
 

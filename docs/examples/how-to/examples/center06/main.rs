@@ -4,9 +4,10 @@
 /// on a screen using `align: center middle`.
 use textual::prelude::*;
 
-const QUOTE: &str = "Could not find you in Seattle and no terminal is in operation at your classified address.";
+const QUOTE: &str =
+    "Could not find you in Seattle and no terminal is in operation at your classified address.";
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -18,7 +19,7 @@ Screen {
     height: 9;
     text-align: center;
 }
-"#;
+";
 
 struct CenterApp;
 

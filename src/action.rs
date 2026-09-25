@@ -9,6 +9,7 @@
 
 use crate::event::EventCtx;
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::widget_tree::WidgetTree;
 
 // ── Core types ───────────────────────────────────────────────────────────────
@@ -74,6 +75,7 @@ pub enum ActionArgument {
 
 impl ActionArgument {
     /// The string payload, if this argument is a string literal.
+    #[must_use]
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::Str(s) => Some(s),
@@ -82,6 +84,7 @@ impl ActionArgument {
     }
 
     /// The integer payload, if this argument is an integer literal.
+    #[must_use]
     pub fn as_int(&self) -> Option<i64> {
         match self {
             Self::Int(i) => Some(*i),
@@ -90,15 +93,17 @@ impl ActionArgument {
     }
 
     /// The numeric payload as `f64` (accepts both float and int literals).
+    #[must_use]
     pub fn as_float(&self) -> Option<f64> {
         match self {
             Self::Float(f) => Some(*f),
-            Self::Int(i) => Some(*i as f64),
+            Self::Int(i) => Some(i.to_f64_lossy()),
             _ => None,
         }
     }
 
     /// The boolean payload, if this argument is `True` / `False`.
+    #[must_use]
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Self::Bool(b) => Some(*b),
@@ -107,11 +112,13 @@ impl ActionArgument {
     }
 
     /// Whether this argument is Python `None`.
+    #[must_use]
     pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
 
     /// The element slice, if this argument is a tuple or list.
+    #[must_use]
     pub fn as_items(&self) -> Option<&[ActionArgument]> {
         match self {
             Self::Tuple(items) | Self::List(items) => Some(items),
@@ -186,7 +193,7 @@ impl std::fmt::Display for ActionArgument {
 
 impl Ord for ActionArgument {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use ActionArgument::*;
+        use ActionArgument::{Bool, Float, Int, List, None, Str, Tuple};
         match (self, other) {
             (None, None) => std::cmp::Ordering::Equal,
             (Bool(a), Bool(b)) => a.cmp(b),
@@ -256,15 +263,16 @@ impl std::error::Error for ActionParseError {}
 
 /// Trait for widgets/apps that handle string-based actions.
 ///
-/// Implementors declare which actions they support via [`action_registry`] and
-/// execute them in [`execute_action`].
+/// Implementors declare which actions they support via
+/// [`action_registry`](ActionHandler::action_registry) and execute them in
+/// [`execute_action`](ActionHandler::execute_action).
 pub trait ActionHandler {
     /// The namespace this handler owns (e.g. `"app"`, `"screen"`).
     ///
     /// Used by [`resolve_action`] to route namespaced actions like `"app.quit"`.
     /// Returns `""` by default (no namespace — the handler participates in
     /// bubble resolution only).
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         ""
     }
 
@@ -471,8 +479,7 @@ pub fn parse_action(input: &str) -> Result<ParsedAction, ActionParseError> {
     let head_len = trimmed
         .char_indices()
         .find(|&(_, c)| !(c.is_alphanumeric() || c == '_' || c == '.'))
-        .map(|(i, _)| i)
-        .unwrap_or(trimmed.len());
+        .map_or(trimmed.len(), |(i, _)| i);
 
     let (name_part, arguments) = if head_len > 0
         && trimmed[head_len..].starts_with('(')
@@ -598,8 +605,8 @@ impl LiteralParser {
             Option::None => Err("unexpected end of arguments".to_string()),
             Some('(') => self.parse_parenthesised(),
             Some('[') => self.parse_list(),
-            Some('\'') | Some('"') => self.parse_string_group(),
-            Some('+') | Some('-') => self.parse_signed(),
+            Some('\'' | '"') => self.parse_string_group(),
+            Some('+' | '-') => self.parse_signed(),
             Some(c) if c.is_ascii_digit() || c == '.' => self.parse_number(false),
             Some(c) if c.is_alphabetic() || c == '_' => self.parse_keyword(),
             Some(c) => Err(format!("unexpected character {c:?}")),
@@ -739,7 +746,7 @@ impl LiteralParser {
         loop {
             self.skip_ws();
             match self.peek() {
-                Some('\'') | Some('"') => out.push_str(&self.parse_string()?),
+                Some('\'' | '"') => out.push_str(&self.parse_string()?),
                 _ => break,
             }
         }
@@ -810,6 +817,7 @@ impl LiteralParser {
 }
 
 /// Look up an [`ActionDecl`] by name within a registry slice.
+#[must_use]
 pub fn find_action<'a>(registry: &'a [ActionDecl], name: &str) -> Option<&'a ActionDecl> {
     registry.iter().find(|a| a.name == name)
 }
@@ -851,30 +859,27 @@ pub fn resolve_action<'a>(
     let mut chain = vec![focused];
     chain.extend(tree.ancestors(focused));
 
-    match &action.namespace {
-        Some(ns) => {
-            // Namespaced: find the first node whose namespace matches.
-            for &node in &chain {
-                if let Some((node_ns, registry)) = get_node_actions(node)
-                    && node_ns == ns.as_str()
-                {
-                    return find_action(registry, &action.name)
-                        .map(|decl| ResolvedAction { node, decl: *decl });
-                }
+    if let Some(ns) = &action.namespace {
+        // Namespaced: find the first node whose namespace matches.
+        for &node in &chain {
+            if let Some((node_ns, registry)) = get_node_actions(node)
+                && node_ns == ns.as_str()
+            {
+                return find_action(registry, &action.name)
+                    .map(|decl| ResolvedAction { node, decl: *decl });
             }
-            None
         }
-        None => {
-            // Unnamespaced: first handler with the action in its registry wins.
-            for &node in &chain {
-                if let Some((_ns, registry)) = get_node_actions(node)
-                    && let Some(decl) = find_action(registry, &action.name)
-                {
-                    return Some(ResolvedAction { node, decl: *decl });
-                }
+        None
+    } else {
+        // Unnamespaced: first handler with the action in its registry wins.
+        for &node in &chain {
+            if let Some((_ns, registry)) = get_node_actions(node)
+                && let Some(decl) = find_action(registry, &action.name)
+            {
+                return Some(ResolvedAction { node, decl: *decl });
             }
-            None
         }
+        None
     }
 }
 
@@ -1175,7 +1180,7 @@ mod tests {
     #[test]
     fn parsed_action_debug_format() {
         let a = parse_action("toggle_dark").unwrap();
-        let dbg = format!("{:?}", a);
+        let dbg = format!("{a:?}");
         assert!(dbg.contains("toggle_dark"));
     }
 
@@ -1423,7 +1428,7 @@ mod tests {
     fn custom_action_namespace() {
         struct AppHandler;
         impl ActionHandler for AppHandler {
-            fn action_namespace(&self) -> &str {
+            fn action_namespace(&self) -> &'static str {
                 "app"
             }
         }

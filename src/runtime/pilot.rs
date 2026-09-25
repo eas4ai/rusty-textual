@@ -1,10 +1,11 @@
-//! In-process headless test harness (`App::run_test` + [`Pilot`]).
+//! In-process headless test harness ([`run_test`](crate::run_test) + [`Pilot`]).
 //!
 //! This is the Rust analogue of Python Textual's `Pilot` (see
 //! `textual/src/textual/pilot.py`) and headless driver. It runs the real app
 //! event-dispatch engine in-process, fed from injected input events instead of
-//! a terminal, and rendering into the in-memory [`FrameBuffer`] instead of a
-//! TTY (see [`App::headless`] seam in `runtime/mod.rs`).
+//! a terminal, and rendering into the in-memory
+//! [`FrameBuffer`](crate::render::FrameBuffer) instead of a TTY (see the
+//! `App::headless` seam in `runtime/mod.rs`).
 //!
 //! Each driver call (`press`, `click`, `pause`, …) injects the event(s) and
 //! advances the loop until idle (no pending invalidation, no active animations,
@@ -37,7 +38,8 @@ use crate::widgets::Widget;
 /// Drives a headless app in tests. Mirrors Python Textual's `Pilot`.
 ///
 /// Borrows the running [`App`] and its root widget; created and passed to the
-/// closure given to [`App::run_test`] / the `TextualApp::run_test` extension.
+/// closure given to [`run_test`](crate::run_test) / the
+/// [`TextualApp::run_test`](crate::TextualApp::run_test) extension.
 pub struct Pilot<'a> {
     app: &'a mut App,
     root: &'a mut dyn Widget,
@@ -55,6 +57,7 @@ impl<'a> Pilot<'a> {
     }
 
     /// Immutable access to the running app, for assertions (`query_one`, state).
+    #[must_use]
     pub fn app(&self) -> &App {
         self.app
     }
@@ -69,6 +72,13 @@ impl<'a> Pilot<'a> {
     /// Each key is a Textual key name: a single character (`"r"`), a named key
     /// (`"enter"`, `"tab"`, `"escape"`, `"up"`, `"f5"`), or a modified key
     /// (`"ctrl+a"`, `"shift+tab"`). Mirrors `pilot.press(*keys)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when [`parse_key`]
+    /// does not recognize a key spec. Keys before it in `keys` are already
+    /// delivered. Also forwards any error from the headless pump, which does
+    /// not fail in headless mode.
     pub fn press(&mut self, keys: &[&str]) -> Result<()> {
         for key in keys {
             let event = parse_key(key)
@@ -79,6 +89,12 @@ impl<'a> Pilot<'a> {
     }
 
     /// Convenience: press a single key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when [`parse_key`]
+    /// does not recognize `key`. Also forwards any error from the headless
+    /// pump, which does not fail in headless mode.
     pub fn press_key(&mut self, key: &str) -> Result<()> {
         self.press(&[key])
     }
@@ -86,14 +102,28 @@ impl<'a> Pilot<'a> {
     /// Simulate a bracketed-paste of `text`, then advance to idle.
     ///
     /// Mirrors a terminal delivering DECSET-2004 paste bytes (enabled at
-    /// driver start): the payload dispatches as one [`Event::Paste`] to
-    /// focus, not as raw keystrokes. Mirrors `pilot.press` for paste.
+    /// driver start): the payload dispatches as one
+    /// [`Event::Paste`](crate::event::Event::Paste) to focus, not as raw
+    /// keystrokes. Mirrors `pilot.press` for paste.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn paste(&mut self, text: &str) -> Result<()> {
         self.app.headless_inject_paste(self.root, text.to_string())
     }
 
     /// Simulate a left-click on the widget matched by `selector`, at the centre
     /// of its rendered region. Mirrors `pilot.click(selector)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn click(&mut self, selector: &str) -> Result<()> {
         let node = self
             .app
@@ -109,6 +139,11 @@ impl<'a> Pilot<'a> {
     }
 
     /// Click at an absolute screen coordinate.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn click_at(&mut self, x: u16, y: u16) -> Result<()> {
         self.app.headless_inject_click(self.root, x, y)
     }
@@ -131,6 +166,14 @@ impl<'a> Pilot<'a> {
 
     /// Press the left mouse button on the widget matched by `selector` (no
     /// release). Mirrors `pilot.mouse_down(selector)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn mouse_down(&mut self, selector: &str) -> Result<()> {
         let (cx, cy) = self.target_center(selector)?;
         self.app.headless_inject_mouse_down(self.root, cx, cy)
@@ -138,6 +181,11 @@ impl<'a> Pilot<'a> {
 
     /// Press the left mouse button at an absolute screen coordinate (no
     /// release). Mirrors `pilot.mouse_down` with a screen offset.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn mouse_down_at(&mut self, x: u16, y: u16) -> Result<()> {
         self.app.headless_inject_mouse_down(self.root, x, y)
     }
@@ -145,6 +193,14 @@ impl<'a> Pilot<'a> {
     /// Release the mouse button over the widget matched by `selector`.
     /// Mirrors `pilot.mouse_up(selector)`. Pairs with [`Pilot::mouse_down`]
     /// to produce a `Click` when the targets match.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn mouse_up(&mut self, selector: &str) -> Result<()> {
         let (cx, cy) = self.target_center(selector)?;
         self.app.headless_inject_mouse_up(self.root, cx, cy)
@@ -152,6 +208,11 @@ impl<'a> Pilot<'a> {
 
     /// Release the mouse button at an absolute screen coordinate. Mirrors
     /// `pilot.mouse_up` with a screen offset.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn mouse_up_at(&mut self, x: u16, y: u16) -> Result<()> {
         self.app.headless_inject_mouse_up(self.root, x, y)
     }
@@ -162,12 +223,25 @@ impl<'a> Pilot<'a> {
     /// Minimal behavior: the harness emits two plain `Click` events, one per
     /// cycle. Chained double-click events (a single `Click` carrying a click
     /// count) do not exist yet — see the dispatch-model RFC follow-up.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn double_click(&mut self, selector: &str) -> Result<()> {
         let (cx, cy) = self.target_center(selector)?;
         self.double_click_at(cx, cy)
     }
 
     /// Double-click at an absolute screen coordinate.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn double_click_at(&mut self, x: u16, y: u16) -> Result<()> {
         self.click_at(x, y)?;
         self.click_at(x, y)
@@ -176,12 +250,25 @@ impl<'a> Pilot<'a> {
     /// Triple-click the widget matched by `selector`: three press/release
     /// cycles. Mirrors `pilot.triple_click(selector)`. Same minimal-event
     /// note as [`Pilot::double_click`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn triple_click(&mut self, selector: &str) -> Result<()> {
         let (cx, cy) = self.target_center(selector)?;
         self.triple_click_at(cx, cy)
     }
 
     /// Triple-click at an absolute screen coordinate.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn triple_click_at(&mut self, x: u16, y: u16) -> Result<()> {
         self.click_at(x, y)?;
         self.click_at(x, y)?;
@@ -192,6 +279,14 @@ impl<'a> Pilot<'a> {
     /// updating hover state (`:hover`, Enter/Leave, the system tooltip) and
     /// dispatching a `MouseMove` to it, then advance to idle. Mirrors
     /// `pilot.hover(selector)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`](crate::Error::Message) when `selector` is
+    /// invalid or matches no widget, or when the matched widget has no
+    /// rendered region in the hit-test map (for example, it was not drawn).
+    /// Also forwards any error from the headless pump, which does not fail in
+    /// headless mode.
     pub fn hover(&mut self, selector: &str) -> Result<()> {
         let node = self
             .app
@@ -208,17 +303,32 @@ impl<'a> Pilot<'a> {
 
     /// Move the mouse to an absolute screen coordinate (hover + `MouseMove`),
     /// then advance to idle. Mirrors `pilot.hover((x, y))` / `pilot.move`.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn move_to(&mut self, x: u16, y: u16) -> Result<()> {
         self.app.headless_inject_mouse_move(self.root, x, y)
     }
 
     /// Advance the app to idle (process queued messages/timers/animations and
     /// render). Mirrors `pilot.pause()`.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn pause(&mut self) -> Result<()> {
         self.app.headless_pause(self.root)
     }
 
     /// Alias for [`Pilot::pause`] — wait until the app is idle.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn wait_for_idle(&mut self) -> Result<()> {
         self.pause()
     }
@@ -228,6 +338,11 @@ impl<'a> Pilot<'a> {
     /// `await pilot.pause(delay)`: Python sleeps real time so wall-clock
     /// timers fire; here the manual clock advances with the same
     /// deadline-by-deadline semantics as [`Pilot::advance_clock`].
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn pause_for(&mut self, delay: Duration) -> Result<()> {
         self.advance_clock(delay)?;
         self.pause()
@@ -240,6 +355,11 @@ impl<'a> Pilot<'a> {
     /// ~32 simulated seconds) so animations complete instantly in real
     /// time. Returns after the bound with the app settled even if an
     /// animation never finishes (e.g. an infinite repeat).
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn wait_for_animation(&mut self) -> Result<()> {
         const MAX_STEPS: usize = 2_000;
         const STEP: Duration = Duration::from_millis(16);
@@ -255,6 +375,11 @@ impl<'a> Pilot<'a> {
     /// Wait for current and scheduled animations to complete, then settle.
     /// Mirrors `await pilot.wait_for_scheduled_animations()`: pump once so
     /// newly scheduled animations enqueue, drain them, and settle.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn wait_for_scheduled_animations(&mut self) -> Result<()> {
         self.pause()?;
         self.wait_for_animation()?;
@@ -264,6 +389,11 @@ impl<'a> Pilot<'a> {
     /// Exit the app with `result`. Mirrors `await pilot.exit(result)`:
     /// records the result on the app (see [`App::exit`](crate::runtime::App::exit))
     /// with return code 0 and settles to idle.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn exit(&mut self, result: Option<String>) -> Result<()> {
         self.app.exit(result, 0, None);
         self.pause()
@@ -275,7 +405,7 @@ impl<'a> Pilot<'a> {
     ///
     /// This is the deterministic analogue of Python's `await pilot.pause(delay)`
     /// (which sleeps real time so wall-clock timers fire). Inside `run_test` the
-    /// timer subsystem runs on a manual clock (installed in [`Pilot::new`]), so
+    /// timer subsystem runs on a manual clock (installed in `Pilot::new`), so
     /// time-driven demos — clocks, stopwatches, progress timers — become fully
     /// deterministic with no sleeping and no flakiness.
     ///
@@ -284,11 +414,16 @@ impl<'a> Pilot<'a> {
     /// 1s interval fires three discrete ticks (1s, 2s, 3s), not a single
     /// backlog-collapsed fire. The remaining sub-deadline time is then consumed
     /// so the clock ends exactly `delta` ahead.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn advance_clock(&mut self, delta: Duration) -> Result<()> {
-        let mut remaining = delta;
         // Bound iterations defensively (a fast interval over a long delta still
         // terminates; this only guards against a pathological zero-interval).
         const MAX_STEPS: usize = 1_000_000;
+        let mut remaining = delta;
         // Walk to each timer deadline that falls within `remaining`, advancing
         // and pumping (which drains ready timers, runs app-level timer
         // callbacks, processes messages/recompositions, and re-renders — exactly
@@ -333,6 +468,11 @@ impl<'a> Pilot<'a> {
     /// Python's animation frames firing while the loop runs. Use this (instead
     /// of [`Pilot::advance_clock`]) for demos whose motion is driven purely by
     /// `on_tick` rather than by elapsed time.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the headless pump. The pump draws only into the
+    /// in-memory frame, so it does not fail in headless mode.
     pub fn advance_ticks(&mut self, count: u64) -> Result<()> {
         self.app.headless_advance_ticks(self.root, count)
     }
@@ -340,11 +480,18 @@ impl<'a> Pilot<'a> {
     /// True while the harness is running on the deterministic manual clock
     /// (always the case inside `run_test`). Lets tests assert the foundation is
     /// active before relying on [`Pilot::advance_clock`] determinism.
+    #[must_use]
     pub fn clock_is_manual(&self) -> bool {
         self.app.timer_clock_is_manual()
     }
 
     /// Resize the virtual terminal and advance to idle.
+    ///
+    /// # Errors
+    ///
+    /// Forwards any error from the size refresh or the headless pump. Both use
+    /// the virtual terminal and the in-memory frame, so they do not fail in
+    /// headless mode.
     pub fn resize(&mut self, width: u16, height: u16) -> Result<()> {
         self.app.headless_resize(self.root, width, height)
     }
@@ -354,6 +501,7 @@ impl<'a> Pilot<'a> {
 /// into a crossterm [`KeyEvent`].
 ///
 /// Returns `None` for unrecognised specs.
+#[must_use]
 pub fn parse_key(spec: &str) -> Option<KeyEvent> {
     let mut modifiers = KeyModifiers::NONE;
     let parts: Vec<&str> = spec.split('+').collect();
@@ -422,10 +570,10 @@ mod tests {
     use crate::widgets::{AppRoot, BindingDecl, Button, Horizontal};
     use crate::{App, TextualApp};
 
-    const CSS: &str = r#"
+    const CSS: &str = r"
 Screen { align: center middle; }
 Horizontal { width: auto; height: auto; }
-"#;
+";
 
     /// Port of Python `docs/examples/guide/testing/rgb.py` + `test_rgb.py`,
     /// driven through the real Pilot harness.
@@ -598,6 +746,9 @@ Horizontal { width: auto; height: auto; }
     }
 
     impl crate::screen::Screen for AutoFocusScreen {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "AutoFocusScreen"
         }
@@ -795,6 +946,9 @@ Horizontal { width: auto; height: auto; }
     }
 
     impl crate::screen::Screen for SnapshotScreen {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "SnapshotScreen"
         }
@@ -870,11 +1024,14 @@ Horizontal { width: auto; height: auto; }
         }
     }
 
-    /// A translucent modal (ModalScreen default `background: $background 60%`)
+    /// A translucent modal (`ModalScreen` default `background: $background 60%`)
     /// with a small top-left dialog, leaving the far corner dimmed.
     struct DimModalScreen;
 
     impl crate::screen::Screen for DimModalScreen {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "DimModalScreen"
         }
@@ -949,5 +1106,63 @@ Horizontal { width: auto; height: auto; }
         assert!(parse_key("f5").is_some());
         assert!(parse_key("boguskey").is_none());
         assert!(parse_key("ctrl+r").is_some());
+    }
+
+    struct EmptyApp;
+
+    impl TextualApp for EmptyApp {
+        fn compose(&mut self) -> AppRoot {
+            AppRoot::new()
+        }
+    }
+
+    fn shows_quit_hint(app: &App) -> bool {
+        app.notifications
+            .iter()
+            .any(|n| n.message.contains("to quit the app"))
+    }
+
+    /// Python: `ctrl+c` with nothing selected ends in `App.action_help_quit`,
+    /// which shows the "Press ctrl+q to quit" notification. For a
+    /// `TextualApp` the screen's `copy_selected_text` binding handles it.
+    #[test]
+    fn ctrl_c_with_no_selection_shows_the_quit_hint() {
+        crate::run_test(EmptyApp, |pilot| {
+            pilot.pause()?;
+            assert!(!shows_quit_hint(pilot.app()));
+            pilot.press(&["ctrl+c"])?;
+            assert!(
+                shows_quit_hint(pilot.app()),
+                "ctrl+c with no selection should show the quit hint"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// A key bound with `App::bind_key` reaches the action-map fallback. The
+    /// headless fallback must handle `HelpQuit` and `CopySelectedText` the
+    /// way the live loop does: with nothing selected, both show the quit hint.
+    #[test]
+    fn bind_key_help_quit_and_copy_selected_text_show_the_quit_hint() {
+        for action in [
+            crate::event::Action::HelpQuit,
+            crate::event::Action::CopySelectedText,
+        ] {
+            crate::run_test(EmptyApp, |pilot| {
+                pilot.app_mut().bind_key(
+                    crate::event::KeyBind::new(KeyCode::F(2), KeyModifiers::empty()),
+                    action,
+                );
+                pilot.pause()?;
+                pilot.press(&["f2"])?;
+                assert!(
+                    shows_quit_hint(pilot.app()),
+                    "f2 bound to {action:?} should show the quit hint"
+                );
+                Ok(())
+            })
+            .unwrap();
+        }
     }
 }

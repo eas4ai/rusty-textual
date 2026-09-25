@@ -10,7 +10,7 @@
 /// carries that id, which matches the corresponding `ContentSwitcher` child id.
 use textual::prelude::*;
 
-const MARKDOWN_EXAMPLE: &str = r#"# Three Flavours Cornetto
+const MARKDOWN_EXAMPLE: &str = r"# Three Flavours Cornetto
 
 The Three Flavours Cornetto trilogy is an anthology series of British
 comedic genre films directed by Edgar Wright.
@@ -32,7 +32,7 @@ comedic genre films directed by Edgar Wright.
 | Flavour | UK Release Date | Director |
 | -- | -- | -- |
 | Mint | 2013-07-19 | Edgar Wright |
-"#;
+";
 
 // Ported from Python's `content_switcher.tcss`.
 //
@@ -42,7 +42,7 @@ comedic genre films directed by Edgar Wright.
 // ContentSwitcher's `1fr` (which would split the screen 50/50).
 // NOTE: the textual CSS parser does not support `/* */` comments — keep this
 // stylesheet comment-free.
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
     padding: 1;
@@ -58,7 +58,7 @@ ContentSwitcher {
     width: 90%;
     height: 1fr;
 }
-"#;
+";
 
 struct ContentSwitcherApp;
 
@@ -79,10 +79,8 @@ impl TextualApp for ContentSwitcherApp {
         // ContentSwitcher children are wrapped in Node to assign CSS ids that
         // ContentSwitcher uses to track which child is visible.
         let table = DataTable::new(vec![], vec![]).id("data-table");
-        let markdown = ScrollView::new(
-            Markdown::new(MARKDOWN_EXAMPLE).id("markdown-content"),
-        )
-        .id("markdown");
+        let markdown =
+            ScrollView::new(Markdown::new(MARKDOWN_EXAMPLE).id("markdown-content")).id("markdown");
 
         let switcher = ContentSwitcher::new()
             .initial("data-table")
@@ -111,14 +109,20 @@ impl TextualApp for ContentSwitcherApp {
         });
     }
 
-    fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, _ctx: &mut textual::event::WidgetCtx) {
+    fn on_message_with_app(
+        &mut self,
+        app: &mut App,
+        message: &MessageEvent,
+        _ctx: &mut textual::event::WidgetCtx,
+    ) {
         // Mirror Python: `self.query_one(ContentSwitcher).current = event.button.id`
         if let Some(ev) = message.downcast_ref::<ButtonPressed>()
-            && let Some(ref id) = ev.button_id {
-                let _ = app.with_query_one_mut_as::<ContentSwitcher, _>("ContentSwitcher", |cs| {
-                    cs.set_current(Some(id.clone()))
-                });
-            }
+            && let Some(ref id) = ev.button_id
+        {
+            let _ = app.with_query_one_mut_as::<ContentSwitcher, _>("ContentSwitcher", |cs| {
+                cs.set_current(Some(id.clone()));
+            });
+        }
     }
 }
 

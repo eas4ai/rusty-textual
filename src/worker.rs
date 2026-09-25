@@ -32,6 +32,7 @@ impl WorkerId {
 
     /// Return the raw numeric value (useful for logging/debug).
     #[inline]
+    #[must_use]
     pub fn raw(self) -> u64 {
         self.0
     }
@@ -68,6 +69,7 @@ pub enum WorkerState {
 
 impl WorkerState {
     /// `true` for terminal states (`Cancelled`, `Success`, `Error`).
+    #[must_use]
     pub fn is_finished(&self) -> bool {
         matches!(self, Self::Cancelled | Self::Success | Self::Error(_))
     }
@@ -87,6 +89,7 @@ pub struct CancellationToken {
 
 impl CancellationToken {
     /// Create a new token that is *not* cancelled.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -99,6 +102,7 @@ impl CancellationToken {
     }
 
     /// Check whether cancellation has been signalled.
+    #[must_use]
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
     }
@@ -145,6 +149,7 @@ pub struct WorkerRegistry {
 
 impl WorkerRegistry {
     /// Create an empty registry.
+    #[must_use]
     pub fn new() -> Self {
         let (completion_tx, completion_rx) = mpsc::channel();
         Self {
@@ -303,6 +308,7 @@ impl WorkerRegistry {
     }
 
     /// Query the current state of a worker.
+    #[must_use]
     pub fn state(&self, id: WorkerId) -> Option<&WorkerState> {
         self.find(id).map(|e| &e.state)
     }
@@ -313,6 +319,7 @@ impl WorkerRegistry {
     }
 
     /// Return IDs of all workers that are not in a terminal state.
+    #[must_use]
     pub fn active_workers(&self) -> Vec<WorkerId> {
         self.workers
             .iter()
@@ -428,6 +435,15 @@ impl WorkerRequestPayload {
     }
 
     /// Execute the requested worker payload.
+    ///
+    /// # Errors
+    ///
+    /// For [`ComputeDigest`](Self::ComputeDigest), returns the `fail_with`
+    /// message as `Err` when `fail_with` is set and `token` was not cancelled
+    /// before the rounds finished. A cancelled run returns `Ok(())`. For
+    /// [`Task`](Self::Task), returns the error from
+    /// [`SharedWorkerTask::execute`]: the closure's own error, or an error
+    /// when the task was already consumed.
     pub fn execute(self, token: CancellationToken) -> Result<(), String> {
         match self {
             Self::ComputeDigest {
@@ -479,7 +495,8 @@ impl Default for WorkerRequestPayload {
 
 /// A request from a widget to spawn a background worker.
 ///
-/// Created via [`EventCtx::request_worker`] / [`EventCtx::request_exclusive_worker`].
+/// Created via [`EventCtx::request_worker`](crate::event::EventCtx::request_worker) /
+/// [`EventCtx::request_exclusive_worker`](crate::event::EventCtx::request_exclusive_worker).
 /// The runtime collects these after event dispatch and feeds them to
 /// [`WorkerRegistry::register`].
 #[derive(Debug, Clone)]
@@ -504,12 +521,20 @@ pub struct SharedWorkerTask {
 }
 
 impl SharedWorkerTask {
+    #[must_use]
     pub fn new(job: WorkerJob) -> Self {
         Self {
             inner: Arc::new(Mutex::new(Some(job))),
         }
     }
 
+    /// Run the wrapped closure once with `token` and return its result.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err("worker task payload already consumed")` when this task
+    /// or a clone of it has already run, or when the inner lock is poisoned.
+    /// Otherwise it returns the closure's own `Err` value unchanged.
     pub fn execute(self, token: CancellationToken) -> Result<(), String> {
         let Some(job) = self.inner.lock().ok().and_then(|mut guard| guard.take()) else {
             return Err("worker task payload already consumed".to_string());
@@ -552,11 +577,11 @@ mod tests {
         let mut out = Vec::new();
         while expected > 0 && Instant::now() < deadline {
             let mut batch = reg.drain_state_changes();
-            if !batch.is_empty() {
+            if batch.is_empty() {
+                thread::sleep(Duration::from_millis(1));
+            } else {
                 expected = expected.saturating_sub(batch.len());
                 out.append(&mut batch);
-            } else {
-                thread::sleep(Duration::from_millis(1));
             }
         }
         out
@@ -571,11 +596,11 @@ mod tests {
         let mut out = Vec::new();
         while expected > 0 && Instant::now() < deadline {
             let mut batch = process_worker_requests(reg, Vec::new());
-            if !batch.is_empty() {
+            if batch.is_empty() {
+                thread::sleep(Duration::from_millis(1));
+            } else {
                 expected = expected.saturating_sub(batch.len());
                 out.append(&mut batch);
-            } else {
-                thread::sleep(Duration::from_millis(1));
             }
         }
         out
@@ -887,7 +912,7 @@ mod tests {
                 assert_eq!(delay_per_round_ms, 0);
                 assert_eq!(fail_with, None);
             }
-            other => panic!("unexpected payload: {other:?}"),
+            other @ WorkerRequestPayload::Task(_) => panic!("unexpected payload: {other:?}"),
         }
     }
 

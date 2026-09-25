@@ -24,6 +24,7 @@ mod tree;
 
 use super::StyleSheet;
 
+#[must_use]
 pub fn default_widget_stylesheet() -> StyleSheet {
     let combined = [
         base::DEFAULT_CSS,

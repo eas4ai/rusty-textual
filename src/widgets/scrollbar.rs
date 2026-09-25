@@ -3,6 +3,7 @@ use textual_macros::widget;
 
 use crate::event::{Event, MouseDownEvent, MouseMoveEvent};
 use crate::message::ScrollbarScrollTo;
+use crate::num::Cast;
 use crate::style::{Color, Overflow, ScrollbarGutter, ScrollbarVisibility, Style};
 use crate::widgets::{NodeSeed, Widget};
 
@@ -33,6 +34,7 @@ pub struct ScrollBarRender {
 }
 
 impl ScrollBarRender {
+    #[must_use]
     pub fn thumb_range(
         track_len: usize,
         virtual_size: usize,
@@ -46,22 +48,25 @@ impl ScrollBarRender {
             return (0, track_len);
         }
 
-        let bar_ratio = virtual_size as f32 / track_len as f32;
-        let thumb_size = (window_size as f32 / bar_ratio).max(1.0);
-        let thumb_len = thumb_size.ceil().clamp(1.0, track_len as f32) as usize;
+        let bar_ratio = virtual_size.to_f32_lossy() / track_len.to_f32_lossy();
+        let thumb_size = (window_size.to_f32_lossy() / bar_ratio).max(1.0);
+        let thumb_len = thumb_size
+            .ceil()
+            .clamp(1.0, track_len.to_f32_lossy())
+            .to_usize_sat();
 
-        let max_position = (virtual_size.saturating_sub(window_size)) as f32;
+        let max_position = (virtual_size.saturating_sub(window_size)).to_f32_lossy();
         let clamped_position = position.clamp(0.0, max_position);
         let ratio = if max_position > 0.0 {
             clamped_position / max_position
         } else {
             0.0
         };
-        let travel = (track_len as f32 - thumb_size).max(0.0);
+        let travel = (track_len.to_f32_lossy() - thumb_size).max(0.0);
         let thumb_start = (travel * ratio)
             .floor()
-            .clamp(0.0, (track_len.saturating_sub(thumb_len)) as f32)
-            as usize;
+            .clamp(0.0, (track_len.saturating_sub(thumb_len)).to_f32_lossy())
+            .to_usize_sat();
         (thumb_start, thumb_len)
     }
 
@@ -69,7 +74,8 @@ impl ScrollBarRender {
     ///
     /// `track_fg`: fg for track (whitespace) cells. Python `_Styled(render, rich_style)` applies
     /// the host widget `color` to ALL segments (including track whitespace). When `Some`, this fg
-    /// is baked into the track_style so `apply_style_to_segments` sees `s.color.is_some()`.
+    /// is baked into the `track_style` so `apply_style_to_segments` sees `s.color.is_some()`.
+    #[must_use]
     pub fn render_bar(
         &self,
         track_len: usize,
@@ -127,20 +133,30 @@ impl ScrollBarRender {
 
         let mut segments: Vec<Vec<Segment>> = if scrollable {
             // Python `render_bar` (lines 128-186), shared for both axes.
-            let bar_ratio = self.virtual_size as f32 / track_len as f32;
-            let thumb_size = (self.window_size as f32 / bar_ratio).max(1.0);
-            let max_position = self.virtual_size.saturating_sub(self.window_size) as f32;
+            let bar_ratio = self.virtual_size.to_f32_lossy() / track_len.to_f32_lossy();
+            let thumb_size = (self.window_size.to_f32_lossy() / bar_ratio).max(1.0);
+            let max_position = self
+                .virtual_size
+                .saturating_sub(self.window_size)
+                .to_f32_lossy();
             let clamped_position = self.position.clamp(0.0, max_position);
             let position_ratio = if max_position > 0.0 {
                 clamped_position / max_position
             } else {
                 0.0
             };
-            let position = (track_len as f32 - thumb_size).max(0.0) * position_ratio;
+            let position = (track_len.to_f32_lossy() - thumb_size).max(0.0) * position_ratio;
 
             // start = int(position * len_bars); end = start + ceil(thumb_size * len_bars)
-            let start = (position * FRACTION_BARS as f32).max(0.0).floor() as usize;
-            let end = start.saturating_add((thumb_size * FRACTION_BARS as f32).ceil() as usize);
+            let start = (position * FRACTION_BARS.to_f32_lossy())
+                .max(0.0)
+                .floor()
+                .to_usize_sat();
+            let end = start.saturating_add(
+                (thumb_size * FRACTION_BARS.to_f32_lossy())
+                    .ceil()
+                    .to_usize_sat(),
+            );
 
             // start_index, start_bar = divmod(max(0, start), len_bars)
             let start_index = start / FRACTION_BARS;
@@ -226,6 +242,7 @@ pub struct ScrollbarPolicy {
 }
 
 impl ScrollbarPolicy {
+    #[must_use]
     pub fn from_style(
         style: &Style,
         default_vertical_size: usize,
@@ -247,16 +264,15 @@ impl ScrollbarPolicy {
             vertical_size: style
                 .scrollbar_size_vertical
                 .or(style.scrollbar_size)
-                .map(|size| size as usize)
-                .unwrap_or(default_vertical_size.max(1)),
+                .map_or(default_vertical_size.max(1), |size| size as usize),
             horizontal_size: style
                 .scrollbar_size_horizontal
                 .or(style.scrollbar_size)
-                .map(|size| size as usize)
-                .unwrap_or(default_horizontal_size.max(1)),
+                .map_or(default_horizontal_size.max(1), |size| size as usize),
         }
     }
 
+    #[must_use]
     pub fn resolve(
         self,
         widget_width: usize,
@@ -360,6 +376,8 @@ impl ScrollbarPolicy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ScrollbarGeometry {
     pub widget_width: usize,
     pub widget_height: usize,
@@ -380,6 +398,7 @@ pub struct ScrollbarGeometry {
 }
 
 impl ScrollbarGeometry {
+    #[must_use]
     pub fn from_runtime_state(
         widget: (usize, usize),
         content: (usize, usize),
@@ -409,27 +428,33 @@ impl ScrollbarGeometry {
         }
     }
 
+    #[must_use]
     pub fn max_offset_x(&self) -> usize {
         max_offset(self.content_width, self.viewport_width)
     }
 
+    #[must_use]
     pub fn max_offset_y(&self) -> usize {
         max_offset(self.content_height, self.viewport_height)
     }
 
+    #[must_use]
     pub fn clamp_offset_x(&self, offset: usize) -> usize {
         clamp_offset(offset, self.content_width, self.viewport_width)
     }
 
+    #[must_use]
     pub fn clamp_offset_y(&self, offset: usize) -> usize {
         clamp_offset(offset, self.content_height, self.viewport_height)
     }
 
+    #[must_use]
     pub fn vertical_lane_start(&self) -> Option<usize> {
         (self.vertical_lane_width > 0)
             .then_some(self.widget_width.saturating_sub(self.vertical_lane_width))
     }
 
+    #[must_use]
     pub fn horizontal_lane_start(&self) -> Option<usize> {
         (self.horizontal_lane_height > 0).then_some(
             self.widget_height
@@ -437,14 +462,17 @@ impl ScrollbarGeometry {
         )
     }
 
+    #[must_use]
     pub fn is_vertical_scrollable(&self) -> bool {
         self.vertical_lane_width > 0 && self.content_height > self.viewport_height
     }
 
+    #[must_use]
     pub fn is_horizontal_scrollable(&self) -> bool {
         self.horizontal_lane_height > 0 && self.content_width > self.viewport_width
     }
 
+    #[must_use]
     pub fn vertical_thumb(&self, offset_y: usize) -> (usize, usize) {
         thumb_range(
             self.viewport_height,
@@ -454,6 +482,7 @@ impl ScrollbarGeometry {
         )
     }
 
+    #[must_use]
     pub fn horizontal_thumb(&self, offset_x: usize) -> (usize, usize) {
         thumb_range(
             self.viewport_width,
@@ -463,6 +492,7 @@ impl ScrollbarGeometry {
         )
     }
 
+    #[must_use]
     pub fn hit_test(
         &self,
         x: usize,
@@ -526,6 +556,7 @@ impl ScrollbarGeometry {
         None
     }
 
+    #[must_use]
     pub fn page_offset_for_track_click(
         &self,
         axis: ScrollbarAxis,
@@ -562,6 +593,7 @@ impl ScrollbarGeometry {
         clamp_offset(next, content_len, viewport_len)
     }
 
+    #[must_use]
     pub fn drag_offset(
         &self,
         axis: ScrollbarAxis,
@@ -590,36 +622,42 @@ impl ScrollbarGeometry {
     }
 }
 
+#[must_use]
 pub fn max_offset(content_len: usize, viewport_len: usize) -> usize {
     content_len.saturating_sub(viewport_len.max(1))
 }
 
+#[must_use]
 pub fn clamp_offset(offset: usize, content_len: usize, viewport_len: usize) -> usize {
     offset.min(max_offset(content_len, viewport_len))
 }
 
+#[must_use]
 pub fn scroll_by(offset: usize, delta: i32, content_len: usize, viewport_len: usize) -> usize {
     let next = if delta.is_negative() {
         offset.saturating_sub(delta.unsigned_abs() as usize)
     } else {
-        offset.saturating_add(delta as usize)
+        offset.saturating_add(delta.to_usize_sat())
     };
     clamp_offset(next, content_len, viewport_len)
 }
 
+#[must_use]
 pub fn scroll_end(content_len: usize, viewport_len: usize) -> usize {
     max_offset(content_len, viewport_len)
 }
 
+#[must_use]
 pub fn thumb_range(
     track_len: usize,
     content_len: usize,
     viewport_len: usize,
     offset: usize,
 ) -> (usize, usize) {
-    ScrollBarRender::thumb_range(track_len, content_len, viewport_len, offset as f32)
+    ScrollBarRender::thumb_range(track_len, content_len, viewport_len, offset.to_f32_lossy())
 }
 
+#[must_use]
 pub fn drag_to_offset(
     pointer: usize,
     grab_offset: usize,
@@ -638,10 +676,11 @@ pub fn drag_to_offset(
         return 0;
     }
     let thumb_origin = pointer.saturating_sub(grab_offset).min(thumb_travel);
-    let ratio = (thumb_origin as f64) / (thumb_travel as f64);
-    (ratio * (max_offset as f64))
+    let ratio = thumb_origin.to_f64_lossy() / thumb_travel.to_f64_lossy();
+    (ratio * max_offset.to_f64_lossy())
         .round()
-        .clamp(0.0, max_offset as f64) as usize
+        .clamp(0.0, max_offset.to_f64_lossy())
+        .to_usize_sat()
 }
 
 #[widget(Focus, Interactive)]
@@ -672,6 +711,7 @@ fn quantize_drag_position(position: f32) -> f32 {
 impl ScrollBar {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new(vertical: bool, thickness: usize) -> Self {
         Self {
             vertical,
@@ -711,20 +751,115 @@ impl ScrollBar {
         self.position = position.max(0.0);
     }
 
+    #[must_use]
     pub fn position(&self) -> f32 {
         self.position
     }
 
+    #[must_use]
     pub fn grabbed(&self) -> bool {
         self.grabbed
     }
 
+    #[must_use]
     pub fn axis(&self) -> ScrollbarAxis {
         if self.vertical {
             ScrollbarAxis::Vertical
         } else {
             ScrollbarAxis::Horizontal
         }
+    }
+}
+
+impl ScrollBar {
+    /// A press on the bar: grab the thumb when the press is on it, else
+    /// page towards the press.
+    fn on_track_press(&mut self, mouse: &MouseDownEvent, ctx: &mut crate::event::WidgetCtx) {
+        let pointer = if self.vertical {
+            mouse.y as usize
+        } else {
+            mouse.x as usize
+        };
+        let screen_pointer = if self.vertical {
+            mouse.screen_y as usize
+        } else {
+            mouse.screen_x as usize
+        };
+        let track_len = self.track_len.max(1);
+        let current_offset = self.position.max(0.0).round().to_usize_sat();
+        let (thumb_start, thumb_len) = thumb_range(
+            track_len,
+            self.window_virtual_size,
+            self.window_size.max(1),
+            current_offset,
+        );
+        if pointer >= thumb_start && pointer < thumb_start.saturating_add(thumb_len.max(1)) {
+            self.grabbed = true;
+            self.grab_offset = pointer.saturating_sub(thumb_start);
+            self.grab_anchor_screen = screen_pointer;
+            self.grabbed_position = self.position.max(0.0);
+        } else {
+            let page = self.window_size.max(1);
+            let mut next = current_offset;
+            if pointer < thumb_start {
+                next = next.saturating_sub(page);
+            } else if pointer >= thumb_start.saturating_add(thumb_len) {
+                next = next.saturating_add(page);
+            }
+            let clamped = clamp_offset(next, self.window_virtual_size, self.window_size.max(1));
+            self.position = clamped.to_f32_lossy();
+            ctx.post_message(ScrollbarScrollTo {
+                axis: self.axis(),
+                offset: clamped.to_f32_lossy(),
+                animate: true,
+                scroll_duration: None,
+            });
+        }
+    }
+
+    /// A drag of the grabbed thumb: scroll by the pointer's screen movement,
+    /// pinned to the ends when the pointer reaches them.
+    fn on_thumb_drag(&mut self, mouse: &MouseMoveEvent, ctx: &mut crate::event::WidgetCtx) {
+        let screen_pointer = if self.vertical {
+            mouse.screen_y as usize
+        } else {
+            mouse.screen_x as usize
+        };
+        let local_pointer = if self.vertical {
+            mouse.y as usize
+        } else {
+            mouse.x as usize
+        };
+        let max_pos = max_offset(self.window_virtual_size, self.window_size.max(1)).to_f32_lossy();
+        let scale =
+            self.window_virtual_size.to_f32_lossy() / self.window_size.max(1).to_f32_lossy();
+        let delta = screen_pointer.to_f32_lossy() - self.grab_anchor_screen.to_f32_lossy();
+        let gain = THUMB_DRAG_GAIN_FIXED;
+        let mut next_pos = quantize_drag_position(self.grabbed_position + delta * scale * gain)
+            .clamp(0.0, max_pos);
+        let track_len = self.track_len.max(1);
+        if local_pointer == 0 {
+            next_pos = 0.0;
+        } else if local_pointer >= track_len.saturating_sub(1) {
+            next_pos = max_pos;
+        }
+        if (next_pos - self.position).abs() > f32::EPSILON {
+            self.position = next_pos;
+            ctx.post_message(ScrollbarScrollTo {
+                axis: self.axis(),
+                offset: next_pos,
+                animate: true,
+                scroll_duration: None,
+            });
+        }
+    }
+
+    /// Drop the thumb grab.
+    fn release_grab(&mut self) {
+        self.grabbed = false;
+        self.grab_offset = 0;
+        self.grab_anchor_screen = 0;
+        self.grabbed_position = self.position.max(0.0);
     }
 }
 
@@ -741,111 +876,20 @@ impl crate::widgets::Focus for ScrollBar {
 impl crate::widgets::Interactive for ScrollBar {
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
         match event {
-            Event::MouseDown(MouseDownEvent {
-                target,
-                x,
-                y,
-                screen_x,
-                screen_y,
-            }) if *target == self.node_id() => {
-                let pointer = if self.vertical {
-                    *y as usize
-                } else {
-                    *x as usize
-                };
-                let screen_pointer = if self.vertical {
-                    *screen_y as usize
-                } else {
-                    *screen_x as usize
-                };
-                let track_len = self.track_len.max(1);
-                let current_offset = self.position.max(0.0).round() as usize;
-                let (thumb_start, thumb_len) = thumb_range(
-                    track_len,
-                    self.window_virtual_size,
-                    self.window_size.max(1),
-                    current_offset,
-                );
-                if pointer >= thumb_start && pointer < thumb_start.saturating_add(thumb_len.max(1))
-                {
-                    self.grabbed = true;
-                    self.grab_offset = pointer.saturating_sub(thumb_start);
-                    self.grab_anchor_screen = screen_pointer;
-                    self.grabbed_position = self.position.max(0.0);
-                } else {
-                    let page = self.window_size.max(1);
-                    let mut next = current_offset;
-                    if pointer < thumb_start {
-                        next = next.saturating_sub(page);
-                    } else if pointer >= thumb_start.saturating_add(thumb_len) {
-                        next = next.saturating_add(page);
-                    }
-                    let clamped =
-                        clamp_offset(next, self.window_virtual_size, self.window_size.max(1));
-                    self.position = clamped as f32;
-                    ctx.post_message(ScrollbarScrollTo {
-                        axis: self.axis(),
-                        offset: clamped as f32,
-                        animate: true,
-                        scroll_duration: None,
-                    });
-                }
+            Event::MouseDown(mouse) if mouse.target == self.node_id() => {
+                self.on_track_press(mouse, ctx);
                 ctx.set_handled();
             }
-            Event::MouseMove(MouseMoveEvent {
-                target,
-                x,
-                y,
-                screen_x,
-                screen_y,
-                ..
-            }) if *target == self.node_id() && self.grabbed => {
-                let screen_pointer = if self.vertical {
-                    *screen_y as usize
-                } else {
-                    *screen_x as usize
-                };
-                let local_pointer = if self.vertical {
-                    *y as usize
-                } else {
-                    *x as usize
-                };
-                let max_pos = max_offset(self.window_virtual_size, self.window_size.max(1)) as f32;
-                let scale = self.window_virtual_size as f32 / self.window_size.max(1) as f32;
-                let delta = screen_pointer as f32 - self.grab_anchor_screen as f32;
-                let gain = THUMB_DRAG_GAIN_FIXED;
-                let mut next_pos =
-                    quantize_drag_position(self.grabbed_position + delta * scale * gain)
-                        .clamp(0.0, max_pos);
-                let track_len = self.track_len.max(1);
-                if local_pointer == 0 {
-                    next_pos = 0.0;
-                } else if local_pointer >= track_len.saturating_sub(1) {
-                    next_pos = max_pos;
-                }
-                if (next_pos - self.position).abs() > f32::EPSILON {
-                    self.position = next_pos;
-                    ctx.post_message(ScrollbarScrollTo {
-                        axis: self.axis(),
-                        offset: next_pos,
-                        animate: true,
-                        scroll_duration: None,
-                    });
-                }
+            Event::MouseMove(mouse) if mouse.target == self.node_id() && self.grabbed => {
+                self.on_thumb_drag(mouse, ctx);
                 ctx.set_handled();
             }
             Event::MouseUp(_) if self.grabbed => {
-                self.grabbed = false;
-                self.grab_offset = 0;
-                self.grab_anchor_screen = 0;
-                self.grabbed_position = self.position.max(0.0);
+                self.release_grab();
                 ctx.set_handled();
             }
             Event::AppFocus(false) => {
-                self.grabbed = false;
-                self.grab_offset = 0;
-                self.grab_anchor_screen = 0;
-                self.grabbed_position = self.position.max(0.0);
+                self.release_grab();
             }
             _ => {}
         }
@@ -991,6 +1035,7 @@ pub struct ScrollBarCorner {
 impl ScrollBarCorner {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             seed: NodeSeed::default(),
@@ -1323,7 +1368,7 @@ mod tests {
 
     /// Python `ScrollBar._render_bar` (scrollbar.py:311-313): a bar whose
     /// window covers the whole virtual extent renders with `window_size = 0` —
-    /// a PLAIN track (bg only), no thumb. Regression for the RichLog
+    /// a PLAIN track (bg only), no thumb. Regression for the `RichLog`
     /// `overflow-y: scroll` gutter, which painted a full-length reverse-video
     /// thumb where Python shows the bare `$scrollbar-background` strip.
     #[test]
@@ -1343,7 +1388,7 @@ mod tests {
             segments
                 .iter()
                 .filter(|seg| seg.control.is_none())
-                .all(|seg| seg.style.map(|s| s.reverse != Some(true)).unwrap_or(true)),
+                .all(|seg| seg.style.is_none_or(|s| s.reverse != Some(true))),
             "an unscrollable bar must not paint a reverse-video thumb"
         );
         assert!(
@@ -1578,11 +1623,11 @@ mod tests {
         );
     }
 
-    /// Regression: a vertical ScrollBar must paint glyphs `thickness` cells wide.
+    /// Regression: a vertical `ScrollBar` must paint glyphs `thickness` cells wide.
     /// The runtime drives `set_thickness` from the CSS-resolved `scrollbar-size`
     /// lane (e.g. `scrollbar-size: 10 4` → vertical lane width 4); previously the
     /// thickness stayed at the creation default (2) regardless of CSS, so a 4-wide
-    /// lane was painted only 2 cells wide (styles/scrollbar_size parity gap).
+    /// lane was painted only 2 cells wide (`styles/scrollbar_size` parity gap).
     #[test]
     fn scrollbar_thickness_drives_vertical_glyph_width() {
         let mut bar = ScrollBar::new(true, 2);

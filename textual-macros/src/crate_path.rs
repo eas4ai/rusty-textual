@@ -38,9 +38,7 @@ fn retarget_stream(tokens: TokenStream, replacement: &Ident) -> TokenStream {
                 rebuilt.set_span(group.span());
                 out.push(TokenTree::Group(rebuilt));
             }
-            TokenTree::Ident(ident)
-                if ident == "rusty_textual" && is_path_use(&list, i) =>
-            {
+            TokenTree::Ident(ident) if ident == "rusty_textual" && is_path_use(&list, i) => {
                 let mut renamed = replacement.clone();
                 renamed.set_span(ident.span());
                 out.push(TokenTree::Ident(renamed));

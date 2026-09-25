@@ -18,17 +18,20 @@ impl Vertical {
     crate::delegate_ident_methods!(container);
     crate::delegate_border_title_methods!(container);
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             container: Container::new(),
         }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.container = self.container.with_child(child);
         self
     }
 
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         self.container = self.container.with_compose(children);
         self

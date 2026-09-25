@@ -14,7 +14,7 @@
 /// renders this as plain text without emoji substitution.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -27,7 +27,7 @@ Horizontal {
 RadioSet {
     width: 45%;
 }
-"#;
+";
 
 struct RadioChoicesApp;
 
@@ -48,9 +48,7 @@ impl TextualApp for RadioChoicesApp {
             .with_button(RadioButton::new("Star Trek: The Motion Picture"))
             .with_button(RadioButton::new("Star Wars: A New Hope"))
             .with_button(RadioButton::new("The Last Starfighter"))
-            .with_button(RadioButton::new(
-                "Total Recall \u{1F449} \u{1F534}",
-            ))
+            .with_button(RadioButton::new("Total Recall \u{1F449} \u{1F534}"))
             .with_button(RadioButton::new("Wing Commander"));
 
         // Second RadioSet: built from a collection of string labels.
@@ -77,7 +75,7 @@ impl TextualApp for RadioChoicesApp {
         // Mirror Python `on_mount`: focus the first RadioSet (id="focus_me").
         // Since we can't set an id on RadioSet without modifying the framework,
         // we focus the first RadioSet by type selector.
-        let _ = app.query_mut("RadioSet").map(|q| q.focus());
+        let _ = app.query_mut("RadioSet").map(textual::DomQueryMut::focus);
     }
 }
 

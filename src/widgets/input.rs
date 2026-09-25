@@ -6,10 +6,14 @@ use textual_macros::widget;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::event::Event;
-use crate::message::*;
+use crate::message::{
+    InputBlurred, InputChanged, InputSubmitted, MessageEvent, TextEditClipboardCopyRequested,
+    TextEditClipboardPaste, TextEditClipboardPasteRequested,
+};
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
 use crate::validation::{ValidationResult, ValidatorRef};
 
+use super::helpers::flush_run;
 use crate::action::ParsedAction;
 
 use super::{
@@ -45,21 +49,32 @@ pub struct SuggestionCache {
 /// Maximum number of cached suggestions (matches Python's `LRUCache(1024)`).
 const SUGGESTION_CACHE_CAPACITY: usize = 1024;
 
+/// Result of a [`SuggestionCache`] lookup.
+enum CacheLookup {
+    /// No entry for the key.
+    Miss,
+    /// The cached suggestion, which may be `None` ("no suggestion").
+    Hit(Option<String>),
+}
+
 impl SuggestionCache {
     /// Create an empty cache.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Cached result for `key`, if any. The outer `Option` is the cache hit;
-    /// the inner `Option<String>` is the cached suggestion (which may be
-    /// "no suggestion").
-    fn lookup(&self, key: &str) -> Option<Option<String>> {
+    /// Cached result for `key`: a hit carries the cached suggestion (which
+    /// may be "no suggestion").
+    fn lookup(&self, key: &str) -> CacheLookup {
         let entries = match self.entries.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        entries.get(key).cloned()
+        match entries.get(key) {
+            Some(cached) => CacheLookup::Hit(cached.clone()),
+            None => CacheLookup::Miss,
+        }
     }
 
     /// Store a computed result for `key`.
@@ -128,7 +143,7 @@ pub trait Suggester: Send + Sync {
             value.to_lowercase()
         };
         if let Some(cache) = self.cache() {
-            if let Some(hit) = cache.lookup(&normalized) {
+            if let CacheLookup::Hit(hit) = cache.lookup(&normalized) {
                 return hit;
             }
             let suggestion = self.get_suggestion(&normalized);
@@ -189,6 +204,7 @@ impl SuggestFromList {
 
     /// Set whether suggestion results are cached by input value
     /// (Python's `use_cache`; the default is `true`).
+    #[must_use]
     pub fn use_cache(mut self, use_cache: bool) -> Self {
         self.cache = if use_cache {
             Some(SuggestionCache::new())
@@ -260,6 +276,9 @@ impl Selection {
 }
 
 #[widget(Focus, Interactive, Layout, Selectable, StyleIdentity, Components)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
+#[allow(clippy::struct_field_names)] // Python's attribute is `type`, a Rust keyword.
 pub struct Input {
     text: String,
     cursor: usize,
@@ -294,6 +313,7 @@ impl Default for Input {
 }
 
 impl Input {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             text: String::new(),
@@ -328,6 +348,7 @@ impl Input {
     /// This enables Python-style subclass selector behavior. For example,
     /// `CommandInput` can use `style_type_name="CommandInput"` while still
     /// inheriting `Input` selector rules via aliases.
+    #[must_use]
     pub fn with_style_type(
         mut self,
         style_type_name: &'static str,
@@ -338,6 +359,7 @@ impl Input {
         self
     }
 
+    #[must_use]
     pub fn with_placeholder(mut self, value: impl Into<String>) -> Self {
         self.placeholder = Some(value.into());
         self
@@ -348,32 +370,38 @@ impl Input {
     /// A non-empty initial value is rendered as the input's text — not the
     /// placeholder. The cursor is placed at the end of the value, matching the
     /// post-construction `set_text` behaviour.
+    #[must_use]
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         self.set_text(value);
         self
     }
 
+    #[must_use]
     pub fn with_type(mut self, input_type: InputType) -> Self {
         self.input_type = input_type;
         self
     }
 
+    #[must_use]
     pub fn with_validators(mut self, validators: Vec<ValidatorRef>) -> Self {
         self.validators = validators;
         self.revalidate();
         self
     }
 
+    #[must_use]
     pub fn class(mut self, class: impl Into<String>) -> Self {
         self.seed.classes.push(class.into());
         self
     }
 
+    #[must_use]
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.seed.css_id = Some(id.into());
         self
     }
 
+    #[must_use]
     pub fn with_password(mut self, password: bool) -> Self {
         self.password = password;
         self
@@ -385,6 +413,7 @@ impl Input {
     /// While the whole value is selected, the next printable keystroke
     /// replaces it — e.g. a pre-filled `"0"` becomes `"123"` when typing
     /// `123`, not `"0123"`.
+    #[must_use]
     pub fn with_select_on_focus(mut self, select_on_focus: bool) -> Self {
         self.select_on_focus = select_on_focus;
         self
@@ -392,12 +421,14 @@ impl Input {
 
     /// Python `valid_empty`: an empty value passes validation without
     /// running validators (default false).
+    #[must_use]
     pub fn with_valid_empty(mut self, valid_empty: bool) -> Self {
         self.valid_empty = valid_empty;
         self
     }
 
     /// Python `valid_empty` getter.
+    #[must_use]
     pub fn valid_empty(&self) -> bool {
         self.valid_empty
     }
@@ -419,6 +450,7 @@ impl Input {
 
     /// Python `compact`: borderless compact style via the
     /// `-textual-compact` class (default false).
+    #[must_use]
     pub fn with_compact(mut self, compact: bool) -> Self {
         self.compact = compact;
         self.set_class("-textual-compact", compact);
@@ -426,6 +458,7 @@ impl Input {
     }
 
     /// Python `compact` getter.
+    #[must_use]
     pub fn compact(&self) -> bool {
         self.compact
     }
@@ -444,6 +477,7 @@ impl Input {
         }
     }
 
+    #[must_use]
     pub fn with_restrict(mut self, pattern: &str) -> Self {
         // Python uses `re.fullmatch` (`_input.py`): the WHOLE candidate value
         // must match the restrict pattern. Anchor the compiled regex so every
@@ -453,12 +487,14 @@ impl Input {
         self
     }
 
+    #[must_use]
     pub fn with_max_length(mut self, max_length: usize) -> Self {
         self.max_length = Some(max_length);
         self
     }
 
     /// Attach a [`Suggester`] that provides auto-completion ghost text.
+    #[must_use]
     pub fn with_suggester(mut self, suggester: impl Suggester + 'static) -> Self {
         self.suggester = Some(Box::new(suggester));
         self
@@ -474,10 +510,12 @@ impl Input {
         }
     }
 
+    #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
 
+    #[must_use]
     pub fn validation_result(&self) -> &ValidationResult {
         &self.validation_result
     }
@@ -582,6 +620,7 @@ impl Input {
     }
 
     /// Return the currently selected text, or None if no selection.
+    #[must_use]
     pub fn selected_text(&self) -> Option<String> {
         if self.selection.start == self.selection.end {
             return None;
@@ -630,7 +669,7 @@ impl Input {
         }
     }
 
-    /// Check if the proposed new value passes restrict and max_length checks.
+    /// Check if the proposed new value passes restrict and `max_length` checks.
     fn is_value_allowed(&self, value: &str) -> bool {
         if self.max_length.is_some_and(|max| value.len() > max) {
             return false;
@@ -817,11 +856,13 @@ impl Input {
     // ── Reactive getters ─────────────────────────────────────────────────
 
     /// Reactive getter for the input value (Python-aligned name for `text`).
+    #[must_use]
     pub fn value(&self) -> &str {
         &self.text
     }
 
     /// Reactive getter for the placeholder text.
+    #[must_use]
     pub fn placeholder(&self) -> Option<&str> {
         self.placeholder.as_deref()
     }
@@ -898,7 +939,7 @@ impl crate::widgets::Focus for Input {
         self.chrome.is_active()
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "input"
     }
 
@@ -952,12 +993,32 @@ impl crate::widgets::Focus for Input {
 
 impl Input {
     fn apply_edit_command(&mut self, cmd: EditCommand, ctx: &mut crate::event::WidgetCtx) {
-        let mut changed = false;
-        let mut value_changed = false;
+        let cmd = self.password_safe_command(cmd);
+        // `(changed, value_changed)`; commands an Input does not use change nothing.
+        let (changed, value_changed) = self
+            .apply_text_command(cmd)
+            .or_else(|| self.apply_cursor_command(cmd))
+            .or_else(|| self.apply_clipboard_command(cmd, ctx))
+            .unwrap_or((false, false));
+
+        if value_changed {
+            self.revalidate();
+            self.update_suggestion();
+            self.post_changed(ctx);
+        }
+        if changed || value_changed {
+            self.chrome.reset_blink();
+            ctx.request_repaint();
+        }
+        ctx.set_handled();
+    }
+
+    /// In password fields word operations fall back to line operations.
+    fn password_safe_command(&self, cmd: EditCommand) -> EditCommand {
         // Python parity: in password fields word operations fall back to
         // line operations so word boundaries never leak (`action_home`,
         // `action_delete_left_all`, ... instead of the word variants).
-        let cmd = match cmd {
+        match cmd {
             EditCommand::MoveLeft {
                 select,
                 unit: MoveUnit::Word,
@@ -973,7 +1034,14 @@ impl Input {
                 unit: MoveUnit::Word,
             } if self.password => EditCommand::DeleteToEnd,
             other => other,
-        };
+        }
+    }
+
+    /// Text-changing commands. `None` for other commands; else
+    /// `(changed, value_changed)`.
+    fn apply_text_command(&mut self, cmd: EditCommand) -> Option<(bool, bool)> {
+        let mut changed = false;
+        let mut value_changed = false;
         match cmd {
             EditCommand::InsertChar(ch) => {
                 if self.is_allowed_char(ch) {
@@ -1000,30 +1068,6 @@ impl Input {
                         value_changed = true;
                     }
                 }
-            }
-            EditCommand::Submit => {
-                ctx.post_message(InputSubmitted {
-                    value: self.text.clone(),
-                });
-            }
-            EditCommand::Copy => {
-                if let Some(text) = self.selected_text() {
-                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
-                }
-            }
-            EditCommand::Cut => {
-                if let Some(text) = self.selected_text() {
-                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
-                    if self.delete_selection_if_any() {
-                        changed = true;
-                        value_changed = true;
-                    }
-                }
-            }
-            EditCommand::Paste => {
-                ctx.post_message(TextEditClipboardPasteRequested {
-                    target: self.node_id(),
-                });
             }
             EditCommand::Backspace { unit } => {
                 if self.delete_selection_if_any() {
@@ -1073,6 +1117,28 @@ impl Input {
                     value_changed = true;
                 }
             }
+            EditCommand::DeleteToEnd => {
+                if self.delete_selection_if_any() {
+                    changed = true;
+                    value_changed = true;
+                } else if self.cursor < self.text.len() {
+                    self.text.truncate(self.cursor);
+                    self.selection = Selection::cursor(self.cursor);
+                    changed = true;
+                    value_changed = true;
+                }
+            }
+            _ => return None,
+        }
+        Some((changed, value_changed))
+    }
+
+    /// Cursor movement and select-all. `None` for other commands; else
+    /// `(changed, value_changed)` (accepting a suggestion changes the value).
+    fn apply_cursor_command(&mut self, cmd: EditCommand) -> Option<(bool, bool)> {
+        let mut changed = false;
+        let mut value_changed = false;
+        match cmd {
             EditCommand::MoveLeft { select, unit } => {
                 let next = if self.selection.start != self.selection.end && !select {
                     self.selection.start.min(self.selection.end)
@@ -1140,38 +1206,202 @@ impl Input {
                     changed = self.move_cursor_to(self.text.len(), false);
                 }
             }
-            EditCommand::DeleteToEnd => {
-                if self.delete_selection_if_any() {
-                    changed = true;
-                    value_changed = true;
-                } else if self.cursor < self.text.len() {
-                    self.text.truncate(self.cursor);
-                    self.selection = Selection::cursor(self.cursor);
-                    changed = true;
-                    value_changed = true;
-                }
-            }
             EditCommand::SelectAll => {
                 self.select_all();
                 changed = self.selection.start != self.selection.end;
             }
-            EditCommand::InsertNewline
-            | EditCommand::MoveUp { .. }
-            | EditCommand::MoveDown { .. }
-            | EditCommand::DeleteLine
-            | EditCommand::SelectLine => {}
+            _ => return None,
+        }
+        Some((changed, value_changed))
+    }
+
+    /// Submit and clipboard commands. `None` for other commands; else
+    /// `(changed, value_changed)`.
+    fn apply_clipboard_command(
+        &mut self,
+        cmd: EditCommand,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> Option<(bool, bool)> {
+        let mut changed = false;
+        let mut value_changed = false;
+        match cmd {
+            EditCommand::Submit => {
+                ctx.post_message(InputSubmitted {
+                    value: self.text.clone(),
+                });
+            }
+            EditCommand::Copy => {
+                if let Some(text) = self.selected_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
+                }
+            }
+            EditCommand::Cut => {
+                if let Some(text) = self.selected_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
+                    if self.delete_selection_if_any() {
+                        changed = true;
+                        value_changed = true;
+                    }
+                }
+            }
+            EditCommand::Paste => {
+                ctx.post_message(TextEditClipboardPasteRequested {
+                    target: self.node_id(),
+                });
+            }
+            _ => return None,
+        }
+        Some((changed, value_changed))
+    }
+
+    /// The placeholder line, with the cursor on its first cell while focused.
+    fn render_placeholder_line(
+        &self,
+        width: usize,
+        (cursor_style, placeholder_style): (rich_rs::Style, rich_rs::Style),
+        out: &mut Segments,
+    ) {
+        let placeholder = self.placeholder.clone().unwrap_or_default();
+        let line = rich_rs::set_cell_size(&placeholder, width);
+        if self.node_state().focused && self.chrome.cursor_visible() {
+            // Match Python Textual: when empty and focused, render a cursor in the first cell
+            // (even over placeholder text).
+            let mut chars = line.chars();
+            let first = chars.next().unwrap_or(' ');
+            let rest: String = chars.collect();
+            out.push(rich_rs::Segment::styled(first.to_string(), cursor_style));
+            if !rest.is_empty() {
+                out.push(rich_rs::Segment::styled(rest, placeholder_style));
+            }
+        } else {
+            out.push(rich_rs::Segment::styled(line, placeholder_style));
+        }
+    }
+
+    /// Paint the typed text (bullets in password mode) with cursor and
+    /// selection styles. Returns the cells used.
+    fn paint_text(
+        &self,
+        width: usize,
+        (cursor_style, selection_style): (rich_rs::Style, rich_rs::Style),
+        out: &mut Segments,
+    ) -> usize {
+        let (sel_start, sel_end) =
+            if self.node_state().focused && self.selection.start != self.selection.end {
+                (
+                    self.selection.start.min(self.text.len()),
+                    self.selection.end.min(self.text.len()),
+                )
+            } else {
+                (
+                    self.cursor.min(self.text.len()),
+                    self.cursor.min(self.text.len()),
+                )
+            };
+        let (sel_lo, sel_hi) = if sel_start <= sel_end {
+            (sel_start, sel_end)
+        } else {
+            (sel_end, sel_start)
+        };
+
+        let mut cells_used: usize = 0;
+        let mut pending_style: Option<rich_rs::Style> = None;
+        let mut pending_text = String::new();
+
+        // Iterate over original text for byte indices (cursor/selection use these),
+        // but display bullet character in password mode.
+        let bullet = "\u{2022}";
+        for (byte_idx, grapheme) in self.text.grapheme_indices(true) {
+            let display = if self.password { bullet } else { grapheme };
+            let w = grapheme_cell_width(display);
+            if cells_used.saturating_add(w) > width {
+                break;
+            }
+
+            let is_cursor = self.node_state().focused
+                && self.chrome.cursor_visible()
+                && byte_idx == self.cursor;
+            let in_sel = byte_idx >= sel_lo && byte_idx < sel_hi;
+            let style = if is_cursor {
+                Some(cursor_style)
+            } else if in_sel {
+                Some(selection_style)
+            } else {
+                None
+            };
+
+            let style_changed = match (&pending_style, &style) {
+                (None, None) => false,
+                (Some(a), Some(b)) => a != b,
+                _ => true,
+            };
+            if style_changed {
+                flush_run(out, &mut pending_style, &mut pending_text);
+                pending_style = style;
+            }
+            pending_text.push_str(display);
+            cells_used = cells_used.saturating_add(w);
         }
 
-        if value_changed {
-            self.revalidate();
-            self.update_suggestion();
-            self.post_changed(ctx);
+        flush_run(out, &mut pending_style, &mut pending_text);
+        cells_used
+    }
+
+    /// The suggestion ghost text shows: focused, and the suggestion extends
+    /// the typed text.
+    fn shows_suggestion(&self) -> bool {
+        self.node_state().focused
+            && !self.suggestion.is_empty()
+            && self.suggestion.len() > self.text.len()
+            && self.suggestion.is_char_boundary(self.text.len())
+    }
+
+    /// Paint the suggestion ghost text (the suffix beyond what the user
+    /// typed); the cursor sits on its first character when at the end.
+    /// Returns the cells used.
+    fn paint_suggestion(
+        &self,
+        width: usize,
+        cells_used: usize,
+        (cursor_style, suggestion_style): (rich_rs::Style, rich_rs::Style),
+        out: &mut Segments,
+    ) -> usize {
+        let mut cells_used = cells_used;
+        if !self.shows_suggestion() {
+            return cells_used;
         }
-        if changed || value_changed {
-            self.chrome.reset_blink();
-            ctx.request_repaint();
+        let ghost = &self.suggestion[self.text.len()..];
+        // When cursor is at end, the first ghost character gets cursor style
+        // (Python Textual renders the cursor over the first ghost char).
+        if self.cursor == self.text.len() && self.chrome.cursor_visible() {
+            let mut ghost_graphemes = ghost.grapheme_indices(true);
+            if let Some((_idx, first_g)) = ghost_graphemes.next() {
+                let first_w = grapheme_cell_width(first_g);
+                if cells_used.saturating_add(first_w) <= width {
+                    out.push(rich_rs::Segment::styled(first_g.to_string(), cursor_style));
+                    cells_used = cells_used.saturating_add(first_w);
+                }
+            }
+            // Remaining ghost text in suggestion style
+            let rest_start = ghost
+                .grapheme_indices(true)
+                .nth(1)
+                .map_or(ghost.len(), |(i, _)| i);
+            let rest = &ghost[rest_start..];
+            if !rest.is_empty() && cells_used < width {
+                let ghost_text = fit_graphemes(rest, width, &mut cells_used);
+                if !ghost_text.is_empty() {
+                    out.push(rich_rs::Segment::styled(ghost_text, suggestion_style));
+                }
+            }
+        } else {
+            // Cursor not at end — just show ghost text after typed text
+            let ghost_text = fit_graphemes(ghost, width, &mut cells_used);
+            if !ghost_text.is_empty() {
+                out.push(rich_rs::Segment::styled(ghost_text, suggestion_style));
+            }
         }
-        ctx.set_handled();
+        cells_used
     }
 }
 
@@ -1271,7 +1501,7 @@ impl crate::widgets::Interactive for Input {
         }
     }
 
-    /// Apply an [`EditCommand`] (shared by direct key handling and the
+    /// Apply an `EditCommand` (shared by direct key handling and the
     /// action-declared bindings below, so both paths behave identically).
     fn on_message(&mut self, message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
         if let Some(m) = message.downcast_ref::<TextEditClipboardPaste>() {
@@ -1349,156 +1579,24 @@ impl crate::widgets::Render for Input {
         let suggestion_style = resolve_component_rich("input--suggestion");
 
         if self.text.is_empty() {
-            let placeholder = self.placeholder.clone().unwrap_or_default();
-            let line = rich_rs::set_cell_size(&placeholder, width);
-            if self.node_state().focused && self.chrome.cursor_visible() {
-                // Match Python Textual: when empty and focused, render a cursor in the first cell
-                // (even over placeholder text).
-                let mut chars = line.chars();
-                let first = chars.next().unwrap_or(' ');
-                let rest: String = chars.collect();
-                out.push(rich_rs::Segment::styled(first.to_string(), cursor_style));
-                if !rest.is_empty() {
-                    out.push(rich_rs::Segment::styled(rest, placeholder_style));
-                }
-            } else {
-                out.push(rich_rs::Segment::styled(line, placeholder_style));
-            }
+            self.render_placeholder_line(width, (cursor_style, placeholder_style), &mut out);
             return out;
         }
 
-        let (sel_start, sel_end) =
-            if self.node_state().focused && self.selection.start != self.selection.end {
-                (
-                    self.selection.start.min(self.text.len()),
-                    self.selection.end.min(self.text.len()),
-                )
-            } else {
-                (
-                    self.cursor.min(self.text.len()),
-                    self.cursor.min(self.text.len()),
-                )
-            };
-        let (sel_lo, sel_hi) = if sel_start <= sel_end {
-            (sel_start, sel_end)
-        } else {
-            (sel_end, sel_start)
-        };
-
-        let mut cells_used: usize = 0;
-        let mut pending_style: Option<rich_rs::Style> = None;
-        let mut pending_text = String::new();
-
-        let flush = |out: &mut Segments,
-                     pending_style: &mut Option<rich_rs::Style>,
-                     pending_text: &mut String| {
-            if pending_text.is_empty() {
-                return;
-            }
-            let style = pending_style.take().unwrap_or_default();
-            out.push(rich_rs::Segment::styled(
-                std::mem::take(pending_text),
-                style,
-            ));
-        };
-
-        // Iterate over original text for byte indices (cursor/selection use these),
-        // but display bullet character in password mode.
-        let bullet = "\u{2022}";
-        for (byte_idx, grapheme) in self.text.grapheme_indices(true) {
-            let display = if self.password { bullet } else { grapheme };
-            let w = grapheme_cell_width(display);
-            if cells_used.saturating_add(w) > width {
-                break;
-            }
-
-            let is_cursor = self.node_state().focused
-                && self.chrome.cursor_visible()
-                && byte_idx == self.cursor;
-            let in_sel = byte_idx >= sel_lo && byte_idx < sel_hi;
-            let style = if is_cursor {
-                Some(cursor_style)
-            } else if in_sel {
-                Some(selection_style)
-            } else {
-                None
-            };
-
-            let style_changed = match (&pending_style, &style) {
-                (None, None) => false,
-                (Some(a), Some(b)) => a != b,
-                _ => true,
-            };
-            if style_changed {
-                flush(&mut out, &mut pending_style, &mut pending_text);
-                pending_style = style;
-            }
-            pending_text.push_str(display);
-            cells_used = cells_used.saturating_add(w);
-        }
-
-        flush(&mut out, &mut pending_style, &mut pending_text);
-
-        // Show suggestion ghost text (the suffix beyond what the user typed).
-        let show_suggestion = self.node_state().focused
-            && !self.suggestion.is_empty()
-            && self.suggestion.len() > self.text.len()
-            && self.suggestion.is_char_boundary(self.text.len());
-        if show_suggestion {
-            let ghost = &self.suggestion[self.text.len()..];
-            // When cursor is at end, the first ghost character gets cursor style
-            // (Python Textual renders the cursor over the first ghost char).
-            if self.cursor == self.text.len() && self.chrome.cursor_visible() {
-                let mut ghost_graphemes = ghost.grapheme_indices(true);
-                if let Some((_idx, first_g)) = ghost_graphemes.next() {
-                    let first_w = grapheme_cell_width(first_g);
-                    if cells_used.saturating_add(first_w) <= width {
-                        out.push(rich_rs::Segment::styled(first_g.to_string(), cursor_style));
-                        cells_used = cells_used.saturating_add(first_w);
-                    }
-                }
-                // Remaining ghost text in suggestion style
-                let rest_start = ghost
-                    .grapheme_indices(true)
-                    .nth(1)
-                    .map(|(i, _)| i)
-                    .unwrap_or(ghost.len());
-                let rest = &ghost[rest_start..];
-                if !rest.is_empty() && cells_used < width {
-                    let mut ghost_text = String::new();
-                    for grapheme in rest.graphemes(true) {
-                        let w = grapheme_cell_width(grapheme);
-                        if cells_used.saturating_add(w) > width {
-                            break;
-                        }
-                        ghost_text.push_str(grapheme);
-                        cells_used = cells_used.saturating_add(w);
-                    }
-                    if !ghost_text.is_empty() {
-                        out.push(rich_rs::Segment::styled(ghost_text, suggestion_style));
-                    }
-                }
-            } else {
-                // Cursor not at end — just show ghost text after typed text
-                let mut ghost_text = String::new();
-                for grapheme in ghost.graphemes(true) {
-                    let w = grapheme_cell_width(grapheme);
-                    if cells_used.saturating_add(w) > width {
-                        break;
-                    }
-                    ghost_text.push_str(grapheme);
-                    cells_used = cells_used.saturating_add(w);
-                }
-                if !ghost_text.is_empty() {
-                    out.push(rich_rs::Segment::styled(ghost_text, suggestion_style));
-                }
-            }
-        } else if self.node_state().focused
+        let cells_used = self.paint_text(width, (cursor_style, selection_style), &mut out);
+        let mut cells_used = self.paint_suggestion(
+            width,
+            cells_used,
+            (cursor_style, suggestion_style),
+            &mut out,
+        );
+        // No suggestion — trailing cursor space (original behaviour).
+        if !self.shows_suggestion()
+            && self.node_state().focused
             && self.chrome.cursor_visible()
             && self.cursor == self.text.len()
             && cells_used < width
         {
-            // No suggestion — render trailing cursor space (original behaviour).
             out.push(rich_rs::Segment::styled(" ".to_string(), cursor_style));
             cells_used += 1;
         }
@@ -1510,6 +1608,21 @@ impl crate::widgets::Render for Input {
         out
     }
 }
+/// The leading graphemes of `text` that fit in `width` cells after
+/// `cells_used`, advancing `cells_used` past them.
+fn fit_graphemes(text: &str, width: usize, cells_used: &mut usize) -> String {
+    let mut fitted = String::new();
+    for grapheme in text.graphemes(true) {
+        let w = grapheme_cell_width(grapheme);
+        if cells_used.saturating_add(w) > width {
+            break;
+        }
+        fitted.push_str(grapheme);
+        *cells_used = cells_used.saturating_add(w);
+    }
+    fitted
+}
+
 /// Byte index of the start of the next word at or after `cursor` for
 /// Python `Input.action_delete_right_word`: the position of the first
 /// `(?<=\W)\w` match in the text after the cursor (its `hit.end() - 1`
@@ -2936,7 +3049,7 @@ mod tests {
         assert_eq!(input.text(), "abc");
     }
 
-    /// Regression (input_validation parity): after mount the arena node record
+    /// Regression (`input_validation` parity): after mount the arena node record
     /// is the single source of truth for CSS classes, so `revalidate()`'s
     /// seed-class update alone never reaches `Input.-invalid` /
     /// `&.-invalid:focus` selectors. Typing must queue the `-valid` /

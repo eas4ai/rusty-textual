@@ -13,6 +13,7 @@ pub struct HorizontalScroll {
 }
 
 impl HorizontalScroll {
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn style_type_aliases(&self) -> &[&'static str] {
         &["ScrollableContainer"]
     }
@@ -20,6 +21,7 @@ impl HorizontalScroll {
     crate::delegate_ident_methods!(inner);
     crate::delegate_border_title_methods!(inner);
 
+    #[must_use]
     pub fn new() -> Self {
         // Overflow is NOT set inline here: Python `containers.py::HorizontalScroll`
         // declares `overflow-x: auto; overflow-y: hidden` via DEFAULT_CSS (an
@@ -29,11 +31,13 @@ impl HorizontalScroll {
         Self { inner }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.inner = self.inner.with_child(child);
         self
     }
 
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         self.inner = self.inner.with_compose(children);
         self
@@ -43,6 +47,7 @@ impl HorizontalScroll {
         self.inner.push(child);
     }
 
+    #[must_use]
     pub fn height(mut self, height: usize) -> Self {
         self.inner = self.inner.height(height);
         self
@@ -52,6 +57,7 @@ impl HorizontalScroll {
         self.inner.scroll_by_x(delta);
     }
 
+    #[must_use]
     pub fn scroll_step_x(mut self, step: usize) -> Self {
         self.inner = self.inner.scroll_step_x(step);
         self

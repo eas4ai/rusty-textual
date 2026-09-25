@@ -14,7 +14,7 @@
 /// the border container's content area and always paints both border edges.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 .box {
     width: 16;
     height: 8;
@@ -27,7 +27,7 @@ const CSS: &str = r#"
     layout: horizontal;
     overflow: hidden;
 }
-"#;
+";
 
 struct ContainerApp;
 

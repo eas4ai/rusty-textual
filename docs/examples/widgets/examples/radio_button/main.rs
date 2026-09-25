@@ -3,17 +3,17 @@
 /// Demonstrates `RadioButton` widgets inside a `RadioSet`:
 /// - Nine radio buttons with various sci-fi movie/show labels.
 /// - "Serenity" is pre-selected (value=True in Python).
-/// - The RadioSet is centered on screen (width: 50%).
+/// - The `RadioSet` is centered on screen (width: 50%).
 ///
 /// Python: `on_mount` calls `self.query_one(RadioSet).focus()`.
-/// Rust: The RadioSet is the first focusable widget, so it receives focus
+/// Rust: The `RadioSet` is the first focusable widget, so it receives focus
 /// automatically on start.
 ///
 /// Note: Python uses `Text.from_markup(...)` with emoji shortcodes for
 /// "Total Recall". In Rust we use the plain Unicode equivalent.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -21,7 +21,7 @@ Screen {
 RadioSet {
     width: 50%;
 }
-"#;
+";
 
 struct RadioChoicesApp;
 
@@ -40,9 +40,7 @@ impl TextualApp for RadioChoicesApp {
             .with_button(RadioButton::new("Star Trek: The Motion Picture"))
             .with_button(RadioButton::new("Star Wars: A New Hope"))
             .with_button(RadioButton::new("The Last Starfighter"))
-            .with_button(RadioButton::new(
-                "Total Recall 👉 🔴",
-            ))
+            .with_button(RadioButton::new("Total Recall 👉 🔴"))
             .with_button(RadioButton::new("Wing Commander"));
 
         AppRoot::new().with_child(radio_set)

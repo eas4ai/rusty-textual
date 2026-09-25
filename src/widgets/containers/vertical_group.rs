@@ -23,17 +23,20 @@ impl VerticalGroup {
     crate::delegate_ident_methods!(inner);
     crate::delegate_border_title_methods!(inner);
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             inner: Vertical::new(),
         }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.inner = self.inner.with_child(child);
         self
     }
 
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         self.inner = self.inner.with_compose(children);
         self

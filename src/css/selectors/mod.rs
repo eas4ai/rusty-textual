@@ -115,7 +115,7 @@ mod tests {
         let mut segments = Segments::new();
         segments.push(Segment::new("   "));
         let style = Style::new().bg(Color::parse("#334455").expect("valid color"));
-        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, style, None);
+        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, &style, None);
         let bg = styled
             .into_iter()
             .next()
@@ -133,7 +133,7 @@ mod tests {
         let seg_style = rich_rs::Style::new().with_bgcolor(rich_rs::SimpleColor::Default);
         segments.push(Segment::styled("x", seg_style));
         let style = Style::new().bg(Color::parse("#334455").expect("valid color"));
-        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, style, None);
+        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, &style, None);
         let bg = styled
             .into_iter()
             .next()
@@ -181,7 +181,7 @@ mod tests {
         let mut dark_segments = Segments::new();
         dark_segments.push(Segment::new("x"));
         let dark_style = parse_style_body("bg: #121212; fg: auto 87%;");
-        let dark = apply_style_to_segments(node_id_from_ffi(1), dark_segments, dark_style, None);
+        let dark = apply_style_to_segments(node_id_from_ffi(1), dark_segments, &dark_style, None);
         let dark_fg = dark
             .into_iter()
             .next()
@@ -192,7 +192,8 @@ mod tests {
         let mut light_segments = Segments::new();
         light_segments.push(Segment::new("x"));
         let light_style = parse_style_body("bg: #f5f5f5; fg: auto 87%;");
-        let light = apply_style_to_segments(node_id_from_ffi(1), light_segments, light_style, None);
+        let light =
+            apply_style_to_segments(node_id_from_ffi(1), light_segments, &light_style, None);
         let light_fg = light
             .into_iter()
             .next()
@@ -242,7 +243,7 @@ mod tests {
         segments.push(Segment::styled("x", rich_style));
 
         let style = parse_style_body("bg: #000000; text-opacity: 50%;");
-        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, style, None);
+        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, &style, None);
         let fg = styled
             .into_iter()
             .next()
@@ -253,8 +254,7 @@ mod tests {
 
         assert!(
             fg.r >= 120 && fg.r <= 136 && fg.g >= 120 && fg.g <= 136 && fg.b >= 120 && fg.b <= 136,
-            "text-opacity 50% over black should produce medium gray, got {:?}",
-            fg
+            "text-opacity 50% over black should produce medium gray, got {fg:?}"
         );
     }
 
@@ -263,7 +263,7 @@ mod tests {
         let mut segments = Segments::new();
         segments.push(Segment::new("x"));
         let style = parse_style_body("bg: #121212; background-tint: #ffffff 100%; fg: auto 87%;");
-        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, style, None);
+        let styled = apply_style_to_segments(node_id_from_ffi(1), segments, &style, None);
         let fg = styled
             .into_iter()
             .next()
@@ -274,8 +274,7 @@ mod tests {
 
         assert!(
             fg.r < 80 && fg.g < 80 && fg.b < 80,
-            "auto fg should resolve dark after full light tint, got {:?}",
-            fg
+            "auto fg should resolve dark after full light tint, got {fg:?}"
         );
     }
 
@@ -333,6 +332,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)] // Paired names for the two colour channels (fg/bg).
     fn widget_opacity_dims_background_and_text_together() {
         let original_bg = crate::style::Color::rgb(1, 120, 212);
         let original_fg = crate::style::Color::rgb(221, 237, 249);
@@ -352,9 +352,9 @@ mod tests {
         let fg = crate::style::color_from_simple(style.color.expect("fg"));
 
         let dist = |a: crate::style::Color, b: crate::style::Color| -> i32 {
-            let dr = a.r as i32 - b.r as i32;
-            let dg = a.g as i32 - b.g as i32;
-            let db = a.b as i32 - b.b as i32;
+            let dr = i32::from(a.r) - i32::from(b.r);
+            let dg = i32::from(a.g) - i32::from(b.g);
+            let db = i32::from(a.b) - i32::from(b.b);
             dr * dr + dg * dg + db * db
         };
 
@@ -389,7 +389,8 @@ mod tests {
         let parent_style = Style::new().bg(parent_bg);
         let seg_style = rich_rs::Style::new().with_bgcolor(raw_bg.to_simple_opaque());
         let segments = Segments::from(vec![Segment::styled("x", seg_style)]);
-        let out = apply_style_to_segments(node_id_from_ffi(1), segments, style, Some(parent_style));
+        let out =
+            apply_style_to_segments(node_id_from_ffi(1), segments, &style, Some(parent_style));
         let color = out
             .into_iter()
             .next()
@@ -421,7 +422,8 @@ mod tests {
         let parent_style = Style::new().bg(parent_bg);
         let seg_style = rich_rs::Style::new().with_bgcolor(raw_bg.to_simple_opaque());
         let segments = Segments::from(vec![Segment::styled("x", seg_style)]);
-        let out = apply_style_to_segments(node_id_from_ffi(1), segments, style, Some(parent_style));
+        let out =
+            apply_style_to_segments(node_id_from_ffi(1), segments, &style, Some(parent_style));
         let color = out
             .into_iter()
             .next()
@@ -528,7 +530,7 @@ mod tests {
                 apply_style_to_segments(
                     node_id_from_ffi(1),
                     Segments::from(vec![Segment::new("x")]),
-                    Style::default().fg(Color::rgb(255, 255, 255)),
+                    &Style::default().fg(Color::rgb(255, 255, 255)),
                     None,
                 )
             })

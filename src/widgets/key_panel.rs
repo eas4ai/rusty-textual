@@ -5,7 +5,10 @@ use textual_macros::widget;
 
 use crate::event::{Action, BindingHint, Event};
 use crate::keys::format_key_display;
-use crate::message::*;
+use crate::message::{
+    KeyPanelBindingsUpdated, KeyPanelScrolled, MessageEvent, ScrollbarAxis, ScrollbarScrollTo,
+};
+use crate::num::Cast;
 use crate::style::parse_color_like;
 
 use super::footer::FooterBinding;
@@ -31,6 +34,7 @@ impl Default for BindingsTable {
 impl BindingsTable {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             bindings: Vec::new(),
@@ -38,11 +42,13 @@ impl BindingsTable {
         }
     }
 
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.seed.css_id = Some(id.into());
         self
     }
 
+    #[must_use]
     pub fn with_bindings(mut self, bindings: Vec<FooterBinding>) -> Self {
         self.bindings = bindings;
         self
@@ -300,6 +306,7 @@ impl Default for KeyPanel {
 impl KeyPanel {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             title: "Key Bindings".to_string(),
@@ -315,16 +322,19 @@ impl KeyPanel {
         }
     }
 
+    #[must_use]
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
         self
     }
 
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.seed.css_id = Some(id.into());
         self
     }
 
+    #[must_use]
     pub fn with_bindings(mut self, bindings: Vec<FooterBinding>) -> Self {
         self.table.set_bindings(bindings);
         self
@@ -355,7 +365,7 @@ impl KeyPanel {
             // Footer grouping is a footer concern. KeyPanel groups by namespace
             // in Python, which we model elsewhere.
             let mut binding = FooterBinding::new(key, hint.description.clone());
-            binding.tooltip = hint.tooltip.clone();
+            binding.tooltip.clone_from(&hint.tooltip);
             binding.group = namespace;
             mapped.push(binding);
         }
@@ -369,6 +379,7 @@ impl KeyPanel {
         });
     }
 
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);
         self
@@ -422,15 +433,15 @@ impl crate::widgets::Interactive for KeyPanel {
             }
             let before = self.offset_y;
             match action {
-                Action::ScrollUp => self.scroll_by(-(self.scroll_step as i32)),
-                Action::ScrollDown => self.scroll_by(self.scroll_step as i32),
+                Action::ScrollUp => self.scroll_by(-self.scroll_step.to_i32_sat()),
+                Action::ScrollDown => self.scroll_by(self.scroll_step.to_i32_sat()),
                 Action::ScrollPageUp => {
                     let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                    self.scroll_by(-(page as i32));
+                    self.scroll_by(-page.to_i32_sat());
                 }
                 Action::ScrollPageDown => {
                     let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                    self.scroll_by(page as i32);
+                    self.scroll_by(page.to_i32_sat());
                 }
                 _ => return,
             }
@@ -456,7 +467,7 @@ impl crate::widgets::Interactive for KeyPanel {
         let body_viewport = self.viewport_height.load(Ordering::Relaxed).max(1);
         let content_height = self.content_height.load(Ordering::Relaxed).max(1);
         let next = ScrollView::line_clamp_offset(
-            payload.offset.max(0.0).round() as usize,
+            payload.offset.max(0.0).round().to_usize_sat(),
             content_height,
             body_viewport,
         );
@@ -481,7 +492,7 @@ impl crate::widgets::Scrollable for KeyPanel {
             return;
         }
         let before = self.offset_y;
-        self.scroll_by(delta_y.saturating_mul(self.scroll_step as i32));
+        self.scroll_by(delta_y.saturating_mul(self.scroll_step.to_i32_sat()));
         if self.offset_y != before {
             ctx.request_repaint();
             self.emit_scroll_changed_message(ctx);
@@ -494,7 +505,7 @@ impl crate::widgets::Scrollable for KeyPanel {
     }
 
     fn scroll_offset_f32(&self) -> (f32, f32) {
-        (0.0, self.offset_y as f32)
+        (0.0, self.offset_y.to_f32_lossy())
     }
 
     fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {
@@ -644,7 +655,11 @@ mod tests {
             panel.on_event(&Event::Action(Action::ScrollDown), &mut __w);
         }
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<KeyPanelScrolled>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<KeyPanelScrolled>)
+        );
     }
 
     #[test]

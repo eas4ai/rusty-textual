@@ -62,6 +62,7 @@ use crate::style::{Color, Style};
 /// [`composited_background`] for the effective surface underneath.
 ///
 /// Returns `None` outside of a render call.
+#[must_use]
 pub fn resolved_style() -> Option<Style> {
     crate::css::current_self_style()
 }
@@ -77,6 +78,7 @@ pub fn resolved_style() -> Option<Style> {
 ///
 /// Returns `None` outside of a render call, or when no ancestor in the
 /// current render stack paints any background (terminal-default surface).
+#[must_use]
 pub fn composited_background() -> Option<Color> {
     crate::css::current_composited_background()
 }
@@ -94,6 +96,7 @@ pub fn composited_background() -> Option<Color> {
 /// context (not just during render).
 ///
 /// Returns `None` for an unknown token.
+#[must_use]
 pub fn theme_color(token: &str) -> Option<Color> {
     let token = token.trim();
     let name = token.strip_prefix('$').unwrap_or(token);

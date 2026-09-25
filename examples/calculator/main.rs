@@ -18,7 +18,7 @@ use rusty_textual::prelude::*;
 // Embedded CSS (mirrors calculator.tcss from the Python Textual repo)
 // ---------------------------------------------------------------------------
 
-const CSS: &str = r#"
+const CSS: &str = r"
 #calculator {
     layout: grid;
     grid-size: 4 6;
@@ -41,7 +41,7 @@ const CSS: &str = r#"
 Button {
     width: 100%;
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // Pure calculator state (unit-testable without the runtime)
@@ -111,7 +111,7 @@ impl CalcState {
         }
         // Round to 10 significant digits to hide f64 noise (Python's
         // Decimal is exact; this is the documented f64 trade-off).
-        let rounded = format!("{:.10}", n)
+        let rounded = format!("{n:.10}")
             .trim_end_matches('0')
             .trim_end_matches('.')
             .to_string();
@@ -124,16 +124,13 @@ impl CalcState {
 
     /// LEFT OPERATOR RIGHT (Python `_do_math`).
     fn do_math(&mut self) {
-        match self.operator.apply(self.left, self.right) {
-            Some(result) => {
-                self.left = result;
-                self.numbers = Self::fmt(result);
-                self.value.clear();
-            }
-            None => {
-                self.numbers = "Error".to_string();
-                self.value.clear();
-            }
+        if let Some(result) = self.operator.apply(self.left, self.right) {
+            self.left = result;
+            self.numbers = Self::fmt(result);
+            self.value.clear();
+        } else {
+            self.numbers = "Error".to_string();
+            self.value.clear();
         }
     }
 
@@ -274,6 +271,7 @@ impl Default for CalculatorApp {
 }
 
 impl CalculatorApp {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             state: CalcState::new(),

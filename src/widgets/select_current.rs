@@ -1,7 +1,7 @@
 //! `SelectCurrent` — the closed-state bar of a [`Select`](super::Select).
 //!
 //! Port of Python Textual's `SelectCurrent` (`textual/widgets/_select.py`): a
-//! `Horizontal` that OWNS the `border: tall` chrome via its DEFAULT_CSS and
+//! `Horizontal` that OWNS the `border: tall` chrome via its `DEFAULT_CSS` and
 //! composes a `#label` static plus two `.arrow` statics (down / up). This Rust
 //! port is a composed-children ARENA widget — its `#label` + arrow glyphs are
 //! real child nodes, so the CSS cascade resolves on them directly:

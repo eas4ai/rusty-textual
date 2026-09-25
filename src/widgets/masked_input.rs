@@ -5,7 +5,11 @@ use textual_macros::widget;
 
 use crate::action::ParsedAction;
 use crate::event::Event;
-use crate::message::*;
+use crate::message::{
+    InputChanged, InputSubmitted, MessageEvent, TextEditClipboardCopyRequested,
+    TextEditClipboardPaste, TextEditClipboardPasteRequested,
+};
+use crate::num::Cast;
 use crate::validation::{Failure, ValidationResult, ValidatorRef};
 
 use super::{
@@ -384,12 +388,14 @@ impl Template {
             }
         }
 
-        let mut pos = cursor as i32 + delta;
-        while pos >= 0 && (pos as usize) < self.defs.len() && self.defs[pos as usize].is_separator()
+        let mut pos = cursor.to_i32_sat() + delta;
+        while pos >= 0
+            && pos.to_usize_sat() < self.defs.len()
+            && self.defs[pos.to_usize_sat()].is_separator()
         {
             pos += delta;
         }
-        (pos.max(0) as usize).min(self.defs.len())
+        pos.to_usize_sat().min(self.defs.len())
     }
 
     // --- delete at position ------------------------------------------------
@@ -502,6 +508,7 @@ impl MaskedInput {
         out
     }
 
+    #[must_use]
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         let v: Vec<char> = value.into().chars().collect();
         if !v.is_empty() {
@@ -512,18 +519,21 @@ impl MaskedInput {
         self
     }
 
+    #[must_use]
     pub fn with_placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = placeholder.into();
         self.template.update_mask(&self.placeholder);
         self
     }
 
+    #[must_use]
     pub fn with_validators(mut self, validators: Vec<ValidatorRef>) -> Self {
         self.validators = validators;
         self.revalidate();
         self
     }
 
+    #[must_use]
     pub fn class(mut self, class: impl Into<String>) -> Self {
         self.seed.classes.push(class.into());
         self
@@ -540,10 +550,12 @@ impl MaskedInput {
     }
 
     /// Returns the current value as a string.
+    #[must_use]
     pub fn text(&self) -> String {
         self.value.iter().collect()
     }
 
+    #[must_use]
     pub fn validation_result(&self) -> &ValidationResult {
         &self.validation_result
     }
@@ -568,7 +580,12 @@ impl MaskedInput {
 
     /// Replace the template at runtime, re-parsing and resetting content/cursor state.
     ///
-    /// Returns `Err` if the template string contains no non-separator characters.
+    /// # Errors
+    ///
+    /// Returns `Err` with a message string when the mask part of
+    /// `template_str` (the text before the first unescaped `;`) has no
+    /// editable slot character. Escaped characters and the `>`, `<`, and `!`
+    /// modifiers do not count as slots. The widget is not modified.
     pub fn set_template(&mut self, template_str: &str) -> Result<(), String> {
         // Validate before modifying state: template must have at least one editable slot.
         let has_editable = {
@@ -580,12 +597,10 @@ impl MaskedInput {
                     continue;
                 }
                 match ch {
-                    '\\' => {
-                        escaped = true;
-                        continue;
-                    }
+                    '\\' => escaped = true,
                     ';' => break,
-                    '>' | '<' | '!' => continue,
+                    // Modifiers are not editable slots.
+                    '>' | '<' | '!' => {}
                     _ => {
                         if template_char_def(ch).is_some() {
                             found = true;
@@ -718,7 +733,7 @@ impl MaskedInput {
     fn action_home(&mut self) {
         self.cursor = self
             .template
-            .move_cursor(self.cursor, -(self.template.len() as i32));
+            .move_cursor(self.cursor, -self.template.len().to_i32_sat());
         // If position 0 is a separator, skip forward to first editable slot.
         if self.cursor < self.template.len() && self.template.at_separator(self.cursor) {
             self.cursor = self.template.move_cursor(self.cursor, 1);
@@ -735,14 +750,12 @@ impl MaskedInput {
         } else {
             self.template.prev_separator_position(self.cursor)
         };
-        self.cursor = pos.map(|p| p + 1).unwrap_or(0);
+        self.cursor = pos.map_or(0, |p| p + 1);
     }
 
     fn action_cursor_right_word(&mut self) {
         let pos = self.template.next_separator_position(self.cursor);
-        self.cursor = pos
-            .map(|p| p + 1)
-            .unwrap_or_else(|| self.template.mask().len());
+        self.cursor = pos.map_or_else(|| self.template.mask().len(), |p| p + 1);
     }
 
     fn action_delete_right(&mut self) {
@@ -767,8 +780,7 @@ impl MaskedInput {
         let end = self
             .template
             .next_separator_position(self.cursor)
-            .map(|p| p + 1)
-            .unwrap_or(self.value.len());
+            .map_or(self.value.len(), |p| p + 1);
         let start = self.cursor;
         // Delete non-separator chars from start..end. Since delete shifts values,
         // we repeatedly delete at `start` for each non-separator position.
@@ -790,13 +802,11 @@ impl MaskedInput {
         let target = if self.cursor > 0 && self.template.at_separator(self.cursor - 1) {
             self.template
                 .prev_separator_position(self.cursor - 1)
-                .map(|p| p + 1)
-                .unwrap_or(0)
+                .map_or(0, |p| p + 1)
         } else {
             self.template
                 .prev_separator_position(self.cursor)
-                .map(|p| p + 1)
-                .unwrap_or(0)
+                .map_or(0, |p| p + 1)
         };
 
         let original_cursor = self.cursor;
@@ -845,6 +855,112 @@ impl MaskedInput {
     }
 }
 
+impl MaskedInput {
+    /// Apply one edit command. Returns `(changed, value_changed)`: whether
+    /// the widget needs a repaint and whether its value changed.
+    fn apply_edit_command(
+        &mut self,
+        cmd: EditCommand,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> (bool, bool) {
+        let mut changed = false;
+        let mut value_changed = false;
+        match cmd {
+            EditCommand::DeleteToStart => {
+                self.action_delete_left_all();
+                changed = true;
+                value_changed = true;
+            }
+            EditCommand::InsertChar(ch) => {
+                if self.action_insert_text(&ch.to_string()) {
+                    changed = true;
+                    value_changed = true;
+                }
+            }
+            EditCommand::Submit => {
+                ctx.post_message(InputSubmitted {
+                    value: self.value_str(),
+                });
+            }
+            EditCommand::Copy => {
+                if let Some(text) = self.copy_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
+                }
+            }
+            EditCommand::Cut => {
+                if let Some(text) = self.copy_text() {
+                    ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
+                    self.clear();
+                    changed = true;
+                    value_changed = true;
+                }
+            }
+            EditCommand::Paste => {
+                ctx.post_message(TextEditClipboardPasteRequested {
+                    target: self.node_id(),
+                });
+            }
+            EditCommand::Backspace { unit } => {
+                match unit {
+                    MoveUnit::Grapheme => self.action_delete_left(),
+                    MoveUnit::Word => self.action_delete_left_word(),
+                }
+                changed = true;
+                value_changed = true;
+            }
+            EditCommand::Delete { unit } => {
+                match unit {
+                    MoveUnit::Grapheme => self.action_delete_right(),
+                    MoveUnit::Word => self.action_delete_right_word(),
+                }
+                changed = true;
+                value_changed = true;
+            }
+            EditCommand::MoveLeft { unit, .. } => {
+                match unit {
+                    MoveUnit::Grapheme => self.action_cursor_left(),
+                    MoveUnit::Word => self.action_cursor_left_word(),
+                }
+                changed = true;
+            }
+            EditCommand::MoveRight { unit, .. } => {
+                match unit {
+                    MoveUnit::Grapheme => self.action_cursor_right(),
+                    MoveUnit::Word => self.action_cursor_right_word(),
+                }
+                changed = true;
+            }
+            EditCommand::MoveHome { .. } => {
+                self.action_home();
+                changed = true;
+            }
+            EditCommand::MoveEnd { .. } => {
+                self.action_end();
+                changed = true;
+            }
+            EditCommand::DeleteToEnd => {
+                self.action_delete_right_all();
+                changed = true;
+                value_changed = true;
+            }
+            // `SelectAll` (ctrl+shift+a) is intentionally not wired:
+            // `MaskedInput` has no selection model — copy already
+            // yields the full value and cut already clears it — so
+            // there is no selection state for select-all to set.
+            // (Python inherits `Input.action_select_all`, but its
+            // cursor-action overrides drop the `select` parameter, so
+            // shift-selection is broken there too.)
+            EditCommand::InsertNewline
+            | EditCommand::MoveUp { .. }
+            | EditCommand::MoveDown { .. }
+            | EditCommand::DeleteLine
+            | EditCommand::SelectAll
+            | EditCommand::SelectLine => {}
+        }
+        (changed, value_changed)
+    }
+}
+
 impl crate::widgets::Focus for MaskedInput {
     fn focusable(&self) -> bool {
         true
@@ -854,7 +970,7 @@ impl crate::widgets::Focus for MaskedInput {
         self.chrome.is_active()
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "masked-input"
     }
 
@@ -990,100 +1106,7 @@ impl crate::widgets::Interactive for MaskedInput {
                 let Some(cmd) = edit_command_from_key(key, false) else {
                     return;
                 };
-                let mut changed = false;
-                let mut value_changed = false;
-                match cmd {
-                    EditCommand::DeleteToStart => {
-                        self.action_delete_left_all();
-                        changed = true;
-                        value_changed = true;
-                    }
-                    EditCommand::InsertChar(ch) => {
-                        if self.action_insert_text(&ch.to_string()) {
-                            changed = true;
-                            value_changed = true;
-                        }
-                    }
-                    EditCommand::Submit => {
-                        ctx.post_message(InputSubmitted {
-                            value: self.value_str(),
-                        });
-                    }
-                    EditCommand::Copy => {
-                        if let Some(text) = self.copy_text() {
-                            ctx.post_message(TextEditClipboardCopyRequested { text, cut: false });
-                        }
-                    }
-                    EditCommand::Cut => {
-                        if let Some(text) = self.copy_text() {
-                            ctx.post_message(TextEditClipboardCopyRequested { text, cut: true });
-                            self.clear();
-                            changed = true;
-                            value_changed = true;
-                        }
-                    }
-                    EditCommand::Paste => {
-                        ctx.post_message(TextEditClipboardPasteRequested {
-                            target: self.node_id(),
-                        });
-                    }
-                    EditCommand::Backspace { unit } => {
-                        match unit {
-                            MoveUnit::Grapheme => self.action_delete_left(),
-                            MoveUnit::Word => self.action_delete_left_word(),
-                        }
-                        changed = true;
-                        value_changed = true;
-                    }
-                    EditCommand::Delete { unit } => {
-                        match unit {
-                            MoveUnit::Grapheme => self.action_delete_right(),
-                            MoveUnit::Word => self.action_delete_right_word(),
-                        }
-                        changed = true;
-                        value_changed = true;
-                    }
-                    EditCommand::MoveLeft { unit, .. } => {
-                        match unit {
-                            MoveUnit::Grapheme => self.action_cursor_left(),
-                            MoveUnit::Word => self.action_cursor_left_word(),
-                        }
-                        changed = true;
-                    }
-                    EditCommand::MoveRight { unit, .. } => {
-                        match unit {
-                            MoveUnit::Grapheme => self.action_cursor_right(),
-                            MoveUnit::Word => self.action_cursor_right_word(),
-                        }
-                        changed = true;
-                    }
-                    EditCommand::MoveHome { .. } => {
-                        self.action_home();
-                        changed = true;
-                    }
-                    EditCommand::MoveEnd { .. } => {
-                        self.action_end();
-                        changed = true;
-                    }
-                    EditCommand::DeleteToEnd => {
-                        self.action_delete_right_all();
-                        changed = true;
-                        value_changed = true;
-                    }
-                    // `SelectAll` (ctrl+shift+a) is intentionally not wired:
-                    // `MaskedInput` has no selection model — copy already
-                    // yields the full value and cut already clears it — so
-                    // there is no selection state for select-all to set.
-                    // (Python inherits `Input.action_select_all`, but its
-                    // cursor-action overrides drop the `select` parameter, so
-                    // shift-selection is broken there too.)
-                    EditCommand::InsertNewline
-                    | EditCommand::MoveUp { .. }
-                    | EditCommand::MoveDown { .. }
-                    | EditCommand::DeleteLine
-                    | EditCommand::SelectAll
-                    | EditCommand::SelectLine => {}
-                }
+                let (changed, value_changed) = self.apply_edit_command(cmd, ctx);
 
                 if value_changed {
                     self.revalidate();
@@ -1137,6 +1160,13 @@ impl crate::widgets::Render for MaskedInput {
     }
 
     fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum SlotVisual {
+            Normal,
+            Placeholder,
+            Cursor,
+        }
+
         let width = options.size.0.max(1);
 
         // Painted surface + component-colour resolution shared with `Input`
@@ -1154,13 +1184,6 @@ impl crate::widgets::Render for MaskedInput {
 
         let cursor_style = resolve_component_rich("input--cursor");
         let placeholder_style = resolve_component_rich("input--placeholder");
-
-        #[derive(Clone, Copy, PartialEq, Eq)]
-        enum SlotVisual {
-            Normal,
-            Placeholder,
-            Cursor,
-        }
 
         let mut runs: Vec<(SlotVisual, String)> = Vec::new();
         let mut push_char = |visual: SlotVisual, ch: char| {
@@ -1775,7 +1798,7 @@ mod tests {
         assert_eq!(input.text(), "");
     }
 
-    /// Regression (masked_input parity): after mount the arena node record is
+    /// Regression (`masked_input` parity): after mount the arena node record is
     /// the single source of truth for CSS classes, so `revalidate()`'s
     /// seed-class update alone never reaches `MaskedInput.-invalid` /
     /// `&.-invalid:focus` selectors (Python paints `border: tall $error` for a

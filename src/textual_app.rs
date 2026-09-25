@@ -49,6 +49,13 @@ pub trait TextualApp: Send + 'static {
     }
 
     /// Optional runtime configuration hook (key bindings, debug flags, etc.).
+    ///
+    /// # Errors
+    ///
+    /// The default implementation never fails. An override can return any
+    /// error to abort startup. [`run_with_output`] and [`run_test_sized`]
+    /// (and the runners that wrap them) return that error before the app
+    /// starts.
     fn configure(&mut self, _app: &mut App) -> Result<()> {
         Ok(())
     }
@@ -139,6 +146,11 @@ pub trait TextualApp: Send + 'static {
     /// Run this app headless (in-process, no terminal) and drive it with a
     /// [`Pilot`](crate::runtime::Pilot), mirroring Python Textual's
     /// `app.run_test()`. See [`run_test`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`run_test_sized`]: a failed terminal size
+    /// read, an error from `configure`, or an error from `body`.
     fn run_test<F>(self, body: F) -> Result<()>
     where
         Self: Sized,
@@ -344,7 +356,7 @@ pub trait TextualApp: Send + 'static {
     }
 }
 
-/// Command provider lifecycle for TextualApp command palette integration.
+/// Command provider lifecycle for `TextualApp` command palette integration.
 pub trait CommandPaletteProvider: Send + Sync {
     /// Called when the command palette opens.
     fn startup(&mut self, _ctx: &mut crate::event::WidgetCtx) {}
@@ -369,18 +381,22 @@ pub struct OverlayScreenStack {
 }
 
 impl OverlayScreenStack {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.stack.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.stack.is_empty()
     }
 
+    #[must_use]
     pub fn current(&self) -> Option<NodeId> {
         self.stack.last().copied()
     }
@@ -452,10 +468,120 @@ fn build_textual_app_runtime_root<T: TextualApp>(
 }
 
 impl<T: TextualApp> TextualAppAdapter<T> {
+    /// Command palette opened / closed / command selected. Returns true when
+    /// the app's hook handled the message.
+    fn on_command_palette_message(
+        &mut self,
+        message: &MessageEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> bool {
+        if message.is::<crate::message::CommandPaletteOpened>() {
+            self.initialize_command_palette_providers(ctx);
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_command_palette_opened(ctx);
+            if ctx.handled() {
+                return true;
+            }
+        } else if message.is::<crate::message::CommandPaletteClosed>() {
+            self.palette_screen_open = false;
+            self.shutdown_command_palette_providers(ctx);
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_command_palette_closed(ctx);
+            if ctx.handled() {
+                return true;
+            }
+        } else if let Some(m) =
+            message.downcast_ref::<crate::message::CommandPaletteCommandSelected>()
+        {
+            let id = m.id.clone();
+            let title = m.title.clone();
+            // System commands (theme/quit/keys/screenshot) run here now that the
+            // composed screen no longer executes them itself; user-provider
+            // commands route through the provider index.
+            self.run_system_command(&id, ctx);
+            self.handle_command_palette_selection(&id, ctx);
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_command_palette_command_selected(&id, &title, ctx);
+            if ctx.handled() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Built-in typed app hooks (`on_button_pressed`, `on_input_changed`, …).
+    fn dispatch_app_message_hooks(
+        &mut self,
+        message: &MessageEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
+        if let Some(m) = message.downcast_ref::<crate::message::ButtonPressed>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_button_pressed(&m.description, ctx);
+            return;
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::CheckboxChanged>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_checkbox_changed(m.checked, ctx);
+            return;
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::InputChanged>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_input_changed(&m.value, &m.validation, ctx);
+            return;
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::InputSubmitted>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_input_submitted(&m.value, ctx);
+            return;
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::TextAreaChanged>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_text_area_changed(&m.value, ctx);
+            return;
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::ListViewSelectionChanged>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_list_view_selection_changed(m.index, &m.item, ctx);
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::ListViewItemActivated>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_list_view_item_activated(m.index, &m.item, ctx);
+        }
+        if let Some(m) = message.downcast_ref::<crate::message::TabActivated>() {
+            self.app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .on_tab_activated(m.index, &m.title, ctx);
+        }
+    }
+
     fn new(app: Arc<Mutex<T>>, child: impl Widget + 'static) -> Self {
         let mut message_handlers = crate::message_handlers::MessageHandlers::new();
         {
-            let mut locked = app.lock().unwrap_or_else(|e| e.into_inner());
+            let mut locked = app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             locked.register_message_handlers(&mut message_handlers);
         }
         Self {
@@ -553,7 +679,7 @@ impl<T: TextualApp> TextualAppAdapter<T> {
         self.command_palette_providers = self
             .app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .command_palette_providers();
         for provider in &mut self.command_palette_providers {
             provider.startup(ctx);
@@ -621,7 +747,7 @@ impl<T: TextualApp> TextualAppAdapter<T> {
         // Preserve the app-level lifecycle hook (Python `CommandPalette.Opened`).
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_command_palette_opened(ctx);
 
         // The dismiss callback runs while the screen is popped mid-drain; it
@@ -691,7 +817,7 @@ impl<T: TextualApp> TextualAppAdapter<T> {
             if let Some(rw) = self
                 .app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .reactive_widget_mut()
             {
                 rw.reactive_dispatch_with_app(app, &changes, &mut rctx);
@@ -750,7 +876,11 @@ impl<T: TextualApp> TextualAppAdapter<T> {
         // state), re-invoke the app's `compose()` and rebuild the app-content
         // subtree via `App::recompose_app`. A recompose implies layout + repaint.
         if needs_recompose {
-            let fresh_root = self.app.lock().unwrap_or_else(|e| e.into_inner()).compose();
+            let fresh_root = self
+                .app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .compose();
             app.recompose_app(fresh_root);
             ctx.request_layout_invalidation();
         }
@@ -765,6 +895,151 @@ impl<T: TextualApp> TextualAppAdapter<T> {
             ctx.request_style_invalidation();
         }
     }
+}
+
+/// `action` takes exactly a selector and a class name.
+fn selector_and_class(action: &ParsedAction) -> Option<(&str, &str)> {
+    if action.arguments.len() != 2 {
+        return None;
+    }
+    Some((action.arguments[0].as_str()?, action.arguments[1].as_str()?))
+}
+
+/// `action` takes exactly one string argument.
+fn single_arg(action: &ParsedAction) -> Option<&str> {
+    if action.arguments.len() != 1 {
+        return None;
+    }
+    action.arguments[0].as_str()
+}
+
+/// `action` takes no arguments.
+fn no_args(action: &ParsedAction) -> bool {
+    action.arguments.is_empty()
+}
+
+/// Box an app message.
+fn boxed(message: impl crate::message::Message) -> Box<dyn crate::message::Message> {
+    Box::new(message)
+}
+
+/// `message` for an action that takes no arguments; `None` when it has some.
+fn unit_message(
+    action: &ParsedAction,
+    message: impl crate::message::Message,
+) -> Option<Box<dyn crate::message::Message>> {
+    no_args(action).then(|| boxed(message))
+}
+
+/// The app message a built-in app action posts (other than `quit`), or
+/// `None` for an unknown action or wrong arguments.
+fn app_action_message(action: &ParsedAction) -> Option<Box<dyn crate::message::Message>> {
+    use crate::message as m;
+    match action.name.as_str() {
+        "back" => unit_message(action, m::AppBack),
+        "bell" => unit_message(action, m::AppBell),
+        "change_theme" => unit_message(action, m::AppChangeTheme),
+        "cycle_theme" => unit_message(action, m::AppCycleTheme),
+        "command_palette" => unit_message(action, m::AppCommandPalette),
+        "focus_next" => unit_message(action, m::AppFocusNext),
+        "focus_previous" => unit_message(action, m::AppFocusPrevious),
+        "help_quit" => unit_message(action, m::AppHelpQuit),
+        "copy_selected_text" => unit_message(action, m::AppCopySelectedText),
+        "hide_help_panel" => unit_message(action, m::AppHideHelpPanel),
+        "pop_screen" => unit_message(action, m::AppPopScreen),
+        "show_help_panel" => unit_message(action, m::AppShowHelpPanel),
+        "suspend_process" => unit_message(action, m::AppSuspendProcess),
+        "toggle_dark" => unit_message(action, m::AppToggleDark),
+        "set_theme" => single_arg(action).map(|name| {
+            boxed(m::AppSetTheme {
+                name: name.to_string(),
+            })
+        }),
+        "focus" => single_arg(action).map(|widget_id| {
+            boxed(m::AppFocus {
+                widget_id: widget_id.to_string(),
+            })
+        }),
+        "push_screen" => single_arg(action).map(|screen| {
+            boxed(m::AppPushScreen {
+                screen: screen.to_string(),
+            })
+        }),
+        "simulate_key" => single_arg(action).map(|key| {
+            boxed(m::AppSimulateKey {
+                key: key.to_string(),
+            })
+        }),
+        "switch_mode" => single_arg(action).map(|mode| {
+            boxed(m::AppSwitchMode {
+                mode: mode.to_string(),
+            })
+        }),
+        "switch_screen" => single_arg(action).map(|screen| {
+            boxed(m::AppSwitchScreen {
+                screen: screen.to_string(),
+            })
+        }),
+        "add_class" => selector_and_class(action).map(|(selector, class_name)| {
+            boxed(m::AppAddClass {
+                selector: selector.to_string(),
+                class_name: class_name.to_string(),
+            })
+        }),
+        "remove_class" => selector_and_class(action).map(|(selector, class_name)| {
+            boxed(m::AppRemoveClass {
+                selector: selector.to_string(),
+                class_name: class_name.to_string(),
+            })
+        }),
+        "toggle_class" => selector_and_class(action).map(|(selector, class_name)| {
+            boxed(m::AppToggleClass {
+                selector: selector.to_string(),
+                class_name: class_name.to_string(),
+            })
+        }),
+        "notify" => notify_message(action),
+        "screenshot" => (action.arguments.len() <= 2).then(|| {
+            boxed(m::AppScreenshot {
+                filename: action
+                    .arguments
+                    .first()
+                    .and_then(|a| a.as_str())
+                    .map(str::to_string),
+                path: action
+                    .arguments
+                    .get(1)
+                    .and_then(|a| a.as_str())
+                    .map(str::to_string),
+            })
+        }),
+        _ => None,
+    }
+}
+
+/// `notify(message, title?, severity?)`.
+fn notify_message(action: &ParsedAction) -> Option<Box<dyn crate::message::Message>> {
+    if action.arguments.is_empty() || action.arguments.len() > 3 {
+        return None;
+    }
+    let message = action.arguments[0].as_str().map(str::to_string)?;
+    let title = action
+        .arguments
+        .get(1)
+        .and_then(|a| a.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let severity = action
+        .arguments
+        .get(2)
+        .and_then(|a| a.as_str())
+        .unwrap_or("information")
+        .to_string();
+    Some(boxed(crate::message::AppNotify {
+        message,
+        title,
+        severity,
+    }))
 }
 
 impl<T: TextualApp> Widget for TextualAppAdapter<T> {
@@ -796,13 +1071,13 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         bindings.extend(
             self.app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .bindings(),
         );
         bindings
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "app"
     }
 
@@ -817,289 +1092,26 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     ) -> Option<bool> {
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .check_action(action, parameters)
     }
 
     fn execute_action(&mut self, action: &ParsedAction, ctx: &mut crate::event::WidgetCtx) -> bool {
-        fn selector_and_class(action: &ParsedAction) -> Option<(&str, &str)> {
-            if action.arguments.len() != 2 {
-                return None;
+        if action.name == "quit" {
+            if !no_args(action) {
+                return false;
             }
-            Some((action.arguments[0].as_str()?, action.arguments[1].as_str()?))
+            ctx.request_stop();
+            ctx.set_handled();
+            return true;
         }
-        fn single_arg(action: &ParsedAction) -> Option<&str> {
-            if action.arguments.len() != 1 {
-                return None;
-            }
-            action.arguments[0].as_str()
-        }
-        fn no_args(action: &ParsedAction) -> bool {
-            action.arguments.is_empty()
-        }
-
-        match action.name.as_str() {
-            "quit" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.request_stop();
-                ctx.set_handled();
-                true
-            }
-            "back" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppBack);
-                ctx.set_handled();
-                true
-            }
-            "bell" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppBell);
-                ctx.set_handled();
-                true
-            }
-            "change_theme" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppChangeTheme);
-                ctx.set_handled();
-                true
-            }
-            "cycle_theme" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppCycleTheme);
-                ctx.set_handled();
-                true
-            }
-            "set_theme" => {
-                let Some(name) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppSetTheme {
-                    name: name.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "command_palette" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppCommandPalette);
-                ctx.set_handled();
-                true
-            }
-            "focus" => {
-                let Some(widget_id) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppFocus {
-                    widget_id: widget_id.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "focus_next" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppFocusNext);
-                ctx.set_handled();
-                true
-            }
-            "focus_previous" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppFocusPrevious);
-                ctx.set_handled();
-                true
-            }
-            "help_quit" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppHelpQuit);
-                ctx.set_handled();
-                true
-            }
-            "copy_selected_text" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppCopySelectedText);
-                ctx.set_handled();
-                true
-            }
-            "hide_help_panel" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppHideHelpPanel);
-                ctx.set_handled();
-                true
-            }
-            "add_class" => {
-                let Some((selector, class_name)) = selector_and_class(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppAddClass {
-                    selector: selector.to_string(),
-                    class_name: class_name.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "remove_class" => {
-                let Some((selector, class_name)) = selector_and_class(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppRemoveClass {
-                    selector: selector.to_string(),
-                    class_name: class_name.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "toggle_class" => {
-                let Some((selector, class_name)) = selector_and_class(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppToggleClass {
-                    selector: selector.to_string(),
-                    class_name: class_name.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "notify" => {
-                if action.arguments.is_empty() || action.arguments.len() > 3 {
-                    return false;
-                }
-                let Some(message) = action.arguments[0].as_str().map(str::to_string) else {
-                    return false;
-                };
-                let title = action
-                    .arguments
-                    .get(1)
-                    .and_then(|a| a.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-                let severity = action
-                    .arguments
-                    .get(2)
-                    .and_then(|a| a.as_str())
-                    .unwrap_or("information")
-                    .to_string();
-                ctx.post_message(crate::message::AppNotify {
-                    message,
-                    title,
-                    severity,
-                });
-                ctx.set_handled();
-                true
-            }
-            "pop_screen" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppPopScreen);
-                ctx.set_handled();
-                true
-            }
-            "push_screen" => {
-                let Some(screen) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppPushScreen {
-                    screen: screen.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "screenshot" => {
-                if action.arguments.len() > 2 {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppScreenshot {
-                    filename: action
-                        .arguments
-                        .first()
-                        .and_then(|a| a.as_str())
-                        .map(str::to_string),
-                    path: action
-                        .arguments
-                        .get(1)
-                        .and_then(|a| a.as_str())
-                        .map(str::to_string),
-                });
-                ctx.set_handled();
-                true
-            }
-            "show_help_panel" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppShowHelpPanel);
-                ctx.set_handled();
-                true
-            }
-            "simulate_key" => {
-                let Some(key) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppSimulateKey {
-                    key: key.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "suspend_process" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppSuspendProcess);
-                ctx.set_handled();
-                true
-            }
-            "switch_mode" => {
-                let Some(mode) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppSwitchMode {
-                    mode: mode.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "switch_screen" => {
-                let Some(screen) = single_arg(action) else {
-                    return false;
-                };
-                ctx.post_message(crate::message::AppSwitchScreen {
-                    screen: screen.to_string(),
-                });
-                ctx.set_handled();
-                true
-            }
-            "toggle_dark" => {
-                if !no_args(action) {
-                    return false;
-                }
-                ctx.post_message(crate::message::AppToggleDark);
-                ctx.set_handled();
-                true
-            }
-            _ => false,
-        }
+        // Every other built-in app action posts one app message.
+        let Some(message) = app_action_message(action) else {
+            return false;
+        };
+        ctx.post_message_boxed(message);
+        ctx.set_handled();
+        true
     }
 
     fn compose(&mut self) -> crate::compose::ComposeResult {
@@ -1119,7 +1131,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         self.app_child.on_mount(ctx);
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_mount();
     }
 
@@ -1157,7 +1169,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     fn on_app_key(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut crate::event::WidgetCtx) {
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_key_with_app(app, key, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1165,7 +1177,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     fn on_app_action(&mut self, app: &mut App, action: Action, ctx: &mut crate::event::WidgetCtx) {
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_action_with_app(app, action, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1178,7 +1190,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     ) {
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_app_action_str(app, action, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1196,7 +1208,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         self.sync_help_panel_visible_from_runtime(app);
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_message_with_app(app, message, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1204,7 +1216,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
     fn on_app_tick(&mut self, app: &mut App, tick: u64, ctx: &mut crate::event::WidgetCtx) {
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_tick_with_app(app, tick, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1229,7 +1241,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         app.set_check_action_fn(Arc::new(move |action, params| {
             app_ref
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .check_action(action, params)
         }));
 
@@ -1239,7 +1251,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         app.set_bindings_clash_fn(Arc::new(move |clashes| {
             app_ref
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .handle_bindings_clash(clashes);
         }));
 
@@ -1247,7 +1259,11 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         // #5742). Merged via `update_keymap` so entries set earlier (e.g. from
         // `configure(&mut App)`) survive unless overridden by the declaration.
         {
-            let declared = self.app.lock().unwrap_or_else(|e| e.into_inner()).keymap();
+            let declared = self
+                .app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .keymap();
             if !declared.is_empty() {
                 app.update_keymap(declared);
             }
@@ -1259,7 +1275,11 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         // type(self).__name__` (app.py): an explicit `title()` override wins;
         // otherwise default to the app type's name (final path segment).
         {
-            let app_title = self.app.lock().unwrap_or_else(|e| e.into_inner()).title();
+            let app_title = self
+                .app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .title();
             if app_title.is_empty() {
                 app.set_title(app_type_name::<T>());
             } else {
@@ -1275,7 +1295,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
             if let Some(rw) = self
                 .app
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .reactive_widget_mut()
             {
                 rw.reactive_record_init(app.reactive_ctx());
@@ -1285,7 +1305,7 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
 
         self.app
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .on_mount_with_app(app, ctx);
         self.dispatch_app_reactive(app, ctx);
     }
@@ -1299,42 +1319,8 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         if ctx.handled() {
             return;
         }
-        if message.is::<crate::message::CommandPaletteOpened>() {
-            self.initialize_command_palette_providers(ctx);
-            self.app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .on_command_palette_opened(ctx);
-            if ctx.handled() {
-                return;
-            }
-        } else if message.is::<crate::message::CommandPaletteClosed>() {
-            self.palette_screen_open = false;
-            self.shutdown_command_palette_providers(ctx);
-            self.app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .on_command_palette_closed(ctx);
-            if ctx.handled() {
-                return;
-            }
-        } else if let Some(m) =
-            message.downcast_ref::<crate::message::CommandPaletteCommandSelected>()
-        {
-            let id = m.id.clone();
-            let title = m.title.clone();
-            // System commands (theme/quit/keys/screenshot) run here now that the
-            // composed screen no longer executes them itself; user-provider
-            // commands route through the provider index.
-            self.run_system_command(&id, ctx);
-            self.handle_command_palette_selection(&id, ctx);
-            self.app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .on_command_palette_command_selected(&id, &title, ctx);
-            if ctx.handled() {
-                return;
-            }
+        if self.on_command_palette_message(message, ctx) {
+            return;
         }
         if message.is::<crate::message::AppShowHelpPanel>() {
             self.help_panel_visible = true;
@@ -1346,77 +1332,42 @@ impl<T: TextualApp> Widget for TextualAppAdapter<T> {
         // Runs AFTER adapter state management (Block A) but BEFORE built-in typed hooks
         // (Block B), so `palette_screen_open` / `help_panel_visible` are already set.
         {
-            let mut app = self.app.lock().unwrap_or_else(|e| e.into_inner());
+            let mut app = self
+                .app
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             self.message_handlers
                 .dispatch(&mut *app, message, ctx.event_ctx_mut());
         }
         if ctx.handled() {
             return;
         }
-        if let Some(m) = message.downcast_ref::<crate::message::ButtonPressed>() {
-            self.app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .on_button_pressed(&m.description, ctx);
-            return;
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::CheckboxChanged>() {
-            self.app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .on_checkbox_changed(m.checked, ctx);
-            return;
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::InputChanged>() {
-            self.app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .on_input_changed(&m.value, &m.validation, ctx);
-            return;
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::InputSubmitted>() {
-            self.app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .on_input_submitted(&m.value, ctx);
-            return;
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::TextAreaChanged>() {
-            self.app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .on_text_area_changed(&m.value, ctx);
-            return;
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::ListViewSelectionChanged>() {
-            self.app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .on_list_view_selection_changed(m.index, &m.item, ctx);
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::ListViewItemActivated>() {
-            self.app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .on_list_view_item_activated(m.index, &m.item, ctx);
-        }
-        if let Some(m) = message.downcast_ref::<crate::message::TabActivated>() {
-            self.app
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .on_tab_activated(m.index, &m.title, ctx);
-        }
-        if ctx.handled() {}
+        self.dispatch_app_message_hooks(message, ctx);
     }
 }
 
 /// Run a `TextualApp` definition using the standard `App` runtime and return
 /// optional app output.
+///
+/// # Errors
+///
+/// - [`Error::StylesheetError`](crate::Error::StylesheetError) when
+///   `css_path` names a file that does not exist.
+/// - [`Error::Terminal`](crate::Error::Terminal) when [`App::new`] cannot
+///   read the terminal size, when the `css_path` file cannot be read, or
+///   when a terminal operation in the event loop fails (see
+///   [`App::run_widget_tree`]).
+/// - [`Error::RuntimeStopped`](crate::Error::RuntimeStopped) when
+///   `configure` calls [`App::stop`] or [`App::exit`].
+/// - Any error that [`TextualApp::configure`] returns.
 pub async fn run_with_output<T: TextualApp>(definition: T) -> Result<Option<String>> {
     let state = Arc::new(Mutex::new(definition));
     let mut app = App::new()?;
 
-    let css_path = state.lock().unwrap_or_else(|e| e.into_inner()).css_path();
+    let css_path = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .css_path();
     if let Some(path) = css_path {
         // PR-11: a missing `css_path` fails startup with `StylesheetError`
         // (Python parity) instead of silently running unstyled.
@@ -1428,25 +1379,32 @@ pub async fn run_with_output<T: TextualApp>(definition: T) -> Result<Option<Stri
         }
         let interval = state
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .stylesheet_watch_interval();
         app.watch_stylesheet(path, interval)?;
     }
 
     state
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .configure(&mut app)?;
-    let composed = state.lock().unwrap_or_else(|e| e.into_inner()).compose();
+    let composed = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .compose();
     let mut root = build_textual_app_runtime_root(state.clone(), composed);
     app.run_widget_tree(&mut root).await?;
     Ok(state
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .take_exit_output())
 }
 
 /// Run a `TextualApp` definition using the standard `App` runtime.
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_with_output`].
 pub async fn run<T: TextualApp>(definition: T) -> Result<()> {
     let _ = run_with_output(definition).await?;
     Ok(())
@@ -1474,6 +1432,10 @@ pub async fn run<T: TextualApp>(definition: T) -> Result<()> {
 ///     Ok(())
 /// }).unwrap();
 /// ```
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_test_sized`].
 pub fn run_test<T, F>(definition: T, body: F) -> Result<()>
 where
     T: TextualApp,
@@ -1483,6 +1445,17 @@ where
 }
 
 /// Like [`run_test`] but with an explicit virtual terminal size.
+///
+/// # Errors
+///
+/// - [`Error::Terminal`](crate::Error::Terminal) when [`App::new`] cannot
+///   read the terminal size, for example when no terminal is attached.
+/// - Any error that [`TextualApp::configure`] returns.
+/// - Any error that `body` returns. The app is still unmounted in that
+///   case.
+///
+/// Headless startup and teardown do not touch the terminal, so they do
+/// not fail.
 pub fn run_test_sized<T, F>(definition: T, width: u16, height: u16, body: F) -> Result<()>
 where
     T: TextualApp,
@@ -1494,9 +1467,12 @@ where
 
     state
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .configure(&mut app)?;
-    let composed = state.lock().unwrap_or_else(|e| e.into_inner()).compose();
+    let composed = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .compose();
     let mut root = build_textual_app_runtime_root(state.clone(), composed);
 
     // Install the deterministic manual clock BEFORE startup so timers and
@@ -1523,11 +1499,19 @@ where
 }
 
 /// Compatibility alias for [`run`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_with_output`].
 pub async fn run_textual_app<T: TextualApp>(definition: T) -> Result<()> {
     run(definition).await
 }
 
 /// Compatibility alias for [`run_with_output`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_with_output`].
 pub async fn run_textual_app_with_output<T: TextualApp>(definition: T) -> Result<Option<String>> {
     run_with_output(definition).await
 }
@@ -1535,17 +1519,29 @@ pub async fn run_textual_app_with_output<T: TextualApp>(definition: T) -> Result
 /// Optional helper for example/dev binaries that support both runtime and snapshot output.
 ///
 /// This keeps snapshot wiring out of example `main()` bodies while remaining opt-in.
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_snapshot_with_output`].
 pub async fn run_snapshot<T: TextualApp>(definition: T) -> Result<()> {
     let _ = run_snapshot_with_output(definition).await?;
     Ok(())
 }
 
 /// Compatibility alias for [`run_snapshot`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_snapshot_with_output`].
 pub async fn run_textual_app_or_snapshot<T: TextualApp>(definition: T) -> Result<()> {
     run_snapshot(definition).await
 }
 
 /// Compatibility alias for [`run_snapshot_with_output`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_snapshot_with_output`].
 pub async fn run_textual_app_or_snapshot_with_output<T: TextualApp>(
     definition: T,
 ) -> Result<Option<String>> {
@@ -1553,6 +1549,13 @@ pub async fn run_textual_app_or_snapshot_with_output<T: TextualApp>(
 }
 
 /// Variant of `run_snapshot` that returns optional app output.
+///
+/// # Errors
+///
+/// With `--snapshot <path>` on the command line, returns
+/// [`Error::Terminal`](crate::Error::Terminal) when printing the widget to
+/// the recording console fails or when writing the SVG file fails.
+/// Otherwise returns the same errors as [`run_with_output`].
 pub async fn run_snapshot_with_output<T: TextualApp>(mut definition: T) -> Result<Option<String>> {
     if let Some(args) = SnapshotArgs::parse() {
         let widget = definition.compose_for_snapshot();
@@ -1564,6 +1567,12 @@ pub async fn run_snapshot_with_output<T: TextualApp>(mut definition: T) -> Resul
 }
 
 /// Blocking/synchronous variant of [`run_with_output`].
+///
+/// # Errors
+///
+/// Returns [`Error::Terminal`](crate::Error::Terminal) when the Tokio
+/// runtime cannot be built. Otherwise returns the same errors as
+/// [`run_with_output`].
 pub fn run_sync_with_output<T: TextualApp>(definition: T) -> Result<Option<String>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -1572,12 +1581,22 @@ pub fn run_sync_with_output<T: TextualApp>(definition: T) -> Result<Option<Strin
 }
 
 /// Blocking/synchronous variant of [`run`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_sync_with_output`].
 pub fn run_sync<T: TextualApp>(definition: T) -> Result<()> {
     let _ = run_sync_with_output(definition)?;
     Ok(())
 }
 
 /// Blocking/synchronous variant of [`run_snapshot_with_output`].
+///
+/// # Errors
+///
+/// Returns [`Error::Terminal`](crate::Error::Terminal) when the Tokio
+/// runtime cannot be built. Otherwise returns the same errors as
+/// [`run_snapshot_with_output`].
 pub fn run_sync_snapshot_with_output<T: TextualApp>(definition: T) -> Result<Option<String>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -1586,6 +1605,10 @@ pub fn run_sync_snapshot_with_output<T: TextualApp>(definition: T) -> Result<Opt
 }
 
 /// Blocking/synchronous variant of [`run_snapshot`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`run_sync_snapshot_with_output`].
 pub fn run_sync_snapshot<T: TextualApp>(definition: T) -> Result<()> {
     let _ = run_sync_snapshot_with_output(definition)?;
     Ok(())
@@ -1781,6 +1804,7 @@ mod tests {
     }
 
     #[derive(Clone)]
+    #[allow(clippy::struct_field_names)] // Parallel counters, one per provider hook.
     struct ProviderState {
         startup_count: Arc<AtomicUsize>,
         shutdown_count: Arc<AtomicUsize>,
@@ -1963,6 +1987,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::struct_field_names)] // Parallel counters, one per hook.
     struct LegacyAppHookForwardingApp {
         action_hits: Arc<AtomicUsize>,
         message_hits: Arc<AtomicUsize>,
@@ -1987,6 +2012,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::struct_field_names)] // Parallel counters, one per hook.
     struct AppHandleHooksApp {
         action_hits: Arc<AtomicUsize>,
         message_hits: Arc<AtomicUsize>,
@@ -2057,11 +2083,9 @@ mod tests {
         }
         assert_eq!(state.startup_count.load(Ordering::SeqCst), 1);
         let open_messages = open_ctx.take_messages();
-        assert!(
-            open_messages
-                .iter()
-                .any(|event| event.is::<crate::message::CommandPaletteSetCommands>())
-        );
+        assert!(open_messages.iter().any(
+            super::super::message::MessageEvent::is::<crate::message::CommandPaletteSetCommands>
+        ));
 
         let mut select_ctx = EventCtx::default();
         {
@@ -2391,7 +2415,9 @@ mod tests {
             }
         }
 
-        let app = app.lock().unwrap_or_else(|e| e.into_inner());
+        let app = app
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(app.hooks.last_button.as_deref(), Some("ok"));
         assert_eq!(app.hooks.input_changed, Some(("42".to_string(), true)));
         assert_eq!(app.hooks.input_submitted.as_deref(), Some("submit"));
@@ -2469,7 +2495,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            stack.clear(sender, &mut __w)
+            stack.clear(sender, &mut __w);
         };
         assert!(stack.is_empty());
 
@@ -2780,6 +2806,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // One row per Python action; a single inventory table.
     fn app_action_caller_inventory_rows_are_complete() {
         struct CallerRow {
             action: &'static str,
@@ -2991,19 +3018,35 @@ mod tests {
 
         let messages = ctx.take_messages();
         assert!(!messages.is_empty());
-        assert!(messages.iter().any(|m| m.is::<crate::message::AppBack>()));
-        assert!(messages.iter().any(|m| m.is::<crate::message::AppBell>()));
-        assert!(messages.iter().any(|m| m.is::<crate::message::AppFocus>()));
-        assert!(messages.iter().any(|m| m.is::<crate::message::AppNotify>()));
         assert!(
             messages
                 .iter()
-                .any(|m| m.is::<crate::message::AppSwitchMode>())
+                .any(super::super::message::MessageEvent::is::<crate::message::AppBack>)
         );
         assert!(
             messages
                 .iter()
-                .any(|m| m.is::<crate::message::AppToggleDark>())
+                .any(super::super::message::MessageEvent::is::<crate::message::AppBell>)
+        );
+        assert!(
+            messages
+                .iter()
+                .any(super::super::message::MessageEvent::is::<crate::message::AppFocus>)
+        );
+        assert!(
+            messages
+                .iter()
+                .any(super::super::message::MessageEvent::is::<crate::message::AppNotify>)
+        );
+        assert!(
+            messages
+                .iter()
+                .any(super::super::message::MessageEvent::is::<crate::message::AppSwitchMode>)
+        );
+        assert!(
+            messages
+                .iter()
+                .any(super::super::message::MessageEvent::is::<crate::message::AppToggleDark>)
         );
     }
 
@@ -3073,7 +3116,7 @@ mod tests {
     // App-level reactive bridge tests (Work Item 2)
     // =========================================================================
 
-    /// A TextualApp that exposes a `count` field with a manual reactive setter
+    /// A `TextualApp` that exposes a `count` field with a manual reactive setter
     /// and records watcher calls in `watch_log`. Overrides `reactive_widget_mut`
     /// to enable dispatch.
     struct ReactiveTestApp {
@@ -3386,7 +3429,7 @@ mod tests {
     // T2b: New bridge tests — chained changes, cycle guard, styles flag, init order
     // ---------------------------------------------------------------------------
 
-    /// A TextualApp that chains reactive changes: watcher for `a` records a
+    /// A `TextualApp` that chains reactive changes: watcher for `a` records a
     /// change for `b`, which has its own watcher.
     struct ChainedReactiveApp {
         a: i32,
@@ -3470,7 +3513,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            adapter.dispatch_app_reactive(&mut runtime, &mut __w)
+            adapter.dispatch_app_reactive(&mut runtime, &mut __w);
         };
 
         let guard = app_state.lock().unwrap();
@@ -3527,9 +3570,9 @@ mod tests {
         ) {
             for change in changes {
                 if change.field_name == "val" {
+                    use crate::reactive::ReactiveFlags;
                     self.dispatch_count += 1;
                     // Always re-record to create a cycle
-                    use crate::reactive::ReactiveFlags;
                     let new = *change.new_value.downcast_ref::<i32>().unwrap();
                     ctx.record_change(
                         "val",
@@ -3556,7 +3599,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            adapter.dispatch_app_reactive(&mut runtime, &mut __w)
+            adapter.dispatch_app_reactive(&mut runtime, &mut __w);
         };
 
         let guard = app_state.lock().unwrap();
@@ -3566,7 +3609,7 @@ mod tests {
         assert!(!runtime.reactive_ctx().has_changes());
     }
 
-    /// An app whose watcher calls ctx.request_styles().
+    /// An app whose watcher calls `ctx.request_styles()`.
     struct StylesRequestApp {
         val: i32,
     }
@@ -3623,7 +3666,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            adapter.dispatch_app_reactive(&mut runtime, &mut __w)
+            adapter.dispatch_app_reactive(&mut runtime, &mut __w);
         };
 
         assert!(ctx.repaint_requested(), "repaint should be requested");
@@ -3633,7 +3676,7 @@ mod tests {
         );
     }
 
-    /// An app that logs watcher call order to verify init fires before on_mount_with_app.
+    /// An app that logs watcher call order to verify init fires before `on_mount_with_app`.
     struct InitOrderApp {
         log: Vec<&'static str>,
     }
@@ -3643,7 +3686,7 @@ mod tests {
             Self { log: Vec::new() }
         }
 
-        #[allow(dead_code)] // reactive-setter scaffolding for the init-order watcher test
+        #[allow(dead_code, clippy::unused_self)] // reactive-setter scaffolding for the init-order watcher test
         fn set_count(&mut self, _val: i32, ctx: &mut ReactiveCtx) {
             use crate::reactive::ReactiveFlags;
             ctx.record_change(
@@ -3899,10 +3942,7 @@ mod tests {
         runtime.build_widget_tree(&mut root);
 
         // Initially one Label.
-        let before = runtime
-            .query("Label")
-            .map(|q| q.into_ids().len())
-            .unwrap_or(0);
+        let before = runtime.query("Label").map_or(0, |q| q.into_ids().len());
         assert_eq!(before, 1, "one Label before recompose");
 
         // Set n = 3 (records a recompose change), then run the bridge.
@@ -3913,14 +3953,11 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            adapter_for_state.dispatch_app_reactive(&mut runtime, &mut __w)
+            adapter_for_state.dispatch_app_reactive(&mut runtime, &mut __w);
         };
 
         // The app-content subtree was recomposed: now three Labels.
-        let after = runtime
-            .query("Label")
-            .map(|q| q.into_ids().len())
-            .unwrap_or(0);
+        let after = runtime.query("Label").map_or(0, |q| q.into_ids().len());
         assert_eq!(after, 3, "three Labels after recompose");
         assert!(
             ctx.invalidation().layout,

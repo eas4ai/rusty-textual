@@ -1,7 +1,7 @@
 /// Port of Python Textual `docs/examples/how-to/layout05.py`.
 ///
 /// Demonstrates docked header/footer placeholders with a `HorizontalScroll`
-/// body container. The body has 4 `Column` (VerticalScroll) widgets, each
+/// body container. The body has 4 `Column` (`VerticalScroll`) widgets, each
 /// containing 19 `Tweet` (Placeholder) widgets.
 ///
 /// Python defines `Header`, `Footer`, `Tweet` as `Placeholder` subclasses,
@@ -10,7 +10,7 @@
 /// selectors for Tweet placeholders.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 #Header {
     height: 3;
     dock: top;
@@ -20,7 +20,7 @@ const CSS: &str = r#"
     height: 3;
     dock: bottom;
 }
-"#;
+";
 
 struct LayoutApp;
 
@@ -36,8 +36,7 @@ impl TextualApp for LayoutApp {
             let mut column = VerticalScroll::new();
             for tweet_no in 1..=19 {
                 column.push(
-                    Placeholder::new(format!("#Tweet{}", tweet_no))
-                        .id(format!("Tweet{}", tweet_no)),
+                    Placeholder::new(format!("#Tweet{tweet_no}")).id(format!("Tweet{tweet_no}")),
                 );
             }
             columns.push(column);

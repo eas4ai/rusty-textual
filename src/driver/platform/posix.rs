@@ -76,16 +76,18 @@ impl PlatformDriver for PosixPlatformDriver {
                 "\x1b[>{}u",
                 crate::driver::negotiate::KITTY_FLAGS
             )
-            .and_then(|_| std::io::stdout().flush())
+            .and_then(|()| std::io::stdout().flush())
             .is_ok()
         } else {
             false
         };
 
-        // Synchronous mode negotiation (PR-15b): bounded DECRQM round-trips
-        // before the input loop owns stdin. Never enables in-band resize
-        // (its reports are unparseable through crossterm) — records support
-        // only. Skipped entirely when piped or on Apple Terminal (SYNC).
+        // Synchronous mode negotiation (PR-15b): one bounded DECRQM exchange
+        // before the input loop owns stdin, read by the driver itself so no
+        // reply reaches crossterm (see `driver::live`). Linux only; skipped
+        // when piped, on Apple Terminal (SYNC) and on other Unix systems.
+        // Never enables in-band resize (its reports are unparseable through
+        // crossterm) — records support only.
         let negotiated = crate::driver::live::negotiate_live();
 
         Ok((keyboard_enhanced, negotiated))
@@ -191,8 +193,8 @@ pub(crate) fn detect_kitty_keyboard_support(protocol: KeyboardProtocol) -> bool 
             .map(str::to_lowercase)
             .as_deref()
         {
-            Some("off") | Some("0") | Some("false") => Some(false),
-            Some("on") | Some("1") | Some("true") => Some(true),
+            Some("off" | "0" | "false") => Some(false),
+            Some("on" | "1" | "true") => Some(true),
             _ => None,
         },
     };

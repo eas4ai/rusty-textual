@@ -38,7 +38,11 @@ mod liveness {
     #[test]
     fn click_inner_title_reveals_body() {
         run_test(CollapsibleApp, |pilot| {
-            let ids = pilot.app().query("Collapsible").map(|q| q.into_ids()).unwrap_or_default();
+            let ids = pilot
+                .app()
+                .query("Collapsible")
+                .map(|q| q.into_ids())
+                .unwrap_or_default();
             let inner = ids[1];
             let collapsed_before = pilot
                 .app_mut()

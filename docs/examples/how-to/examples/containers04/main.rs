@@ -6,7 +6,7 @@
 /// - The `.with-border` class applies a heavy green border.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Placeholder {
     width: 16;
     height: 8;
@@ -15,7 +15,7 @@ Placeholder {
 .with-border {
     border: heavy green;
 }
-"#;
+";
 
 struct ContainerApp;
 
@@ -26,19 +26,17 @@ impl TextualApp for ContainerApp {
     }
 
     fn compose(&mut self) -> AppRoot {
-        let row1 = 
-            Horizontal::new()
-                .with_child(Placeholder::new(""))
-                .with_child(Placeholder::new(""))
-                .with_child(Placeholder::new(""))
-        .class("with-border");
+        let row1 = Horizontal::new()
+            .with_child(Placeholder::new(""))
+            .with_child(Placeholder::new(""))
+            .with_child(Placeholder::new(""))
+            .class("with-border");
 
-        let row2 = 
-            Horizontal::new()
-                .with_child(Placeholder::new(""))
-                .with_child(Placeholder::new(""))
-                .with_child(Placeholder::new(""))
-        .class("with-border");
+        let row2 = Horizontal::new()
+            .with_child(Placeholder::new(""))
+            .with_child(Placeholder::new(""))
+            .with_child(Placeholder::new(""))
+            .class("with-border");
 
         AppRoot::new().with_child(row1).with_child(row2)
     }

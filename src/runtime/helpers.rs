@@ -4,6 +4,7 @@ use crate::event::{
     Action, ActionMap, ClickEvent, Event, KeyBind, MouseEnterEvent, MouseLeaveEvent,
 };
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::widget_tree::WidgetTree;
 use crate::widgets::{
     APP_ROOT_HSCROLLBAR_ID, APP_ROOT_SCROLLBAR_CORNER_ID, APP_ROOT_VSCROLLBAR_ID,
@@ -156,9 +157,8 @@ pub(crate) fn collect_focus_chain_tree_sorted(
 ) -> Vec<NodeId> {
     // Trap scope: nearest trapping ancestor of the focused widget (or the
     // focused widget itself), mirroring `ancestors_with_self` in Python.
-    let mut root = match tree.root() {
-        Some(r) => r,
-        None => return Vec::new(),
+    let Some(mut root) = tree.root() else {
+        return Vec::new();
     };
     if let Some(mut id) = focused {
         while let Some(node) = tree.get(id) {
@@ -226,8 +226,7 @@ pub(crate) fn raw_focused_node_id(tree: &WidgetTree) -> Option<NodeId> {
 /// `visibility: visible`.
 fn node_self_shown(tree: &WidgetTree, node_id: NodeId) -> bool {
     tree.get(node_id)
-        .map(|node| node.display && node.visibility == crate::style::Visibility::Visible)
-        .unwrap_or(false)
+        .is_some_and(|node| node.display && node.visibility == crate::style::Visibility::Visible)
 }
 
 /// Python `Screen.get_focusable_widget_at` (`screen.py`): the widget under
@@ -288,8 +287,7 @@ pub(crate) fn reset_focus_for_hidden_node(tree: &mut WidgetTree) -> bool {
             }
             let focusable = tree
                 .get(sibling)
-                .map(|node| node.widget.focusable() && !node.state.disabled)
-                .unwrap_or(false);
+                .is_some_and(|node| node.widget.focusable() && !node.state.disabled);
             if focusable && node_self_shown(tree, sibling) {
                 tree.set_focus_state(sibling, true);
                 return true;
@@ -337,6 +335,7 @@ fn build_path_to_node_local(tree: &WidgetTree, target: NodeId) -> Vec<NodeId> {
 
 /// Find the deepest visible node at a screen coordinate using tree layout
 /// geometry, independent of rendered segment metadata.
+#[must_use]
 pub fn widget_at_tree_layout(tree: &WidgetTree, x: u16, y: u16) -> Option<NodeId> {
     let root = tree.root()?;
     let mut hit_any: Option<NodeId> = None;
@@ -366,8 +365,8 @@ pub fn widget_at_tree_layout(tree: &WidgetTree, x: u16, y: u16) -> Option<NodeId
                 continue;
             }
             let (ox, oy) = ancestor.widget.scroll_offset();
-            render_shift_x -= ox as i32;
-            render_shift_y -= oy as i32;
+            render_shift_x -= ox.to_i32_sat();
+            render_shift_y -= oy.to_i32_sat();
         }
         let rect = node.layout_rect;
         let x0 = rect.x0 + render_shift_x;
@@ -389,6 +388,7 @@ pub fn widget_at_tree_layout(tree: &WidgetTree, x: u16, y: u16) -> Option<NodeId
 
 /// Translate screen coordinates to content-local coordinates using tree node
 /// geometry (prefers `content_rect`, falls back to `layout_rect`).
+#[must_use]
 pub fn tree_content_local_coords(
     tree: &WidgetTree,
     target: NodeId,
@@ -421,14 +421,14 @@ pub fn tree_content_local_coords(
             continue;
         }
         let (ox, oy) = ancestor.widget.scroll_offset();
-        render_shift_x -= ox as i32;
-        render_shift_y -= oy as i32;
+        render_shift_x -= ox.to_i32_sat();
+        render_shift_y -= oy.to_i32_sat();
     }
 
     let origin_x = rect.x0 + render_shift_x;
     let origin_y = rect.y0 + render_shift_y;
-    let local_x = i32::from(screen_x).saturating_sub(origin_x).max(0) as u16;
-    let local_y = i32::from(screen_y).saturating_sub(origin_y).max(0) as u16;
+    let local_x = i32::from(screen_x).saturating_sub(origin_x).to_u16_sat();
+    let local_y = i32::from(screen_y).saturating_sub(origin_y).to_u16_sat();
     (local_x, local_y)
 }
 
@@ -538,9 +538,8 @@ fn resolve_style_along_path(
 
 /// Check whether any widget in the tree reports `is_active() == true`.
 pub(crate) fn any_widget_active_tree(tree: &WidgetTree) -> bool {
-    let root = match tree.root() {
-        Some(r) => r,
-        None => return false,
+    let Some(root) = tree.root() else {
+        return false;
     };
     for node_id in tree.walk_depth_first(root) {
         if let Some(node) = tree.get(node_id) {
@@ -626,10 +625,10 @@ pub(crate) fn generate_enter_leave_events(
         events.push((
             old,
             Event::Leave(MouseLeaveEvent {
-                x,
-                y,
                 screen_x,
                 screen_y,
+                x,
+                y,
             }),
         ));
     }
@@ -637,10 +636,10 @@ pub(crate) fn generate_enter_leave_events(
         events.push((
             new,
             Event::Enter(MouseEnterEvent {
-                x,
-                y,
                 screen_x,
                 screen_y,
+                x,
+                y,
             }),
         ));
     }

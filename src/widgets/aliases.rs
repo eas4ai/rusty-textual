@@ -42,6 +42,8 @@ enum StaticContent {
 /// [`Static::update()`] / [`Static::update_rich()`] to change content at
 /// runtime, matching Python's `Static.update(content)` API.
 #[widget(Interactive, Layout, StyleIdentity)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Static {
     text: String,
     markup: bool,
@@ -89,6 +91,7 @@ impl Static {
     /// Mirrors Python `Static(text, markup=False)`: tags are rendered as-is
     /// (not interpreted).  The widget CSS type remains `Static`, so type-based
     /// CSS rules such as `Static { height: 1fr }` still apply.
+    #[must_use]
     pub fn without_markup(mut self) -> Self {
         self.markup = false;
         self
@@ -97,6 +100,7 @@ impl Static {
     /// When true, the widget expands to fill the available width.
     ///
     /// Mirrors Python `Static(expand=True)`.
+    #[must_use]
     pub fn with_expand(mut self, expand: bool) -> Self {
         self.expand = expand;
         self
@@ -107,6 +111,7 @@ impl Static {
     ///
     /// This allows CSS rules like `#custom { link-color: ... }` to target the
     /// Static widget directly with id-selector specificity.
+    #[must_use]
     pub fn id(mut self, value: impl Into<String>) -> Self {
         self.seed.css_id = Some(value.into());
         self
@@ -121,6 +126,7 @@ impl Static {
     /// leaf because the height-chrome keystone lets the flow layout add the
     /// ancestor-resolved chrome (previously this had to ride a `Node` wrapper so
     /// the chrome resolved with ancestor context).
+    #[must_use]
     pub fn class(mut self, value: impl Into<String>) -> Self {
         let v = value.into();
         if !self.seed.classes.iter().any(|c| c == &v) {
@@ -130,6 +136,7 @@ impl Static {
     }
 
     /// Add several CSS classes at once (Python `classes="a b c"`). Idempotent.
+    #[must_use]
     pub fn classes(mut self, values: impl IntoIterator<Item = impl Into<String>>) -> Self {
         for value in values {
             let v = value.into();
@@ -194,7 +201,7 @@ impl Static {
         self.content = StaticContent::Renderable(Arc::new(renderable));
     }
 
-    /// Replace content with a pre-built [`Content`] value.
+    /// Replace content with a pre-built [`Content`](crate::content::Content) value.
     ///
     /// Use this to display markup whose template variables were already
     /// substituted (e.g. `Content::from_markup_with_vars(...)`), so the Static
@@ -216,12 +223,14 @@ impl Static {
     }
 
     /// Set the text rendered on the top border (Python `widget.border_title`).
+    #[must_use]
     pub fn with_border_title(mut self, title: impl Into<String>) -> Self {
         self.border_title = Some(title.into());
         self
     }
 
     /// Set the text rendered on the bottom border (Python `widget.border_subtitle`).
+    #[must_use]
     pub fn with_border_subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.border_subtitle = Some(subtitle.into());
         self
@@ -273,7 +282,6 @@ impl Static {
     /// `apply_link_style` mirrors the `markup` flag: only markup-derived content
     /// gets `[@click=...]` link styling overlaid.
     fn render_content(
-        &self,
         content: &crate::content::Content,
         options: &ConsoleOptions,
         apply_link_style: bool,
@@ -298,8 +306,7 @@ impl Static {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
 
         // Construct the render-time visual style: always has an explicit bg so
         // make_segment never falls back to black.
@@ -453,10 +460,10 @@ impl crate::widgets::StyleIdentity for Static {
 
     fn style_classes(&self) -> &[String] {
         // Pre-mount: seed has the classes. Post-mount: use the cache.
-        if !self.seed.classes.is_empty() {
-            &self.seed.classes
-        } else {
+        if self.seed.classes.is_empty() {
             &self.classes_cache
+        } else {
+            &self.seed.classes
         }
     }
 
@@ -473,8 +480,8 @@ impl crate::widgets::StyleIdentity for Static {
         // Preserve id/classes in the cache so `style_id()` / `style_classes()`
         // keep working after the seed has been taken (off-tree CSS resolution
         // in `layout_height()` runs post-mount when `seed.css_id` would be gone).
-        self.css_id_cache = seed.css_id.clone();
-        self.classes_cache = seed.classes.clone();
+        self.css_id_cache.clone_from(&seed.css_id);
+        self.classes_cache.clone_from(&seed.classes);
         seed
     }
 }
@@ -490,12 +497,12 @@ impl crate::widgets::Render for Static {
                 } else {
                     crate::content::Content::from_text(&self.text)
                 };
-                self.render_content(&content, options, self.markup)
+                Self::render_content(&content, options, self.markup)
             }
             StaticContent::Content(content) => {
                 // Pre-built Content (e.g. with template variables substituted).
                 // Treat it like markup output for link styling/resolution purposes.
-                self.render_content(content, options, true)
+                Self::render_content(content, options, true)
             }
             StaticContent::Rich(text) => text.render(console, options),
             StaticContent::Renderable(renderable) => renderable.render(console, options),

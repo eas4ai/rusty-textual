@@ -6,7 +6,7 @@ use crate::compose::ComposeResult;
 use crate::content::Content;
 use crate::css;
 use crate::event::Event;
-use crate::message::*;
+use crate::message::{CollapsibleCollapsed, CollapsibleExpanded};
 
 use super::{NodeSeed, Widget};
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
@@ -49,6 +49,8 @@ fn tag_segment_no_text_style(seg: &mut Segment) {
 /// like `CollapsibleTitle { ... }` resolve against this node directly and the
 /// arena renderer applies the resolved style (color / text-style / padding).
 #[widget(Focus, Interactive, Layout)]
+// Separate widget and CSS pseudo-class states; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 pub struct CollapsibleTitle {
     title: String,
     collapsed_symbol: String,
@@ -104,6 +106,7 @@ impl CollapsibleTitle {
         self.pressed = pressed;
     }
 
+    #[must_use]
     pub fn is_pressed(&self) -> bool {
         self.pressed
     }
@@ -131,7 +134,7 @@ impl crate::widgets::Interactive for CollapsibleTitle {
 
     /// The title is the focusable node (Python `CollapsibleTitle`), so it owns
     /// the toggle interaction: `enter` while focused, or a click, posts a
-    /// [`CollapsibleTitleToggle`] that bubbles to the parent `Collapsible`.
+    /// `CollapsibleTitleToggle` that bubbles to the parent `Collapsible`.
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
         match event {
             Event::MouseDown(mouse) if mouse.target == self.node_id() => {
@@ -183,7 +186,7 @@ impl crate::widgets::Render for CollapsibleTitle {
         "CollapsibleTitle"
     }
 
-    /// Render the symbol + label via Content::render_strips.
+    /// Render the symbol + label via `Content::render_strips`.
     /// The arena renderer applies the node's resolved style (color / text-style
     /// / padding / background) on top.
     fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
@@ -199,8 +202,7 @@ impl crate::widgets::Render for CollapsibleTitle {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
         let mut render_style = visual_style.clone();
         render_style.bg = Some(effective_bg);
 
@@ -329,6 +331,8 @@ impl crate::widgets::Render for CollapsibleContents {
 // ── Collapsible ─────────────────────────────────────────────────────────
 
 #[widget(Focus, Interactive, Layout)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Collapsible {
     title: String,
     collapsed_symbol: String,
@@ -376,6 +380,7 @@ impl Collapsible {
         }
     }
 
+    #[must_use]
     pub fn collapsed(mut self, collapsed: bool) -> Self {
         self.collapsed = collapsed;
         if collapsed {
@@ -388,16 +393,19 @@ impl Collapsible {
         self
     }
 
+    #[must_use]
     pub fn collapsed_symbol(mut self, symbol: impl Into<String>) -> Self {
         self.collapsed_symbol = symbol.into();
         self
     }
 
+    #[must_use]
     pub fn expanded_symbol(mut self, symbol: impl Into<String>) -> Self {
         self.expanded_symbol = symbol.into();
         self
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(Box::new(child));
         self
@@ -408,6 +416,7 @@ impl Collapsible {
     }
 
     /// Read-only access to the collapsible's (not-yet-extracted) children.
+    #[must_use]
     pub fn children(&self) -> &[Box<dyn Widget>] {
         &self.children
     }
@@ -419,6 +428,7 @@ impl Collapsible {
 
     // ── Reactive getters ─────────────────────────────────────────────────
 
+    #[must_use]
     pub fn is_collapsed(&self) -> bool {
         self.collapsed
     }
@@ -459,6 +469,7 @@ impl Collapsible {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_collapsed(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Layout invalidation is handled by ReactiveFlags::reactive_layout().
     }
@@ -912,8 +923,16 @@ mod tests {
             c.on_message(&MessageEvent::new(sender, CollapsibleTitleToggle), &mut __w);
         }
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<CollapsibleExpanded>()));
-        assert!(!messages.iter().any(|m| m.is::<CollapsibleCollapsed>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleExpanded>)
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleCollapsed>)
+        );
 
         // Expanded -> collapsed posts `CollapsibleCollapsed`.
         let mut ctx = EventCtx::default();
@@ -925,8 +944,16 @@ mod tests {
             c.on_message(&MessageEvent::new(sender, CollapsibleTitleToggle), &mut __w);
         }
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<CollapsibleCollapsed>()));
-        assert!(!messages.iter().any(|m| m.is::<CollapsibleExpanded>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleCollapsed>)
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleExpanded>)
+        );
     }
 
     /// A programmatic `set_collapsed` posts the state message too (Python
@@ -940,11 +967,19 @@ mod tests {
 
         c.set_collapsed(false, &mut rctx);
         let messages = rctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<CollapsibleExpanded>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleExpanded>)
+        );
 
         c.set_collapsed(true, &mut rctx);
         let messages = rctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<CollapsibleCollapsed>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<CollapsibleCollapsed>)
+        );
 
         // No change, no message.
         c.set_collapsed(true, &mut rctx);

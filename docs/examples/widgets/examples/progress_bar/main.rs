@@ -2,19 +2,19 @@
 ///
 /// Demonstrates `ProgressBar` with a funding tracker:
 /// - Header with title "Funding tracking"
-/// - ProgressBar (total=100, show_eta=False)
+/// - `ProgressBar` (total=100, `show_eta=False`)
 /// - Input for donation amounts and a "Donate" button
 /// - A history log below showing past donations
 ///
 /// Donate by entering an integer amount and pressing Enter or clicking "Donate".
 /// The progress bar advances by the entered amount.
 ///
-/// NOTE: Dynamic mounting of Labels under VerticalScroll is not available via
+/// NOTE: Dynamic mounting of Labels under `VerticalScroll` is not available via
 /// the public `App` API (no `mount_at(parent, widget)`). History is tracked
 /// using `ListView::append` which provides equivalent scrollable history.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Container {
     overflow: hidden hidden;
     height: auto;
@@ -37,7 +37,7 @@ Input {
 ListView {
     height: auto;
 }
-"#;
+";
 
 struct FundingProgressApp;
 
@@ -93,13 +93,13 @@ impl TextualApp for FundingProgressApp {
             || message.downcast_ref::<InputSubmitted>().is_some();
 
         if triggered {
-            self.add_donation(app, ctx);
+            Self::add_donation(app, ctx);
         }
     }
 }
 
 impl FundingProgressApp {
-    fn add_donation(&mut self, app: &mut App, ctx: &mut textual::event::WidgetCtx) {
+    fn add_donation(app: &mut App, ctx: &mut textual::event::WidgetCtx) {
         // Read the current input value.
         let text_value = app
             .with_query_one_mut_as::<Input, _>("#amount", |input| input.value().to_string())
@@ -110,11 +110,15 @@ impl FundingProgressApp {
             Err(_) => return,
         };
 
+        // A typed donation is far below 2^53, where f64 holds every integer.
+        #[allow(clippy::cast_precision_loss)]
+        let amount = value as f64;
+
         // Advance the progress bar (reactive path: the recorded change
         // recomposes the bar's sub-widgets with the new value).
         if let Ok(handle) = app.query_one_typed::<ProgressBar>("#progress") {
             let _ = handle.update(app, |bar, rctx| {
-                bar.advance(value as f64, rctx);
+                bar.advance(amount, rctx);
             });
         }
 

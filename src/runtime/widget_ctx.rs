@@ -1,4 +1,4 @@
-//! `WidgetCtx` query/update surface (WidgetCtx build, sub-step 2).
+//! `WidgetCtx` query/update surface (`WidgetCtx` build, sub-step 2).
 //!
 //! The [`WidgetCtx`](crate::event::WidgetCtx) type lives in `event/mod.rs` (it
 //! carries the event-scoped flags and `DerefMut`s to the reactive recording
@@ -95,7 +95,7 @@ impl<W: Widget> WidgetQuery<W> {
     }
 }
 
-impl<'a> WidgetCtx<'a> {
+impl WidgetCtx<'_> {
     /// Query the single descendant of this widget whose concrete type is `W`
     /// (Python `self.query_one(W)`), resolved at drain time. Rooted at this
     /// widget's node — descendants only, not self.
@@ -104,6 +104,7 @@ impl<'a> WidgetCtx<'a> {
     /// subclass/supertrait/style-alias matching (a `Button` query never matches a
     /// user newtype wrapping a Button). Use [`query_one_id`](Self::query_one_id)
     /// for CSS-selector matching.
+    #[must_use]
     pub fn query_one<W: Widget>(&self) -> WidgetQuery<W> {
         WidgetQuery::new(CommandTarget::TypeMatch {
             // Scoped to the DISPATCHING tree (aliasing guard, same rationale as
@@ -117,6 +118,7 @@ impl<'a> WidgetCtx<'a> {
 
     /// Query the single descendant matching a CSS selector (e.g. `"#disp"`),
     /// resolved at drain time. Rooted at this widget's node.
+    #[must_use]
     pub fn query_one_id<W: Widget>(&self, selector: &str) -> WidgetQuery<W> {
         WidgetQuery::new(CommandTarget::Selector {
             scope: TreeScope::dispatching(),
@@ -149,6 +151,7 @@ impl<'a> WidgetCtx<'a> {
     /// posted from the closure and reactive `watch_*` dispatch are dropped
     /// with a debug log; direct widget mutation, class ops, and repaint apply
     /// fully.
+    #[must_use]
     pub fn query_one_on<W: Widget>(&self, screen: ScreenRef<'_>, selector: &str) -> WidgetQuery<W> {
         WidgetQuery::new(CommandTarget::Selector {
             scope: TreeScope::from_screen_ref(screen),
@@ -159,7 +162,7 @@ impl<'a> WidgetCtx<'a> {
 
     /// Add a CSS class to this widget's own node (Python `self.add_class(name)`).
     ///
-    /// RA2.3: enqueues a deferred [`WidgetCommand::AddClass`] applied by the
+    /// RA2.3: enqueues a deferred `WidgetCommand::AddClass` applied by the
     /// shared flush (`tree.add_class` + layout invalidation) — the ONE deferred
     /// mechanism, replacing the RA2.2-interim `EventCtx`/`DispatchOutcome`
     /// class-op side-channel. Because both the live loop and headless pump run the
@@ -188,7 +191,7 @@ impl<'a> WidgetCtx<'a> {
     /// Add (when `on`) or remove `class` on this widget's own node (command queue).
     ///
     /// Footgun closer: shadows `ReactiveCtx::set_class` (reachable via `Deref`),
-    /// which only sets reactive flags — this keeps every WidgetCtx class op on the
+    /// which only sets reactive flags — this keeps every `WidgetCtx` class op on the
     /// one command-queue path.
     pub fn set_class(&mut self, on: bool, class: &str) {
         if on {
@@ -222,7 +225,7 @@ impl<'a> WidgetCtx<'a> {
 
     /// Apply a closure to this widget's own inline styles (Python
     /// `widget.styles.<prop> = v`). Deferred: enqueues a
-    /// [`WidgetCommand::UpdateStyles`] applied by the shared flush against the
+    /// `WidgetCommand::UpdateStyles` applied by the shared flush against the
     /// arena node record. This is the post-mount inline-style write path — the
     /// widget's node seed is drained at mount, so mutating the seed after mount is
     /// invisible; route style writes here so they reach layout/render (retires the
@@ -332,7 +335,7 @@ impl<'a> WidgetCtx<'a> {
     }
 }
 
-impl<'a> ScreenMessageCtx<'a> {
+impl ScreenMessageCtx<'_> {
     /// Query the single widget matching a CSS selector on another screen's
     /// tree, from a `Screen` handler (the main cross-screen consumer: a modal
     /// updating the screen beneath it). Same deferred semantics and caveats as
@@ -341,6 +344,7 @@ impl<'a> ScreenMessageCtx<'a> {
     ///
     /// Defined here (not in `screen.rs`) so all `CommandTarget` construction
     /// stays next to the queue it feeds.
+    #[must_use]
     pub fn query_one_on<W: Widget>(&self, screen: ScreenRef<'_>, selector: &str) -> WidgetQuery<W> {
         WidgetQuery::new(CommandTarget::Selector {
             scope: TreeScope::from_screen_ref(screen),
@@ -357,7 +361,7 @@ impl<W: Widget> Handle<W> {
     /// Target is the handle's already-resolved node.
     ///
     /// Same caveats as [`WidgetQuery::update_via`]: closure-posted messages are
-    /// not routed yet (PostUp), and `_ctx` is a deliberate capability token
+    /// not routed yet (`PostUp`), and `_ctx` is a deliberate capability token
     /// (proves handler context) — intentionally unused, do not remove.
     pub fn update_via<F>(self, _ctx: &mut WidgetCtx, f: F)
     where
@@ -476,7 +480,7 @@ mod tests {
     fn handle_update_via_does_not_alias_across_trees() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_widget_commands();
 
         // Tree A (NOT installed in the app) and a handle to its root.
@@ -515,7 +519,7 @@ mod tests {
     fn handle_update_via_applies_in_owning_tree() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_widget_commands();
 
         let (tree_a, root_a) = build_probe_tree(1);
@@ -536,6 +540,9 @@ mod tests {
     struct ModalScreenStub;
 
     impl crate::screen::Screen for ModalScreenStub {
+        // `Screen::name` returns `&str` so names may be runtime values; an impl
+        // cannot narrow it to `&'static str`, whatever clippy suggests.
+        #[allow(clippy::unnecessary_literal_bound)]
         fn name(&self) -> &str {
             "modal-stub"
         }
@@ -554,7 +561,7 @@ mod tests {
     fn handle_update_via_applies_to_owning_tree_while_other_screen_active() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_widget_commands();
 
         let (tree_a, root_a) = build_probe_tree(1);
@@ -603,7 +610,7 @@ mod tests {
     fn unstamped_node_target_resolves_against_active_tree() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Direct queue write (simulates what dispatch would enqueue): mark this
         // thread draining so a foreign test's live loop can't trip the assert.
         let _drain = crate::runtime::commands::DispatchDrainGuard::enter();
@@ -633,7 +640,7 @@ mod tests {
     fn ctx_class_ops_stamp_dispatching_tree() {
         let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = take_widget_commands();
 
         let (_tree, root) = build_probe_tree(1);

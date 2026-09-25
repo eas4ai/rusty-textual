@@ -7,7 +7,7 @@ use textual_macros::widget;
 
 use crate::compose::ComposeResult;
 use crate::event::{BindingHint, Event};
-use crate::message::*;
+use crate::message::{AppCommandPalette, HeaderIconPressed, HeaderToggled, ScreenTitleChanged};
 
 use super::{NodeSeed, Widget};
 use crate::reactive::{ReactiveCtx, ReactiveFlags, ReactiveWidget};
@@ -197,16 +197,14 @@ impl crate::widgets::Interactive for HeaderTitle {
         ctx: &mut crate::event::WidgetCtx,
     ) {
         if let Some(m) = message.downcast_ref::<ScreenTitleChanged>() {
-            self.title = m
-                .title
-                .as_deref()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| self.default_title.clone());
+            self.title = m.title.as_deref().map_or_else(
+                || self.default_title.clone(),
+                std::string::ToString::to_string,
+            );
             self.subtitle = m
                 .sub_title
                 .as_deref()
-                .map(|s| Some(s.to_string()))
-                .unwrap_or_else(|| self.default_subtitle.clone());
+                .map_or_else(|| self.default_subtitle.clone(), |s| Some(s.to_string()));
             ctx.request_repaint();
         }
     }
@@ -245,6 +243,7 @@ pub struct HeaderClockSpace {
 impl HeaderClockSpace {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             seed: NodeSeed::default(),
@@ -340,6 +339,8 @@ impl crate::widgets::Render for HeaderClock {
 }
 #[derive(Debug, Clone)]
 #[widget(Focus, Interactive, Layout, StyleIdentity)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Header {
     title: String,
     subtitle: Option<String>,
@@ -366,6 +367,7 @@ impl Default for Header {
 impl Header {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             title: "textual-rs".to_string(),
@@ -383,13 +385,15 @@ impl Header {
         }
     }
 
+    #[must_use]
     pub fn title(mut self, title: impl Into<String>) -> Self {
         let t = title.into();
-        self.title = t.clone();
+        self.title.clone_from(&t);
         self.default_title = t;
         self
     }
 
+    #[must_use]
     pub fn subtitle(mut self, subtitle: impl Into<String>) -> Self {
         let s = subtitle.into();
         self.subtitle = Some(s.clone());
@@ -397,6 +401,7 @@ impl Header {
         self
     }
 
+    #[must_use]
     pub fn clear_subtitle(mut self) -> Self {
         self.subtitle = None;
         self.default_subtitle = None;
@@ -406,21 +411,25 @@ impl Header {
     // ── Reactive getters ─────────────────────────────────────────────────
 
     /// Reactive getter for `title`.
+    #[must_use]
     pub fn get_title(&self) -> &str {
         &self.title
     }
 
     /// Reactive getter for `subtitle`.
+    #[must_use]
     pub fn get_subtitle(&self) -> Option<&str> {
         self.subtitle.as_deref()
     }
 
     /// Reactive getter for `show_clock`.
+    #[must_use]
     pub fn get_show_clock(&self) -> bool {
         self.show_clock
     }
 
     /// Reactive getter for `tall`.
+    #[must_use]
     pub fn get_tall(&self) -> bool {
         self.tall
     }
@@ -431,9 +440,10 @@ impl Header {
     ///
     /// Pass `None` to revert to the default (app-level) title.
     pub fn set_title(&mut self, title: Option<&str>, ctx: &mut ReactiveCtx) {
-        let new_title = title
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| self.default_title.clone());
+        let new_title = title.map_or_else(
+            || self.default_title.clone(),
+            std::string::ToString::to_string,
+        );
         if self.title != new_title {
             let old = self.title.clone();
             self.title = new_title;
@@ -451,9 +461,8 @@ impl Header {
     ///
     /// Pass `None` to revert to the default (app-level) subtitle.
     pub fn set_subtitle(&mut self, subtitle: Option<&str>, ctx: &mut ReactiveCtx) {
-        let new_subtitle = subtitle
-            .map(|s| Some(s.to_string()))
-            .unwrap_or_else(|| self.default_subtitle.clone());
+        let new_subtitle =
+            subtitle.map_or_else(|| self.default_subtitle.clone(), |s| Some(s.to_string()));
         if self.subtitle != new_subtitle {
             let old = self.subtitle.clone();
             self.subtitle = new_subtitle;
@@ -497,6 +506,7 @@ impl Header {
         }
     }
 
+    #[must_use]
     pub fn tall(mut self, tall: bool) -> Self {
         self.tall = tall;
         if tall {
@@ -509,16 +519,19 @@ impl Header {
         self
     }
 
+    #[must_use]
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = icon.into();
         self
     }
 
+    #[must_use]
     pub fn show_clock(mut self, show_clock: bool) -> Self {
         self.show_clock = show_clock;
         self
     }
 
+    #[must_use]
     pub fn time_format(mut self, time_format: impl Into<String>) -> Self {
         self.time_format = time_format.into();
         self
@@ -582,16 +595,14 @@ impl crate::widgets::Interactive for Header {
     ) {
         if let Some(m) = message.downcast_ref::<ScreenTitleChanged>() {
             // Direct field assignment (internal call site — not reactive setter).
-            self.title = m
-                .title
-                .as_deref()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| self.default_title.clone());
+            self.title = m.title.as_deref().map_or_else(
+                || self.default_title.clone(),
+                std::string::ToString::to_string,
+            );
             self.subtitle = m
                 .sub_title
                 .as_deref()
-                .map(|s| Some(s.to_string()))
-                .unwrap_or_else(|| self.default_subtitle.clone());
+                .map_or_else(|| self.default_subtitle.clone(), |s| Some(s.to_string()));
             ctx.request_repaint();
         }
     }

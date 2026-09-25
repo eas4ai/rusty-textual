@@ -4,7 +4,7 @@ use textual_macros::widget;
 
 use crate::debug::{debug_input, debug_message};
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::ButtonPressed;
 #[cfg(test)]
 use crate::node_id::NodeId;
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
@@ -71,7 +71,7 @@ impl std::fmt::Debug for Button {
             .field("flat", &self.flat)
             .field("compact", &self.compact)
             .field("classes", &self.seed.classes)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -124,25 +124,30 @@ impl Button {
         Self::new(label).variant(ButtonVariant::Error)
     }
 
+    #[must_use]
     pub fn pressed(&self) -> bool {
         self.pressed != PressedState::None
     }
 
+    #[must_use]
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
         self.variant = variant;
         self.rebuild_classes()
     }
 
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self.rebuild_classes()
     }
 
+    #[must_use]
     pub fn flat(mut self, flat: bool) -> Self {
         self.flat = flat;
         self.rebuild_classes()
     }
 
+    #[must_use]
     pub fn compact(mut self, compact: bool) -> Self {
         self.compact = compact;
         self.rebuild_classes()
@@ -152,6 +157,7 @@ impl Button {
     ///
     /// The id is included in `ButtonPressed.button_id`, mirroring Python's
     /// `Button.Pressed.button.id` semantics.
+    #[must_use]
     pub fn id(mut self, id: impl Into<String>) -> Self {
         let id = id.into();
         self.seed.css_id = Some(id.clone());
@@ -166,6 +172,7 @@ impl Button {
     /// suppressed, matching Python Textual's behavior.
     ///
     /// Accepted formats: `"toggle_dark"`, `"app.quit"`, `"push_screen('settings')"`.
+    #[must_use]
     pub fn with_action(mut self, action: impl Into<String>) -> Self {
         self.action = Some(action.into());
         self
@@ -176,17 +183,20 @@ impl Button {
     /// When set, the rich `Text` is rendered instead of the plain label string.
     /// Use `Text::from_markup("[bold]Save[/]", true)` or similar to create
     /// styled button labels.
+    #[must_use]
     pub fn with_content(mut self, content: Text) -> Self {
         self.content = Some(content);
         self
     }
 
     /// Access the button's action string, if set.
+    #[must_use]
     pub fn action(&self) -> Option<&str> {
         self.action.as_deref()
     }
 
     /// Access the button's rich text content, if set.
+    #[must_use]
     pub fn content(&self) -> Option<&Text> {
         self.content.as_ref()
     }
@@ -194,6 +204,7 @@ impl Button {
     // ── Reactive getters ─────────────────────────────────────────────────
 
     /// Reactive getter for `label`.
+    #[must_use]
     pub fn label(&self) -> &str {
         &self.label
     }
@@ -282,6 +293,7 @@ impl Button {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_variant(
         &mut self,
         _old: &ButtonVariant,
@@ -291,14 +303,17 @@ impl Button {
         self.rebuild_classes_in_place();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_disabled(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         self.rebuild_classes_in_place();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_flat(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         self.rebuild_classes_in_place();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_compact(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         self.rebuild_classes_in_place();
     }
@@ -314,6 +329,7 @@ impl Button {
         }
     }
 
+    #[must_use]
     pub fn describe(&self) -> String {
         let mut classes = self.seed.classes.clone();
         // Include -active when the button is in a pressed state.
@@ -328,7 +344,7 @@ impl Button {
             ButtonVariant::Warning => "warning",
             ButtonVariant::Error => "error",
         };
-        format!("Button(classes='{}', variant='{}')", class_str, variant)
+        format!("Button(classes='{class_str}', variant='{variant}')")
     }
 
     /// Dispatch the press: either the stored action or a `ButtonPressed` message.
@@ -401,7 +417,7 @@ impl Button {
         if self.disabled {
             classes.push("disabled".to_string());
         }
-        self.layout_classes = classes.clone();
+        self.layout_classes.clone_from(&classes);
         self.seed.classes = classes;
     }
 }
@@ -474,7 +490,7 @@ impl Focus for Button {
         self.disabled
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "button"
     }
 
@@ -656,8 +672,7 @@ impl Render for Button {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
         let mut render_style = visual_style.clone();
         render_style.bg = Some(effective_bg);
 
@@ -755,14 +770,14 @@ impl StyleIdentity for Button {
         // structural `Node` wrapper) into the Button's own seed, so both the
         // node record AND `ButtonPressed.button_id` (cached at `take_node_seed`)
         // resolve to it. Matches Python `Button(id="x")`.
-        self.seed.css_id = id.clone();
+        self.seed.css_id.clone_from(&id);
         self.css_id = id;
     }
 
     fn take_node_seed(&mut self) -> NodeSeed {
         let seed = std::mem::take(&mut self.seed);
         // Cache the CSS id so ButtonPressed.button_id can include it post-mount.
-        self.css_id = seed.css_id.clone();
+        self.css_id.clone_from(&seed.css_id);
         seed
     }
 
@@ -812,7 +827,11 @@ mod tests {
         }
 
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<ButtonPressed>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>)
+        );
     }
 
     #[test]
@@ -841,7 +860,11 @@ mod tests {
             button.execute_action(&action, &mut __w)
         });
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<ButtonPressed>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>)
+        );
     }
 
     // ── WP-18: Button action parameter ──────────────────────────────────
@@ -875,13 +898,15 @@ mod tests {
         let messages = ctx.take_messages();
         // ButtonPressed should NOT be posted when action is set.
         assert!(
-            !messages.iter().any(|m| m.is::<ButtonPressed>()),
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>),
             "ButtonPressed should be suppressed when action is set"
         );
         assert!(
             messages
                 .iter()
-                .any(|m| m.is::<crate::message::ActionDispatchRequested>()),
+                .any(crate::message::MessageEvent::is::<crate::message::ActionDispatchRequested>),
             "ActionDispatchRequested should be emitted when action is set"
         );
     }
@@ -906,13 +931,15 @@ mod tests {
 
         let messages = ctx.take_messages();
         assert!(
-            !messages.iter().any(|m| m.is::<ButtonPressed>()),
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>),
             "ButtonPressed should be suppressed when action is set"
         );
         assert!(
             messages
                 .iter()
-                .any(|m| m.is::<crate::message::ActionDispatchRequested>()),
+                .any(crate::message::MessageEvent::is::<crate::message::ActionDispatchRequested>),
             "ActionDispatchRequested should be emitted when action is set"
         );
     }
@@ -939,7 +966,9 @@ mod tests {
 
         let messages = ctx.take_messages();
         assert!(
-            messages.iter().any(|m| m.is::<ButtonPressed>()),
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>),
             "ButtonPressed should be posted when no action is set"
         );
     }
@@ -968,7 +997,9 @@ mod tests {
 
         let messages = ctx.take_messages();
         assert!(
-            !messages.iter().any(|m| m.is::<ButtonPressed>()),
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<ButtonPressed>),
             "space must not press a Button (enter-only parity)"
         );
     }

@@ -5,7 +5,10 @@ use textual_macros::widget;
 use crate::compose::ComposeResult;
 use crate::css;
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    ListItemChildClicked, ListViewItemActivated, ListViewSelectionChanged, MessageEvent,
+};
+use crate::num::Cast;
 
 use crate::action::ParsedAction;
 
@@ -117,6 +120,7 @@ impl ListView {
 
     // ── State accessors (also used by the headless command-palette model) ────
 
+    #[must_use]
     pub fn selected(&self) -> usize {
         self.selected
     }
@@ -125,25 +129,30 @@ impl ListView {
         self.item_text.get(self.selected).map(String::as_str)
     }
 
+    #[must_use]
     pub fn offset(&self) -> usize {
         self.offset
     }
 
+    #[must_use]
     pub fn hovered_index(&self) -> Option<usize> {
         self.hovered_index
     }
 
     /// The number of items in the list.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.item_text.len()
     }
 
     /// Whether the list has no items.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.item_text.is_empty()
     }
 
     /// The item texts, in order.
+    #[must_use]
     pub fn items(&self) -> &[String] {
         &self.item_text
     }
@@ -202,10 +211,12 @@ impl ListView {
         self.ensure_visible();
     }
 
+    #[must_use]
     pub fn is_item_disabled(&self, index: usize) -> bool {
         self.disabled.get(index).copied().unwrap_or(false)
     }
 
+    #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);
         self
@@ -310,18 +321,18 @@ impl ListView {
         if self.selectable_count() == 0 {
             return None;
         }
-        let max = self.item_text.len().saturating_sub(1) as isize;
-        let mut idx = (from as isize).clamp(0, max) as usize;
+        let max = self.item_text.len().saturating_sub(1).to_isize_sat();
+        let mut idx = from.to_isize_sat().clamp(0, max).to_usize_sat();
         if self.is_selectable(idx) {
             return Some(idx);
         }
         let step = if direction >= 0 { 1 } else { -1 };
         loop {
-            let next = idx as isize + step;
+            let next = idx.to_isize_sat() + step;
             if next < 0 || next > max {
                 return None;
             }
-            idx = next as usize;
+            idx = next.to_usize_sat();
             if self.is_selectable(idx) {
                 return Some(idx);
             }
@@ -410,16 +421,16 @@ impl ListView {
         if self.selectable_count() == 0 {
             return;
         }
-        let current = self.selected as isize;
-        let max = (self.item_text.len() - 1) as isize;
-        let mut next = (current + delta).clamp(0, max) as usize;
+        let current = self.selected.to_isize_sat();
+        let max = (self.item_text.len() - 1).to_isize_sat();
+        let mut next = (current + delta).clamp(0, max).to_usize_sat();
         let step = if delta >= 0 { 1 } else { -1 };
         while next < self.item_text.len() && !self.is_selectable(next) {
-            let probe = next as isize + step;
+            let probe = next.to_isize_sat() + step;
             if probe < 0 || probe > max {
                 return;
             }
-            next = probe as usize;
+            next = probe.to_usize_sat();
         }
         self.select_index(next, ctx);
     }
@@ -442,7 +453,7 @@ impl ListView {
         let before = self.offset;
         self.offset = ScrollView::line_scroll_by(
             self.offset,
-            delta_rows as i32,
+            delta_rows.to_i32_sat(),
             self.item_text.len(),
             self.viewport_height.max(1),
         );
@@ -467,7 +478,7 @@ impl crate::widgets::Focus for ListView {
         false
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "list-view"
     }
 
@@ -504,17 +515,17 @@ impl crate::widgets::Focus for ListView {
             // Python parity (inherited container bindings): paging scrolls the
             // viewport only — the highlight stays where it is.
             "page_up" => {
-                self.scroll_offset(-(self.page_step() as isize), ctx);
+                self.scroll_offset(-self.page_step().to_isize_sat(), ctx);
                 ctx.set_handled();
                 true
             }
             "page_down" => {
-                self.scroll_offset(self.page_step() as isize, ctx);
+                self.scroll_offset(self.page_step().to_isize_sat(), ctx);
                 ctx.set_handled();
                 true
             }
             "scroll_home" => {
-                self.scroll_offset(-(self.offset as isize), ctx);
+                self.scroll_offset(-self.offset.to_isize_sat(), ctx);
                 ctx.set_handled();
                 true
             }
@@ -523,7 +534,7 @@ impl crate::widgets::Focus for ListView {
                     self.item_text.len(),
                     self.viewport_height.max(1),
                 );
-                self.scroll_offset(end as isize - self.offset as isize, ctx);
+                self.scroll_offset(end.to_isize_sat() - self.offset.to_isize_sat(), ctx);
                 ctx.set_handled();
                 true
             }
@@ -623,11 +634,11 @@ impl crate::widgets::Interactive for ListView {
                     ctx.set_handled();
                 }
                 Action::ScrollPageUp => {
-                    self.move_selection(-(self.page_step() as isize), ctx);
+                    self.move_selection(-self.page_step().to_isize_sat(), ctx);
                     ctx.set_handled();
                 }
                 Action::ScrollPageDown => {
-                    self.move_selection(self.page_step() as isize, ctx);
+                    self.move_selection(self.page_step().to_isize_sat(), ctx);
                     ctx.set_handled();
                 }
                 _ => {}
@@ -642,15 +653,15 @@ impl crate::widgets::Interactive for ListView {
                     ctx.set_handled();
                 }
                 KeyCode::PageUp => {
-                    self.scroll_offset(-(self.page_step() as isize), ctx);
+                    self.scroll_offset(-self.page_step().to_isize_sat(), ctx);
                     ctx.set_handled();
                 }
                 KeyCode::PageDown => {
-                    self.scroll_offset(self.page_step() as isize, ctx);
+                    self.scroll_offset(self.page_step().to_isize_sat(), ctx);
                     ctx.set_handled();
                 }
                 KeyCode::Home => {
-                    self.scroll_offset(-(self.offset as isize), ctx);
+                    self.scroll_offset(-self.offset.to_isize_sat(), ctx);
                     ctx.set_handled();
                 }
                 KeyCode::End => {
@@ -658,7 +669,7 @@ impl crate::widgets::Interactive for ListView {
                         self.item_text.len(),
                         self.viewport_height.max(1),
                     );
-                    self.scroll_offset(end as isize - self.offset as isize, ctx);
+                    self.scroll_offset(end.to_isize_sat() - self.offset.to_isize_sat(), ctx);
                     ctx.set_handled();
                 }
                 KeyCode::Enter => {
@@ -750,7 +761,7 @@ impl crate::widgets::Scrollable for ListView {
             return;
         }
         self.scroll_offset(
-            delta_y.saturating_mul(self.scroll_step as i32) as isize,
+            delta_y.saturating_mul(self.scroll_step.to_i32_sat()) as isize,
             ctx,
         );
     }

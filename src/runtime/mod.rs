@@ -59,7 +59,9 @@ use crate::event::{ActionMap, BindingHint, Event, EventCtx, KeyBind};
 use crate::message::MessageEvent;
 use crate::node_id::NodeId;
 use crate::node_id::node_id_from_ffi;
+use crate::node_id::node_id_from_meta;
 use crate::node_id::node_id_to_ffi;
+use crate::num::Cast;
 use crate::render::FrameBuffer;
 use crate::screen::ScreenStack;
 use crate::signal::{Signal, SignalResponse};
@@ -186,13 +188,10 @@ fn suspend_process_default() -> io::Result<()> {
 
 /// Truthy env-flag check: `1`/`true`/`yes`/`on` (case-insensitive) enable it.
 fn env_flag(name: &str) -> bool {
-    std::env::var(name)
-        .ok()
-        .map(|value| {
-            let value = value.trim().to_ascii_lowercase();
-            matches!(value.as_str(), "1" | "true" | "yes" | "on")
-        })
-        .unwrap_or(false)
+    std::env::var(name).ok().is_some_and(|value| {
+        let value = value.trim().to_ascii_lowercase();
+        matches!(value.as_str(), "1" | "true" | "yes" | "on")
+    })
 }
 
 /// Snapshot-style query result over arena node ids.
@@ -206,30 +205,50 @@ impl DomQuery {
         Self { nodes }
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
 
+    #[must_use]
     pub fn ids(&self) -> &[NodeId] {
         &self.nodes
     }
 
+    #[must_use]
     pub fn into_ids(self) -> Vec<NodeId> {
         self.nodes
     }
 
+    /// Return the first node in the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when the result is empty.
     pub fn first(&self) -> std::result::Result<NodeId, QueryError> {
         self.nodes.first().copied().ok_or(QueryError::NoMatch)
     }
 
+    /// Return the last node in the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when the result is empty.
     pub fn last(&self) -> std::result::Result<NodeId, QueryError> {
         self.nodes.last().copied().ok_or(QueryError::NoMatch)
     }
 
+    /// Return the single node in the result.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::NoMatch`] if the result is empty.
+    /// - [`QueryError::TooManyMatches`] if the result holds more than one node.
     pub fn only_one(&self) -> std::result::Result<NodeId, QueryError> {
         match self.nodes.len() {
             0 => Err(QueryError::NoMatch),
@@ -242,6 +261,7 @@ impl DomQuery {
         self.nodes.iter().copied()
     }
 
+    #[must_use]
     pub fn results_where(self, app: &App, mut predicate: impl FnMut(&dyn Widget) -> bool) -> Self {
         let Some(tree) = app.widget_tree.as_ref() else {
             return Self::from_nodes(Vec::new());
@@ -257,6 +277,12 @@ impl DomQuery {
         Self::from_nodes(filtered)
     }
 
+    /// Keep only the nodes that also match `selector` in `app`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn filter(self, app: &App, selector: &str) -> std::result::Result<Self, QueryError> {
         let matched = app.query(selector)?;
         let matched_set: HashSet<NodeId> = matched.nodes.into_iter().collect();
@@ -268,6 +294,12 @@ impl DomQuery {
         Ok(Self::from_nodes(filtered))
     }
 
+    /// Drop the nodes that also match `selector` in `app`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn exclude(self, app: &App, selector: &str) -> std::result::Result<Self, QueryError> {
         let matched = app.query(selector)?;
         let matched_set: HashSet<NodeId> = matched.nodes.into_iter().collect();
@@ -295,19 +327,26 @@ pub struct DomQueryMut<'a> {
     nodes: Vec<NodeId>,
 }
 
+// Chainable DOM operations apply their effect on the call, like Python's
+// `query().add_class()`. The returned query only enables chaining, so a
+// caller may drop it; `#[must_use]` would flag correct statement-style use.
+#[allow(clippy::must_use_candidate, clippy::return_self_not_must_use)]
 impl<'a> DomQueryMut<'a> {
     fn new(app: &'a mut App, nodes: Vec<NodeId>) -> Self {
         Self { app, nodes }
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
 
+    #[must_use]
     pub fn ids(&self) -> &[NodeId] {
         &self.nodes
     }
@@ -333,7 +372,7 @@ impl<'a> DomQueryMut<'a> {
                 }
             }
         }
-        self.absorb_class_change(changed_nodes)
+        self.absorb_class_change(&changed_nodes)
     }
 
     pub fn add_class(self, class: &str) -> Self {
@@ -372,7 +411,7 @@ impl<'a> DomQueryMut<'a> {
                 }
             }
         }
-        self.absorb_class_change(changed_nodes)
+        self.absorb_class_change(&changed_nodes)
     }
 
     pub fn set_classes(self, classes: &[&str]) -> Self {
@@ -390,7 +429,7 @@ impl<'a> DomQueryMut<'a> {
                 }
             }
         }
-        self.absorb_class_change(changed_nodes)
+        self.absorb_class_change(&changed_nodes)
     }
 
     /// Shared invalidation for the class-mutation helpers above.
@@ -407,10 +446,10 @@ impl<'a> DomQueryMut<'a> {
     /// invalidation at all, leaving a `display` flip invisible until an
     /// unrelated relayout. A no-op class op (class set unchanged) requests
     /// nothing.
-    fn absorb_class_change(self, changed_nodes: Vec<NodeId>) -> Self {
+    fn absorb_class_change(self, changed_nodes: &[NodeId]) -> Self {
         if !changed_nodes.is_empty() {
             self.app.pending_force_relayout = true;
-            self.app.request_query_refresh(&changed_nodes);
+            self.app.request_query_refresh(changed_nodes);
         }
         self
     }
@@ -597,12 +636,12 @@ impl<'a> DomQueryMut<'a> {
     }
 }
 
-/// Payload of [`App::app_suspend_signal`]: published before the driver stops
+/// Payload of `App::app_suspend_signal`: published before the driver stops
 /// (Python `App.app_suspend_signal`, PR-14).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AppSuspended;
 
-/// Payload of [`App::app_resume_signal`]: published when the driver restarts
+/// Payload of `App::app_resume_signal`: published when the driver restarts
 /// (Python `App.app_resume_signal`, PR-14).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AppResumed;
@@ -620,6 +659,7 @@ pub struct SuspendGuard<'a> {
 
 impl SuspendGuard<'_> {
     /// Whether the suspension is still active (the guard has not been dropped).
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.app.is_suspended()
     }
@@ -653,6 +693,7 @@ pub struct AwaitRemove {
 
 impl AwaitRemove {
     /// The ids detached by the removal, parents before children.
+    #[must_use]
     pub fn removed(&self) -> &[NodeId] {
         &self.removed
     }
@@ -662,11 +703,17 @@ impl AwaitRemove {
     /// True once a lifecycle drain ran after the removal was captured; an
     /// idle pump (no events dispatched) never completes a handle whose work
     /// is still queued.
+    #[must_use]
     pub fn is_complete(&self, app: &App) -> bool {
         app.lifecycle_drain_generation() > self.drain_generation
     }
 }
 
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
+// app_* marks app-wide state; app_suspend_signal and app_resume_signal are
+// Python's names.
+#[allow(clippy::struct_field_names)]
 pub struct App {
     driver: TerminalDriver,
     console: Console,
@@ -784,7 +831,7 @@ pub struct App {
     pending_widget_timer_fires: Vec<u64>,
     /// Messages posted from an `update_via` / timer / `on_mount_ctx` closure
     /// (their sender is the closure's node). The shared flush bubbles them from
-    /// that node after its rounds converge (WidgetCtx `PostUp`).
+    /// that node after its rounds converge (`WidgetCtx` `PostUp`).
     pending_widget_posts: Vec<MessageEvent>,
     /// Type-erased handle to the user app struct (`Arc<Mutex<T>>`), set by the
     /// `TextualApp` adapter at mount time. Lets timer callbacks re-enter the app
@@ -815,7 +862,7 @@ pub struct App {
     dynamic_watchers: Vec<DynamicWatcher>,
     /// Runtime hook used by `action_suspend_process()` (injectable in tests).
     suspend_process_impl: SuspendProcessFn,
-    /// Pending highlight clear: (node_id, clear_at_instant).
+    /// Pending highlight clear: (`node_id`, `clear_at_instant`).
     /// Set by HIGHLIGHT devtools command, cleared after timeout.
     pending_highlight_clear: Option<(NodeId, std::time::Instant)>,
     /// Callback for `check_action` — set by `TextualAppAdapter` to forward calls
@@ -918,7 +965,7 @@ pub struct App {
     /// headless harness keeps it on the `App` so successive `advance_ticks` /
     /// `advance_clock` calls deliver strictly-increasing tick values (mirroring
     /// the live loop's `tick += 1` per frame), which on-tick-driven animations
-    /// (LoadingIndicator, button flash, …) rely on to progress.
+    /// (`LoadingIndicator`, button flash, …) rely on to progress.
     headless_tick: u64,
     /// Whether the headless pump has registered this thread as the UI thread.
     ///
@@ -955,6 +1002,13 @@ pub struct App {
 }
 
 impl App {
+    /// Create an app bound to the current terminal.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`] when the terminal driver cannot read the
+    /// terminal size, for example when no terminal is attached.
+    #[allow(clippy::too_many_lines)] // One initializer per `App` field.
     pub fn new() -> Result<Self> {
         let options = DriverOptions {
             // Preserve textual-rs behavior: mouse capture enabled by default.
@@ -974,8 +1028,7 @@ impl App {
         let frame = FrameBuffer::new(size.width as usize, size.height as usize, None);
         let sync_output = std::env::var("TEXTUAL_SYNC_OUTPUT")
             .ok()
-            .map(|s| s != "0" && s.to_lowercase() != "false")
-            .unwrap_or(true);
+            .is_none_or(|s| s != "0" && s.to_lowercase() != "false");
         let app = Self {
             driver,
             console,
@@ -1137,7 +1190,7 @@ impl App {
         interval: Duration,
         repeat: Option<u64>,
         pause: bool,
-        name: Option<String>,
+        name: Option<&str>,
         callback: TimerCallback,
     ) -> TimerHandle {
         let timer_id = self.alloc_timer_id();
@@ -1179,6 +1232,7 @@ impl App {
     }
 
     /// True while the timer is still registered (not yet fired-out or stopped).
+    #[must_use]
     pub fn timer_is_active(&self, handle: TimerHandle) -> bool {
         self.timers.contains(handle.0)
     }
@@ -1214,7 +1268,9 @@ impl App {
         T: 'static,
     {
         let app_struct = self.app_struct.clone()?;
-        let mut guard = app_struct.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = app_struct
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let typed = guard.downcast_mut::<T>()?;
         Some(f(typed, self, ctx))
     }
@@ -1223,7 +1279,7 @@ impl App {
     fn runtime_node_id(&self) -> NodeId {
         self.widget_tree
             .as_ref()
-            .and_then(|tree| tree.root())
+            .and_then(super::widget_tree::WidgetTree::root)
             .unwrap_or_default()
     }
 
@@ -1439,11 +1495,13 @@ impl App {
     }
 
     /// Current app-level title (as last set via `set_title()`).
+    #[must_use]
     pub fn title(&self) -> &str {
         &self.app_title
     }
 
     /// Current app-level sub-title (as last set via `set_sub_title()`).
+    #[must_use]
     pub fn sub_title(&self) -> Option<&str> {
         self.app_sub_title.as_deref()
     }
@@ -1505,6 +1563,7 @@ impl App {
     }
 
     /// Return current runtime pseudo-class flags (`inline`, `ansi`, `nocolor`).
+    #[must_use]
     pub fn css_runtime_pseudos(&self) -> (bool, bool, bool) {
         (self.app_inline, self.app_ansi, self.app_nocolor)
     }
@@ -1535,6 +1594,7 @@ impl App {
 
     /// Whether inactive screens currently receive the per-frame widget tick.
     /// See [`App::set_tick_inactive_screens`].
+    #[must_use]
     pub fn tick_inactive_screens(&self) -> bool {
         self.tick_inactive_screens
     }
@@ -1559,6 +1619,7 @@ impl App {
     /// Find a widget tree by its process-unique [`WidgetTree::tree_id`], over
     /// the screen stack (top-down) plus the app-root tree. `None` when no live
     /// tree carries that id (e.g. its screen was popped).
+    #[must_use]
     pub fn tree_by_id(&self, tree_id: u64) -> Option<&WidgetTree> {
         for index in (0..self.screen_stack.len()).rev() {
             if let Some(entry) = self.screen_stack.get(index)
@@ -1619,17 +1680,27 @@ impl App {
     /// Query nodes in the active arena tree using a CSS selector.
     ///
     /// Returns a snapshot query object in tree traversal order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector. No match returns an empty query, not an error.
     pub fn query(&self, selector: &str) -> std::result::Result<DomQuery, QueryError> {
-        match self.active_widget_tree() {
-            Some(tree) => tree.query(selector).map(DomQuery::from_nodes),
-            None => {
-                Self::validate_selector(selector)?;
-                Ok(DomQuery::from_nodes(Vec::new()))
-            }
+        if let Some(tree) = self.active_widget_tree() {
+            tree.query(selector).map(DomQuery::from_nodes)
+        } else {
+            Self::validate_selector(selector)?;
+            Ok(DomQuery::from_nodes(Vec::new()))
         }
     }
 
     /// Query first matching node (Python `query_one` semantics).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`, including when
+    ///   there is no active widget tree.
     pub fn query_one(&self, selector: &str) -> std::result::Result<NodeId, QueryError> {
         self.query(selector)?.first()
     }
@@ -1639,17 +1710,29 @@ impl App {
     /// unknown). Lets headless tests (including example smoke tests) assert
     /// row order and non-overlap without reaching into crate-internal fields.
     #[doc(hidden)]
+    #[must_use]
     pub fn layout_rect_for_test(&self, node: NodeId) -> Option<(u16, u16, u16, u16)> {
         let tree = self.active_widget_tree()?;
         crate::layout::inspect_node_rects(tree, node).map(|(layout, _)| layout)
     }
 
     /// Query exactly one node; fails when more than one match exists.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
+    /// - [`QueryError::TooManyMatches`] if more than one node matches.
     pub fn query_exactly_one(&self, selector: &str) -> std::result::Result<NodeId, QueryError> {
         self.query(selector)?.only_one()
     }
 
     /// Query one node optionally.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector. No match returns `Ok(None)`, not an error.
     pub fn query_one_optional(
         &self,
         selector: &str,
@@ -1662,22 +1745,33 @@ impl App {
     }
 
     /// Query immediate children of the tree root.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector. An active tree with no root returns an empty result without
+    /// checking `selector`.
     pub fn query_children(&self, selector: &str) -> std::result::Result<DomQuery, QueryError> {
-        match self.active_widget_tree() {
-            Some(tree) => match tree.root() {
+        if let Some(tree) = self.active_widget_tree() {
+            match tree.root() {
                 Some(root) => tree
                     .query_children(root, selector)
                     .map(DomQuery::from_nodes),
                 None => Ok(DomQuery::from_nodes(Vec::new())),
-            },
-            None => {
-                Self::validate_selector(selector)?;
-                Ok(DomQuery::from_nodes(Vec::new()))
             }
+        } else {
+            Self::validate_selector(selector)?;
+            Ok(DomQuery::from_nodes(Vec::new()))
         }
     }
 
     /// Query closest ancestor of a node matching a selector.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if there is no active widget tree, `node_id`
+    ///   is not in the active tree, or no ancestor of `node_id` matches.
     pub fn query_ancestor(
         &self,
         node_id: NodeId,
@@ -1700,16 +1794,31 @@ impl App {
     }
 
     /// Find first descendant by CSS id (selector `#id`).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `#{id}` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node in the active tree has that id.
     pub fn get_widget_by_id(&self, id: &str) -> std::result::Result<NodeId, QueryError> {
         self.query_one(&format!("#{id}"))
     }
 
     /// Find immediate child of the tree root by CSS id.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `#{id}` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no direct child of the root has that id.
     pub fn get_child_by_id(&self, id: &str) -> std::result::Result<NodeId, QueryError> {
         self.query_children(&format!("#{id}"))?.first()
     }
 
     /// Find immediate child of the tree root by widget type.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when there is no active widget tree,
+    /// the tree has no root, or no direct child of the root is a `T`.
     pub fn get_child_by_type<T: Widget + 'static>(
         &self,
     ) -> std::result::Result<NodeId, QueryError> {
@@ -1739,6 +1848,11 @@ impl App {
     }
 
     /// Mount a widget onto the active screen.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when there is no active widget tree or
+    /// the active tree has no root.
     pub fn mount(
         &mut self,
         widget: impl Widget + 'static,
@@ -1777,13 +1891,18 @@ impl App {
     /// Mount a boxed widget onto the active screen body.
     ///
     /// Routes through the canonical compose-aware mount path
-    /// ([`mount_extracted_recursive`](Self::mount_extracted_recursive)) so the
+    /// (`mount_extracted_recursive`) so the
     /// widget's composed children (e.g. `Welcome`'s `#close` button) are built,
     /// laid out, and painted — matching the compose-time build and Python's
     /// `Widget.mount`, which composes + refreshes the new subtree. A raw
     /// `tree.mount` insert (the previous behavior) left composed children absent
     /// and the widget unpainted; it also targeted the bare tree root, mounting
-    /// the widget offscreen (see [`Self::default_mount_parent`]).
+    /// the widget offscreen (see `Self::default_mount_parent`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when there is no active widget tree or
+    /// the active tree has no root.
     pub fn mount_boxed(
         &mut self,
         widget: Box<dyn Widget>,
@@ -1806,6 +1925,11 @@ impl App {
     ///
     /// Each widget is mounted through the same compose-aware path as
     /// [`mount_boxed`](Self::mount_boxed) so composed children build and paint.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::NoMatch`] when there is no active widget tree or
+    /// the active tree has no root. No widget is mounted in that case.
     pub fn mount_all(
         &mut self,
         widgets: Vec<Box<dyn Widget>>,
@@ -1847,6 +1971,11 @@ impl App {
     ///
     /// `selector` is a CSS selector resolved with [`query_one`](Self::query_one)
     /// (e.g. `"#timers"`, `"VerticalScroll"`). Returns the new node's `NodeId`.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
     pub fn mount_under(
         &mut self,
         selector: &str,
@@ -1857,6 +1986,11 @@ impl App {
     }
 
     /// Mount a boxed widget as the last child of `parent` (a live `NodeId`).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::NoMatch`] if there is no active widget tree.
+    /// - [`QueryError::Unmounted`] if `parent` is not in the active tree.
     pub fn mount_under_node(
         &mut self,
         parent: NodeId,
@@ -1866,6 +2000,11 @@ impl App {
     }
 
     /// Boxed twin of [`mount_under_node`](Self::mount_under_node).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::NoMatch`] if there is no active widget tree.
+    /// - [`QueryError::Unmounted`] if `parent` is not in the active tree.
     pub fn mount_under_node_boxed(
         &mut self,
         parent: NodeId,
@@ -1891,6 +2030,13 @@ impl App {
     ///
     /// Python parity: `mount(widget, before=...)`. The new node becomes a child
     /// of the sibling's parent, inserted at the sibling's index.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
+    /// - [`QueryError::Unmounted`] if the first match is the tree root, which
+    ///   has no parent to mount into.
     pub fn mount_before(
         &mut self,
         selector: &str,
@@ -1903,6 +2049,13 @@ impl App {
     /// Mount a widget immediately after the sibling matched by `selector`.
     ///
     /// Python parity: `mount(widget, after=...)`.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
+    /// - [`QueryError::Unmounted`] if the first match is the tree root, which
+    ///   has no parent to mount into.
     pub fn mount_after(
         &mut self,
         selector: &str,
@@ -1943,13 +2096,19 @@ impl App {
 
     /// Remove the node matched by `selector` (and its whole subtree).
     ///
-    /// Python parity: `Widget.remove` / `query(...).remove()`. Returns
-    /// `Err(QueryError::NoMatch)` if nothing matches, or
-    /// `Err(QueryError::TooManyMatches)` if the selector is ambiguous; use
+    /// Python parity: `Widget.remove` / `query(...).remove()`. Use
     /// [`remove_node`](Self::remove_node) to remove a specific `NodeId`.
     ///
     /// The returned [`AwaitRemove`] completes once the event loop has drained
     /// this removal's unmount work (PR-14).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
+    ///
+    /// When several nodes match, the first match is removed and no error is
+    /// returned.
     pub fn remove(&mut self, selector: &str) -> std::result::Result<AwaitRemove, QueryError> {
         let node_id = self.query_one(selector)?;
         self.remove_node(node_id)
@@ -1963,6 +2122,11 @@ impl App {
     ///
     /// The returned [`AwaitRemove`] completes once the event loop has drained
     /// this removal's unmount work (PR-14).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::NoMatch`] if there is no active widget tree.
+    /// - [`QueryError::Unmounted`] if `node_id` is not in the active tree.
     pub fn remove_node(&mut self, node_id: NodeId) -> std::result::Result<AwaitRemove, QueryError> {
         let generation = self.lifecycle_drain_generation();
         let (parent, removed) = {
@@ -2020,6 +2184,11 @@ impl App {
     }
 
     /// Mutable query handle for chainable bulk mutations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn query_mut(
         &mut self,
         selector: &str,
@@ -2042,6 +2211,7 @@ impl App {
     }
 
     /// Read an app-scoped typed value by key.
+    #[must_use]
     pub fn get_data<T>(&self, key: &str) -> Option<T>
     where
         T: Any + Clone + Send + Sync + 'static,
@@ -2056,6 +2226,11 @@ impl App {
     ///
     /// Whenever `set_data(key, ...)` is called, the binder runs for each
     /// matched widget with the latest typed value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector. The binding is not registered in that case.
     pub fn data_bind<T>(
         &mut self,
         key: impl Into<String>,
@@ -2071,8 +2246,7 @@ impl App {
         let wrapped: Arc<DataBindApplyFn> = Arc::new(move |widget, value| {
             value
                 .downcast_ref::<T>()
-                .map(|typed| apply(widget, typed))
-                .unwrap_or(false)
+                .is_some_and(|typed| apply(widget, typed))
         });
         self.data_bindings.push(DataBinding {
             key: key.clone(),
@@ -2107,6 +2281,11 @@ impl App {
     /// Apply `add_class` to all nodes matching `selector`.
     ///
     /// Returns the number of matched nodes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn action_add_class(
         &mut self,
         selector: &str,
@@ -2121,6 +2300,11 @@ impl App {
     /// Apply `remove_class` to all nodes matching `selector`.
     ///
     /// Returns the number of matched nodes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn action_remove_class(
         &mut self,
         selector: &str,
@@ -2135,6 +2319,11 @@ impl App {
     /// Apply `toggle_class` to all nodes matching `selector`.
     ///
     /// Returns the number of matched nodes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `selector` is not a valid CSS
+    /// selector.
     pub fn action_toggle_class(
         &mut self,
         selector: &str,
@@ -2184,11 +2373,7 @@ impl App {
             focus_chain = tree
                 .walk_depth_first(root)
                 .into_iter()
-                .filter(|&id| {
-                    tree.get(id)
-                        .map(|node| node.widget.focusable())
-                        .unwrap_or(false)
-                })
+                .filter(|&id| tree.get(id).is_some_and(|node| node.widget.focusable()))
                 .collect();
         }
         let Some(&first) = focus_chain.first() else {
@@ -2208,6 +2393,12 @@ impl App {
         false
     }
 
+    /// Focus the widget with CSS id `widget_id` and report whether focus changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] when `#{widget_id}` is not a valid
+    /// CSS selector. A missing widget returns `Ok(false)`, not an error.
     pub fn action_focus(&mut self, widget_id: &str) -> std::result::Result<bool, QueryError> {
         let selector = format!("#{widget_id}");
         let target = match self.query_one(&selector) {
@@ -2305,7 +2496,7 @@ impl App {
         let Some(owner) = self.active_selection_owner.take() else {
             return false;
         };
-        self.with_widget_mut(owner, |widget| widget.clear_selection())
+        self.with_widget_mut(owner, crate::widgets::Widget::clear_selection)
             .unwrap_or(false)
     }
 
@@ -2489,6 +2680,13 @@ impl App {
         self.push_screen(screen).is_ok()
     }
 
+    /// Remove every `HelpPanel` from the active widget tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] only if the fixed `HelpPanel`
+    /// selector fails to parse. It is a valid type selector, so this does not
+    /// happen in practice.
     pub fn action_hide_help_panel(&mut self) -> std::result::Result<bool, QueryError> {
         let ids = self.query("HelpPanel")?.into_ids();
         if ids.is_empty() {
@@ -2503,13 +2701,22 @@ impl App {
         Ok(false)
     }
 
+    /// Mount a `HelpPanel` under the active tree root if none is present.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::ParseError`] only if the fixed `HelpPanel`
+    /// selector fails to parse. It is a valid type selector, so this does not
+    /// happen in practice.
     pub fn action_show_help_panel(&mut self) -> std::result::Result<bool, QueryError> {
         if !self.query("HelpPanel")?.is_empty() {
             return Ok(false);
         }
-        let mount_parent = match self.active_widget_tree().and_then(|tree| tree.root()) {
-            Some(root) => root,
-            None => return Ok(false),
+        let Some(mount_parent) = self
+            .active_widget_tree()
+            .and_then(super::widget_tree::WidgetTree::root)
+        else {
+            return Ok(false);
         };
 
         if let Some(tree) = self.active_widget_tree_mut() {
@@ -2631,6 +2838,13 @@ impl App {
     ///
     /// This is distinct from [`App::action_suspend_process`], which performs
     /// Unix job control (`SIGTSTP`) instead of lending the terminal in-process.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`] when the terminal driver fails to stop and
+    /// restore the terminal. This can happen only when the app is not
+    /// headless and the driver is started. The suspend signal has already
+    /// been published when this error returns.
     pub fn suspend(&mut self) -> Result<SuspendGuard<'_>> {
         self.app_suspend_signal.emit(&AppSuspended);
         // Mirror `action_suspend_process`: never touch a real terminal from
@@ -2648,6 +2862,7 @@ impl App {
     }
 
     /// Whether a [`SuspendGuard`] from [`App::suspend`] is currently live.
+    #[must_use]
     pub fn is_suspended(&self) -> bool {
         self.suspended
     }
@@ -2677,6 +2892,7 @@ impl App {
     ///
     /// Backs [`AwaitRemove::is_complete`]: removals capture this counter and
     /// complete once the event loop has run a later lifecycle drain.
+    #[must_use]
     pub fn lifecycle_drain_generation(&self) -> u64 {
         self.lifecycle_drain_generation
     }
@@ -2691,13 +2907,13 @@ impl App {
     }
 
     pub fn action_screenshot(&mut self, filename: Option<&str>, path: Option<&str>) -> bool {
-        let file_name = filename
+        let name = filename
             .filter(|value| !value.trim().is_empty())
             .unwrap_or("screenshot.svg");
         let output = if let Some(path) = path {
-            PathBuf::from(path).join(file_name)
+            PathBuf::from(path).join(name)
         } else {
-            PathBuf::from(file_name)
+            PathBuf::from(name)
         };
         let result = self.console.save_svg(
             output.to_string_lossy().as_ref(),
@@ -2823,7 +3039,7 @@ impl App {
         std::mem::take(&mut self.pending_recompose_nodes)
     }
 
-    /// Recompose the application root from a freshly composed [`AppRoot`].
+    /// Recompose the application root from a freshly composed [`AppRoot`](crate::widgets::AppRoot).
     ///
     /// Mirrors Python Textual's `reactive(recompose=True)` at the `App`/`Screen`
     /// level (e.g. `recompose01.py`, `set_reactive03.py`): when an app-level
@@ -2839,9 +3055,8 @@ impl App {
     ///
     /// Returns `true` if the recompose was applied.
     pub fn recompose_app(&mut self, fresh_root: crate::widgets::AppRoot) -> bool {
-        let app_content_id = match self.app_content_node_id() {
-            Some(id) => id,
-            None => return false,
+        let Some(app_content_id) = self.app_content_node_id() else {
+            return false;
         };
         let Some(tree) = self.active_widget_tree_mut() else {
             return false;
@@ -2921,6 +3136,7 @@ impl App {
     /// an app reactive use this sentinel as their watcher target, mirroring
     /// Python where the compose-parent of `child.data_bind(App.time)` is the
     /// singleton `App`/`Screen`.
+    #[must_use]
     pub fn app_reactive_source() -> NodeId {
         NodeId::default()
     }
@@ -2939,8 +3155,8 @@ impl App {
     ///     `source` + `source_field`;
     ///   - on fire, the new value is downcast to `T`, then for each matched
     ///     child the caller-supplied `set_child` runs the child's generated
-    ///     reactive setter into a fresh [`ReactiveCtx`] (an *unconditional* set,
-    ///     like Python wrapping the value in `_Mutated`);
+    ///     reactive setter into a fresh [`ReactiveCtx`](crate::ReactiveCtx) (an
+    ///     *unconditional* set, like Python wrapping the value in `_Mutated`);
     ///   - any recorded change is enqueued as a
     ///     [`RuntimeReactiveEntry`](crate::reactive::RuntimeReactiveEntry) so the
     ///     child's `watch_*` runs through the normal runtime reactive phase.
@@ -2966,7 +3182,7 @@ impl App {
             let value = typed.clone();
             let node_ids = app
                 .query(&target_selector)
-                .map(|q| q.into_ids())
+                .map(DomQuery::into_ids)
                 .unwrap_or_default();
             for node_id in node_ids {
                 let value_ref = &value;
@@ -3009,6 +3225,12 @@ impl App {
     /// `reactive_dispatch_with_app` (`watch_with_app`) can run during fan-out.
     ///
     /// Returns `None` if the node is absent or its widget is not a `W`.
+    ///
+    /// # Panics
+    ///
+    /// Does not panic on its own. The internal `expect` downcasts the taken
+    /// widget to `W`, and that same widget passed the `W` check just before
+    /// it was taken.
     pub fn with_widget_taken_as<W, R>(
         &mut self,
         node_id: NodeId,
@@ -3079,8 +3301,8 @@ impl App {
 
     /// Borrow a widget mutably by node id for a scoped update.
     ///
-    /// Runs `f` against the widget through the shared [`run_on_node_widget_r`]
-    /// path (dispatch-recipient guard + reactive-fixpoint / EventCtx absorption),
+    /// Runs `f` against the widget through the shared `run_on_node_widget_r`
+    /// path (dispatch-recipient guard + reactive-fixpoint / `EventCtx` absorption),
     /// so it converges identically to the other node-scoped mutation entry points.
     /// Returns `None` when the node is absent (the `Option<R>` contract). The
     /// closure is ctx-less, so post-mount side effects (class changes,
@@ -3148,6 +3370,11 @@ impl App {
     /// Query one widget by selector and borrow it mutably for a scoped update.
     ///
     /// Escape hatch; prefer `query_one_typed` + `Handle` for typed single-widget access.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
     pub fn with_query_one_mut<R>(
         &mut self,
         selector: &str,
@@ -3160,6 +3387,12 @@ impl App {
     /// Query one widget by selector and mutably downcast it to `T`.
     ///
     /// Escape hatch; prefer `query_one_typed` + `Handle` for typed single-widget access.
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`, or the first
+    ///   matching widget is not a `T`.
     pub fn with_query_one_mut_as<T: Widget + 'static, R>(
         &mut self,
         selector: &str,
@@ -3185,27 +3418,40 @@ impl App {
     ///
     /// Returns `true` if any scroll offset changed.
     pub fn scroll_visible(&mut self, node_id: NodeId) -> bool {
+        // Minimum delta to make [pos, pos + size) fit in [current, current + viewport).
+        fn min_scroll_delta(pos: usize, size: usize, current: usize, viewport: usize) -> i32 {
+            if size >= viewport {
+                // Widget larger than viewport: align top-left.
+                pos.to_i32_sat() - current.to_i32_sat()
+            } else if pos < current {
+                // Widget is above/left of current view.
+                pos.to_i32_sat() - current.to_i32_sat()
+            } else if pos + size > current + viewport {
+                // Widget extends below/right of current view.
+                (pos + size).to_i32_sat() - (current + viewport).to_i32_sat()
+            } else {
+                0
+            }
+        }
+
         // --- Read phase (immutable borrow) ---
 
         // Gather (ancestor_id, widget_rect, ancestor_rect, scroll_offset, viewport_size)
         // for the first scrollable ancestor.
         let scroll_info = {
-            let tree = match self.active_widget_tree() {
-                Some(t) => t,
-                None => return false,
+            let Some(tree) = self.active_widget_tree() else {
+                return false;
             };
-            let node = match tree.get(node_id) {
-                Some(n) => n,
-                None => return false,
+            let Some(node) = tree.get(node_id) else {
+                return false;
             };
             let widget_rect = node.layout_rect;
 
             // Walk ancestors to find the first scrollable one.
             let mut found = None;
             for anc_id in tree.ancestors(node_id) {
-                let anc_node = match tree.get(anc_id) {
-                    Some(n) => n,
-                    None => continue,
+                let Some(anc_node) = tree.get(anc_id) else {
+                    continue;
                 };
                 if let Some(vp) = anc_node.widget.scroll_viewport_size() {
                     let scroll_off = anc_node.widget.scroll_offset();
@@ -3220,10 +3466,9 @@ impl App {
             found
         };
 
-        let (anc_id, widget_rect, anc_rect, (offset_x, offset_y), (vp_w, vp_h)) = match scroll_info
-        {
-            Some(info) => info,
-            None => return false,
+        let Some((anc_id, widget_rect, anc_rect, (offset_x, offset_y), (vp_w, vp_h))) = scroll_info
+        else {
+            return false;
         };
 
         // --- Compute target offsets ---
@@ -3236,31 +3481,16 @@ impl App {
         // offset here would count it twice and over-scroll by exactly the
         // current offset on every call after the first (Python parity:
         // `Widget.virtual_region` is likewise scroll-independent).
-        let virt_x = (widget_rect.x0 as i64)
-            .saturating_sub(anc_rect.x0 as i64)
-            .max(0) as usize;
-        let virt_y = (widget_rect.y0 as i64)
-            .saturating_sub(anc_rect.y0 as i64)
-            .max(0) as usize;
-        let widget_w = widget_rect.x1.saturating_sub(widget_rect.x0) as usize;
-        let widget_h = widget_rect.y1.saturating_sub(widget_rect.y0) as usize;
+        let virt_x = i64::from(widget_rect.x0)
+            .saturating_sub(i64::from(anc_rect.x0))
+            .to_usize_sat();
+        let virt_y = i64::from(widget_rect.y0)
+            .saturating_sub(i64::from(anc_rect.y0))
+            .to_usize_sat();
+        let widget_w = widget_rect.x1.saturating_sub(widget_rect.x0).to_usize_sat();
+        let widget_h = widget_rect.y1.saturating_sub(widget_rect.y0).to_usize_sat();
 
         // Minimum delta to make [virt_x, virt_x + widget_w) fit in [offset_x, offset_x + vp_w).
-        fn min_scroll_delta(pos: usize, size: usize, current: usize, viewport: usize) -> i32 {
-            if size >= viewport {
-                // Widget larger than viewport: align top-left.
-                pos as i32 - current as i32
-            } else if pos < current {
-                // Widget is above/left of current view.
-                pos as i32 - current as i32
-            } else if pos + size > current + viewport {
-                // Widget extends below/right of current view.
-                (pos + size) as i32 - (current + viewport) as i32
-            } else {
-                0
-            }
-        }
-
         let delta_x = min_scroll_delta(virt_x, widget_w, offset_x, vp_w);
         let delta_y = min_scroll_delta(virt_y, widget_h, offset_y, vp_h);
 
@@ -3358,6 +3588,7 @@ impl App {
     /// Mirrors the guard Python uses (`self._thread_id == threading.get_ident()`)
     /// to reject `call_from_thread` from the app thread. Exposed for workers that
     /// want to branch instead of receiving [`CallFromThreadError::SameThread`].
+    #[must_use]
     pub fn is_ui_thread() -> bool {
         tasks::is_ui_thread()
     }
@@ -3407,12 +3638,18 @@ impl App {
         tasks::push_screen_wait(screen)
     }
 
-    /// Typed `query_one` upgrade: selector must match exactly one node whose
-    /// concrete type is `W`.
+    /// Typed `query_one` upgrade: returns a handle to the first node matching
+    /// `selector`, which must have concrete type `W`.
     ///
     /// Typed wrapper over the same arena access as `with_widget_mut_as`;
     /// for imperative widget APIs. Application state belongs in reactive
     /// fields/signals (RA-3).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::ParseError`] if `selector` is not a valid CSS selector.
+    /// - [`QueryError::NoMatch`] if no node matches `selector`.
+    /// - [`QueryError::TypeMismatch`] if the first matching widget is not a `W`.
     pub fn query_one_typed<W: Widget>(
         &self,
         selector: &str,
@@ -3421,10 +3658,16 @@ impl App {
         self.typed_handle::<W>(node_id)
     }
 
-    /// Checked typed upgrade of a NodeId in the active tree.
+    /// Checked typed upgrade of a `NodeId` in the active tree.
     ///
     /// Typed wrapper over the same arena access as `with_widget_mut_as`;
     /// for one-off access to a `NodeId` from a message (e.g. `MessageEvent.sender`).
+    ///
+    /// # Errors
+    ///
+    /// - [`QueryError::Unmounted`] if there is no active widget tree or
+    ///   `node_id` is not in it.
+    /// - [`QueryError::TypeMismatch`] if the widget at `node_id` is not a `W`.
     pub fn typed_handle<W: Widget>(
         &self,
         node_id: NodeId,
@@ -3433,8 +3676,13 @@ impl App {
         crate::handle::Handle::<W>::resolve(tree, node_id)
     }
 
-    /// Mount a widget as a direct child of the active tree root and return a
-    /// typed handle to it (typed twin of `App::mount`, src/runtime/mod.rs:882).
+    /// Mount a widget onto the active screen body, like [`App::mount`], and
+    /// return a typed handle to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::Unmounted`] when there is no active widget tree
+    /// or the active tree has no root.
     pub fn mount_typed<W: Widget>(
         &mut self,
         widget: W,
@@ -3444,7 +3692,7 @@ impl App {
         Ok(crate::handle::Handle::new(node_id, tree.tree_id()))
     }
 
-    /// Plumbing for `Handle::read` (active_widget_tree is pub(super)).
+    /// Plumbing for `Handle::read` (`active_widget_tree` is pub(super)).
     pub(crate) fn handle_read<W: Widget, R>(
         &self,
         handle: crate::handle::Handle<W>,
@@ -3478,8 +3726,7 @@ impl App {
     /// Plumbing for `Handle::is_mounted`.
     pub(crate) fn handle_is_mounted<W: Widget>(&self, handle: crate::handle::Handle<W>) -> bool {
         self.active_widget_tree()
-            .map(|tree| handle.is_mounted_in(tree))
-            .unwrap_or(false)
+            .is_some_and(|tree| handle.is_mounted_in(tree))
     }
 
     /// Build the arena-based widget tree by extracting children from the root widget.
@@ -3661,6 +3908,7 @@ impl App {
         .with_control(sender)
     }
 
+    #[must_use]
     pub fn driver(&self) -> &TerminalDriver {
         &self.driver
     }
@@ -3685,11 +3933,13 @@ impl App {
     }
 
     /// Names of all registered themes, sorted (Python `App.available_themes`).
+    #[must_use]
     pub fn available_themes(&self) -> Vec<String> {
         crate::theme::available_theme_names()
     }
 
     /// The currently active theme name.
+    #[must_use]
     pub fn theme_name(&self) -> &str {
         &self.theme_name
     }
@@ -3700,6 +3950,7 @@ impl App {
     /// publicly so headless `Pilot` tests can assert a `toggle_dark` actually
     /// flipped the state, even when the rendered frame (e.g. a blank screen with
     /// default-styled chrome) shows no per-cell color change.
+    #[must_use]
     pub fn is_dark(&self) -> bool {
         self.dark_mode
     }
@@ -3709,6 +3960,7 @@ impl App {
     /// Under the `Pilot` harness `action_suspend_process` records the request
     /// (instead of sending a real `SIGTSTP`) so suspend-on-interaction demos can
     /// assert the trigger fired without suspending the test runner.
+    #[must_use]
     pub fn headless_suspend_count(&self) -> u32 {
         self.headless_suspend_count
     }
@@ -3722,9 +3974,7 @@ impl App {
             return false;
         }
         self.theme_name = name.to_string();
-        self.dark_mode = crate::theme::get_theme(name)
-            .map(|t| t.dark)
-            .unwrap_or(true);
+        self.dark_mode = crate::theme::get_theme(name).is_none_or(|t| t.dark);
         self.rebuild_base_from_active_theme();
         self.refresh_css_for_theme();
         true
@@ -3786,6 +4036,7 @@ impl App {
         self.cycle_theme()
     }
 
+    #[must_use]
     pub fn binding_hints(&self) -> Vec<BindingHint> {
         let mut out = Vec::new();
         for quit in &self.quit_keys {
@@ -3814,10 +4065,10 @@ impl App {
             out.push(entry.hint.clone());
         }
 
-        self.normalize_binding_hints(out)
+        Self::normalize_binding_hints(out)
     }
 
-    pub(super) fn normalize_binding_hints(&self, out: Vec<BindingHint>) -> Vec<BindingHint> {
+    pub(super) fn normalize_binding_hints(out: Vec<BindingHint>) -> Vec<BindingHint> {
         let mut unique = BTreeSet::new();
         let mut deduped = Vec::new();
         for entry in out {
@@ -3910,6 +4161,7 @@ impl App {
         self.custom_binding_hints.len() != before
     }
 
+    #[must_use]
     pub fn visible_binding_hints(&self) -> Vec<BindingHint> {
         self.binding_hints()
             .into_iter()
@@ -3974,6 +4226,7 @@ impl App {
     }
 
     /// The current keymap (normalized values), for introspection and tests.
+    #[must_use]
     pub fn keymap(&self) -> &crate::bindings::Keymap {
         &self.keymap
     }
@@ -4121,8 +4374,7 @@ impl App {
         let root = tree.root()?;
         tree.walk_depth_first(root).into_iter().find(|&id| {
             tree.get(id)
-                .map(|node| node.widget.style_type() == "ToastRack")
-                .unwrap_or(false)
+                .is_some_and(|node| node.widget.style_type() == "ToastRack")
         })
     }
 
@@ -4145,8 +4397,7 @@ impl App {
                     || bind.modifiers.contains(KeyModifiers::SUPER)
             })
             .or_else(|| self.quit_keys.first())
-            .map(|bind| bind.key_name())
-            .unwrap_or_else(|| "ctrl+q".to_string());
+            .map_or_else(|| "ctrl+q".to_string(), super::event::KeyBind::key_name);
         self.notify(
             format!("Press [b]{key}[/b] to quit the app"),
             "Do you want to quit?",
@@ -4155,7 +4406,7 @@ impl App {
         );
     }
 
-    fn dispatch_screen_lifecycle_event(&mut self, event: Event) {
+    fn dispatch_screen_lifecycle_event(&mut self, event: &Event) {
         // App-level lifecycle messages target the runtime root tree.
         // ScreenStack handles per-screen suspend/resume through Screen hooks.
         let Some(tree) = self.widget_tree.as_mut() else {
@@ -4165,7 +4416,7 @@ impl App {
             return;
         }
         let focused = routing::focused_node_id_tree(tree);
-        let _ = routing::dispatch_event_tree(tree, focused, &event);
+        let _ = routing::dispatch_event_tree(tree, focused, event);
     }
 
     pub fn set_stylesheet(&mut self, stylesheet: StyleSheet) {
@@ -4186,6 +4437,12 @@ impl App {
         self.stylesheet_source = Some(css.to_string());
     }
 
+    /// Replace the app stylesheet with the CSS in a file.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`], which wraps the I/O error, when the file
+    /// at `path` cannot be read.
     pub fn load_stylesheet_file(&mut self, path: impl Into<PathBuf>) -> Result<()> {
         let path = path.into();
         let css = fs::read_to_string(&path)?;
@@ -4194,6 +4451,12 @@ impl App {
         Ok(())
     }
 
+    /// Load a stylesheet file and poll it for changes every `interval`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`], which wraps the I/O error, when the file
+    /// at `path` cannot be read.
     pub fn watch_stylesheet(&mut self, path: impl Into<PathBuf>, interval: Duration) -> Result<()> {
         let path = path.into();
         let css = fs::read_to_string(&path)?;
@@ -4214,6 +4477,13 @@ impl App {
         self.action_map.bind(key, action);
     }
 
+    /// Start the terminal driver and size the frame buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`] when the terminal driver fails to start,
+    /// the terminal size cannot be read, or writing the pointer-shape reset
+    /// sequence fails. Headless apps never return `Err`.
     pub fn start(&mut self) -> Result<()> {
         self.last_focused_on_app_blur = None;
         self.last_binding_hints.clear();
@@ -4241,6 +4511,12 @@ impl App {
         Ok(())
     }
 
+    /// Stop the terminal driver and print the exit message, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`] when the terminal driver fails to stop and
+    /// restore the terminal. Headless apps never return `Err`.
     pub fn finish(&mut self) -> Result<()> {
         if self.headless {
             return Ok(());
@@ -4274,27 +4550,35 @@ impl App {
     }
 
     /// The value passed to [`App::exit`] (Python `App.return_value`).
+    #[must_use]
     pub fn return_value(&self) -> Option<&str> {
         self.return_value.as_deref()
     }
 
     /// The code passed to [`App::exit`] (Python `App.return_code`).
+    #[must_use]
     pub fn return_code(&self) -> i32 {
         self.return_code
     }
 
     /// The shutdown message passed to [`App::exit`], if any.
+    #[must_use]
     pub fn exit_message(&self) -> Option<&str> {
         self.exit_message.as_deref()
     }
 
     /// Ring the terminal bell. Python `App.bell`: a no-op while headless,
     /// otherwise writes `\x07` to stdout.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Terminal`] when writing `\x07` to stdout or flushing
+    /// stdout fails. Headless apps never return `Err`.
     pub fn bell(&self) -> Result<()> {
+        use std::io::Write;
         if self.headless {
             return Ok(());
         }
-        use std::io::Write;
         let stdout = std::io::stdout();
         let mut handle = stdout.lock();
         handle.write_all(b"\x07")?;
@@ -4309,6 +4593,11 @@ impl App {
     /// follows the browser's own settings (the underlying opener exposes no
     /// tab control). While headless there is no browser to open, so the URL
     /// is recorded instead — assert on [`App::last_opened_url`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Message`] when the system opener fails to open `url`.
+    /// Headless apps never return `Err`.
     pub fn open_url(&mut self, url: &str, new_tab: bool) -> Result<()> {
         let _ = new_tab;
         if self.headless {
@@ -4320,12 +4609,14 @@ impl App {
     }
 
     /// The last URL passed to [`App::open_url`] while headless, if any.
+    #[must_use]
     pub fn last_opened_url(&self) -> Option<&str> {
         self.last_opened_url.as_deref()
     }
 
     /// True while no animation is running. Test/Pilot helper backing
     /// [`Pilot::wait_for_animation`](crate::runtime::Pilot::wait_for_animation).
+    #[must_use]
     pub fn animator_is_idle(&self) -> bool {
         !self.animator.has_animations()
     }
@@ -4372,6 +4663,7 @@ impl App {
     }
 
     /// Explicit mouse-capture target, if any (see [`App::capture_mouse`]).
+    #[must_use]
     pub fn mouse_captured(&self) -> Option<NodeId> {
         self.click_tracker.capture_target()
     }
@@ -4383,8 +4675,13 @@ impl App {
     /// Returns `Err` and pushes nothing when the screen's stylesheet path
     /// is missing/unreadable ([`Error::StylesheetError`], PR-11) instead of
     /// silently rendering unstyled.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::StylesheetError`] when the screen's `css()` value is a
+    /// file path and that file is missing or unreadable.
     pub fn push_screen(&mut self, screen: Box<dyn crate::screen::Screen>) -> Result<()> {
-        self.dispatch_screen_lifecycle_event(Event::ScreenSuspend);
+        self.dispatch_screen_lifecycle_event(&Event::ScreenSuspend);
         self.screen_stack.push(screen)?;
         self.honor_screen_auto_focus();
         // The active tree changed; force a relayout + full repaint, and re-sync
@@ -4455,10 +4752,7 @@ impl App {
         if !tree.contains(target) {
             return false;
         }
-        let focusable = tree
-            .get(target)
-            .map(|node| node.widget.focusable())
-            .unwrap_or(false);
+        let focusable = tree.get(target).is_some_and(|node| node.widget.focusable());
         if !focusable {
             return false;
         }
@@ -4477,12 +4771,18 @@ impl App {
     ///
     /// The callback is invoked with the `ScreenResult` when the screen is
     /// popped (either via `pop_screen()` or via `dismiss_screen()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::StylesheetError`] when the screen's `css()` value is a
+    /// file path and that file is missing or unreadable. Nothing is pushed in
+    /// that case.
     pub fn push_screen_with_callback(
         &mut self,
         screen: Box<dyn crate::screen::Screen>,
         callback: crate::screen::ScreenResultCallback,
     ) -> Result<()> {
-        self.dispatch_screen_lifecycle_event(Event::ScreenSuspend);
+        self.dispatch_screen_lifecycle_event(&Event::ScreenSuspend);
         self.screen_stack.push_with_callback(screen, callback)?;
         self.honor_screen_auto_focus();
         // The active tree changed; force a relayout + full repaint, and re-sync
@@ -4503,7 +4803,7 @@ impl App {
                 if mode_name.is_some() {
                     self.current_mode = None;
                 }
-                self.dispatch_screen_lifecycle_event(Event::ScreenResume);
+                self.dispatch_screen_lifecycle_event(&Event::ScreenResume);
                 // Re-sync live notifications onto the resumed tree's ToastRack.
                 self.mark_notifications_for_resync();
             }
@@ -4523,7 +4823,7 @@ impl App {
             if mode_name.is_some() {
                 self.current_mode = None;
             }
-            self.dispatch_screen_lifecycle_event(Event::ScreenResume);
+            self.dispatch_screen_lifecycle_event(&Event::ScreenResume);
             // The active tree changed; force a relayout + full repaint.
             self.pending_force_relayout = true;
             result
@@ -4536,16 +4836,19 @@ impl App {
     }
 
     /// Number of screens on the stack.
+    #[must_use]
     pub fn screen_count(&self) -> usize {
         self.screen_stack.len()
     }
 
     /// Get the title from the active screen (if it defines one).
+    #[must_use]
     pub fn active_screen_title(&self) -> Option<String> {
         self.screen_stack.active_title()
     }
 
     /// Get the sub-title from the active screen (if it defines one).
+    #[must_use]
     pub fn active_screen_sub_title(&self) -> Option<String> {
         self.screen_stack.active_sub_title()
     }
@@ -4590,16 +4893,15 @@ impl App {
         }
 
         // Verify the mode is registered.
-        let factory = match self.modes.get(name) {
-            Some(f) => f,
-            None => return false,
+        let Some(factory) = self.modes.get(name) else {
+            return false;
         };
 
         // Create the new screen from the factory before popping the old one,
         // so that if the factory panics the old screen is still intact.
         let new_screen = factory();
 
-        self.dispatch_screen_lifecycle_event(Event::ScreenSuspend);
+        self.dispatch_screen_lifecycle_event(&Event::ScreenSuspend);
 
         // Remove the current mode screen by its mode tag (safe even if
         // transient screens are on top).
@@ -4620,20 +4922,22 @@ impl App {
         }
         let _ = self.focus_first_in_active_tree();
         self.current_mode = Some(name.to_string());
-        self.dispatch_screen_lifecycle_event(Event::ScreenResume);
+        self.dispatch_screen_lifecycle_event(&Event::ScreenResume);
         // Re-sync live notifications onto the new mode screen's ToastRack.
         self.mark_notifications_for_resync();
         true
     }
 
     /// The name of the currently active mode, if any.
+    #[must_use]
     pub fn current_mode(&self) -> Option<&str> {
         self.current_mode.as_deref()
     }
 
     /// Returns the list of registered mode names.
+    #[must_use]
     pub fn mode_names(&self) -> Vec<&str> {
-        self.modes.keys().map(|s| s.as_str()).collect()
+        self.modes.keys().map(std::string::String::as_str).collect()
     }
 
     /// Remove a registered mode by name.
@@ -4659,6 +4963,13 @@ impl App {
 
     /// Run the CSS-layout pass on the arena tree (if present).
     ///
+    /// # Errors
+    ///
+    /// - [`Error::RuntimeStopped`] if [`App::stop`] or [`App::exit`] ran
+    ///   before this call.
+    /// - Any error from [`App::start`], for example [`Error::Terminal`] when
+    ///   the terminal driver fails to start.
+    #[allow(clippy::unused_async)] // Public async API; the loop does not await yet.
     pub async fn run(&mut self) -> Result<()> {
         if !self.running {
             return Err(Error::RuntimeStopped);
@@ -4674,7 +4985,7 @@ impl App {
         if x >= self.frame.width || y >= self.frame.height {
             return false;
         }
-        let hovered = self.widget_at_auto(x as u16, y as u16);
+        let hovered = self.widget_at_auto(x.to_u16_sat(), y.to_u16_sat());
 
         let hovered_changed = hovered != self.hovered;
         if hovered_changed {
@@ -4703,16 +5014,15 @@ impl App {
 
         // Forward updated coordinates so widgets can track intra-widget mouse position.
         let moved_changed = if let Some(id) = self.hovered {
-            let (lx, ly) = self.content_local_coords_auto(id, x as u16, y as u16);
+            let (lx, ly) = self.content_local_coords_auto(id, x.to_u16_sat(), y.to_u16_sat());
             self.call_on_mouse_move_auto(root, id, lx, ly, false)
         } else {
             // No hover target: forward through the real root widget so app
             // wrappers can still observe pointer movement outside widget hits.
             debug_input(&format!(
-                "[hover] fallback root-move via real-root screen=({}, {})",
-                x, y
+                "[hover] fallback root-move via real-root screen=({x}, {y})"
             ));
-            root.on_mouse_move(x as u16, y as u16)
+            root.on_mouse_move(x.to_u16_sat(), y.to_u16_sat())
         };
 
         hovered_changed || moved_changed
@@ -4768,10 +5078,8 @@ impl App {
                 self.content_local_coords_auto(owner, screen_x, screen_y);
             let origin_x = i32::from(screen_x) - i32::from(cursor_local_x);
             let origin_y = i32::from(screen_y) - i32::from(cursor_local_y);
-            let anchor_x =
-                (origin_x + i32::from(anchor_local_x)).clamp(0, i32::from(u16::MAX)) as u16;
-            let anchor_y =
-                (origin_y + i32::from(anchor_local_y)).clamp(0, i32::from(u16::MAX)) as u16;
+            let anchor_x = (origin_x + i32::from(anchor_local_x)).to_u16_sat();
+            let anchor_y = (origin_y + i32::from(anchor_local_y)).to_u16_sat();
             return Some((anchor_x, anchor_y));
         }
 
@@ -4783,8 +5091,8 @@ impl App {
         // Anchor is a screen position; clamp the (possibly off-viewport) center
         // back into the non-negative screen coordinate space.
         Some((
-            (rect.x0 + width / 2).clamp(0, i32::from(u16::MAX)) as u16,
-            (rect.y0 + height / 2).clamp(0, i32::from(u16::MAX)) as u16,
+            (rect.x0 + width / 2).to_u16_sat(),
+            (rect.y0 + height / 2).to_u16_sat(),
         ))
     }
 
@@ -4811,49 +5119,46 @@ impl App {
         }
 
         let mut changed = false;
-        match next {
-            Some((owner, text)) => {
-                // Keep the anchor stable while the pointer stays over the same
-                // owner (Python re-anchors only when the hover timer re-fires on
-                // a new owner); re-anchor when the owner changes or the bubble
-                // was hidden.
-                let reanchor = self
-                    .with_widget_mut_as::<Tooltip, _>(tooltip_id, |tooltip| {
-                        !(tooltip.is_visible() && tooltip.system_owner() == Some(owner))
-                    })
-                    .unwrap_or(true);
-                changed |= self
-                    .with_widget_mut_as::<Tooltip, _>(tooltip_id, |tooltip| {
-                        tooltip.apply_system_state(owner, text)
-                    })
-                    .unwrap_or(false);
-                if reanchor {
-                    // The anchor is the mouse-relative screen point to center the
-                    // bubble on (Python `screen.absolute_offset = mouse_position`).
-                    // It is stored as the node's `absolute_offset`; CSS
-                    // `offset-x: -50%` + `margin` then position it and the
-                    // `overlay: screen` paint pass constrains it into the frame.
-                    let (anchor_x, anchor_y) = self
-                        .tooltip_anchor_for_owner(owner, screen_x, screen_y)
-                        .unwrap_or((0, 0));
-                    if let Some(tree) = self.active_widget_tree_mut() {
-                        changed |= tree.set_absolute_offset(
-                            tooltip_id,
-                            Some((i32::from(anchor_x), i32::from(anchor_y))),
-                        );
-                    }
-                }
-                changed |= self.set_runtime_display_for_node(tooltip_id, true);
-            }
-            None => {
-                changed |= self
-                    .with_widget_mut_as::<Tooltip, _>(tooltip_id, Tooltip::hide_system)
-                    .unwrap_or(false);
+        if let Some((owner, text)) = next {
+            // Keep the anchor stable while the pointer stays over the same
+            // owner (Python re-anchors only when the hover timer re-fires on
+            // a new owner); re-anchor when the owner changes or the bubble
+            // was hidden.
+            let reanchor = self
+                .with_widget_mut_as::<Tooltip, _>(tooltip_id, |tooltip| {
+                    !(tooltip.is_visible() && tooltip.system_owner() == Some(owner))
+                })
+                .unwrap_or(true);
+            changed |= self
+                .with_widget_mut_as::<Tooltip, _>(tooltip_id, |tooltip| {
+                    tooltip.apply_system_state(owner, text)
+                })
+                .unwrap_or(false);
+            if reanchor {
+                // The anchor is the mouse-relative screen point to center the
+                // bubble on (Python `screen.absolute_offset = mouse_position`).
+                // It is stored as the node's `absolute_offset`; CSS
+                // `offset-x: -50%` + `margin` then position it and the
+                // `overlay: screen` paint pass constrains it into the frame.
+                let (anchor_x, anchor_y) = self
+                    .tooltip_anchor_for_owner(owner, screen_x, screen_y)
+                    .unwrap_or((0, 0));
                 if let Some(tree) = self.active_widget_tree_mut() {
-                    changed |= tree.set_absolute_offset(tooltip_id, None);
+                    changed |= tree.set_absolute_offset(
+                        tooltip_id,
+                        Some((i32::from(anchor_x), i32::from(anchor_y))),
+                    );
                 }
-                changed |= self.set_runtime_display_for_node(tooltip_id, false);
             }
+            changed |= self.set_runtime_display_for_node(tooltip_id, true);
+        } else {
+            changed |= self
+                .with_widget_mut_as::<Tooltip, _>(tooltip_id, Tooltip::hide_system)
+                .unwrap_or(false);
+            if let Some(tree) = self.active_widget_tree_mut() {
+                changed |= tree.set_absolute_offset(tooltip_id, None);
+            }
+            changed |= self.set_runtime_display_for_node(tooltip_id, false);
         }
 
         changed
@@ -4922,7 +5227,7 @@ impl App {
             .and_then(|m| m.meta.as_ref())
             .and_then(|map| map.get("textual:widget_id"))
             .and_then(|value| match value {
-                MetaValue::Int(n) if *n >= 0 => Some(node_id_from_ffi(*n as u64)),
+                MetaValue::Int(n) if *n >= 0 => Some(node_id_from_meta(*n)),
                 _ => None,
             });
 
@@ -5007,27 +5312,23 @@ impl App {
                 ));
             } else {
                 debug_input(&format!(
-                    "[hover] widget_at source=frame+tree x={} y={} target=None",
-                    x, y
+                    "[hover] widget_at source=frame+tree x={x} y={y} target=None"
                 ));
             }
             chosen
+        } else if let Some(target) = frame_target {
+            debug_input(&format!(
+                "[hover] widget_at source=frame x={} y={} target={}",
+                x,
+                y,
+                node_id_to_ffi(target)
+            ));
+            Some(target)
         } else {
-            if let Some(target) = frame_target {
-                debug_input(&format!(
-                    "[hover] widget_at source=frame x={} y={} target={}",
-                    x,
-                    y,
-                    node_id_to_ffi(target)
-                ));
-                Some(target)
-            } else {
-                debug_input(&format!(
-                    "[hover] widget_at source=none x={} y={} target=None (tree-missing)",
-                    x, y
-                ));
-                None
-            }
+            debug_input(&format!(
+                "[hover] widget_at source=none x={x} y={y} target=None (tree-missing)"
+            ));
+            None
         }
     }
 
@@ -5079,8 +5380,7 @@ impl App {
             let now = Instant::now();
             let dt_ms = self
                 .last_resize_at
-                .map(|t| now.duration_since(t).as_millis())
-                .unwrap_or(0);
+                .map_or(0, |t| now.duration_since(t).as_millis());
             self.last_resize_at = Some(now);
             self.resize_burst = self.resize_burst.saturating_add(1);
             debug_render(&format!(
@@ -5116,10 +5416,7 @@ impl App {
         let Ok(modified) = meta.modified() else {
             return None;
         };
-        let changed = watch
-            .last_modified
-            .map(|prev| modified > prev)
-            .unwrap_or(true);
+        let changed = watch.last_modified.is_none_or(|prev| modified > prev);
         if !changed {
             return None;
         }
@@ -5177,8 +5474,7 @@ fn choose_deeper_target(
                 Some(frame)
             }
         }
-        (Some(frame), Some(_)) => Some(frame),
-        (Some(frame), None) => Some(frame),
+        (Some(frame), _) => Some(frame),
         (None, Some(tree_hit)) => Some(tree_hit),
         (None, None) => None,
     }
@@ -5194,7 +5490,7 @@ fn debug_target_label(tree: &WidgetTree, id: Option<NodeId>) -> String {
     match id {
         Some(node_id) => {
             if let Some(node) = tree.get(node_id) {
-                let parent = tree.parent(node_id).map(node_id_to_ffi).unwrap_or(0);
+                let parent = tree.parent(node_id).map_or(0, node_id_to_ffi);
                 format!(
                     "Some(id={},type={},parent={},children={})",
                     node_id_to_ffi(node_id),
@@ -5257,7 +5553,7 @@ fn style_affects_layout(style: &crate::style::Style) -> bool {
 /// Build an arena-based [`WidgetTree`] from a root widget without requiring
 /// a full [`App`] instance.
 ///
-/// Replicates the extraction logic of [`App::build_widget_tree()`] for
+/// Replicates the extraction logic of `App::build_widget_tree()` for
 /// user-declared children (excluding runtime-injected system widgets):
 /// 1. Creates a `TreeStubWidget` root node.
 /// 2. Recursively extracts children via `compose()`.
@@ -5284,7 +5580,7 @@ pub fn build_widget_tree_from_root(root: &mut dyn Widget) -> Option<WidgetTree> 
     // inheritance reads the root widget's `style()`, not the root node's styles.
     {
         let root_classes: Vec<String> = root.style_classes().to_vec();
-        let root_css_id: Option<String> = root.style_id().map(|s| s.to_string());
+        let root_css_id: Option<String> = root.style_id().map(std::string::ToString::to_string);
         for class in &root_classes {
             tree.add_class(root_node_id, class);
         }
@@ -5600,8 +5896,7 @@ mod tests {
         let hidden = app
             .active_widget_tree()
             .and_then(|tree| tree.get(tooltip_id))
-            .map(|node| !node.runtime_display)
-            .unwrap_or(false);
+            .is_some_and(|node| !node.runtime_display);
         assert!(hidden, "system tooltip should start hidden");
     }
 
@@ -5622,16 +5917,12 @@ mod tests {
             tree.set_hover_state(target, true);
         }
 
-        let (focused, hovered) = app
-            .widget_tree
-            .as_ref()
-            .map(|tree| {
-                (
-                    tree.node_state(target).focused,
-                    tree.node_state(target).hovered,
-                )
-            })
-            .unwrap_or((false, false));
+        let (focused, hovered) = app.widget_tree.as_ref().map_or((false, false), |tree| {
+            (
+                tree.node_state(target).focused,
+                tree.node_state(target).hovered,
+            )
+        });
         assert!(focused);
         assert!(hovered);
     }
@@ -5657,7 +5948,10 @@ mod tests {
         assert_eq!(app.app_content_node_id(), Some(app_content));
 
         // Before: exactly one Label with text "before".
-        let before_labels = app.query("Label").map(|q| q.into_ids()).unwrap_or_default();
+        let before_labels = app
+            .query("Label")
+            .map(super::DomQuery::into_ids)
+            .unwrap_or_default();
         assert_eq!(
             before_labels.len(),
             1,
@@ -5676,7 +5970,10 @@ mod tests {
             Some(app_content),
             "app-content node id is stable across recompose"
         );
-        let after_labels = app.query("Label").map(|q| q.into_ids()).unwrap_or_default();
+        let after_labels = app
+            .query("Label")
+            .map(super::DomQuery::into_ids)
+            .unwrap_or_default();
         assert_eq!(after_labels.len(), 2, "expected two Labels after recompose");
         assert!(
             after_labels.iter().all(|id| !before_labels.contains(id)),
@@ -5949,8 +6246,7 @@ mod tests {
         let first_visible = app
             .active_widget_tree()
             .and_then(|tree| tree.get(tooltip_id))
-            .map(|node| node.runtime_display)
-            .unwrap_or(false);
+            .is_some_and(|node| node.runtime_display);
         assert!(first_visible);
         // Hovering the SAME owner keeps the anchor stable (no re-anchor) and is a
         // no-op overall.
@@ -6099,8 +6395,7 @@ mod tests {
         let visible = app
             .active_widget_tree()
             .and_then(|tree| tree.get(tooltip_id))
-            .map(|node| node.runtime_display)
-            .unwrap_or(true);
+            .is_none_or(|node| node.runtime_display);
         assert!(!visible, "tooltip should remain hidden during cooldown");
     }
 
@@ -6522,6 +6817,7 @@ mod tests {
 
         static SUSPEND_CALLS: AtomicUsize = AtomicUsize::new(0);
 
+        #[allow(clippy::unnecessary_wraps)] // Must match the suspend hook's signature.
         fn suspend_ok() -> io::Result<()> {
             SUSPEND_CALLS.fetch_add(1, Ordering::Relaxed);
             Ok(())
@@ -6644,7 +6940,10 @@ mod tests {
             &mut pending,
         );
         // The post bubbled into the pending widget-post queue (PostUp path).
-        posted |= app.pending_widget_posts.iter().any(|m| m.is::<MountPing>());
+        posted |= app
+            .pending_widget_posts
+            .iter()
+            .any(super::super::message::MessageEvent::is::<MountPing>);
         assert!(posted, "on_mount should post a MountPing");
     }
 
@@ -7207,9 +7506,6 @@ mod tests {
     // (event_loop.rs `dispatch_message_queue_auto_calls_app_message_when_root_message_unhandled`).
     #[test]
     fn screen_callback_defers_app_message_via_widget_command_on_dismiss() {
-        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
         use crate::message::CommandPaletteCommandSelected;
         use crate::runtime::commands::{WidgetCommand, take_widget_commands};
         use crate::screen::{Screen, ScreenMessageCtx, ScreenResult};
@@ -7226,6 +7522,9 @@ mod tests {
         // it observes any key (standing in for a CommandList `OptionSelected`).
         struct StubScreen;
         impl Screen for StubScreen {
+            // `Screen::name` returns `&str` so names may be runtime values; an impl
+            // cannot narrow it to `&'static str`, whatever clippy suggests.
+            #[allow(clippy::unnecessary_literal_bound)]
             fn name(&self) -> &str {
                 "CommandPaletteScreen"
             }
@@ -7252,6 +7551,9 @@ mod tests {
             }
         }
 
+        let _guard = crate::runtime::tasks::UI_THREAD_BRIDGE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut app = App::new().expect("app should initialize");
         // The selection callback defers the command via the runtime WidgetCommand
         // FIFO (exactly what the adapter's command-palette open path will do at

@@ -26,6 +26,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments, Style};
 use super::core::{NodeSeed, Widget};
 use crate::event::{Event, WidgetCtx};
 use crate::message::DateChanged;
+use crate::num::Cast;
 
 /// Minimum selectable year.
 pub const YEAR_MIN: i32 = 1900;
@@ -52,17 +53,19 @@ enum SegmentKind {
 }
 
 /// Days in `month` of `year` (Gregorian leap-year rule).
+#[must_use]
 pub fn days_in_month(year: i32, month: u8) -> u8 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
         2 if is_leap_year(year) => 29,
         2 => 28,
+        // April, June, September and November (and any out-of-range month).
         _ => 30,
     }
 }
 
 /// Gregorian leap-year rule.
+#[must_use]
 pub fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
@@ -89,6 +92,7 @@ pub struct DateInput {
 }
 
 impl DateInput {
+    #[must_use]
     pub fn new(year: i32, month: u8, day: u8) -> Self {
         let mut input = Self {
             seed: NodeSeed::default(),
@@ -107,16 +111,19 @@ impl DateInput {
     crate::seed_ident_methods!();
 
     /// Segment order (locale layout).
+    #[must_use]
     pub fn order(mut self, order: DateOrder) -> Self {
         self.order = order;
         self
     }
 
+    #[must_use]
     pub fn order_of(&self) -> DateOrder {
         self.order
     }
 
     /// Current date as `(year, month, day)`.
+    #[must_use]
     pub fn date(&self) -> (i32, u8, u8) {
         (self.year, self.month, self.day)
     }
@@ -124,11 +131,13 @@ impl DateInput {
     /// Strip open state. Real focus transitions post Focus/Blur and flip
     /// this immediately; a silent mount auto-focus (live loop) opens the
     /// strip on first input via the focus-state sync in `on_event`.
+    #[must_use]
     pub fn is_open(&self) -> bool {
         self.open
     }
 
     /// Index of the focused segment (position in display order).
+    #[must_use]
     pub fn focused_segment(&self) -> usize {
         self.seg
     }
@@ -148,15 +157,15 @@ impl DateInput {
 
     fn seg_value(&self, kind: SegmentKind) -> i32 {
         match kind {
-            SegmentKind::Day => self.day as i32,
-            SegmentKind::Month => self.month as i32,
+            SegmentKind::Day => i32::from(self.day),
+            SegmentKind::Month => i32::from(self.month),
             SegmentKind::Year => self.year,
         }
     }
 
     fn seg_range(&self, kind: SegmentKind) -> (i32, i32) {
         match kind {
-            SegmentKind::Day => (1, days_in_month(self.year, self.month) as i32),
+            SegmentKind::Day => (1, i32::from(days_in_month(self.year, self.month))),
             SegmentKind::Month => (1, 12),
             SegmentKind::Year => (YEAR_MIN, YEAR_MAX),
         }
@@ -190,8 +199,8 @@ impl DateInput {
         let wrapped = wrap_range(value, min, max);
         let changed = self.seg_value(kind) != wrapped;
         match kind {
-            SegmentKind::Day => self.day = wrapped as u8,
-            SegmentKind::Month => self.month = wrapped as u8,
+            SegmentKind::Day => self.day = wrapped.to_u8_sat(),
+            SegmentKind::Month => self.month = wrapped.to_u8_sat(),
             SegmentKind::Year => self.year = wrapped,
         }
         self.clamp_day();
@@ -274,7 +283,7 @@ impl DateInput {
     /// Move segment focus by `dir` with wrap, committing in-progress typing.
     fn move_seg(&mut self, ctx: &mut WidgetCtx, dir: i32) {
         self.commit_typing(ctx);
-        self.seg = wrap_range(self.seg as i32 + dir, 0, 2) as usize;
+        self.seg = (wrap_range(self.seg.to_i32_sat() + dir, 0, 2)).to_usize_sat();
         ctx.request_repaint();
     }
 
@@ -352,7 +361,7 @@ impl DateInput {
 
 /// Click zones of the spinner strip row (offsets from the row start).
 struct StripZones {
-    /// x < dec_end (the `<` end): step down.
+    /// x < `dec_end` (the `<` end): step down.
     dec_end: usize,
     /// Previous value zone (click sets it).
     prev: (usize, usize, i32),
@@ -360,7 +369,7 @@ struct StripZones {
     cur: (usize, usize, i32),
     /// Next value zone (click sets it).
     next: (usize, usize, i32),
-    /// x >= inc_start (the `>` end): step up.
+    /// x >= `inc_start` (the `>` end): step up.
     inc_start: usize,
 }
 
@@ -446,7 +455,7 @@ impl Widget for DateInput {
         if let Some(pos) = strip.find(&cur_s) {
             // Match the `| CC |` cell, not a coincidental digit run: the
             // current cell is the middle `X | CC | Y` group.
-            let cell_start = strip[..pos].rfind("| ").map(|p| p + 2).unwrap_or(pos);
+            let cell_start = strip[..pos].rfind("| ").map_or(pos, |p| p + 2);
             let cell_end = pos + cur_s.len();
             if cell_start > 0 {
                 strip_line.push(Segment::new(strip[..cell_start].to_string()));

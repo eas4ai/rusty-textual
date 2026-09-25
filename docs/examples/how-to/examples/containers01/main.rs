@@ -8,12 +8,12 @@
 ///   - `ContainerApp.compose()` yields `Horizontal` containing three `Box` widgets.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Placeholder {
     width: 16;
     height: 8;
 }
-"#;
+";
 
 struct ContainerApp;
 

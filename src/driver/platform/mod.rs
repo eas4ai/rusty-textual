@@ -8,6 +8,8 @@ mod posix;
 mod windows;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct CapabilityProfile {
     pub supports_dim_reliably: bool,
     pub supports_reverse_reliably: bool,

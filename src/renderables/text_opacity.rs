@@ -20,9 +20,13 @@ impl<R> TextOpacity<R> {
     }
 
     pub fn from_percent(renderable: R, opacity_percent: u8) -> Self {
-        Self::new(renderable, (opacity_percent as f32 / 100.0).clamp(0.0, 1.0))
+        Self::new(
+            renderable,
+            (f32::from(opacity_percent) / 100.0).clamp(0.0, 1.0),
+        )
     }
 
+    #[must_use]
     pub fn process_segments(segments: Segments, opacity: f32) -> Segments {
         let opacity = opacity.clamp(0.0, 1.0);
         if (opacity - 1.0).abs() < f32::EPSILON {
@@ -60,11 +64,13 @@ impl<R> TextOpacity<R> {
             .collect()
     }
 
+    #[must_use]
     pub fn apply_alpha(color: crate::style::Color, opacity: f32) -> crate::style::Color {
         // Python `Color.multiply_alpha`: `a * opacity`, kept as a float.
         color.with_alpha(color.a * opacity.clamp(0.0, 1.0))
     }
 
+    #[must_use]
     pub fn blend_foreground_over_background(
         foreground: crate::style::Color,
         background: crate::style::Color,

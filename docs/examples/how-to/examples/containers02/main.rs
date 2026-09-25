@@ -5,22 +5,22 @@
 ///
 /// Python layout:
 ///   class Box(Placeholder):
-///       DEFAULT_CSS = "Box { width: 16; height: 8; }"
+///       `DEFAULT_CSS` = "Box { width: 16; height: 8; }"
 ///
 ///   class ContainerApp(App):
 ///       def compose(self):
-///           with Vertical():
-///               yield Box()
-///               yield Box()
-///               yield Box()
+///           with `Vertical()`:
+///               yield `Box()`
+///               yield `Box()`
+///               yield `Box()`
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Placeholder {
     width: 16;
     height: 8;
 }
-"#;
+";
 
 struct ContainerApp;
 

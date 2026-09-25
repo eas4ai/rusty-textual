@@ -2,7 +2,11 @@ use rich_rs::{Console, ConsoleOptions, Segments};
 use textual_macros::widget;
 
 use crate::event::{BindingHint, Event};
-use crate::message::*;
+use crate::message::{
+    HelpPanelClearHelp, HelpPanelFocusedHelpChanged, HelpPanelFocusedHelpCleared, HelpPanelSetHelp,
+    MessageEvent,
+};
+use crate::num::Cast;
 use crate::render::FrameBuffer;
 
 use super::{FooterBinding, KeyPanel, Markdown, NodeSeed, Overlay, Widget, WidgetRenderable};
@@ -31,6 +35,7 @@ impl Default for HelpPanel {
 impl HelpPanel {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         let mut seed = NodeSeed::default();
         seed.classes.push("help-panel".to_string());
@@ -45,10 +50,11 @@ impl HelpPanel {
         }
     }
 
+    #[must_use]
     pub fn with_help(mut self, markup: impl Into<String>) -> Self {
         let markup = markup.into();
         let show = !markup.trim().is_empty();
-        self.help_markup = markup.clone();
+        self.help_markup.clone_from(&markup);
         self.show_help = show;
         self.markdown.set_markup(markup);
         if show {
@@ -77,6 +83,7 @@ impl HelpPanel {
         self.show_help
     }
 
+    #[must_use]
     pub fn with_bindings(mut self, bindings: Vec<FooterBinding>) -> Self {
         self.key_panel.set_bindings(bindings);
         self
@@ -120,16 +127,24 @@ impl crate::widgets::Interactive for HelpPanel {
         let width = usize::from(width).max(1);
         let height = usize::from(height).max(1);
         let (help_height, keys_height) = self.split_heights(width, height);
-        crate::widgets::Widget::on_layout(&mut self.markdown, width as u16, help_height as u16);
-        crate::widgets::Widget::on_layout(&mut self.key_panel, width as u16, keys_height as u16);
+        crate::widgets::Widget::on_layout(
+            &mut self.markdown,
+            width.to_u16_sat(),
+            help_height.to_u16_sat(),
+        );
+        crate::widgets::Widget::on_layout(
+            &mut self.key_panel,
+            width.to_u16_sat(),
+            keys_height.to_u16_sat(),
+        );
     }
 
     fn on_resize(&mut self, width: u16, height: u16) {
         let width_usize = usize::from(width).max(1);
         let height_usize = usize::from(height).max(1);
         let (help_height, keys_height) = self.split_heights(width_usize, height_usize);
-        crate::widgets::Widget::on_resize(&mut self.markdown, width, help_height as u16);
-        crate::widgets::Widget::on_resize(&mut self.key_panel, width, keys_height as u16);
+        crate::widgets::Widget::on_resize(&mut self.markdown, width, help_height.to_u16_sat());
+        crate::widgets::Widget::on_resize(&mut self.key_panel, width, keys_height.to_u16_sat());
     }
 
     fn on_mount(&mut self, ctx: &mut crate::event::WidgetCtx) {

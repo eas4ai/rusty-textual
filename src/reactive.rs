@@ -36,6 +36,8 @@ use std::cell::RefCell;
 
 /// Flags controlling what happens when a reactive field changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ReactiveFlags {
     /// Request repaint on change (default for `#[reactive]`).
     pub repaint: bool,
@@ -79,6 +81,7 @@ impl Default for ReactiveFlags {
 
 impl ReactiveFlags {
     /// Flags for `#[reactive]`: repaint on change, call watcher on init.
+    #[must_use]
     pub const fn reactive() -> Self {
         Self {
             repaint: true,
@@ -91,6 +94,7 @@ impl ReactiveFlags {
     }
 
     /// Flags for `#[reactive(layout)]`: repaint + layout on change, call watcher on init.
+    #[must_use]
     pub const fn reactive_layout() -> Self {
         Self {
             repaint: true,
@@ -103,6 +107,7 @@ impl ReactiveFlags {
     }
 
     /// Flags for `#[reactive(init = false)]`: repaint on change, no watcher on init.
+    #[must_use]
     pub const fn reactive_no_init() -> Self {
         Self {
             repaint: true,
@@ -115,6 +120,7 @@ impl ReactiveFlags {
     }
 
     /// Flags for `#[reactive(layout, init = false)]`: repaint + layout on change, no watcher on init.
+    #[must_use]
     pub const fn reactive_layout_no_init() -> Self {
         Self {
             repaint: true,
@@ -130,6 +136,7 @@ impl ReactiveFlags {
     ///
     /// Matches Python `var` default (`init=True`, `reactive.py:489`). Use
     /// [`var_no_init`](Self::var_no_init) to suppress init-phase watcher firing.
+    #[must_use]
     pub const fn var() -> Self {
         Self {
             repaint: false,
@@ -145,6 +152,7 @@ impl ReactiveFlags {
     ///
     /// Use this when you want `var` semantics but do not want the watcher to
     /// fire at mount (e.g. the value is not yet meaningful at init time).
+    #[must_use]
     pub const fn var_no_init() -> Self {
         Self {
             repaint: false,
@@ -160,6 +168,7 @@ impl ReactiveFlags {
     /// on init, and fire watchers even when old value equals new value.
     ///
     /// Matches Python's `reactive(always_update=True)` pattern.
+    #[must_use]
     pub const fn reactive_always_update() -> Self {
         Self {
             repaint: true,
@@ -176,6 +185,7 @@ impl ReactiveFlags {
     ///
     /// Matches Python's `reactive(default, recompose=True)`. A recompose
     /// implies repaint + layout (the subtree is rebuilt), so both are set.
+    #[must_use]
     pub const fn reactive_recompose() -> Self {
         Self {
             repaint: true,
@@ -189,6 +199,7 @@ impl ReactiveFlags {
 
     /// Flags for `#[reactive(recompose, init = false)]`: recompose on change,
     /// but do not recompose/fire the watcher at mount.
+    #[must_use]
     pub const fn reactive_recompose_no_init() -> Self {
         Self {
             repaint: true,
@@ -209,6 +220,7 @@ impl ReactiveFlags {
     /// `recompose=True` reactive must NOT recompose the subtree at mount (doing so
     /// would rebuild the freshly-composed tree and discard auto-focus). The
     /// watcher still fires and repaint/layout are preserved.
+    #[must_use]
     pub const fn without_recompose(mut self) -> Self {
         self.recompose = false;
         self
@@ -221,6 +233,7 @@ impl ReactiveFlags {
     /// (`reactive`, `var`, `layout`, `recompose`, `init = false`): the
     /// generated setter bypasses the equality gate and records the change
     /// (firing watchers) even when the new value equals the old one.
+    #[must_use]
     pub const fn with_always_update(mut self) -> Self {
         self.always_update = true;
         self
@@ -230,6 +243,7 @@ impl ReactiveFlags {
     ///
     /// Used by `#[derive(Reactive)]` to compose Python's
     /// `reactive(..., bindings=True)` with any base flag preset.
+    #[must_use]
     pub const fn with_bindings(mut self) -> Self {
         self.bindings = true;
         self
@@ -268,6 +282,8 @@ impl std::fmt::Debug for ReactiveChange {
 /// The context accumulates all changes that occurred during an event dispatch
 /// cycle, and the runtime drains them afterward to call watchers and request
 /// repaint/layout invalidation.
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ReactiveCtx {
     node_id: NodeId,
     changes: Vec<ReactiveChange>,
@@ -297,6 +313,7 @@ impl ReactiveCtx {
     /// Captures the ambient prevented-message set (Python's context-managed
     /// `prevent` stack) so it stays in effect when this context's watchers
     /// dispatch later in the runtime reactive phase.
+    #[must_use]
     pub fn new(node_id: NodeId) -> Self {
         Self {
             node_id,
@@ -313,11 +330,13 @@ impl ReactiveCtx {
     }
 
     /// The node identity of the widget that owns this context.
+    #[must_use]
     pub fn node_id(&self) -> NodeId {
         self.node_id
     }
 
     /// Access the recorded changes.
+    #[must_use]
     pub fn changes(&self) -> &[ReactiveChange] {
         &self.changes
     }
@@ -372,21 +391,25 @@ impl ReactiveCtx {
     }
 
     /// Whether any change requested a repaint.
+    #[must_use]
     pub fn needs_repaint(&self) -> bool {
         self.repaint_requested
     }
 
     /// Whether any change requested a layout invalidation.
+    #[must_use]
     pub fn needs_layout(&self) -> bool {
         self.layout_requested
     }
 
     /// Whether any change requested a recompose of the owner's subtree.
+    #[must_use]
     pub fn needs_recompose(&self) -> bool {
         self.recompose_requested
     }
 
     /// Whether any change requested a key-bindings refresh.
+    #[must_use]
     pub fn needs_bindings_refresh(&self) -> bool {
         self.bindings_refresh_requested
     }
@@ -397,6 +420,7 @@ impl ReactiveCtx {
     }
 
     /// Whether any change/watcher requested style recomputation.
+    #[must_use]
     pub fn needs_styles(&self) -> bool {
         self.styles_requested
     }
@@ -417,6 +441,7 @@ impl ReactiveCtx {
     }
 
     /// Returns `true` if any changes were recorded.
+    #[must_use]
     pub fn has_changes(&self) -> bool {
         !self.changes.is_empty()
     }
@@ -519,6 +544,7 @@ impl ReactiveCtx {
     /// `Handle::update_in`) decide to enqueue a runtime reactive entry even when
     /// no field change / repaint / layout flag was recorded — otherwise a
     /// class-op-only mutation (Python `self.set_class(...)`) would be dropped.
+    #[must_use]
     pub fn has_class_ops(&self) -> bool {
         !self.class_ops.is_empty()
     }
@@ -553,6 +579,7 @@ impl ReactiveCtx {
     }
 
     /// Whether any watcher-posted message is pending on this context.
+    #[must_use]
     pub fn has_messages(&self) -> bool {
         !self.messages.is_empty()
     }
@@ -571,7 +598,14 @@ impl std::fmt::Debug for ReactiveCtx {
             .field("repaint_requested", &self.repaint_requested)
             .field("layout_requested", &self.layout_requested)
             .field("recompose_requested", &self.recompose_requested)
+            .field(
+                "bindings_refresh_requested",
+                &self.bindings_refresh_requested,
+            )
+            .field("class_ops", &self.class_ops.len())
             .field("styles_requested", &self.styles_requested)
+            .field("messages", &self.messages.len())
+            .field("prevented", &self.prevented.len())
             .finish()
     }
 }
@@ -654,6 +688,8 @@ pub const MAX_REACTIVE_ITERATIONS: usize = 100;
 
 /// Outcome of running the reactive phase for a single widget.
 #[derive(Debug, Default)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ReactivePhaseResult {
     /// Whether any changes were processed.
     pub had_changes: bool,
@@ -786,10 +822,12 @@ pub struct RuntimeReactiveEntry {
 }
 
 impl RuntimeReactiveEntry {
+    #[must_use]
     pub fn new(node_id: NodeId, ctx: ReactiveCtx) -> Self {
         Self { node_id, ctx }
     }
 
+    #[must_use]
     pub fn node_id(&self) -> NodeId {
         self.node_id
     }
@@ -797,6 +835,7 @@ impl RuntimeReactiveEntry {
     /// Read the field names of the changes currently pending in this entry,
     /// without consuming them. Used by the runtime to decide which dynamic
     /// watchers must fire (the values are passed during dispatch).
+    #[must_use]
     pub fn pending_field_names(&self) -> Vec<&'static str> {
         self.ctx.changes().iter().map(|c| c.field_name).collect()
     }
@@ -842,6 +881,7 @@ pub fn enqueue_runtime_reactive_entry(entry: RuntimeReactiveEntry) {
 }
 
 /// Drain all queued runtime reactive work items.
+#[must_use]
 pub fn take_runtime_reactive_entries() -> Vec<RuntimeReactiveEntry> {
     RUNTIME_REACTIVE_QUEUE.with(|queue| std::mem::take(&mut *queue.borrow_mut()))
 }
@@ -849,6 +889,7 @@ pub fn take_runtime_reactive_entries() -> Vec<RuntimeReactiveEntry> {
 /// Whether the runtime reactive queue currently holds any pending entries
 /// (without draining it). Lets the headless pump decide whether the reactive
 /// phase has work to do this iteration.
+#[must_use]
 pub fn runtime_reactive_queue_is_nonempty() -> bool {
     RUNTIME_REACTIVE_QUEUE.with(|queue| !queue.borrow().is_empty())
 }
@@ -920,7 +961,7 @@ mod tests {
     /// must NOT request a recompose (Python's `_initialize_reactive` fires
     /// watchers via `_check_watchers`, which never recomposes — recompose only
     /// happens in `_set`/`mutate_reactive`). A mount-time recompose would rebuild
-    /// the freshly-composed subtree and discard auto-focus (set_reactive03).
+    /// the freshly-composed subtree and discard auto-focus (`set_reactive03`).
     #[test]
     fn derived_recompose_reactive_does_not_recompose_at_init() {
         #[derive(crate::Reactive, Default)]
@@ -1110,7 +1151,7 @@ mod tests {
             old_value: Box::new(1_i32),
             new_value: Box::new(2_i32),
         };
-        let debug_str = format!("{:?}", change);
+        let debug_str = format!("{change:?}");
         assert!(debug_str.contains("test"));
         assert!(debug_str.contains("type-erased"));
     }
@@ -1388,6 +1429,7 @@ mod tests {
 
     impl ValidateApp {
         // Python `validate_count`: clamp to [0, 10].
+        #[allow(clippy::unused_self)] // `#[derive(Reactive)]` calls validators as methods.
         fn validate_count(&self, count: i32) -> i32 {
             count.clamp(0, 10)
         }
@@ -1478,6 +1520,7 @@ mod tests {
         fn compute_color(&self) -> (u8, u8, u8) {
             (self.red, self.green, self.blue)
         }
+        #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
         fn watch_color(&mut self, _old: &(u8, u8, u8), new: &(u8, u8, u8), _ctx: &mut ReactiveCtx) {
             self.observed = Some(*new);
         }

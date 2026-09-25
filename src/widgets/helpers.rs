@@ -236,10 +236,10 @@ pub(crate) fn constraints_from_style(style: &Style) -> LayoutConstraints {
 }
 
 pub(crate) fn border_spacing_from_style(style: &Style) -> (usize, usize, usize, usize) {
-    let top = if style.border_top.is_set() { 1 } else { 0 };
-    let right = if style.border_right.is_set() { 1 } else { 0 };
-    let bottom = if style.border_bottom.is_set() { 1 } else { 0 };
-    let left = if style.border_left.is_set() { 1 } else { 0 };
+    let top = usize::from(style.border_top.is_set());
+    let right = usize::from(style.border_right.is_set());
+    let bottom = usize::from(style.border_bottom.is_set());
+    let left = usize::from(style.border_left.is_set());
     (top, bottom, left, right)
 }
 
@@ -251,7 +251,7 @@ pub(crate) fn border_spacing_from_style(style: &Style) -> (usize, usize, usize, 
 pub(crate) fn apply_border_edges(
     segments: Segments,
     inner_width: usize,
-    style: Style,
+    style: &Style,
     parent_style: Option<Style>,
     full_width: usize,
     full_height: usize,
@@ -273,6 +273,106 @@ pub(crate) fn apply_border_edges(
         return segments;
     }
 
+    let (parent_bg, inner_bg) = border_backgrounds(style, parent_style);
+    let outer_bg = parent_bg;
+
+    // Pre-blend opacity for border colors: when `opacity_percent` is set,
+    // Python pre-composites the border color over `base_background` at the
+    // given opacity inside `render_line`, BEFORE `_apply_opacity` sees it.
+    // We replicate that as a float factor passed down to `border_inner_outer_styles`.
+    let pre_blend_opacity: Option<f32> = opacity_percent
+        .filter(|&o| o < 100)
+        .map(|o| f32::from(o) / 100.0);
+    let border_debug = border_debug_matches(debug_widget_label);
+    if border_debug {
+        debug_border(&format!(
+            "[border] widget={} size={}x{} inner_width={} edges=top:{} right:{} bottom:{} left:{} edge_colors=top:{:?} right:{:?} bottom:{:?} left:{:?} parent_bg={:?} inner_bg={:?} outer_bg={:?}",
+            debug_widget_label,
+            full_width,
+            full_height,
+            inner_width,
+            border_top.edge_type(),
+            border_right.edge_type(),
+            border_bottom.edge_type(),
+            border_left.edge_type(),
+            border_top.color(),
+            border_right.color(),
+            border_bottom.color(),
+            border_left.color(),
+            parent_bg,
+            inner_bg,
+            outer_bg,
+        ));
+    }
+
+    let mut edged = border_interior_rows(
+        segments,
+        style,
+        inner_width,
+        (full_width, full_height),
+        (inner_bg, outer_bg),
+        pre_blend_opacity,
+    );
+    let has_left = border_left.is_set();
+    let has_right = border_right.is_set();
+    let row_geometry = (full_width.max(1), has_left, has_right);
+
+    // Add top/bottom borders (if any).
+    if border_top.is_set() {
+        let title = BorderLabel::title(style, border_title);
+        let top_row = titled_border_row(
+            border_top,
+            true,
+            title.as_ref(),
+            (inner_bg, outer_bg),
+            row_geometry,
+            pre_blend_opacity,
+        );
+        if border_debug {
+            debug_border(&format!(
+                "[border_row] widget={} row=top segments={}",
+                debug_widget_label,
+                debug_border_row_segments(&top_row)
+            ));
+        }
+        edged.insert(0, top_row);
+    }
+    if border_bottom.is_set() {
+        let subtitle = BorderLabel::subtitle(style, border_subtitle);
+        let bottom_row = titled_border_row(
+            border_bottom,
+            false,
+            subtitle.as_ref(),
+            (inner_bg, outer_bg),
+            row_geometry,
+            pre_blend_opacity,
+        );
+        if border_debug {
+            debug_border(&format!(
+                "[border_row] widget={} row=bottom segments={}",
+                debug_widget_label,
+                debug_border_row_segments(&bottom_row)
+            ));
+        }
+        edged.push(bottom_row);
+    }
+
+    // Clamp/pad to requested height.
+    edged = Segment::set_shape(
+        &edged,
+        full_width.max(1),
+        Some(full_height.max(1)),
+        None,
+        false,
+    );
+    join_lines(edged)
+}
+
+/// Background colours for a border: `(outer, inner)`.
+fn border_backgrounds(
+    style: &Style,
+    parent_style: Option<Style>,
+) -> (crate::style::Color, crate::style::Color) {
     // Inner (widget) and outer (parent) backgrounds used for border blending.
     //
     // Python's `DOMNode.background_colors` composites the whole ancestor chain
@@ -304,47 +404,30 @@ pub(crate) fn apply_border_edges(
     // surface (e.g. focused Input `:focus { background-tint: $foreground 5% }`
     // lightens $surface #1e1e1e -> #272727 on the border, not just the content row).
     let inner_bg = {
-        let base = style
-            .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+        let base = style.bg.map_or(parent_bg, |c| c.flatten_over(parent_bg));
         if let Some(tint) = style.background_tint {
             crate::renderables::Tint::<()>::blend_color_with_percent(base, tint.color, tint.percent)
         } else {
             base
         }
     };
-    let outer_bg = parent_bg;
+    (parent_bg, inner_bg)
+}
 
-    // Pre-blend opacity for border colors: when `opacity_percent` is set,
-    // Python pre-composites the border color over `base_background` at the
-    // given opacity inside `render_line`, BEFORE `_apply_opacity` sees it.
-    // We replicate that as a float factor passed down to `border_inner_outer_styles`.
-    let pre_blend_opacity: Option<f32> = opacity_percent
-        .filter(|&o| o < 100)
-        .map(|o| o as f32 / 100.0);
-    let border_debug = border_debug_matches(debug_widget_label);
-    if border_debug {
-        debug_border(&format!(
-            "[border] widget={} size={}x{} inner_width={} edges=top:{} right:{} bottom:{} left:{} edge_colors=top:{:?} right:{:?} bottom:{:?} left:{:?} parent_bg={:?} inner_bg={:?} outer_bg={:?}",
-            debug_widget_label,
-            full_width,
-            full_height,
-            inner_width,
-            border_top.edge_type(),
-            border_right.edge_type(),
-            border_bottom.edge_type(),
-            border_left.edge_type(),
-            border_top.color(),
-            border_right.color(),
-            border_bottom.color(),
-            border_left.color(),
-            parent_bg,
-            inner_bg,
-            outer_bg,
-        ));
-    }
-
+/// The widget's interior lines, shaped to the inner box and wrapped with
+/// the left/right border cells.
+fn border_interior_rows(
+    segments: Segments,
+    style: &Style,
+    inner_width: usize,
+    (full_width, full_height): (usize, usize),
+    (inner_bg, outer_bg): (crate::style::Color, crate::style::Color),
+    pre_blend_opacity: Option<f32>,
+) -> Vec<Vec<Segment>> {
+    let border_top = style.border_top;
+    let border_right = style.border_right;
+    let border_bottom = style.border_bottom;
+    let border_left = style.border_left;
     let mut lines = Segment::split_and_crop_lines(segments, inner_width.max(1), None, false, false);
     // Ensure the widget interior is fully painted with the widget style (at least background).
     // `split_and_crop_lines` may trim trailing whitespace, which would otherwise expose the
@@ -392,101 +475,75 @@ pub(crate) fn apply_border_edges(
         let row = adjust_line_length_no_bg(&row, full_width.max(1));
         edged.push(row);
     }
+    edged
+}
 
-    // Add top/bottom borders (if any).
-    if border_top.is_set() {
-        let mut top_row = border_horizontal_row(
-            border_top,
-            Some(inner_bg),
-            Some(outer_bg),
-            full_width.max(1),
-            has_left,
-            has_right,
-            true,
-            pre_blend_opacity,
-        );
-        if let Some(title) = border_title.filter(|t| !t.is_empty()) {
-            overlay_border_text(
-                &mut top_row,
-                title,
-                full_width.max(1),
-                has_left,
-                has_right,
-                style
-                    .border_title_align
-                    .unwrap_or(crate::style::HorizontalAlign::Left),
-                style.border_title_color,
-                style.border_title_background,
-                style.border_title_style,
-                inner_bg,
-                border_title_flip(border_top.edge_type()).0,
-            );
-        }
-        if border_debug {
-            debug_border(&format!(
-                "[border_row] widget={} row=top segments={}",
-                debug_widget_label,
-                debug_border_row_segments(&top_row)
-            ));
-        }
-        edged.insert(0, top_row);
-    }
-    if border_bottom.is_set() {
-        let mut bottom_row = border_horizontal_row(
-            border_bottom,
-            Some(inner_bg),
-            Some(outer_bg),
-            full_width.max(1),
-            has_left,
-            has_right,
-            false,
-            pre_blend_opacity,
-        );
-        if let Some(subtitle) = border_subtitle.filter(|t| !t.is_empty()) {
-            overlay_border_text(
-                &mut bottom_row,
-                subtitle,
-                full_width.max(1),
-                has_left,
-                has_right,
-                style
-                    .border_subtitle_align
-                    .unwrap_or(crate::style::HorizontalAlign::Right),
-                style.border_subtitle_color,
-                style.border_subtitle_background,
-                style.border_subtitle_style,
-                inner_bg,
-                border_title_flip(border_bottom.edge_type()).1,
-            );
-        }
-        if border_debug {
-            debug_border(&format!(
-                "[border_row] widget={} row=bottom segments={}",
-                debug_widget_label,
-                debug_border_row_segments(&bottom_row)
-            ));
-        }
-        edged.push(bottom_row);
+/// A border (sub)title and how to draw it.
+struct BorderLabel<'a> {
+    text: &'a str,
+    align: crate::style::HorizontalAlign,
+    fg: Option<crate::style::Color>,
+    bg: Option<crate::style::Color>,
+    flags: Option<crate::style::TextStyleFlags>,
+    /// Swap the base fg/bg (panel and tab titles).
+    flip: bool,
+}
+
+impl<'a> BorderLabel<'a> {
+    /// The border title (top edge, left-aligned by default); `None` when
+    /// there is no title text.
+    fn title(style: &Style, text: Option<&'a str>) -> Option<Self> {
+        text.filter(|t| !t.is_empty()).map(|text| BorderLabel {
+            text,
+            align: style
+                .border_title_align
+                .unwrap_or(crate::style::HorizontalAlign::Left),
+            fg: style.border_title_color,
+            bg: style.border_title_background,
+            flags: style.border_title_style,
+            flip: border_title_flip(style.border_top.edge_type()).0,
+        })
     }
 
-    // Clamp/pad to requested height.
-    edged = Segment::set_shape(
-        &edged,
-        full_width.max(1),
-        Some(full_height.max(1)),
-        None,
-        false,
+    /// The border subtitle (bottom edge, right-aligned by default); `None`
+    /// when there is no subtitle text.
+    fn subtitle(style: &Style, text: Option<&'a str>) -> Option<Self> {
+        text.filter(|t| !t.is_empty()).map(|text| BorderLabel {
+            text,
+            align: style
+                .border_subtitle_align
+                .unwrap_or(crate::style::HorizontalAlign::Right),
+            fg: style.border_subtitle_color,
+            bg: style.border_subtitle_background,
+            flags: style.border_subtitle_style,
+            flip: border_title_flip(style.border_bottom.edge_type()).1,
+        })
+    }
+}
+
+/// The top (`top`) or bottom border row, with its (sub)title laid over it.
+fn titled_border_row(
+    edge: BorderEdge,
+    top: bool,
+    label: Option<&BorderLabel<'_>>,
+    (inner_bg, outer_bg): (crate::style::Color, crate::style::Color),
+    (width, has_left, has_right): (usize, bool, bool),
+    pre_blend_opacity: Option<f32>,
+) -> Vec<Segment> {
+    let mut row = border_horizontal_row(
+        edge,
+        Some(inner_bg),
+        Some(outer_bg),
+        width,
+        has_left,
+        has_right,
+        top,
+        pre_blend_opacity,
     );
-
-    let line_count = edged.len();
-    let mut out = Segments::new();
-    for (idx, line) in edged.into_iter().enumerate() {
-        out.extend(line);
-        if idx + 1 < line_count {
-            out.push(Segment::line());
-        }
+    if let Some(label) = label {
+        overlay_border_text(&mut row, label, (width, has_left, has_right), inner_bg);
     }
-    out
+    row
 }
 
 fn debug_border_row_segments(row: &[Segment]) -> String {
@@ -548,10 +605,6 @@ pub(crate) fn border_chars(edge_type: &str) -> ([[char; 3]; 3], [[u8; 3]; 3]) {
             [['+', '-', '+'], ['|', ' ', '|'], ['+', '-', '+']],
             [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
         ),
-        "blank" => (
-            [[' ', ' ', ' '], [' ', ' ', ' '], [' ', ' ', ' ']],
-            [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-        ),
         "round" => (
             [['╭', '─', '╮'], ['│', ' ', '│'], ['╰', '─', '╯']],
             [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
@@ -576,14 +629,11 @@ pub(crate) fn border_chars(edge_type: &str) -> ([[char; 3]; 3], [[u8; 3]; 3]) {
             [['▊', '█', '▎'], ['▊', ' ', '▎'], ['▊', '▁', '▎']],
             [[2, 0, 1], [2, 0, 1], [2, 0, 1]],
         ),
-        "tab" => (
+        "tab" | "wide" => (
             [['▁', '▁', '▁'], ['▎', ' ', '▊'], ['▔', '▔', '▔']],
             [[1, 1, 1], [0, 1, 3], [1, 1, 1]],
         ),
-        "wide" => (
-            [['▁', '▁', '▁'], ['▎', ' ', '▊'], ['▔', '▔', '▔']],
-            [[1, 1, 1], [0, 1, 3], [1, 1, 1]],
-        ),
+        // "blank", and any unknown type, draws spaces.
         _ => (
             [[' ', ' ', ' '], [' ', ' ', ' '], [' ', ' ', ' ']],
             [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
@@ -610,9 +660,9 @@ enum WindowsSafeBordersMode {
 
 fn parse_windows_safe_borders_mode(value: Option<&str>) -> WindowsSafeBordersMode {
     match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
-        Some("1") | Some("true") | Some("yes") | Some("on") => WindowsSafeBordersMode::On,
-        Some("0") | Some("false") | Some("no") | Some("off") => WindowsSafeBordersMode::Off,
-        Some("auto") | None => WindowsSafeBordersMode::Auto,
+        Some("1" | "true" | "yes" | "on") => WindowsSafeBordersMode::On,
+        Some("0" | "false" | "no" | "off") => WindowsSafeBordersMode::Off,
+        // "auto", unset, or any other value.
         _ => WindowsSafeBordersMode::Auto,
     }
 }
@@ -627,9 +677,8 @@ fn windows_safe_border_fallback_enabled() -> bool {
         );
         match mode {
             WindowsSafeBordersMode::On => true,
-            WindowsSafeBordersMode::Off => false,
+            WindowsSafeBordersMode::Off | WindowsSafeBordersMode::Auto => false,
             // Keep auto conservative for now; enable explicitly in known-problematic terminals.
-            WindowsSafeBordersMode::Auto => false,
         }
     })
 }
@@ -648,7 +697,6 @@ fn resolve_border_char_style(
     outer: rich_rs::Style,
 ) -> rich_rs::Style {
     match location {
-        0 => inner,
         1 => outer,
         2 => {
             // Cross-combination (Textual): outer background + inner foreground, with reverse.
@@ -738,8 +786,8 @@ fn border_horizontal_row(
     let row_chars = chars[row_idx];
     let row_locs = locations[row_idx];
 
-    let left_w = if has_left { 1 } else { 0 };
-    let right_w = if has_right { 1 } else { 0 };
+    let left_w = usize::from(has_left);
+    let right_w = usize::from(has_right);
     let mid_w = width.saturating_sub(left_w + right_w);
 
     let mut out: Vec<Segment> = Vec::new();
@@ -881,19 +929,11 @@ fn rich_color_to_style_color(color: Option<&rich_rs::SimpleColor>) -> Option<cra
     color.copied().map(crate::style::color_from_simple)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn overlay_border_text(
     row: &mut Vec<Segment>,
-    text: &str,
-    width: usize,
-    has_left: bool,
-    has_right: bool,
-    align: crate::style::HorizontalAlign,
-    fg: Option<crate::style::Color>,
-    bg: Option<crate::style::Color>,
-    flags: Option<crate::style::TextStyleFlags>,
+    label: &BorderLabel<'_>,
+    (width, has_left, has_right): (usize, bool, bool),
     fallback_bg: crate::style::Color,
-    flip: bool,
 ) {
     let left_w = usize::from(has_left);
     let right_w = usize::from(has_right);
@@ -928,7 +968,7 @@ fn overlay_border_text(
     // label. Truncate with an ellipsis exactly like
     // `Content.truncate(width, ellipsis=True)`, then pad one blank per present
     // corner, matching Python's `pad_left(1)` / `pad_right(1)`.
-    let content = crate::content::Content::from_markup(text);
+    let content = crate::content::Content::from_markup(label.text);
     if content.cell_length() == 0 {
         return;
     }
@@ -949,8 +989,7 @@ fn overlay_border_text(
     let fill_char: String = middle_seg
         .as_ref()
         .and_then(|s| s.text.chars().next())
-        .map(|c| c.to_string())
-        .unwrap_or_else(|| "─".to_string());
+        .map_or_else(|| "─".to_string(), |c| c.to_string());
     let make_fill = |count: usize| -> Option<Segment> {
         if count == 0 {
             return None;
@@ -967,7 +1006,7 @@ fn overlay_border_text(
     };
     // For left/right alignment Python reserves one fill char on the "anchor"
     // side and puts the rest on the other side. Center splits evenly.
-    let (before, after) = match align {
+    let (before, after) = match label.align {
         crate::style::HorizontalAlign::Left => {
             (space_available.min(1), space_available.saturating_sub(1))
         }
@@ -985,53 +1024,7 @@ fn overlay_border_text(
     // panel/tab titles and any border-(sub)title-color/background/style CSS
     // overrides. This is the Rust analogue of Python's `base_style` passed to
     // `Content.render_segments` after `stylize_before(label_style)`.
-    let middle_rich = middle_seg
-        .as_ref()
-        .and_then(|s| s.style)
-        .unwrap_or_default();
-    let mut base = crate::style::Style {
-        fg: rich_color_to_style_color(middle_rich.color.as_ref()),
-        bg: rich_color_to_style_color(middle_rich.bgcolor.as_ref()),
-        bold: middle_rich.bold,
-        dim: middle_rich.dim,
-        italic: middle_rich.italic,
-        underline: middle_rich.underline,
-        reverse: middle_rich.reverse,
-        strike: middle_rich.strike,
-        ..crate::style::Style::default()
-    };
-    if flip {
-        // Python _border.py:397-401: swap fg/bg of the base style for panel/tab titles.
-        std::mem::swap(&mut base.fg, &mut base.bg);
-    }
-    if let Some(c) = fg {
-        base.fg = Some(c);
-    }
-    if let Some(c) = bg {
-        base.bg = Some(c);
-    } else if base.bg.is_none() {
-        base.bg = Some(fallback_bg);
-    }
-    if let Some(f) = flags.as_ref() {
-        if f.bold {
-            base.bold = Some(true);
-        }
-        if f.dim {
-            base.dim = Some(true);
-        }
-        if f.italic {
-            base.italic = Some(true);
-        }
-        if f.underline {
-            base.underline = Some(true);
-        }
-        if f.reverse {
-            base.reverse = Some(true);
-        }
-        if f.strike {
-            base.strike = Some(true);
-        }
-    }
+    let base = border_label_base_style(middle_seg.as_ref(), label, fallback_bg);
 
     // Resolve theme tokens ($primary, …) embedded in markup span tags, mirroring
     // the resolver used by Label/Static rendering.
@@ -1061,6 +1054,61 @@ fn overlay_border_text(
         }
     }
     *row = adjust_line_length_no_bg(&rebuilt, width);
+}
+
+/// The base style of a border label: the border line's middle style, the
+/// panel/tab flip, then the (sub)title colour, background and style
+/// overrides.
+fn border_label_base_style(
+    middle_seg: Option<&Segment>,
+    label: &BorderLabel<'_>,
+    fallback_bg: crate::style::Color,
+) -> crate::style::Style {
+    let middle_rich = middle_seg.and_then(|s| s.style).unwrap_or_default();
+    let mut base = crate::style::Style {
+        fg: rich_color_to_style_color(middle_rich.color.as_ref()),
+        bg: rich_color_to_style_color(middle_rich.bgcolor.as_ref()),
+        bold: middle_rich.bold,
+        dim: middle_rich.dim,
+        italic: middle_rich.italic,
+        underline: middle_rich.underline,
+        reverse: middle_rich.reverse,
+        strike: middle_rich.strike,
+        ..crate::style::Style::default()
+    };
+    if label.flip {
+        // Python _border.py:397-401: swap fg/bg of the base style for panel/tab titles.
+        std::mem::swap(&mut base.fg, &mut base.bg);
+    }
+    if let Some(c) = label.fg {
+        base.fg = Some(c);
+    }
+    if let Some(c) = label.bg {
+        base.bg = Some(c);
+    } else if base.bg.is_none() {
+        base.bg = Some(fallback_bg);
+    }
+    if let Some(f) = label.flags.as_ref() {
+        if f.bold {
+            base.bold = Some(true);
+        }
+        if f.dim {
+            base.dim = Some(true);
+        }
+        if f.italic {
+            base.italic = Some(true);
+        }
+        if f.underline {
+            base.underline = Some(true);
+        }
+        if f.reverse {
+            base.reverse = Some(true);
+        }
+        if f.strike {
+            base.strike = Some(true);
+        }
+    }
+    base
 }
 
 pub(crate) fn apply_line_pad(
@@ -1127,6 +1175,32 @@ pub(crate) fn apply_margin(
         out.push(pad_line.clone());
     }
     out
+}
+
+/// Join lines into segments with a line break between them.
+pub(crate) fn join_lines(out_lines: Vec<Vec<Segment>>) -> Segments {
+    let line_count = out_lines.len();
+    let mut out = Segments::new();
+    for (idx, line) in out_lines.into_iter().enumerate() {
+        out.extend(line);
+        if idx + 1 < line_count {
+            out.push(Segment::line());
+        }
+    }
+    out
+}
+
+/// Push the pending text run (if any) with its style.
+pub(crate) fn flush_run(
+    out: &mut Segments,
+    pending_style: &mut Option<rich_rs::Style>,
+    pending_text: &mut String,
+) {
+    if pending_text.is_empty() {
+        return;
+    }
+    let style = pending_style.take().unwrap_or_default();
+    out.push(Segment::styled(std::mem::take(pending_text), style));
 }
 
 #[cfg(test)]

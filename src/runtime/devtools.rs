@@ -86,14 +86,10 @@ pub(crate) struct DevtoolsRuntime {
 
 impl DevtoolsRuntime {
     pub(crate) fn from_env() -> io::Result<Option<Self>> {
-        let enabled = std::env::var(ENV_ENABLE)
-            .ok()
-            .map(|value| {
-                let value = value.trim().to_ascii_lowercase();
-                matches!(value.as_str(), "1" | "true" | "yes" | "on")
-            })
-            .unwrap_or(false)
-            || std::env::var(ENV_BIND).is_ok();
+        let enabled = std::env::var(ENV_ENABLE).ok().is_some_and(|value| {
+            let value = value.trim().to_ascii_lowercase();
+            matches!(value.as_str(), "1" | "true" | "yes" | "on")
+        }) || std::env::var(ENV_BIND).is_ok();
 
         if !enabled {
             return Ok(None);
@@ -152,12 +148,13 @@ impl DevtoolsRuntime {
         })
     }
 
-    pub(crate) fn publish_snapshot(&self, snapshot: String) {
+    pub(crate) fn publish_snapshot(&self, snapshot: &str) {
         if let Ok(mut slot) = self.shared.snapshot.lock() {
-            *slot = snapshot.clone();
+            slot.clear();
+            slot.push_str(snapshot);
         }
         if let Ok(mut watchers) = self.shared.watchers.lock() {
-            watchers.retain(|watcher| watcher.send(snapshot.clone()).is_ok());
+            watchers.retain(|watcher| watcher.send(snapshot.to_owned()).is_ok());
         }
     }
 
@@ -182,9 +179,10 @@ impl Drop for DevtoolsRuntime {
 }
 
 fn devtools_root() -> PathBuf {
-    std::env::var_os(ENV_ROOT)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join("textual-rs-devtools"))
+    std::env::var_os(ENV_ROOT).map_or_else(
+        || std::env::temp_dir().join("textual-rs-devtools"),
+        PathBuf::from,
+    )
 }
 
 fn current_app_name() -> String {
@@ -210,6 +208,8 @@ fn write_instance_file(path: &Path, pid: u32, app: &str, addr: &str) -> io::Resu
     fs::write(path, body)
 }
 
+// Thread entry point: it owns what its thread uses and clones per client.
+#[allow(clippy::needless_pass_by_value)]
 fn server_loop(
     listener: TcpListener,
     shared: Arc<SharedState>,
@@ -351,26 +351,8 @@ enum Request {
 
 fn parse_command(raw: &str) -> Result<Request, String> {
     let line = raw.trim();
-    if line.eq_ignore_ascii_case("PING") {
-        return Ok(Request::Ping);
-    }
-    if line.eq_ignore_ascii_case("INFO") {
-        return Ok(Request::Info);
-    }
-    if line.eq_ignore_ascii_case("SNAPSHOT") {
-        return Ok(Request::Snapshot);
-    }
-    if line.eq_ignore_ascii_case("WATCH") {
-        return Ok(Request::Watch);
-    }
-    if line.eq_ignore_ascii_case("LOGS") {
-        return Ok(Request::Logs);
-    }
-    if line.eq_ignore_ascii_case("CHANNELS") {
-        return Ok(Request::Channels);
-    }
-    if line.eq_ignore_ascii_case("QUIT") {
-        return Ok(Request::Quit);
+    if let Some(request) = keyword_request(line) {
+        return Ok(request);
     }
 
     let mut parts = line.split_whitespace();
@@ -464,6 +446,33 @@ fn parse_command(raw: &str) -> Result<Request, String> {
     Err(format!("unknown request: {head}"))
 }
 
+/// The request for a one-word command (`PING`, `INFO`, ...), matched
+/// without regard to case.
+fn keyword_request(line: &str) -> Option<Request> {
+    if line.eq_ignore_ascii_case("PING") {
+        return Some(Request::Ping);
+    }
+    if line.eq_ignore_ascii_case("INFO") {
+        return Some(Request::Info);
+    }
+    if line.eq_ignore_ascii_case("SNAPSHOT") {
+        return Some(Request::Snapshot);
+    }
+    if line.eq_ignore_ascii_case("WATCH") {
+        return Some(Request::Watch);
+    }
+    if line.eq_ignore_ascii_case("LOGS") {
+        return Some(Request::Logs);
+    }
+    if line.eq_ignore_ascii_case("CHANNELS") {
+        return Some(Request::Channels);
+    }
+    if line.eq_ignore_ascii_case("QUIT") {
+        return Some(Request::Quit);
+    }
+    None
+}
+
 fn write_ok_line(stream: &mut TcpStream, detail: &str) -> io::Result<()> {
     stream.write_all(format!("OK {detail}\n").as_bytes())
 }
@@ -521,13 +530,17 @@ fn stream_logs(stream: &mut TcpStream) -> io::Result<()> {
 /// `CHANNELS` payload: a `protocol` header plus one line per debug channel
 /// with its stream state and env-configured log file (or `-`).
 fn channels_payload() -> String {
+    use std::fmt::Write as _;
+
     let mut out = format!("protocol\t{PROTOCOL_VERSION}\n");
     for (name, file, streaming) in debug::channel_states() {
-        out.push_str(&format!(
-            "channel\t{name}\t{}\t{}\n",
+        // Writing to a `String` cannot fail.
+        let _ = writeln!(
+            out,
+            "channel\t{name}\t{}\t{}",
             u8::from(streaming),
             file.unwrap_or("-")
-        ));
+        );
     }
     out
 }
@@ -654,7 +667,7 @@ mod tests {
             let mut fields = line.split('\t');
             assert_eq!(fields.next(), Some("channel"));
             assert_eq!(fields.next(), Some(channel.name()));
-            assert!(matches!(fields.next(), Some("0") | Some("1")));
+            assert!(matches!(fields.next(), Some("0" | "1")));
             assert!(fields.next().is_some(), "file field present");
         }
         assert_eq!(lines.next(), None);

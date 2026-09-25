@@ -54,11 +54,12 @@ pub(crate) enum EditCommand {
     DeleteToEnd,
     DeleteLine,
     SelectAll,
-    /// Used in text_area pattern matching for line selection.
+    /// Used in `text_area` pattern matching for line selection.
     #[allow(dead_code)]
     SelectLine,
 }
 
+#[allow(clippy::too_many_lines)] // One arm per key binding.
 pub(crate) fn edit_command_from_key(key: &KeyEventData, multiline: bool) -> Option<EditCommand> {
     let mut mods_without_shift = key.modifiers;
     mods_without_shift.remove(KeyModifiers::SHIFT);

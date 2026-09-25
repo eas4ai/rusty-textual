@@ -1,8 +1,9 @@
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::style::{BoxSizing, Scalar, Spacing, Style, resolve_scalar, resolve_scalar_exact};
 use crate::widget_tree::WidgetTree;
 
-use super::region::border_spacing;
+use super::region::{Region, border_spacing};
 use super::resolve_1d::Edge;
 
 /// For a transparent styling wrapper (`Node`, from `.id()`/`.class()`), report
@@ -17,8 +18,7 @@ use super::resolve_1d::Edge;
 pub(crate) fn wrapper_child_auto_axes(tree: &WidgetTree, wrapper: NodeId) -> (bool, bool) {
     let is_wrapper = tree
         .get(wrapper)
-        .map(|n| n.widget.is_transparent_wrapper())
-        .unwrap_or(false);
+        .is_some_and(|n| n.widget.is_transparent_wrapper());
     if !is_wrapper {
         return (false, false);
     }
@@ -49,14 +49,13 @@ pub(crate) fn wrapper_child_auto_axes(tree: &WidgetTree, wrapper: NodeId) -> (bo
 ///   of N siblings splitting one track via `1fr` (fixes docs/how-to/layout05),
 /// - `Some(Fraction(1.0))` for any explicit non-auto child height (e.g. a `1fr`
 ///   container): flex-fill, keeping a `Node`-wrapped `1fr` `Horizontal`/`Vertical`
-///   sharing the viewport with its siblings (docs_containers04),
+///   sharing the viewport with its siblings (`docs_containers04`),
 /// - `None` for a non-wrapper, leaving a genuine leaf's unset height to the
 ///   fill-the-container rule.
 pub(crate) fn wrapper_unset_height(tree: &WidgetTree, wrapper: NodeId) -> Option<Scalar> {
     let is_wrapper = tree
         .get(wrapper)
-        .map(|n| n.widget.is_transparent_wrapper())
-        .unwrap_or(false);
+        .is_some_and(|n| n.widget.is_transparent_wrapper());
     if !is_wrapper {
         return None;
     }
@@ -114,8 +113,7 @@ pub(crate) fn wrapper_child_fill_axes(tree: &WidgetTree, node: NodeId) -> (bool,
     };
     let parent_is_wrapper = tree
         .get(parent)
-        .map(|n| n.widget.is_transparent_wrapper())
-        .unwrap_or(false);
+        .is_some_and(|n| n.widget.is_transparent_wrapper());
     if !parent_is_wrapper {
         return (false, false);
     }
@@ -126,7 +124,7 @@ pub(crate) fn wrapper_child_fill_axes(tree: &WidgetTree, node: NodeId) -> (bool,
         .iter()
         .copied()
         .filter(|&c| {
-            tree.get(c).map(|n| n.display).unwrap_or(false)
+            tree.get(c).is_some_and(|n| n.display)
                 && get_node_style(tree, c).display != Some(crate::style::Display::None)
         })
         .collect();
@@ -144,6 +142,52 @@ pub(crate) fn wrapper_child_fill_axes(tree: &WidgetTree, node: NodeId) -> (bool,
     )
 }
 
+/// Adjust a flow child's style for transparent styling wrappers (`Node`):
+/// its own unset axes and, when it is a wrapped widget, the axes it must fill.
+pub(crate) fn apply_wrapper_sizing(tree: &WidgetTree, child: NodeId, style: &mut Style) {
+    // Transparent styling wrappers (`Node`) stand in for the wrapped widget,
+    // so an UNSET axis must adopt that widget's sizing intent: when the
+    // wrapped child is `width:auto`/`height:auto`, make the wrapper behave as
+    // `auto` (shrink-to-content) on that axis; otherwise it keeps the `1fr`
+    // fill of an unset dimension. Done before spec extraction so the auto
+    // arms (which size to the measured intrinsic) are selected correctly.
+    let (wrapper_w_auto_pre, _wrapper_h_auto_pre) = wrapper_child_auto_axes(tree, child);
+    if wrapper_w_auto_pre && style.width.is_none() {
+        style.width = Some(crate::style::Scalar::Auto);
+    }
+    // A transparent wrapper's unset height mirrors the wrapped child's intent
+    // (`auto` → shrink, otherwise `1fr` flex-fill); it must NOT fall through to
+    // the bare-leaf "unset fills the whole container" rule, or a `Node`-wrapped
+    // `1fr` container would overflow instead of sharing its track.
+    if style.height.is_none()
+        && let Some(h) = wrapper_unset_height(tree, child)
+    {
+        style.height = Some(h);
+    }
+
+    // This `child` is a wrapped widget (its parent — the node being laid out
+    // here — is a transparent wrapper for which `child` is the sole flow
+    // child). On an axis the wrapper sized by ADOPTING this widget's extent
+    // (its own axis unset), the widget must FILL the wrapper instead of
+    // re-applying its own explicit size against it (which would shrink a
+    // `height: 50%` widget to 50% of an already-50%-sized wrapper —
+    // `min_height`). The widget's own min/max on that axis were applied at the
+    // wrapper; clear them to avoid double-application. Axes where the wrapper
+    // carries its OWN extent are left untouched so the widget keeps its
+    // natural size for the wrapper's `content-align` (`docs_center07`).
+    let (fill_w, fill_h) = wrapper_child_fill_axes(tree, child);
+    if fill_h {
+        style.height = Some(crate::style::Scalar::Percent(100.0));
+        style.min_height = None;
+        style.max_height = None;
+    }
+    if fill_w {
+        style.width = Some(crate::style::Scalar::Percent(100.0));
+        style.min_width = None;
+        style.max_width = None;
+    }
+}
+
 /// Seed width-dependent intrinsic measurement for the children of a transparent
 /// styling wrapper (`Node`). The wrapper's own `on_layout` is a no-op, so its
 /// drained child never learns the real content width before the layout asks for
@@ -159,8 +203,7 @@ pub(crate) fn seed_wrapper_subtree_widths(
 ) {
     let is_wrapper = tree
         .get(wrapper)
-        .map(|n| n.widget.is_transparent_wrapper())
-        .unwrap_or(false);
+        .is_some_and(|n| n.widget.is_transparent_wrapper());
     if !is_wrapper {
         return;
     }
@@ -238,20 +281,76 @@ pub(crate) struct ChildSpec {
     pub(crate) frac_width: Option<f64>,
 }
 
-/// Vertical chrome = margin.top + border_top + padding.top + padding.bottom + border_bottom + margin.bottom.
-fn vertical_chrome(
-    margin: &Spacing,
-    padding: &Spacing,
-    border_top: u16,
-    border_bottom: u16,
-) -> u16 {
+impl ChildSpec {
+    /// Horizontal border + padding (the box chrome without margin).
+    pub(crate) fn h_box_chrome(&self) -> u16 {
+        self.border_left + self.border_right + self.padding.left + self.padding.right
+    }
+
+    /// Vertical border + padding (the box chrome without margin).
+    pub(crate) fn v_box_chrome(&self) -> u16 {
+        self.border_top + self.border_bottom + self.padding.top + self.padding.bottom
+    }
+
+    /// Clamp an outer box width to `max-width`. Under `box-sizing:
+    /// border-box` the limit already includes the chrome; otherwise the
+    /// chrome is added to it.
+    pub(crate) fn clamp_to_max_width(&self, width: u16) -> u16 {
+        if let Some(max_w) = self.max_width_cells {
+            let max_w_outer = if self.box_sizing == BoxSizing::BorderBox {
+                max_w
+            } else {
+                max_w.saturating_add(self.h_box_chrome())
+            };
+            width.min(max_w_outer)
+        } else {
+            width
+        }
+    }
+
+    /// Clamp an outer box height to `max-height` (see `clamp_to_max_width`).
+    pub(crate) fn clamp_to_max_height(&self, height: u16) -> u16 {
+        if let Some(max_h) = self.max_height_cells {
+            let max_h_outer = if self.box_sizing == BoxSizing::BorderBox {
+                max_h
+            } else {
+                max_h.saturating_add(self.v_box_chrome())
+            };
+            height.min(max_h_outer)
+        } else {
+            height
+        }
+    }
+
+    /// Write `child`'s layout rect at `(x, y)` with size `(width, height)`,
+    /// and its content rect: the inner area after border + padding.
+    pub(crate) fn write_rects(
+        &self,
+        tree: &mut WidgetTree,
+        child: NodeId,
+        (x, y): (i32, i32),
+        (width, height): (u16, u16),
+    ) {
+        let content_x = x + i32::from(self.border_left + self.padding.left);
+        let content_y = y + i32::from(self.border_top + self.padding.top);
+        let content_w = width.saturating_sub(self.h_box_chrome());
+        let content_h = height.saturating_sub(self.v_box_chrome());
+        if let Some(node) = tree.get_mut(child) {
+            node.layout_rect = Region::new(x, y, width, height).to_rect();
+            node.content_rect = Region::new(content_x, content_y, content_w, content_h).to_rect();
+        }
+    }
+}
+
+/// Vertical chrome = margin.top + `border_top` + padding.top + padding.bottom + `border_bottom` + margin.bottom.
+fn vertical_chrome(margin: Spacing, padding: Spacing, border_top: u16, border_bottom: u16) -> u16 {
     margin.top + border_top + padding.top + padding.bottom + border_bottom + margin.bottom
 }
 
-/// Horizontal chrome = margin.left + border_left + padding.left + padding.right + border_right + margin.right.
+/// Horizontal chrome = margin.left + `border_left` + padding.left + padding.right + `border_right` + margin.right.
 fn horizontal_chrome(
-    margin: &Spacing,
-    padding: &Spacing,
+    margin: Spacing,
+    padding: Spacing,
     border_left: u16,
     border_right: u16,
 ) -> u16 {
@@ -284,14 +383,14 @@ pub(crate) fn own_box_chrome(style: &Style) -> (u16, u16) {
 /// assumes the scalar's own axis equals `parent_size` for `w`/`h` too (correct
 /// when sizing the same axis), or [`resolve_scalar_to_cells_2d`] to pass both.
 pub(crate) fn resolve_scalar_to_cells_2d(
-    scalar: &Scalar,
+    scalar: Scalar,
     parent_size: u16,
     parent_width: u16,
     parent_height: u16,
     viewport: (u16, u16),
 ) -> u16 {
     resolve_scalar(
-        scalar,
+        &scalar,
         parent_size,
         parent_width,
         parent_height,
@@ -309,12 +408,12 @@ pub(crate) fn resolve_scalar_to_cells_2d(
 /// real parent width AND height for correct `w`/`h` resolution. `vw`/`vh` always
 /// resolve against the correct viewport axis (the full `viewport` is threaded).
 pub(crate) fn resolve_scalar_to_cells(
-    scalar: &Scalar,
+    scalar: Scalar,
     parent_size: u16,
     viewport: (u16, u16),
 ) -> u16 {
     resolve_scalar(
-        scalar,
+        &scalar,
         parent_size,
         parent_size,
         parent_size,
@@ -326,6 +425,7 @@ pub(crate) fn resolve_scalar_to_cells(
 }
 
 /// Build a [`ChildSpec`] from a resolved style.
+#[allow(clippy::similar_names)] // Paired names for the two axes (w/h, h/v).
 pub(crate) fn extract_child_spec(
     style: &Style,
     parent_width: u16,
@@ -350,32 +450,26 @@ pub(crate) fn extract_child_spec(
         (margin.top + margin.bottom, margin.left + margin.right)
     } else {
         (
-            vertical_chrome(&margin, &padding, border_top, border_bottom),
-            horizontal_chrome(&margin, &padding, border_left, border_right),
+            vertical_chrome(margin, padding, border_top, border_bottom),
+            horizontal_chrome(margin, padding, border_left, border_right),
         )
     };
 
     // Resolve min/max sizes to cells. Use the 2D form so `w`/`h` units resolve
     // against the correct parent axis (e.g. `min-height: 40w` = 40% of parent
     // WIDTH), while `%`/`cells` keep resolving against the property's own axis.
-    let min_h_cells = style
-        .min_height
-        .as_ref()
-        .map(|s| {
-            resolve_scalar_to_cells_2d(s, parent_height, parent_width, parent_height, viewport)
-        })
-        .unwrap_or(0);
-    let min_w_cells = style
-        .min_width
-        .as_ref()
-        .map(|s| resolve_scalar_to_cells_2d(s, parent_width, parent_width, parent_height, viewport))
-        .unwrap_or(0);
+    let min_h_cells = style.min_height.as_ref().map_or(0, |s| {
+        resolve_scalar_to_cells_2d(*s, parent_height, parent_width, parent_height, viewport)
+    });
+    let min_w_cells = style.min_width.as_ref().map_or(0, |s| {
+        resolve_scalar_to_cells_2d(*s, parent_width, parent_width, parent_height, viewport)
+    });
 
     let max_h_cells = style.max_height.as_ref().map(|s| {
-        resolve_scalar_to_cells_2d(s, parent_height, parent_width, parent_height, viewport)
+        resolve_scalar_to_cells_2d(*s, parent_height, parent_width, parent_height, viewport)
     });
     let max_w_cells = style.max_width.as_ref().map(|s| {
-        resolve_scalar_to_cells_2d(s, parent_width, parent_width, parent_height, viewport)
+        resolve_scalar_to_cells_2d(*s, parent_width, parent_width, parent_height, viewport)
     });
 
     // Margin-adjusted parent dims for `w`/`h` units (Python resolves these
@@ -394,168 +488,30 @@ pub(crate) fn extract_child_spec(
     // relying on each widget's context-free `layout_height()` chrome baking —
     // which could not resolve descendant-selected chrome (`#questions .button`)
     // and collapsed such boxes.
-    let full_h_chrome = horizontal_chrome(&margin, &padding, border_left, border_right);
-    let full_v_chrome = vertical_chrome(&margin, &padding, border_top, border_bottom);
-
-    // Build height edge for 1D resolver.
-    //
-    // For `height: auto`, prefer widget intrinsic layout height when available.
-    // `layout_height()` represents the widget's natural rendered height
-    // (excluding margins), so only margins are added here.
-    let mut height_edge = match style.height.as_ref() {
-        Some(Scalar::Auto) => {
-            if let Some(intrinsic) = intrinsic_height {
-                let min_size = min_h_cells.saturating_add(v_chrome);
-                let auto_size = intrinsic.saturating_add(full_v_chrome);
-                Edge {
-                    size: Some(auto_size.max(min_size)),
-                    fraction: 1,
-                    min_size,
-                }
-            } else {
-                // `height: auto` with no measurable content: flex-fill (existing
-                // behavior — distinct from an UNSET height, handled below).
-                scalar_to_edge(
-                    None,
-                    parent_height,
-                    parent_width_adj,
-                    parent_height_adj,
-                    viewport,
-                    min_h_cells,
-                    v_chrome,
-                )
-            }
-        }
-        None => {
-            if let Some(intrinsic) = intrinsic_height {
-                // A widget that reports an intrinsic height despite an unset CSS
-                // height still sizes to its content (preserves auto-content leaves
-                // that omit an explicit `height: auto`).
-                let min_size = min_h_cells.saturating_add(v_chrome);
-                let auto_size = intrinsic.saturating_add(full_v_chrome);
-                Edge {
-                    size: Some(auto_size.max(min_size)),
-                    fraction: 1,
-                    min_size,
-                }
-            } else {
-                // Python parity (`Widget._get_box_model`): an UNSET height with no
-                // intrinsic content fills the FULL container height
-                // (`content_container.height`), it is NOT a `1fr` share. Each
-                // unset-height sibling independently receives the container height,
-                // so multiple bare unset children (e.g. two `Placeholder`s in a
-                // Screen) overflow and scroll rather than splitting the viewport.
-                // A single unset child still fills the container (identical to the
-                // old flex-fill). Emitting a FIXED edge of the full container
-                // height (margin included; the vertical layout subtracts margin
-                // from the resolved total) reproduces that — unlike a `1fr` edge,
-                // which `layout_resolve_1d` would divide among siblings.
-                let min_size = min_h_cells.saturating_add(v_chrome);
-                Edge {
-                    size: Some(parent_height.max(min_size)),
-                    fraction: 1,
-                    min_size,
-                }
-            }
-        }
-        // Explicit height. A percentage resolves against the space available
-        // AFTER this widget's own vertical margins (Python parity): `height:
-        // 100%; margin: 1` in 27 rows is 25 (=27-2), not 27. Margin-free
-        // widgets (e.g. five_by_five GameCell) are unaffected.
-        _ => scalar_to_edge(
-            style.height.as_ref(),
-            parent_height.saturating_sub(margin.top + margin.bottom),
-            parent_width_adj,
-            parent_height_adj,
-            viewport,
-            min_h_cells,
-            v_chrome,
-        ),
+    let full_h_chrome = horizontal_chrome(margin, padding, border_left, border_right);
+    let full_v_chrome = vertical_chrome(margin, padding, border_top, border_bottom);
+    let ctx = EdgeContext {
+        parent_width,
+        parent_height,
+        parent_width_adj,
+        parent_height_adj,
+        viewport,
     };
 
-    // Build width edge for 1D resolver.
-    //
-    // For `width: auto` (and an UNSET width when an `intrinsic_width` hint is
-    // supplied by the caller), size to the widget's intrinsic content width.
-    // `content_width()` is pure content, so the full horizontal chrome is added
-    // to compute the outer edge size (see `full_h_chrome` note above). The arena
-    // flow layouts decide WHICH widgets contribute an `intrinsic_width` for the
-    // unset case (only `width: auto` widgets and measured auto containers — never
-    // a fill leaf like a bare `Static`).
-    let mut width_edge = match style.width.as_ref() {
-        Some(Scalar::Auto) => {
-            if let Some(intrinsic) = intrinsic_width {
-                let min_size = min_w_cells.saturating_add(h_chrome);
-                let auto_size = intrinsic.saturating_add(full_h_chrome).max(min_size);
-                Edge {
-                    size: Some(auto_size),
-                    fraction: 1,
-                    min_size,
-                }
-            } else {
-                // `width: auto` with no measurable content: flex-fill (existing
-                // behavior — distinct from an UNSET width, handled below).
-                scalar_to_edge(
-                    None,
-                    parent_width,
-                    parent_width_adj,
-                    parent_height_adj,
-                    viewport,
-                    min_w_cells,
-                    h_chrome,
-                )
-            }
-        }
-        None => {
-            if let Some(intrinsic) = intrinsic_width {
-                // A widget that reports an intrinsic width despite an unset CSS
-                // width still sizes to its content (preserves auto-content leaves
-                // that omit an explicit `width: auto`).
-                let min_size = min_w_cells.saturating_add(h_chrome);
-                let auto_size = intrinsic.saturating_add(full_h_chrome).max(min_size);
-                Edge {
-                    size: Some(auto_size),
-                    fraction: 1,
-                    min_size,
-                }
-            } else {
-                // Python parity (`Widget._get_box_model`): an UNSET width with no
-                // intrinsic content fills the FULL container width
-                // (`content_container.width - margin.width`), it is NOT a `1fr`
-                // share. Each unset-width sibling independently receives the
-                // container width, so multiple bare unset children in a horizontal
-                // row overflow and scroll rather than splitting the viewport.
-                // A single unset child still fills the container (identical to the
-                // old flex-fill). Emitting a FIXED edge of the full container
-                // width (margin included; the horizontal layout subtracts margin
-                // from the resolved total) reproduces that — unlike a `1fr` edge,
-                // which `layout_resolve_1d` would divide among siblings.
-                // Mirrors the unset-HEIGHT arm above.
-                let min_size = min_w_cells.saturating_add(h_chrome);
-                Edge {
-                    size: Some(parent_width.max(min_size)),
-                    fraction: 1,
-                    min_size,
-                }
-            }
-        }
-        // Explicit width. Like the height arm above, a percentage resolves against
-        // the space available AFTER this widget's own horizontal margins (Python
-        // `Widget._get_box_model`: `styles_width.resolve(container - margin.totals,
-        // …)`). So `width: 80%; margin: 1` in an 80-col parent is `80% of 78` (=62),
-        // NOT `80% of 80` (=64) — which otherwise centers the box one column early
-        // (compound01). Margin-free widths are unaffected (`parent_width_adj ==
-        // parent_width`).
-        _ => scalar_to_edge(
-            style.width.as_ref(),
-            parent_width_adj,
-            parent_width_adj,
-            parent_height_adj,
-            viewport,
-            min_w_cells,
-            h_chrome,
-        ),
-    };
+    let mut height_edge = build_height_edge(
+        style,
+        intrinsic_height,
+        &ctx,
+        min_h_cells,
+        (v_chrome, full_v_chrome),
+    );
+    let mut width_edge = build_width_edge(
+        style,
+        intrinsic_width,
+        &ctx,
+        min_w_cells,
+        (h_chrome, full_h_chrome),
+    );
 
     // Python parity (`Widget.get_box_model`): for a border-box explicit size,
     // `content = max(0, size - gutter)` and the box is `content + gutter`. So a
@@ -606,66 +562,7 @@ pub(crate) fn extract_child_spec(
         *size = (*size).max(width_min);
     }
 
-    // Exact (pre-floor) box sizes for cumulative flooring (Python parity, see
-    // `resolve_scalar_exact`). Only emitted for a SIMPLE fixed scalar: border-box
-    // with no border/padding (so the box equals the resolved scalar with no chrome
-    // offset), and only when the resolver-fed integer edge equals `floor(exact)`
-    // (i.e. min/max/box-sizing clamps did NOT override it). Otherwise `None` keeps
-    // the existing integer behaviour for that axis.
-    let no_v_chrome =
-        border_top == 0 && border_bottom == 0 && padding.top == 0 && padding.bottom == 0;
-    let no_h_chrome =
-        border_left == 0 && border_right == 0 && padding.left == 0 && padding.right == 0;
-    let frac_height = if box_sizing == BoxSizing::BorderBox && no_v_chrome {
-        style.height.as_ref().and_then(|s| {
-            resolve_scalar_exact(
-                s,
-                parent_height_adj,
-                parent_width_adj,
-                parent_height_adj,
-                viewport.0,
-                viewport.1,
-            )
-        })
-    } else {
-        None
-    }
-    .filter(|exact| {
-        // Box edge (margin-excluded) the resolver will receive equals floor(exact)
-        // only when no min/max clamp moved it.
-        height_edge
-            .size
-            .map(|sz| sz.saturating_sub(margin.top + margin.bottom) == exact.floor() as u16)
-            .unwrap_or(false)
-    });
-    let frac_width = if box_sizing == BoxSizing::BorderBox && no_h_chrome {
-        style.width.as_ref().and_then(|s| {
-            // The integer width resolver (`scalar_to_edge` explicit arm) now
-            // resolves a `%` width against the margin-adjusted `parent_width_adj`
-            // (matching Python `container - margin.totals`, symmetric with the
-            // height path). Mirror that base here so a simple `width: 12.5%`
-            // produces an exact value whose floor equals the integer edge (the
-            // `.filter()` below would otherwise reject it).
-            resolve_scalar_exact(
-                s,
-                parent_width_adj,
-                parent_width_adj,
-                parent_height_adj,
-                viewport.0,
-                viewport.1,
-            )
-        })
-    } else {
-        None
-    }
-    .filter(|exact| {
-        width_edge
-            .size
-            .map(|sz| sz.saturating_sub(margin.left + margin.right) == exact.floor() as u16)
-            .unwrap_or(false)
-    });
-
-    ChildSpec {
+    let mut spec = ChildSpec {
         height_edge,
         width_edge,
         margin,
@@ -677,9 +574,270 @@ pub(crate) fn extract_child_spec(
         max_width_cells: max_w_cells,
         max_height_cells: max_h_cells,
         box_sizing,
-        frac_height,
-        frac_width,
+        frac_height: None,
+        frac_width: None,
+    };
+    spec.frac_height = exact_box_height(style, &spec, &ctx);
+    spec.frac_width = exact_box_width(style, &spec, &ctx);
+    spec
+}
+
+/// The parent extents an edge resolves against.
+struct EdgeContext {
+    parent_width: u16,
+    parent_height: u16,
+    /// Parent extents minus this child's margins, for `w`/`h` units (Python
+    /// resolves these against `container - margin.totals` on BOTH axes).
+    parent_width_adj: u16,
+    parent_height_adj: u16,
+    viewport: (u16, u16),
+}
+
+/// The height edge for the 1D resolver. `chrome` is the edge chrome for an
+/// explicit size (margin only under border-box) and `full_chrome` the
+/// margin + border + padding added to an intrinsic content height.
+fn build_height_edge(
+    style: &Style,
+    intrinsic_height: Option<u16>,
+    ctx: &EdgeContext,
+    min_h_cells: u16,
+    (v_chrome, full_v_chrome): (u16, u16),
+) -> Edge {
+    // Build height edge for 1D resolver.
+    //
+    // For `height: auto`, prefer widget intrinsic layout height when available.
+    // `layout_height()` represents the widget's natural rendered height
+    // (excluding margins), so only margins are added here.
+    match style.height.as_ref() {
+        Some(Scalar::Auto) => {
+            if let Some(intrinsic) = intrinsic_height {
+                let min_size = min_h_cells.saturating_add(v_chrome);
+                let auto_size = intrinsic.saturating_add(full_v_chrome);
+                Edge {
+                    size: Some(auto_size.max(min_size)),
+                    fraction: 1,
+                    min_size,
+                }
+            } else {
+                // `height: auto` with no measurable content: flex-fill (existing
+                // behavior — distinct from an UNSET height, handled below).
+                scalar_to_edge(
+                    None,
+                    ctx.parent_height,
+                    ctx.parent_width_adj,
+                    ctx.parent_height_adj,
+                    ctx.viewport,
+                    min_h_cells,
+                    v_chrome,
+                )
+            }
+        }
+        None => {
+            if let Some(intrinsic) = intrinsic_height {
+                // A widget that reports an intrinsic height despite an unset CSS
+                // height still sizes to its content (preserves auto-content leaves
+                // that omit an explicit `height: auto`).
+                let min_size = min_h_cells.saturating_add(v_chrome);
+                let auto_size = intrinsic.saturating_add(full_v_chrome);
+                Edge {
+                    size: Some(auto_size.max(min_size)),
+                    fraction: 1,
+                    min_size,
+                }
+            } else {
+                // Python parity (`Widget._get_box_model`): an UNSET height with no
+                // intrinsic content fills the FULL container height
+                // (`content_container.height`), it is NOT a `1fr` share. Each
+                // unset-height sibling independently receives the container height,
+                // so multiple bare unset children (e.g. two `Placeholder`s in a
+                // Screen) overflow and scroll rather than splitting the viewport.
+                // A single unset child still fills the container (identical to the
+                // old flex-fill). Emitting a FIXED edge of the full container
+                // height (margin included; the vertical layout subtracts margin
+                // from the resolved total) reproduces that — unlike a `1fr` edge,
+                // which `layout_resolve_1d` would divide among siblings.
+                let min_size = min_h_cells.saturating_add(v_chrome);
+                Edge {
+                    size: Some(ctx.parent_height.max(min_size)),
+                    fraction: 1,
+                    min_size,
+                }
+            }
+        }
+        // Explicit height. A percentage resolves against the space available
+        // AFTER this widget's own vertical margins (Python parity): `height:
+        // 100%; margin: 1` in 27 rows is 25 (=27-2), not 27. Margin-free
+        // widgets (e.g. five_by_five GameCell) are unaffected.
+        _ => scalar_to_edge(
+            style.height.as_ref(),
+            ctx.parent_height_adj,
+            ctx.parent_width_adj,
+            ctx.parent_height_adj,
+            ctx.viewport,
+            min_h_cells,
+            v_chrome,
+        ),
     }
+}
+
+/// The width edge for the 1D resolver (see `build_height_edge`).
+fn build_width_edge(
+    style: &Style,
+    intrinsic_width: Option<u16>,
+    ctx: &EdgeContext,
+    min_w_cells: u16,
+    (h_chrome, full_h_chrome): (u16, u16),
+) -> Edge {
+    // Build width edge for 1D resolver.
+    //
+    // For `width: auto` (and an UNSET width when an `intrinsic_width` hint is
+    // supplied by the caller), size to the widget's intrinsic content width.
+    // `content_width()` is pure content, so the full horizontal chrome is added
+    // to compute the outer edge size (see `full_h_chrome` note above). The arena
+    // flow layouts decide WHICH widgets contribute an `intrinsic_width` for the
+    // unset case (only `width: auto` widgets and measured auto containers — never
+    // a fill leaf like a bare `Static`).
+    match style.width.as_ref() {
+        Some(Scalar::Auto) => {
+            if let Some(intrinsic) = intrinsic_width {
+                let min_size = min_w_cells.saturating_add(h_chrome);
+                let auto_size = intrinsic.saturating_add(full_h_chrome).max(min_size);
+                Edge {
+                    size: Some(auto_size),
+                    fraction: 1,
+                    min_size,
+                }
+            } else {
+                // `width: auto` with no measurable content: flex-fill (existing
+                // behavior — distinct from an UNSET width, handled below).
+                scalar_to_edge(
+                    None,
+                    ctx.parent_width,
+                    ctx.parent_width_adj,
+                    ctx.parent_height_adj,
+                    ctx.viewport,
+                    min_w_cells,
+                    h_chrome,
+                )
+            }
+        }
+        None => {
+            if let Some(intrinsic) = intrinsic_width {
+                // A widget that reports an intrinsic width despite an unset CSS
+                // width still sizes to its content (preserves auto-content leaves
+                // that omit an explicit `width: auto`).
+                let min_size = min_w_cells.saturating_add(h_chrome);
+                let auto_size = intrinsic.saturating_add(full_h_chrome).max(min_size);
+                Edge {
+                    size: Some(auto_size),
+                    fraction: 1,
+                    min_size,
+                }
+            } else {
+                // Python parity (`Widget._get_box_model`): an UNSET width with no
+                // intrinsic content fills the FULL container width
+                // (`content_container.width - margin.width`), it is NOT a `1fr`
+                // share. Each unset-width sibling independently receives the
+                // container width, so multiple bare unset children in a horizontal
+                // row overflow and scroll rather than splitting the viewport.
+                // A single unset child still fills the container (identical to the
+                // old flex-fill). Emitting a FIXED edge of the full container
+                // width (margin included; the horizontal layout subtracts margin
+                // from the resolved total) reproduces that — unlike a `1fr` edge,
+                // which `layout_resolve_1d` would divide among siblings.
+                // Mirrors the unset-HEIGHT arm above.
+                let min_size = min_w_cells.saturating_add(h_chrome);
+                Edge {
+                    size: Some(ctx.parent_width.max(min_size)),
+                    fraction: 1,
+                    min_size,
+                }
+            }
+        }
+        // Explicit width. Like the height arm above, a percentage resolves against
+        // the space available AFTER this widget's own horizontal margins (Python
+        // `Widget._get_box_model`: `styles_width.resolve(container - margin.totals,
+        // …)`). So `width: 80%; margin: 1` in an 80-col parent is `80% of 78` (=62),
+        // NOT `80% of 80` (=64) — which otherwise centers the box one column early
+        // (compound01). Margin-free widths are unaffected (`parent_width_adj ==
+        // parent_width`).
+        _ => scalar_to_edge(
+            style.width.as_ref(),
+            ctx.parent_width_adj,
+            ctx.parent_width_adj,
+            ctx.parent_height_adj,
+            ctx.viewport,
+            min_w_cells,
+            h_chrome,
+        ),
+    }
+}
+
+/// Exact (pre-floor) box sizes for cumulative flooring (Python parity, see
+/// `resolve_scalar_exact`). Only emitted for a SIMPLE fixed scalar: border-box
+/// with no border/padding (so the box equals the resolved scalar with no chrome
+/// offset), and only when the resolver-fed integer edge equals `floor(exact)`
+/// (i.e. min/max/box-sizing clamps did NOT override it). Otherwise `None` keeps
+/// the existing integer behaviour for that axis.
+fn exact_box_height(style: &Style, spec: &ChildSpec, ctx: &EdgeContext) -> Option<f64> {
+    let no_v_chrome = spec.border_top == 0
+        && spec.border_bottom == 0
+        && spec.padding.top == 0
+        && spec.padding.bottom == 0;
+    if spec.box_sizing == BoxSizing::BorderBox && no_v_chrome {
+        style.height.as_ref().and_then(|s| {
+            resolve_scalar_exact(
+                s,
+                ctx.parent_height_adj,
+                ctx.parent_width_adj,
+                ctx.parent_height_adj,
+                ctx.viewport.0,
+                ctx.viewport.1,
+            )
+        })
+    } else {
+        None
+    }
+    .filter(|exact| {
+        // Box edge (margin-excluded) the resolver will receive equals floor(exact)
+        // only when no min/max clamp moved it.
+        spec.height_edge.size.is_some_and(|sz| {
+            sz.saturating_sub(spec.margin.top + spec.margin.bottom) == exact.floor().to_u16_sat()
+        })
+    })
+}
+
+/// The exact (pre-floor) box width (see `exact_box_height`).
+fn exact_box_width(style: &Style, spec: &ChildSpec, ctx: &EdgeContext) -> Option<f64> {
+    let no_h_chrome = spec.border_left == 0
+        && spec.border_right == 0
+        && spec.padding.left == 0
+        && spec.padding.right == 0;
+    if spec.box_sizing == BoxSizing::BorderBox && no_h_chrome {
+        style.width.as_ref().and_then(|s| {
+            // The integer width resolver (`scalar_to_edge` explicit arm) now
+            // resolves a `%` width against the margin-adjusted `parent_width_adj`
+            // (matching Python `container - margin.totals`, symmetric with the
+            // height path). Mirror that base here so a simple `width: 12.5%`
+            // produces an exact value whose floor equals the integer edge (the
+            // `.filter()` below would otherwise reject it).
+            resolve_scalar_exact(
+                s,
+                ctx.parent_width_adj,
+                ctx.parent_width_adj,
+                ctx.parent_height_adj,
+                ctx.viewport.0,
+                ctx.viewport.1,
+            )
+        })
+    } else {
+        None
+    }
+    .filter(|exact| {
+        spec.width_edge.size.is_some_and(|sz| {
+            sz.saturating_sub(spec.margin.left + spec.margin.right) == exact.floor().to_u16_sat()
+        })
+    })
 }
 
 /// Bottom-up intrinsic measurement for auto-sized containers.
@@ -738,8 +896,7 @@ fn measure_rendered_leaf(tree: &WidgetTree, node: NodeId, render_width: u16) -> 
     if height > 1
         && lines
             .last()
-            .map(|l| rich_rs::Segment::get_line_length(l) == 0)
-            .unwrap_or(false)
+            .is_some_and(|l| rich_rs::Segment::get_line_length(l) == 0)
     {
         height -= 1;
     }
@@ -815,9 +972,7 @@ pub(crate) fn measure_intrinsic_content_width(
         let outer = measure_child_outer_width(tree, child, &child_style, viewport);
         any = true;
         let margin = child_style.effective_margin();
-        let overlap = prev_margin_right
-            .map(|prev_right| prev_right.min(margin.left))
-            .unwrap_or(0);
+        let overlap = prev_margin_right.map_or(0, |prev_right| prev_right.min(margin.left));
         horizontal_sum = horizontal_sum.saturating_add(outer).saturating_sub(overlap);
         prev_margin_right = Some(margin.right);
         vertical_max = vertical_max.max(outer);
@@ -838,7 +993,7 @@ pub(crate) fn measure_intrinsic_content_width(
 fn is_dynamic_height(style: &Style) -> bool {
     matches!(
         style.height,
-        Some(Scalar::Auto) | Some(Scalar::Fraction(_)) | Some(Scalar::Percent(_))
+        Some(Scalar::Auto | Scalar::Fraction(_) | Scalar::Percent(_))
     )
 }
 
@@ -921,9 +1076,7 @@ pub(crate) fn measure_intrinsic_content_height(
         // available height from the layout call sites.
         let outer = measure_child_outer_height(tree, *child, child_style, viewport);
         let margin = child_style.effective_margin();
-        let overlap = prev_margin_bottom
-            .map(|prev_bottom| prev_bottom.min(margin.top))
-            .unwrap_or(0);
+        let overlap = prev_margin_bottom.map_or(0, |prev_bottom| prev_bottom.min(margin.top));
         vertical_sum = vertical_sum.saturating_add(outer).saturating_sub(overlap);
         prev_margin_bottom = Some(margin.bottom);
         horizontal_max = horizontal_max.max(outer);
@@ -958,10 +1111,10 @@ fn measure_child_outer_width(
             }
             *n
         }
-        None | Some(Scalar::Auto) | Some(Scalar::Fraction(_)) => {
+        None | Some(Scalar::Auto | Scalar::Fraction(_)) => {
             measure_intrinsic_content_width(tree, node, viewport).unwrap_or(0)
         }
-        Some(other) => resolve_scalar_to_cells(other, 0, viewport),
+        Some(other) => resolve_scalar_to_cells(*other, 0, viewport),
     };
     let mut outer = content.saturating_add(h_chrome);
     // Respect min/max-width: Textual treats these as outer-size bounds for the
@@ -969,10 +1122,10 @@ fn measure_child_outer_width(
     // Button's `min-width: 16`). Without the min clamp a narrow label would make
     // its auto-width parent under-size and clip the widget.
     if let Some(min_w) = style.min_width.as_ref() {
-        outer = outer.max(resolve_scalar_to_cells(min_w, 0, viewport));
+        outer = outer.max(resolve_scalar_to_cells(*min_w, 0, viewport));
     }
     if let Some(max_w) = style.max_width.as_ref() {
-        let max = resolve_scalar_to_cells(max_w, 0, viewport);
+        let max = resolve_scalar_to_cells(*max_w, 0, viewport);
         if max > 0 {
             outer = outer.min(max);
         }
@@ -1010,17 +1163,17 @@ fn measure_child_outer_height(
             }
             (*n).saturating_add(v_chrome)
         }
-        None | Some(Scalar::Auto) | Some(Scalar::Fraction(_)) => {
+        None | Some(Scalar::Auto | Scalar::Fraction(_)) => {
             let content = measure_intrinsic_content_height(tree, node, viewport, 0).unwrap_or(0);
             content.saturating_add(v_chrome)
         }
-        Some(other) => resolve_scalar_to_cells(other, 0, viewport).saturating_add(v_chrome),
+        Some(other) => resolve_scalar_to_cells(*other, 0, viewport).saturating_add(v_chrome),
     };
     if let Some(min_h) = style.min_height.as_ref() {
-        outer = outer.max(resolve_scalar_to_cells(min_h, 0, viewport));
+        outer = outer.max(resolve_scalar_to_cells(*min_h, 0, viewport));
     }
     if let Some(max_h) = style.max_height.as_ref() {
-        let max = resolve_scalar_to_cells(max_h, 0, viewport);
+        let max = resolve_scalar_to_cells(*max_h, 0, viewport);
         if max > 0 {
             outer = outer.min(max);
         }
@@ -1059,13 +1212,13 @@ fn scalar_to_edge(
         },
         Some(Scalar::Fraction(f)) => Edge {
             size: None,
-            fraction: f.ceil().max(1.0) as u16,
+            fraction: f.ceil().max(1.0).to_u16_sat(),
             min_size: min_cells.saturating_add(chrome),
         },
         Some(scalar) => {
             // Percent, Width (`w`), Height (`h`), ViewWidth, ViewHeight.
             let cells = resolve_scalar_to_cells_2d(
-                scalar,
+                *scalar,
                 parent_size,
                 parent_width,
                 parent_height,

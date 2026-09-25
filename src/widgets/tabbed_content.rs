@@ -2,6 +2,7 @@ use crate::action::{ActionDecl, ParsedAction};
 use crate::compose::{ChildDecl, ComposeResult};
 use crate::event::{BindingHint, Event};
 use crate::message::{TabActivated, TabsCleared};
+use crate::num::Cast;
 use crate::reactive::ReactiveCtx;
 use crate::widgets::delegate::{delegate_renderable, delegate_widget_method};
 use crate::widgets::{Container, NodeSeed, Widget};
@@ -95,11 +96,13 @@ impl TabPane {
         }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.inner.push(child);
         self
     }
 
+    #[must_use]
     pub fn id(mut self, pane_id: impl Into<String>) -> Self {
         let id = pane_id.into();
         self.pane_id = Some(id.clone());
@@ -238,6 +241,7 @@ pub struct TabbedContent {
 impl TabbedContent {
     const CONTENT_TAB_PREFIX: &'static str = "--content-tab-";
 
+    #[must_use]
     pub fn new() -> Self {
         let mut seed = NodeSeed::default();
         seed.classes.push("tabbed-content".to_string());
@@ -255,11 +259,19 @@ impl TabbedContent {
         }
     }
 
+    #[must_use]
     pub fn initial(mut self, pane_id: impl Into<String>) -> Self {
         self.initial = Some(pane_id.into());
         self
     }
 
+    /// Builder: append `pane`, giving it a `tab-N` id when it has none.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane mutex or the pane metadata mutex is poisoned. That
+    /// happens only if an earlier panic occurred while the mutex was held.
+    #[must_use]
     pub fn with_pane(mut self, mut pane: TabPane) -> Self {
         let id = self.ensure_pane_id(&mut pane);
         self.push_meta(&pane, id);
@@ -268,6 +280,12 @@ impl TabbedContent {
         self
     }
 
+    /// Append `pane`, giving it a `tab-N` id when it has none.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane mutex or the pane metadata mutex is poisoned. That
+    /// happens only if an earlier panic occurred while the mutex was held.
     pub fn add_pane(&mut self, mut pane: TabPane) {
         let id = self.ensure_pane_id(&mut pane);
         self.push_meta(&pane, id);
@@ -279,6 +297,14 @@ impl TabbedContent {
         self.active.as_deref()
     }
 
+    /// Activate the pane with id `pane_id`. Returns whether the active pane
+    /// changed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane metadata mutex or the tabs handle mutex is poisoned,
+    /// or if a mutex inside the inner [`Tabs`] is poisoned. A mutex is
+    /// poisoned only if an earlier panic occurred while it was held.
     pub fn set_active_id(
         &mut self,
         pane_id: &str,
@@ -313,6 +339,14 @@ impl TabbedContent {
         true
     }
 
+    /// Activate the pane at position `index`. Does nothing when `index` is out
+    /// of range.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane metadata mutex or the tabs handle mutex is poisoned,
+    /// or if a mutex inside the inner [`Tabs`] is poisoned. A mutex is
+    /// poisoned only if an earlier panic occurred while it was held.
     pub fn set_active(&mut self, index: usize) {
         let pane_id = self
             .pane_meta
@@ -325,6 +359,12 @@ impl TabbedContent {
         }
     }
 
+    /// Return a copy of the metadata for the pane with id `pane_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane metadata mutex is poisoned. That happens only if an
+    /// earlier panic occurred while the mutex was held.
     pub fn get_pane(&self, pane_id: &str) -> Option<TabPaneMeta> {
         self.pane_meta
             .lock()
@@ -459,7 +499,7 @@ impl TabbedContent {
             self.active = panes
                 .last()
                 .and_then(|p| p.pane_id())
-                .map(|id| id.to_string());
+                .map(std::string::ToString::to_string);
         }
     }
 
@@ -532,8 +572,7 @@ impl TabbedContent {
             self.active
                 .as_deref()
                 .and_then(|active| meta.iter().find(|pane| pane.id == active))
-                .map(|pane| !pane.hidden && !pane.disabled)
-                .unwrap_or(false)
+                .is_some_and(|pane| !pane.hidden && !pane.disabled)
         };
         if active_valid {
             return;
@@ -601,7 +640,7 @@ impl crate::widgets::Render for TabbedContent {
                 },
             );
         }
-        crate::widgets::Widget::on_layout(&mut tabs, width as u16, height as u16);
+        crate::widgets::Widget::on_layout(&mut tabs, width.to_u16_sat(), height.to_u16_sat());
         let mut tab_options = options.clone();
         tab_options.size = (width, height);
         tab_options.max_width = width;
@@ -611,7 +650,7 @@ impl crate::widgets::Render for TabbedContent {
 }
 
 impl crate::widgets::Focus for TabbedContent {
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "tabbed_content"
     }
 

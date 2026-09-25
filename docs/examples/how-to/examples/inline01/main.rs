@@ -12,14 +12,14 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
 #clock {
     width: auto;
 }
-"#;
+";
 
 fn current_time_local() -> String {
     let secs = SystemTime::now()

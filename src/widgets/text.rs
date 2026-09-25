@@ -8,6 +8,7 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::event::Event;
 use crate::message::ActionDispatchRequested;
+use crate::num::Cast;
 use crate::widgets::markdown_model::{
     MarkdownBlock, parse_markdown_blocks, parse_markdown_headings,
 };
@@ -55,6 +56,8 @@ impl LabelVariant {
 
 #[derive(Debug, Clone)]
 #[widget(Interactive, Layout, StyleIdentity)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Label {
     text: String,
     wrap: bool,
@@ -103,6 +106,7 @@ impl Label {
         }
     }
 
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.seed.css_id = Some(id.into());
         self
@@ -110,6 +114,7 @@ impl Label {
 
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
@@ -121,12 +126,14 @@ impl Label {
     /// Set the text rendered on the top border (Python `widget.border_title`).
     /// Only visible when the widget has a border; align/colors come from the
     /// `border-title-*` CSS properties.
+    #[must_use]
     pub fn with_border_title(mut self, title: impl Into<String>) -> Self {
         self.border_title = Some(title.into());
         self
     }
 
     /// Set the text rendered on the bottom border (Python `widget.border_subtitle`).
+    #[must_use]
     pub fn with_border_subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.border_subtitle = Some(subtitle.into());
         self
@@ -142,30 +149,35 @@ impl Label {
         self.border_subtitle = subtitle.map(Into::into);
     }
 
+    #[must_use]
     pub fn wrap(mut self, wrap: bool) -> Self {
         self.wrap = wrap;
         self
     }
 
     /// Enable or disable Rich markup parsing for this label's text content.
+    #[must_use]
     pub fn with_markup(mut self, markup: bool) -> Self {
         self.markup = markup;
         self
     }
 
     /// When true, the widget expands to fill the available width.
+    #[must_use]
     pub fn with_expand(mut self, expand: bool) -> Self {
         self.expand = expand;
         self
     }
 
     /// When true, the widget shrinks to its content width (default: false).
+    #[must_use]
     pub fn with_shrink(mut self, shrink: bool) -> Self {
         self.shrink = shrink;
         self
     }
 
     /// Set the visual variant, adding a CSS class like `label--success`.
+    #[must_use]
     pub fn with_variant(mut self, variant: LabelVariant) -> Self {
         self.variant = Some(variant);
         self.rebuild_classes();
@@ -173,6 +185,7 @@ impl Label {
     }
 
     /// Get the current variant, if any.
+    #[must_use]
     pub fn variant(&self) -> Option<LabelVariant> {
         self.variant
     }
@@ -190,7 +203,7 @@ impl Label {
         }
     }
 
-    /// Mutable access to the pre-mount `NodeSeed` (css_id, classes, inline styles).
+    /// Mutable access to the pre-mount `NodeSeed` (`css_id`, classes, inline styles).
     ///
     /// Valid until the widget is mounted into the arena tree; after mount the
     /// node record is the single source of truth and seed changes have no effect.
@@ -278,10 +291,10 @@ impl crate::widgets::Layout for Label {
     }
 
     fn style(&self) -> Option<crate::style::Style> {
-        if self.seed.styles.style != Default::default() {
-            Some(self.seed.styles.style.clone())
-        } else {
+        if self.seed.styles.style == crate::style::Style::default() {
             None
+        } else {
+            Some(self.seed.styles.style.clone())
         }
     }
 }
@@ -296,10 +309,10 @@ impl crate::widgets::StyleIdentity for Label {
     }
 
     fn style_classes(&self) -> &[String] {
-        if !self.seed.classes.is_empty() {
-            &self.seed.classes
-        } else {
+        if self.seed.classes.is_empty() {
             &self.classes_cache
+        } else {
+            &self.seed.classes
         }
     }
 
@@ -311,8 +324,8 @@ impl crate::widgets::StyleIdentity for Label {
         let seed = std::mem::take(&mut self.seed);
         // Preserve id/classes so off-tree CSS resolution keeps matching after the
         // seed is taken (see `css_id_cache` field doc).
-        self.css_id_cache = seed.css_id.clone();
-        self.classes_cache = seed.classes.clone();
+        self.css_id_cache.clone_from(&seed.css_id);
+        self.classes_cache.clone_from(&seed.classes);
         seed
     }
 }
@@ -352,8 +365,7 @@ impl crate::widgets::Render for Label {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
 
         // Construct the render-time visual style: always has an explicit bg so
         // make_segment never falls back to black. fg/attrs come from the resolved
@@ -443,7 +455,7 @@ impl crate::widgets::Render for Label {
 #[widget(Focus, Interactive, Layout, Selectable)]
 pub struct Markdown {
     markup: String,
-    /// Shared content reference for parent-driven content updates (e.g. from MarkdownViewer).
+    /// Shared content reference for parent-driven content updates (e.g. from `MarkdownViewer`).
     /// When set, `on_layout()` syncs `self.markup` from this shared state before computing height.
     shared_markup: Option<Arc<RwLock<String>>>,
     layout_width: usize,
@@ -459,7 +471,7 @@ impl std::fmt::Debug for Markdown {
         f.debug_struct("Markdown")
             .field("markup_len", &self.markup.len())
             .field("pending_recompose", &self.pending_recompose)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -679,7 +691,7 @@ impl InlineTextDoc {
                         }
                     }
                     if let Some(flags) = resolved.link_style_hover.or(resolved.link_style) {
-                        apply_text_style_flags(&mut style, &flags);
+                        apply_text_style_flags(&mut style, flags);
                         has_style = true;
                     }
                 } else {
@@ -694,7 +706,7 @@ impl InlineTextDoc {
                         }
                     }
                     if let Some(flags) = resolved.link_style {
-                        apply_text_style_flags(&mut style, &flags);
+                        apply_text_style_flags(&mut style, flags);
                         has_style = true;
                     }
                 }
@@ -710,7 +722,7 @@ impl InlineTextDoc {
                     "@click".to_string(),
                     rich_rs::MetaValue::str(format_markdown_link_action(href)),
                 );
-                text.apply_meta(link_meta, start as isize, Some(end as isize));
+                text.apply_meta(link_meta, start.to_isize_sat(), Some(end.to_isize_sat()));
             }
         }
         text.render(console, options)
@@ -854,7 +866,7 @@ fn collapse_inline_whitespace(text: &str) -> String {
 ///     link_background.rich_color if styles.link_background.a else None)
 /// ```
 ///
-/// Returns `None` if no link_color is set (no visible link styling to apply).
+/// Returns `None` if no `link_color` is set (no visible link styling to apply).
 /// This matches Python: `link-color` defaults to the contrast text, which
 /// has alpha 0.87 — always Some in practice.
 pub(crate) fn compute_link_span_style(
@@ -923,7 +935,7 @@ pub(crate) fn compute_link_span_style(
     Some(style)
 }
 
-fn apply_text_style_flags(style: &mut rich_rs::Style, flags: &crate::style::TextStyleFlags) {
+fn apply_text_style_flags(style: &mut rich_rs::Style, flags: crate::style::TextStyleFlags) {
     if flags.bold {
         *style = style.with_bold(true);
     }
@@ -1009,8 +1021,7 @@ impl crate::widgets::Render for MarkdownHeadingBlock {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
         let mut render_style = visual_style.clone();
         render_style.bg = Some(effective_bg);
 
@@ -1073,9 +1084,9 @@ struct MarkdownParagraphBlock {
 }
 
 impl MarkdownParagraphBlock {
-    fn new(raw: String) -> Self {
+    fn new(raw: &str) -> Self {
         Self {
-            inline_doc: InlineTextDoc::parse(&raw),
+            inline_doc: InlineTextDoc::parse(raw),
             layout_width: 0,
             hovered_link: None,
         }
@@ -1415,7 +1426,7 @@ fn wrap_plain_lines(text: &str, width: usize) -> Vec<String> {
                 .to_string()
         })
         .collect();
-    while lines.last().is_some_and(|l| l.is_empty()) {
+    while lines.last().is_some_and(std::string::String::is_empty) {
         lines.pop();
     }
     if lines.is_empty() {
@@ -1451,7 +1462,7 @@ impl MarkdownBlockQuoteBlock {
     /// adds a `▌ ` prefix; nested quotes are surrounded by a single blank bar line
     /// at the parent depth (Python's vertical margins around `MarkdownBlockQuote`).
     fn render_lines(children: &[QuoteChild], depth: usize, total_width: usize) -> Vec<String> {
-        let prefix = format!("{} ", QUOTE_BAR).repeat(depth);
+        let prefix = format!("{QUOTE_BAR} ").repeat(depth);
         let prefix_width = rich_rs::cell_len(&prefix);
         let content_width = total_width.saturating_sub(prefix_width).max(1);
         // A blank bar line at the current depth (bars only, trailing space trimmed).
@@ -1462,7 +1473,7 @@ impl MarkdownBlockQuoteBlock {
             match child {
                 QuoteChild::Paragraph(doc) => {
                     for wrapped in wrap_plain_lines(&doc.plain, content_width) {
-                        lines.push(format!("{}{}", prefix, wrapped));
+                        lines.push(format!("{prefix}{wrapped}"));
                     }
                 }
                 QuoteChild::Quote(nested) => {
@@ -1552,9 +1563,9 @@ struct MarkdownInlineItem {
 }
 
 impl MarkdownInlineItem {
-    fn new(raw: String) -> Self {
+    fn new(raw: &str) -> Self {
         Self {
-            inline_doc: InlineTextDoc::parse(&raw),
+            inline_doc: InlineTextDoc::parse(raw),
             layout_width: 0,
             hovered_link: None,
         }
@@ -1641,15 +1652,15 @@ struct MarkdownListItemBlock {
 }
 
 impl MarkdownListItemBlock {
-    fn new(symbol: String, _item_text: String, item_markup: String) -> Self {
-        let content = Vertical::new().with_child(MarkdownInlineItem::new(item_markup.clone()));
+    fn new(symbol: String, _item_text: String, item_markup: &str) -> Self {
+        let content = Vertical::new().with_child(MarkdownInlineItem::new(item_markup));
         let children: Vec<Box<dyn Widget>> = vec![
             Box::new(MarkdownBullet::new(symbol.clone())),
             Box::new(content),
         ];
         Self {
             symbol,
-            item_inline_doc: InlineTextDoc::parse(&item_markup),
+            item_inline_doc: InlineTextDoc::parse(item_markup),
             layout_width: 0,
             children,
         }
@@ -1710,7 +1721,7 @@ impl MarkdownListBlock {
                     Box::new(MarkdownListItemBlock::new(
                         format!("{:>width$}", format!("{}. ", index + 1), width = width),
                         item,
-                        item_markups.get(index).cloned().unwrap_or_else(String::new),
+                        &item_markups.get(index).cloned().unwrap_or_else(String::new),
                     )) as Box<dyn Widget>
                 })
                 .collect()
@@ -1723,7 +1734,7 @@ impl MarkdownListBlock {
                     Box::new(MarkdownListItemBlock::new(
                         BULLET.to_string(),
                         item,
-                        item_markups.get(index).cloned().unwrap_or_else(String::new),
+                        &item_markups.get(index).cloned().unwrap_or_else(String::new),
                     )) as Box<dyn Widget>
                 })
                 .collect()
@@ -1804,14 +1815,14 @@ struct MarkdownTableCell {
 }
 
 impl MarkdownTableCell {
-    fn new(text: String, raw: String, classes: Vec<String>) -> Self {
+    fn new(text: String, raw: &str, classes: Vec<String>) -> Self {
         let seed = NodeSeed {
             classes,
             ..NodeSeed::default()
         };
         Self {
             text,
-            inline_doc: InlineTextDoc::parse(&raw),
+            inline_doc: InlineTextDoc::parse(raw),
             layout_width: 0,
             hovered_link: None,
             seed,
@@ -1889,7 +1900,7 @@ impl crate::widgets::HasTooltip for MarkdownTableCell {
     fn tooltip_anchor(&self) -> Option<(u16, u16)> {
         // Keep tooltip placement pinned to this cell's local center so runtime
         // can convert through scroll-aware content-local coordinates.
-        let x = (self.layout_width.max(1) / 2).min(u16::MAX as usize) as u16;
+        let x = (self.layout_width.max(1) / 2).to_u16_sat();
         Some((x, 0))
     }
 }
@@ -1940,8 +1951,7 @@ fn compute_markdown_table_column_fractions(
         .map(|column| {
             let mut max_content = header_markups
                 .get(column)
-                .map(|cell| table_cell_content_width(cell))
-                .unwrap_or(1);
+                .map_or(1, |cell| table_cell_content_width(cell));
             for row in row_markups {
                 if let Some(cell) = row.get(column) {
                     max_content = max_content.max(table_cell_content_width(cell));
@@ -1956,7 +1966,7 @@ fn compute_markdown_table_column_fractions(
             // handing the auto widths as fraction weights reproduces Python's
             // expand path bit-for-bit (both use exact rationals + cumulative
             // floor over gutter-interleaved offsets).
-            crate::style::Scalar::Fraction(max_content.saturating_add(2) as f32)
+            crate::style::Scalar::Fraction(max_content.saturating_add(2).to_f32_lossy())
         })
         .collect()
 }
@@ -1986,29 +1996,27 @@ fn compute_markdown_table_column_widths(
     for column in 0..columns {
         let mut max_content = header_markups
             .get(column)
-            .map(|cell| table_cell_content_width(cell))
-            .unwrap_or(1);
+            .map_or(1, |cell| table_cell_content_width(cell));
         let mut minimal = header_markups
             .get(column)
-            .map(|cell| table_cell_minimal_width(cell))
-            .unwrap_or(1);
+            .map_or(1, |cell| table_cell_minimal_width(cell));
         for row in row_markups {
             if let Some(cell) = row.get(column) {
                 max_content = max_content.max(table_cell_content_width(cell));
                 minimal = minimal.max(table_cell_minimal_width(cell));
             }
         }
-        widths.push(max_content.saturating_add(2) as f64);
-        minimums.push(minimal.saturating_add(2) as f64);
+        widths.push(max_content.saturating_add(2).to_f64_lossy());
+        minimums.push(minimal.saturating_add(2).to_f64_lossy());
     }
 
-    let total_space = table_width.saturating_sub(total_gutter) as f64;
+    let total_space = table_width.saturating_sub(total_gutter).to_f64_lossy();
     let mut used_space: f64 = widths.iter().sum();
 
     // Python `_resolve.py:74-81` (expand): grow proportionally to fill.
     if used_space > 0.0 && total_space > used_space {
         let remaining = total_space - used_space;
-        for width in widths.iter_mut() {
+        for width in &mut widths {
             *width += (*width / used_space) * remaining;
         }
     } else if used_space > total_space {
@@ -2029,7 +2037,7 @@ fn compute_markdown_table_column_widths(
         used_space = widths.iter().sum();
         excess = used_space - total_space;
         if excess > 0.0 && used_space > 0.0 {
-            for width in widths.iter_mut() {
+            for width in &mut widths {
                 *width -= (*width / used_space) * excess;
             }
         }
@@ -2042,10 +2050,10 @@ fn compute_markdown_table_column_widths(
     let mut prev_offset = 0i64;
     for width in &widths {
         acc += width;
-        let offset = acc.floor() as i64;
-        result.push((offset - prev_offset).max(0) as usize);
-        acc += gutter as f64;
-        prev_offset = acc.floor() as i64;
+        let offset = acc.floor().to_i64_sat();
+        result.push((offset - prev_offset).to_usize_sat());
+        acc += gutter.to_f64_lossy();
+        prev_offset = acc.floor().to_i64_sat();
     }
     result
 }
@@ -2107,7 +2115,7 @@ struct MarkdownTableContentBlock {
     row_markups: Vec<Vec<String>>,
     layout_width: usize,
     children: Vec<Box<dyn Widget>>,
-    /// Computed row heights from the last on_layout call; contributed via style() hook.
+    /// Computed row heights from the last `on_layout` call; contributed via `style()` hook.
     grid_rows: Option<Vec<crate::style::Scalar>>,
     seed: NodeSeed,
 }
@@ -2115,11 +2123,11 @@ struct MarkdownTableContentBlock {
 impl MarkdownTableContentBlock {
     fn new(
         headers: Vec<String>,
-        header_markups: Vec<String>,
+        header_markups: &[String],
         rows: Vec<Vec<String>>,
-        row_markups: Vec<Vec<String>>,
+        row_markups: &[Vec<String>],
     ) -> Self {
-        let column_count = headers.len().max(1) as u16;
+        let column_count = headers.len().max(1).to_u16_sat();
         let mut effective_header_markups = Vec::with_capacity(headers.len());
         for (index, header) in headers.iter().enumerate() {
             effective_header_markups.push(
@@ -2153,7 +2161,7 @@ impl MarkdownTableContentBlock {
         for (index, header) in headers.into_iter().enumerate() {
             children.push(Box::new(MarkdownTableCell::new(
                 header,
-                effective_header_markups
+                &effective_header_markups
                     .get(index)
                     .cloned()
                     .unwrap_or_else(String::new),
@@ -2164,7 +2172,7 @@ impl MarkdownTableContentBlock {
             for (cell_index, cell) in row.into_iter().enumerate() {
                 children.push(Box::new(MarkdownTableCell::new(
                     cell,
-                    effective_row_markups
+                    &effective_row_markups
                         .get(row_index)
                         .and_then(|cells| cells.get(cell_index))
                         .cloned()
@@ -2175,7 +2183,7 @@ impl MarkdownTableContentBlock {
         }
         let mut seed = NodeSeed::default();
         seed.styles.style.grid_size_columns = Some(column_count);
-        seed.styles.style.grid_size_rows = Some(row_count as u16);
+        seed.styles.style.grid_size_rows = Some(row_count.to_u16_sat());
         seed.styles.style.grid_columns = Some(column_fractions);
         Self {
             column_count: column_count as usize,
@@ -2216,7 +2224,7 @@ impl crate::widgets::Interactive for MarkdownTableContentBlock {
         self.grid_rows = Some(
             row_heights
                 .into_iter()
-                .map(|height| crate::style::Scalar::Cells(height.min(u16::MAX as usize) as u16))
+                .map(|height| crate::style::Scalar::Cells(height.to_u16_sat()))
                 .collect(),
         );
     }
@@ -2275,9 +2283,9 @@ struct MarkdownTableBlock {
 impl MarkdownTableBlock {
     fn new(
         headers: Vec<String>,
-        header_markups: Vec<String>,
+        header_markups: &[String],
         rows: Vec<Vec<String>>,
-        row_markups: Vec<Vec<String>>,
+        row_markups: &[Vec<String>],
     ) -> Self {
         let mut effective_header_markups = Vec::with_capacity(headers.len());
         for (index, header) in headers.iter().enumerate() {
@@ -2312,9 +2320,9 @@ impl MarkdownTableBlock {
             layout_width: 0,
             children: vec![Box::new(MarkdownTableContentBlock::new(
                 headers,
-                effective_header_markups,
+                &effective_header_markups,
                 rows,
-                effective_row_markups,
+                &effective_row_markups,
             ))],
         }
     }
@@ -2474,7 +2482,7 @@ fn push_block_widget(children: &mut Vec<Box<dyn Widget>>, block: MarkdownBlock) 
             children.push(Box::new(MarkdownHeadingBlock::new(level, text)));
         }
         MarkdownBlock::Paragraph { raw, .. } => {
-            children.push(Box::new(MarkdownParagraphBlock::new(raw)));
+            children.push(Box::new(MarkdownParagraphBlock::new(&raw)));
         }
         MarkdownBlock::List {
             ordered,
@@ -2497,9 +2505,9 @@ fn push_block_widget(children: &mut Vec<Box<dyn Widget>>, block: MarkdownBlock) 
         } => {
             children.push(Box::new(MarkdownTableBlock::new(
                 headers,
-                header_markups,
+                &header_markups,
                 rows,
-                row_markups,
+                &row_markups,
             )));
         }
         MarkdownBlock::CodeFence { language, code, .. } => {
@@ -2525,7 +2533,7 @@ impl Markdown {
         let parent_style = crate::css::resolve_style(self, &parent_meta);
         crate::css::push_style_context(parent_meta, parent_style);
 
-        let layout_width = width.min(u16::MAX as usize) as u16;
+        let layout_width = width.to_u16_sat();
         let mut total = 0usize;
         let mut prev_bottom = 0usize;
         for (idx, child) in children.iter_mut().enumerate() {
@@ -2546,7 +2554,7 @@ impl Markdown {
             let child_content_width = (layout_width as usize)
                 .saturating_sub(horizontal_inset)
                 .max(1)
-                .min(u16::MAX as usize) as u16;
+                .to_u16_sat();
             child.on_layout(child_content_width, 1);
             // Mirror `extract_child_spec` box heights: an explicit cells height
             // is border-box; auto/unset heights are PURE content from
@@ -2622,11 +2630,13 @@ impl Markdown {
         markdown
     }
 
+    #[must_use]
     pub fn with_can_focus(mut self, can_focus: bool) -> Self {
         self.can_focus = can_focus;
         self
     }
 
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.seed.css_id = Some(id.into());
         self
@@ -2642,6 +2652,7 @@ impl Markdown {
     /// Extract all headings from the markdown as `(level, title)` pairs.
     ///
     /// Used by `MarkdownTableOfContents` to build the sidebar tree.
+    #[must_use]
     pub fn extract_headings(&self) -> Vec<(usize, String)> {
         parse_markdown_headings(&self.markup)
     }
@@ -2864,9 +2875,8 @@ I must not fear. Fear is the mind-killer. Fear is the little-death that brings t
 
     #[test]
     fn markdown_paragraph_renders_click_action_meta_for_links() {
-        let paragraph = super::MarkdownParagraphBlock::new(
-            "See [example.md](./example.md) for details.".to_string(),
-        );
+        let paragraph =
+            super::MarkdownParagraphBlock::new("See [example.md](./example.md) for details.");
         let console = Console::new();
         let mut options = console.options().clone();
         options.size = (80, 1);
@@ -2888,9 +2898,8 @@ I must not fear. Fear is the mind-killer. Fear is the little-death that brings t
 
     #[test]
     fn markdown_paragraph_link_default_background_is_transparent() {
-        let paragraph = super::MarkdownParagraphBlock::new(
-            "See [example.md](./example.md) for details.".to_string(),
-        );
+        let paragraph =
+            super::MarkdownParagraphBlock::new("See [example.md](./example.md) for details.");
         let console = Console::new();
         let mut options = console.options().clone();
         options.size = (80, 1);
@@ -2932,11 +2941,7 @@ I must not fear. Fear is the mind-killer. Fear is the little-death that brings t
 
     #[test]
     fn markdown_table_cell_tooltip_anchor_uses_local_center() {
-        let mut cell = MarkdownTableCell::new(
-            "True".to_string(),
-            "True".to_string(),
-            vec!["cell".to_string()],
-        );
+        let mut cell = MarkdownTableCell::new("True".to_string(), "True", vec!["cell".to_string()]);
         cell.on_layout(12, 1);
         assert_eq!(cell.tooltip_anchor(), Some((6, 0)));
     }
@@ -3050,7 +3055,7 @@ I must not fear. Fear is the mind-killer. Fear is the little-death that brings t
                 "Default".to_string(),
                 "Description".to_string(),
             ],
-            vec![
+            &[
                 "Name".to_string(),
                 "Type".to_string(),
                 "Default".to_string(),
@@ -3070,7 +3075,7 @@ I must not fear. Fear is the mind-killer. Fear is the little-death that brings t
                     "Number of fixed columns".to_string(),
                 ],
             ],
-            vec![
+            &[
                 vec![
                     "`show_header`".to_string(),
                     "`bool`".to_string(),

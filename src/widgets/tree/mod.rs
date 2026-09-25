@@ -2,7 +2,11 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use textual_macros::widget;
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    TreeNodeActivated, TreeNodeCollapsed, TreeNodeExpanded, TreeNodeHighlighted, TreeNodeSelected,
+    TreeNodeToggled,
+};
+use crate::num::Cast;
 
 use crate::action::ParsedAction;
 use crate::reactive::{ReactiveChange, ReactiveCtx, ReactiveFlags, ReactiveWidget};
@@ -52,6 +56,7 @@ pub struct Tree {
 impl Tree {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new(roots: Vec<TreeNode>) -> Self {
         let mut nodes = slotmap::SlotMap::with_key();
         let root_ids: Vec<TreeNodeId> = roots
@@ -131,6 +136,7 @@ impl Tree {
     }
 
     /// Whether the expand/collapse twisty is hidden.
+    #[must_use]
     pub fn twisty_hidden(&self) -> bool {
         self.hide_twisty
     }
@@ -169,25 +175,29 @@ impl Tree {
     /// This is a per-frame projection of the node-anchored cursor
     /// ([`Tree::cursor_node_id`]); it shifts when nodes above the cursor are
     /// inserted/removed/expanded, while the cursor keeps following its node.
+    #[must_use]
     pub fn selected(&self) -> usize {
         self.selected_line()
     }
 
+    #[must_use]
     pub fn showing_root(&self) -> bool {
         self.show_root
     }
 
+    #[must_use]
     pub fn showing_guides(&self) -> bool {
         self.show_guides
     }
 
+    #[must_use]
     pub fn guide_depth(&self) -> usize {
         self.guide_depth
     }
 
     // ── Reactive setters ─────────────────────────────────────────────────
 
-    /// Reactive setter for `selected` (always_update: fires even when value unchanged).
+    /// Reactive setter for `selected` (`always_update`: fires even when value unchanged).
     ///
     /// Matches Python's `cursor_line = var(-1, always_update=True)` — setting
     /// the cursor to the same position still triggers scroll-into-view and repaint.
@@ -261,6 +271,7 @@ impl Tree {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_show_root(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Offset clamping is done in the setter; layout flag triggers re-layout.
         self.clamp_offsets();
@@ -272,16 +283,19 @@ impl Tree {
     ///
     /// Mirrors Python's `tree.root` property. Python's Tree always has exactly
     /// one root; Rust's multi-root Vec is an implementation detail.
+    #[must_use]
     pub fn root(&self) -> Option<NodeRef<'_>> {
         self.roots.first().map(|&id| NodeRef { tree: self, id })
     }
 
     /// Stable id of the root node (first root).
+    #[must_use]
     pub fn root_id(&self) -> Option<TreeNodeId> {
         self.roots.first().copied()
     }
 
     /// Stable ids of all roots, in order.
+    #[must_use]
     pub fn root_ids(&self) -> &[TreeNodeId] {
         &self.roots
     }
@@ -290,6 +304,7 @@ impl Tree {
 
     /// Read-only view of a node by id, or `None` for a stale/unknown id
     /// (non-erroring twin of [`Tree::get_node_by_id`]).
+    #[must_use]
     pub fn node(&self, id: TreeNodeId) -> Option<NodeRef<'_>> {
         self.nodes
             .contains_key(id)
@@ -298,21 +313,25 @@ impl Tree {
 
     /// Look up a node by id (Python `get_node_by_id`, typed
     /// `TreeError::UnknownNode` instead of `UnknownNodeID`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node, for example after the node was removed.
     pub fn get_node_by_id(&self, id: TreeNodeId) -> Result<NodeRef<'_>, TreeError> {
         self.node(id).ok_or(TreeError::UnknownNode(id))
     }
 
     /// The parent of `id`, or `None` for a root or unknown id.
+    #[must_use]
     pub fn parent_of(&self, id: TreeNodeId) -> Option<TreeNodeId> {
         self.nodes.get(id).and_then(|n| n.parent)
     }
 
     /// The ordered children of `id` (empty for a leaf or unknown id).
+    #[must_use]
     pub fn children_of(&self, id: TreeNodeId) -> &[TreeNodeId] {
-        self.nodes
-            .get(id)
-            .map(|n| n.children.as_slice())
-            .unwrap_or(&[])
+        self.nodes.get(id).map_or(&[], |n| n.children.as_slice())
     }
 
     /// The sibling list containing `id`: its parent's children, or the root
@@ -326,6 +345,7 @@ impl Tree {
     }
 
     /// The next sibling of `id`, if any (Python `next_sibling`).
+    #[must_use]
     pub fn next_sibling(&self, id: TreeNodeId) -> Option<TreeNodeId> {
         let siblings = self.sibling_list(id);
         let pos = siblings.iter().position(|&s| s == id)?;
@@ -333,6 +353,7 @@ impl Tree {
     }
 
     /// The previous sibling of `id`, if any (Python `previous_sibling`).
+    #[must_use]
     pub fn previous_sibling(&self, id: TreeNodeId) -> Option<TreeNodeId> {
         let siblings = self.sibling_list(id);
         let pos = siblings.iter().position(|&s| s == id)?;
@@ -340,11 +361,13 @@ impl Tree {
     }
 
     /// Whether `id` is a live root node (Python `is_root`).
+    #[must_use]
     pub fn is_root(&self, id: TreeNodeId) -> bool {
         self.nodes.get(id).is_some_and(|n| n.parent.is_none())
     }
 
     /// Whether `id` is the last of its siblings (Python `is_last`).
+    #[must_use]
     pub fn is_last(&self, id: TreeNodeId) -> bool {
         self.sibling_list(id).last() == Some(&id)
     }
@@ -352,11 +375,17 @@ impl Tree {
     // ── Per-node accessors (replace the retired `root_mut()` surgery) ──
 
     /// The label of `id`, if it resolves.
+    #[must_use]
     pub fn label_of(&self, id: TreeNodeId) -> Option<&str> {
         self.nodes.get(id).map(|n| n.label.as_str())
     }
 
     /// Set the label of `id` (Python `node.set_label`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn set_label(&mut self, id: TreeNodeId, label: impl Into<String>) -> Result<(), TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -368,11 +397,17 @@ impl Tree {
     }
 
     /// The user data of `id`, if it resolves and has data.
+    #[must_use]
     pub fn data_of(&self, id: TreeNodeId) -> Option<&str> {
         self.nodes.get(id).and_then(|n| n.data.as_deref())
     }
 
     /// Set the user data of `id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn set_data(&mut self, id: TreeNodeId, data: Option<String>) -> Result<(), TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -384,6 +419,11 @@ impl Tree {
     }
 
     /// Expand `id` (Python `node.expand()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn expand(&mut self, id: TreeNodeId) -> Result<(), TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -395,6 +435,11 @@ impl Tree {
     }
 
     /// Collapse `id` (Python `node.collapse()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn collapse(&mut self, id: TreeNodeId) -> Result<(), TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -406,6 +451,11 @@ impl Tree {
     }
 
     /// Toggle expansion of `id` (Python `node.toggle()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn toggle_node(&mut self, id: TreeNodeId) -> Result<bool, TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -417,6 +467,11 @@ impl Tree {
     }
 
     /// Set whether `id` can be expanded by the user.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn set_allow_expand(&mut self, id: TreeNodeId, value: bool) -> Result<(), TreeError> {
         match self.nodes.get_mut(id) {
             Some(node) => {
@@ -431,6 +486,11 @@ impl Tree {
 
     /// Add a seed (and its whole subtree) as the last child of `parent`,
     /// returning the subtree root's id (Python `node.add`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `parent` does not resolve to a
+    /// live node. The tree is not modified.
     pub fn add(&mut self, parent: TreeNodeId, node: TreeNode) -> Result<TreeNodeId, TreeError> {
         if !self.nodes.contains_key(parent) {
             return Err(TreeError::UnknownNode(parent));
@@ -441,6 +501,11 @@ impl Tree {
     }
 
     /// Add a seed as a leaf child of `parent` (Python `node.add_leaf`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `parent` does not resolve to a
+    /// live node. The tree is not modified.
     pub fn add_leaf(
         &mut self,
         parent: TreeNodeId,
@@ -455,6 +520,11 @@ impl Tree {
     /// node-addressed sibling insertion; use the index form via
     /// `children_of(parent)`), a stale anchor is `TreeError::InvalidAnchor`
     /// like Python's `AddNodeError` for a removed anchor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::InvalidAnchor`] when `sibling` is a root node or
+    /// does not resolve to a live node. The tree is not modified.
     pub fn add_before(
         &mut self,
         sibling: TreeNodeId,
@@ -465,6 +535,11 @@ impl Tree {
 
     /// Insert a seed as a sibling of `sibling`, immediately after it
     /// (Python `add(after=node)`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::InvalidAnchor`] when `sibling` is a root node or
+    /// does not resolve to a live node. The tree is not modified.
     pub fn add_after(
         &mut self,
         sibling: TreeNodeId,
@@ -496,6 +571,13 @@ impl Tree {
     ///
     /// Refuses roots with `TreeError::RemoveRoot`. All descendant slots are
     /// purged, so stale ids reliably miss every lookup afterwards.
+    ///
+    /// # Errors
+    ///
+    /// - [`TreeError::UnknownNode`] when `id` does not resolve to a live node.
+    /// - [`TreeError::RemoveRoot`] when `id` is a root node.
+    ///
+    /// The tree is not modified in either case.
     pub fn remove(&mut self, id: TreeNodeId) -> Result<(), TreeError> {
         let Some(node) = self.nodes.get(id) else {
             return Err(TreeError::UnknownNode(id));
@@ -511,6 +593,11 @@ impl Tree {
 
     /// Remove all children of `id`, keeping the node itself
     /// (Python `node.remove_children()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node.
     pub fn remove_children(&mut self, id: TreeNodeId) -> Result<(), TreeError> {
         let Some(node) = self.nodes.get_mut(id) else {
             return Err(TreeError::UnknownNode(id));
@@ -597,7 +684,7 @@ impl Tree {
     /// Non-reactive setter for `show_root`.
     ///
     /// For use in construction contexts where no `ReactiveCtx` is available
-    /// (e.g. building a Tree inside MarkdownTableOfContents).
+    /// (e.g. building a Tree inside `MarkdownTableOfContents`).
     pub fn set_show_root_plain(&mut self, value: bool) {
         self.show_root = value;
     }
@@ -620,6 +707,7 @@ impl Tree {
     // ── Node-anchored cursor (Python `_tree.py:962-1003`) ──────────────
 
     /// Stable id of the cursor node, if any.
+    #[must_use]
     pub fn cursor_node_id(&self) -> Option<TreeNodeId> {
         self.cursor.filter(|&id| self.nodes.contains_key(id))
     }
@@ -637,6 +725,11 @@ impl Tree {
 
     /// Move the cursor to `id` and emit `TreeNodeSelected` +
     /// `TreeNodeHighlighted` (Python `select_node(node)`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TreeError::UnknownNode`] when `id` does not resolve to a live
+    /// node. The cursor does not move and no message is emitted.
     pub fn select_node_by_id(
         &mut self,
         id: TreeNodeId,
@@ -655,12 +748,14 @@ impl Tree {
 
     /// The node currently rendered at visible line `line`, if any (bridges
     /// the line-oriented and id-oriented APIs).
+    #[must_use]
     pub fn node_at_line(&self, line: usize) -> Option<TreeNodeId> {
         self.visible_nodes().get(line).map(|n| n.id)
     }
 
     /// The current visible line of `id`, or `None` when the node is unknown
     /// or hidden inside a collapsed ancestor.
+    #[must_use]
     pub fn line_of(&self, id: TreeNodeId) -> Option<usize> {
         self.visible_nodes().iter().position(|n| n.id == id)
     }
@@ -715,6 +810,7 @@ impl Tree {
     /// Get the label of the currently highlighted (cursor) node, if any.
     ///
     /// Mirrors Python's `Tree.cursor_node` property.
+    #[must_use]
     pub fn cursor_node(&self) -> Option<String> {
         let nodes = self.visible_nodes();
         let line = self.selected_line_in(&nodes);
@@ -750,9 +846,9 @@ impl Tree {
         // closest selectable line).
         let mut line = self.selected_line_in(&nodes).min(total - 1);
         if nodes.get(line).is_some_and(|node| node.disabled) {
-            if let Some(next) = self.closest_selectable(line, 1, &nodes) {
+            if let Some(next) = Self::closest_selectable(line, 1, &nodes) {
                 line = next;
-            } else if let Some(prev) = self.closest_selectable(line, -1, &nodes) {
+            } else if let Some(prev) = Self::closest_selectable(line, -1, &nodes) {
                 line = prev;
             }
         }
@@ -796,12 +892,7 @@ impl Tree {
         }
     }
 
-    fn emit_activated(
-        &self,
-        ctx: &mut crate::event::WidgetCtx,
-        index: usize,
-        nodes: &[VisibleNode],
-    ) {
+    fn emit_activated(ctx: &mut crate::event::WidgetCtx, index: usize, nodes: &[VisibleNode]) {
         if let Some(node) = nodes.get(index) {
             if node.disabled {
                 return;
@@ -827,7 +918,6 @@ impl Tree {
     }
 
     fn emit_toggled(
-        &self,
         ctx: &mut crate::event::WidgetCtx,
         index: usize,
         node_id: TreeNodeId,
@@ -862,9 +952,8 @@ impl Tree {
             return;
         }
         let selected = self.selected_line_in(&nodes);
-        let next = self
-            .closest_selectable(index, 1, &nodes)
-            .or_else(|| self.closest_selectable(index, -1, &nodes))
+        let next = Self::closest_selectable(index, 1, &nodes)
+            .or_else(|| Self::closest_selectable(index, -1, &nodes))
             .unwrap_or(selected.min(total - 1));
         if next != selected {
             self.cursor = nodes.get(next).map(|n| n.id);
@@ -881,16 +970,16 @@ impl Tree {
         if total == 0 || self.selectable_count() == 0 {
             return;
         }
-        let current = self.selected_line_in(&nodes) as isize;
-        let max = (total - 1) as isize;
-        let mut next = (current + delta).clamp(0, max) as usize;
+        let current = self.selected_line_in(&nodes).to_isize_sat();
+        let max = (total - 1).to_isize_sat();
+        let mut next = (current + delta).clamp(0, max).to_usize_sat();
         let step = if delta >= 0 { 1 } else { -1 };
         while next < total && nodes[next].disabled {
-            let probe = next as isize + step;
+            let probe = next.to_isize_sat() + step;
             if probe < 0 || probe > max {
                 return;
             }
-            next = probe as usize;
+            next = probe.to_usize_sat();
         }
         self.select_index(next, ctx);
     }
@@ -902,18 +991,18 @@ impl Tree {
     fn toggle_selected(&mut self, ctx: &mut crate::event::WidgetCtx) {
         let nodes = self.visible_nodes();
         let selected = self.selected_line_in(&nodes);
-        self.toggle_line(selected, nodes, ctx);
+        self.toggle_line(selected, &nodes, ctx);
     }
 
     fn toggle_index(&mut self, index: usize, ctx: &mut crate::event::WidgetCtx) {
         let nodes = self.visible_nodes();
-        self.toggle_line(index, nodes, ctx);
+        self.toggle_line(index, &nodes, ctx);
     }
 
     fn toggle_line(
         &mut self,
         index: usize,
-        nodes: Vec<VisibleNode>,
+        nodes: &[VisibleNode],
         ctx: &mut crate::event::WidgetCtx,
     ) {
         let Some(info) = nodes.get(index).cloned() else {
@@ -928,7 +1017,7 @@ impl Tree {
             expanded = node.expanded;
         }
         self.ensure_visible();
-        self.emit_toggled(ctx, index, info.id, info.label, expanded);
+        Self::emit_toggled(ctx, index, info.id, info.label, expanded);
         ctx.request_repaint();
     }
 
@@ -1155,7 +1244,7 @@ impl Tree {
         }
 
         self.ensure_visible();
-        self.emit_toggled(ctx, selected, info.id, info.label, new_state);
+        Self::emit_toggled(ctx, selected, info.id, info.label, new_state);
         ctx.request_repaint();
     }
 
@@ -1177,7 +1266,7 @@ impl Tree {
         let before = self.offset;
         self.offset = ScrollView::line_scroll_by(
             self.offset,
-            delta_rows as i32,
+            delta_rows.to_i32_sat(),
             self.visible_count(),
             self.viewport_height.max(1),
         );
@@ -1187,27 +1276,22 @@ impl Tree {
         }
     }
 
-    fn closest_selectable(
-        &self,
-        index: usize,
-        direction: isize,
-        nodes: &[VisibleNode],
-    ) -> Option<usize> {
+    fn closest_selectable(index: usize, direction: isize, nodes: &[VisibleNode]) -> Option<usize> {
         if nodes.is_empty() {
             return None;
         }
-        let max = nodes.len().saturating_sub(1) as isize;
-        let mut idx = (index as isize).clamp(0, max) as usize;
+        let max = nodes.len().saturating_sub(1).to_isize_sat();
+        let mut idx = index.to_isize_sat().clamp(0, max).to_usize_sat();
         if !nodes[idx].disabled {
             return Some(idx);
         }
         let step = if direction >= 0 { 1 } else { -1 };
         loop {
-            let next = idx as isize + step;
+            let next = idx.to_isize_sat() + step;
             if next < 0 || next > max {
                 return None;
             }
-            idx = next as usize;
+            idx = next.to_usize_sat();
             if !nodes[idx].disabled {
                 return Some(idx);
             }
@@ -1235,7 +1319,7 @@ impl crate::widgets::Focus for Tree {
         true
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "tree"
     }
 
@@ -1278,12 +1362,12 @@ impl crate::widgets::Focus for Tree {
                 true
             }
             "scroll_up" => {
-                self.move_selection(-(self.page_step() as isize), ctx);
+                self.move_selection(-self.page_step().to_isize_sat(), ctx);
                 ctx.set_handled();
                 true
             }
             "scroll_down" => {
-                self.move_selection(self.page_step() as isize, ctx);
+                self.move_selection(self.page_step().to_isize_sat(), ctx);
                 ctx.set_handled();
                 true
             }
@@ -1313,7 +1397,7 @@ impl crate::widgets::Focus for Tree {
             "select_cursor" => {
                 let nodes = self.visible_nodes();
                 let selected = self.selected_line_in(&nodes);
-                self.emit_activated(ctx, selected, &nodes);
+                Self::emit_activated(ctx, selected, &nodes);
                 ctx.set_handled();
                 true
             }
@@ -1352,6 +1436,119 @@ impl crate::widgets::Focus for Tree {
     }
 }
 
+impl Tree {
+    /// A press on a row: toggle it when the press is on its twisty, else
+    /// select it and remember it for activation on release.
+    fn on_tree_mouse_down(
+        &mut self,
+        mouse: &crate::event::MouseDownEvent,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
+        let nodes = self.visible_nodes();
+        let index = self.offset.saturating_add(mouse.y as usize);
+        if let Some(node) = nodes.get(index) {
+            if node.disabled {
+                return;
+            }
+            let twist_col =
+                Self::twisty_hit_max_x(node, self.show_guides, self.guide_depth, self.hide_twisty);
+            if node.expandable && (mouse.x as usize) <= twist_col {
+                self.pressed_activation_index = None;
+                self.toggle_index(index, ctx);
+            } else {
+                self.select_index(index, ctx);
+                self.pressed_activation_index = Some(index);
+                if self.hovered_index != Some(index) {
+                    self.hovered_index = Some(index);
+                    ctx.request_repaint();
+                }
+            }
+            ctx.set_handled();
+        }
+    }
+
+    /// Cursor movement, expand/collapse and activation keys (Shift+arrows
+    /// move between siblings and to the parent).
+    fn on_tree_key(&mut self, key: &crate::keys::KeyEventData, ctx: &mut crate::event::WidgetCtx) {
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+        let shift_handled = if shift {
+            match key.code {
+                KeyCode::Up => {
+                    self.cursor_previous_sibling(ctx);
+                    true
+                }
+                KeyCode::Down => {
+                    self.cursor_next_sibling(ctx);
+                    true
+                }
+                KeyCode::Left => {
+                    self.cursor_parent(ctx);
+                    true
+                }
+                KeyCode::Right | KeyCode::Char(' ') => {
+                    self.toggle_expand_all_selected(ctx);
+                    true
+                }
+                _ => false,
+            }
+        } else {
+            false
+        };
+        if shift_handled {
+            ctx.set_handled();
+        } else {
+            match key.code {
+                KeyCode::Up => {
+                    self.move_selection(-1, ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::Down => {
+                    self.move_selection(1, ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::PageUp => {
+                    self.move_selection(-self.page_step().to_isize_sat(), ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::PageDown => {
+                    self.move_selection(self.page_step().to_isize_sat(), ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::Home => {
+                    self.select_index(0, ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::End => {
+                    let total = self.visible_count();
+                    if total > 0 {
+                        self.select_index(total - 1, ctx);
+                    }
+                    ctx.set_handled();
+                }
+                KeyCode::Left => {
+                    self.collapse_or_parent(ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::Right => {
+                    self.expand_or_child(ctx);
+                    ctx.set_handled();
+                }
+                KeyCode::Enter => {
+                    let nodes = self.visible_nodes();
+                    let selected = self.selected_line_in(&nodes);
+                    Self::emit_activated(ctx, selected, &nodes);
+                    ctx.set_handled();
+                }
+                KeyCode::Char(' ') => {
+                    self.toggle_selected(ctx);
+                    ctx.set_handled();
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 impl crate::widgets::Interactive for Tree {
     fn on_node_state_changed(
         &mut self,
@@ -1371,37 +1568,13 @@ impl crate::widgets::Interactive for Tree {
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
         match event {
             Event::MouseDown(mouse) if mouse.target == self.node_id() => {
-                let nodes = self.visible_nodes();
-                let index = self.offset.saturating_add(mouse.y as usize);
-                if let Some(node) = nodes.get(index) {
-                    if node.disabled {
-                        return;
-                    }
-                    let twist_col = Self::twisty_hit_max_x(
-                        node,
-                        self.show_guides,
-                        self.guide_depth,
-                        self.hide_twisty,
-                    );
-                    if node.expandable && (mouse.x as usize) <= twist_col {
-                        self.pressed_activation_index = None;
-                        self.toggle_index(index, ctx);
-                    } else {
-                        self.select_index(index, ctx);
-                        self.pressed_activation_index = Some(index);
-                        if self.hovered_index != Some(index) {
-                            self.hovered_index = Some(index);
-                            ctx.request_repaint();
-                        }
-                    }
-                    ctx.set_handled();
-                }
+                self.on_tree_mouse_down(mouse, ctx);
             }
             Event::MouseUp(mouse) if mouse.target.is_some_and(|t| t == self.node_id()) => {
                 let index = self.offset.saturating_add(mouse.y as usize);
                 let nodes = self.visible_nodes();
                 if self.pressed_activation_index == Some(index) {
-                    self.emit_activated(ctx, index, &nodes);
+                    Self::emit_activated(ctx, index, &nodes);
                     ctx.set_handled();
                 }
                 self.pressed_activation_index = None;
@@ -1416,11 +1589,11 @@ impl crate::widgets::Interactive for Tree {
                     ctx.set_handled();
                 }
                 Action::ScrollPageUp => {
-                    self.move_selection(-(self.page_step() as isize), ctx);
+                    self.move_selection(-self.page_step().to_isize_sat(), ctx);
                     ctx.set_handled();
                 }
                 Action::ScrollPageDown => {
-                    self.move_selection(self.page_step() as isize, ctx);
+                    self.move_selection(self.page_step().to_isize_sat(), ctx);
                     ctx.set_handled();
                 }
                 Action::Toggle => {
@@ -1430,86 +1603,7 @@ impl crate::widgets::Interactive for Tree {
                 _ => {}
             },
             Event::Key(key) if self.node_state().focused => {
-                let shift = key.modifiers.contains(KeyModifiers::SHIFT);
-                let shift_handled = if shift {
-                    match key.code {
-                        KeyCode::Up => {
-                            self.cursor_previous_sibling(ctx);
-                            true
-                        }
-                        KeyCode::Down => {
-                            self.cursor_next_sibling(ctx);
-                            true
-                        }
-                        KeyCode::Left => {
-                            self.cursor_parent(ctx);
-                            true
-                        }
-                        KeyCode::Right => {
-                            self.toggle_expand_all_selected(ctx);
-                            true
-                        }
-                        KeyCode::Char(' ') => {
-                            self.toggle_expand_all_selected(ctx);
-                            true
-                        }
-                        _ => false,
-                    }
-                } else {
-                    false
-                };
-                if shift_handled {
-                    ctx.set_handled();
-                } else {
-                    match key.code {
-                        KeyCode::Up => {
-                            self.move_selection(-1, ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::Down => {
-                            self.move_selection(1, ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::PageUp => {
-                            self.move_selection(-(self.page_step() as isize), ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::PageDown => {
-                            self.move_selection(self.page_step() as isize, ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::Home => {
-                            self.select_index(0, ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::End => {
-                            let total = self.visible_count();
-                            if total > 0 {
-                                self.select_index(total - 1, ctx);
-                            }
-                            ctx.set_handled();
-                        }
-                        KeyCode::Left => {
-                            self.collapse_or_parent(ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::Right => {
-                            self.expand_or_child(ctx);
-                            ctx.set_handled();
-                        }
-                        KeyCode::Enter => {
-                            let nodes = self.visible_nodes();
-                            let selected = self.selected_line_in(&nodes);
-                            self.emit_activated(ctx, selected, &nodes);
-                            ctx.set_handled();
-                        }
-                        KeyCode::Char(' ') => {
-                            self.toggle_selected(ctx);
-                            ctx.set_handled();
-                        }
-                        _ => {}
-                    }
-                }
+                self.on_tree_key(key, ctx);
             }
             Event::AppFocus(false) => {
                 self.pressed_activation_index = None;
@@ -1568,7 +1662,7 @@ impl crate::widgets::Scrollable for Tree {
             return;
         }
         self.scroll_offset(
-            delta_y.saturating_mul(self.scroll_step as i32) as isize,
+            delta_y.saturating_mul(self.scroll_step.to_i32_sat()) as isize,
             ctx,
         );
     }

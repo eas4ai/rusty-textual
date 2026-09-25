@@ -1,14 +1,14 @@
 /// Port of Python Textual `docs/examples/how-to/layout06.py`.
 ///
 /// Demonstrates a docked header/footer (Placeholder subclasses) combined with
-/// a HorizontalScroll body holding four vertically-scrollable Column widgets.
+/// a `HorizontalScroll` body holding four vertically-scrollable Column widgets.
 /// Each Column contains 19 Tweet placeholders.
 ///
 /// Python defines custom Placeholder subclasses (`Header`, `Footer`, `Tweet`,
 /// `Column`) with `DEFAULT_CSS`. Rust targets them via CSS classes and IDs.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 .header {
     height: 3;
     dock: top;
@@ -30,7 +30,7 @@ const CSS: &str = r#"
     width: 32;
     margin: 0 2;
 }
-"#;
+";
 
 struct LayoutApp;
 
@@ -48,9 +48,9 @@ impl TextualApp for LayoutApp {
         for _ in 0..4 {
             let mut col = VerticalScroll::new();
             for tweet_no in 1..=19 {
-                let label = format!("#Tweet{}", tweet_no);
+                let label = format!("#Tweet{tweet_no}");
                 let tweet = Placeholder::new(label.clone())
-                    .id(format!("Tweet{}", tweet_no))
+                    .id(format!("Tweet{tweet_no}"))
                     .class("tweet");
                 col.push(tweet);
             }

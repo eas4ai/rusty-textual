@@ -15,6 +15,7 @@ impl OptionId {
         Self(id.into())
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -242,6 +243,7 @@ impl OptionItem {
     }
 
     /// Builder: attach rich [`Text`] content to this option.
+    #[must_use]
     pub fn with_content(mut self, content: Text) -> Self {
         if let Self::Option {
             content: ref mut c, ..
@@ -255,6 +257,7 @@ impl OptionItem {
     /// Builder: attach a renderable to this option.
     ///
     /// The renderable is rendered live at the runtime widget width.
+    #[must_use]
     pub fn with_renderable(mut self, renderable: impl Renderable + 'static) -> Self {
         if let Self::Option {
             content: ref mut c, ..
@@ -265,18 +268,22 @@ impl OptionItem {
         self
     }
 
+    #[must_use]
     pub fn is_separator(&self) -> bool {
         matches!(self, Self::Separator)
     }
 
+    #[must_use]
     pub fn is_disabled(&self) -> bool {
         matches!(self, Self::Option { disabled: true, .. })
     }
 
+    #[must_use]
     pub fn is_selectable(&self) -> bool {
         !self.is_separator() && !self.is_disabled()
     }
 
+    #[must_use]
     pub fn prompt(&self) -> Option<&str> {
         match self {
             Self::Option { prompt, .. } => Some(prompt),
@@ -285,6 +292,7 @@ impl OptionItem {
     }
 
     /// Rich content, if any.
+    #[must_use]
     pub fn content(&self) -> Option<&OptionContent> {
         match self {
             Self::Option { content, .. } => content.as_ref(),
@@ -293,6 +301,7 @@ impl OptionItem {
     }
 
     /// Access the content as `Text`, if it is a `Text` variant.
+    #[must_use]
     pub fn text_content(&self) -> Option<&Text> {
         match self.content() {
             Some(OptionContent::Text(t)) => Some(t),
@@ -300,6 +309,7 @@ impl OptionItem {
         }
     }
 
+    #[must_use]
     pub fn id(&self) -> Option<&OptionId> {
         match self {
             Self::Option { id, .. } => id.as_ref(),
@@ -373,6 +383,8 @@ pub(crate) struct ToggleEventOutcome {
 
 /// Shared interaction state and input handling for binary toggle widgets.
 #[derive(Debug, Clone)]
+// Separate widget and CSS pseudo-class states; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct BinaryToggleState {
     value: bool,
     focused: bool,

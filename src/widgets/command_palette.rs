@@ -15,6 +15,7 @@ use textual_macros::widget;
 use crate::event::Event;
 use crate::message::MessageEvent;
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::runtime::dispatch_ctx::set_dispatch_recipient;
 
 use super::{Input, NodeSeed, NodeState, Widget, helpers::adjust_line_length_no_bg};
@@ -76,6 +77,7 @@ struct SystemCommandEntry {
 }
 
 impl SystemCommandsProvider {
+    #[must_use]
     pub fn new(commands: Vec<PaletteCommand>) -> Self {
         let indexed = commands
             .iter()
@@ -91,12 +93,16 @@ impl SystemCommandsProvider {
     /// Borrow the current command list.
     /// Public API accessor for command palette providers.
     #[allow(dead_code)]
+    #[must_use]
     pub fn commands(&self) -> &[PaletteCommand] {
         &self.commands
     }
 }
 
 impl Provider for SystemCommandsProvider {
+    // `Provider::name` returns `&str` so names may be runtime values; an impl
+    // cannot narrow it to `&'static str`, whatever clippy suggests.
+    #[allow(clippy::unnecessary_literal_bound)]
     fn name(&self) -> &str {
         "system"
     }
@@ -149,11 +155,11 @@ impl FuzzyMatcher {
         let mut starts = std::collections::HashSet::new();
         let mut in_word = false;
         for (idx, ch) in candidate.iter().enumerate() {
-            let is_word = ch.is_alphanumeric() || *ch == '_';
-            if is_word && !in_word {
+            let word_char = ch.is_alphanumeric() || *ch == '_';
+            if word_char && !in_word {
                 starts.insert(idx);
             }
-            in_word = is_word;
+            in_word = word_char;
         }
         starts
     }
@@ -163,11 +169,12 @@ impl FuzzyMatcher {
             return 0.0;
         }
         let first_letters = Self::first_letter_positions(candidate);
-        let offset_count = positions.len() as f64;
+        let offset_count = positions.len().to_f64_lossy();
         let first_letter_hits = positions
             .iter()
             .filter(|offset| first_letters.contains(offset))
-            .count() as f64;
+            .count()
+            .to_f64_lossy();
 
         let mut groups = 1usize;
         let mut last = positions[0];
@@ -177,7 +184,8 @@ impl FuzzyMatcher {
             }
             last = offset;
         }
-        let normalized_groups = (offset_count - (groups.saturating_sub(1) as f64)) / offset_count;
+        let normalized_groups =
+            (offset_count - groups.saturating_sub(1).to_f64_lossy()) / offset_count;
         (offset_count + first_letter_hits) * (1.0 + normalized_groups * normalized_groups)
     }
 
@@ -191,6 +199,37 @@ impl FuzzyMatcher {
     }
 
     fn best_match_indices(query: &str, text: &str) -> Option<(f64, Vec<usize>)> {
+        fn recurse(
+            letter_positions: &[Vec<usize>],
+            positions_index: usize,
+            stack: &mut Vec<usize>,
+            candidate_chars: &[char],
+            best: &mut Option<(f64, Vec<usize>)>,
+        ) {
+            for &offset in &letter_positions[positions_index] {
+                if stack.last().is_some_and(|last| offset <= *last) {
+                    continue;
+                }
+                stack.push(offset);
+                if positions_index + 1 == letter_positions.len() {
+                    let score = FuzzyMatcher::score_positions(candidate_chars, stack);
+                    match best {
+                        Some((best_score, _)) if *best_score >= score => {}
+                        _ => *best = Some((score, stack.clone())),
+                    }
+                } else {
+                    recurse(
+                        letter_positions,
+                        positions_index + 1,
+                        stack,
+                        candidate_chars,
+                        best,
+                    );
+                }
+                let _ = stack.pop();
+            }
+        }
+
         if query.is_empty() {
             return Some((0.0, Vec::new()));
         }
@@ -239,42 +278,12 @@ impl FuzzyMatcher {
         let query_len = query_chars.len();
         let mut stack: Vec<usize> = Vec::with_capacity(query_len);
 
-        fn recurse(
-            letter_positions: &[Vec<usize>],
-            positions_index: usize,
-            stack: &mut Vec<usize>,
-            candidate_chars: &[char],
-            best: &mut Option<(f64, Vec<usize>)>,
-        ) {
-            for &offset in &letter_positions[positions_index] {
-                if stack.last().is_some_and(|last| offset <= *last) {
-                    continue;
-                }
-                stack.push(offset);
-                if positions_index + 1 == letter_positions.len() {
-                    let score = FuzzyMatcher::score_positions(candidate_chars, stack);
-                    match best {
-                        Some((best_score, _)) if *best_score >= score => {}
-                        _ => *best = Some((score, stack.clone())),
-                    }
-                } else {
-                    recurse(
-                        letter_positions,
-                        positions_index + 1,
-                        stack,
-                        candidate_chars,
-                        best,
-                    );
-                }
-                let _ = stack.pop();
-            }
-        }
-
         recurse(&letter_positions, 0, &mut stack, &text_chars, &mut best);
         best
     }
 
     /// Convert matched indices into contiguous `[start, end)` character ranges.
+    #[must_use]
     pub fn highlight_ranges(query: &str, text: &str) -> Vec<(usize, usize)> {
         let Some((score, indices)) = Self::best_match_indices(query, text) else {
             return Vec::new();
@@ -301,6 +310,7 @@ impl FuzzyMatcher {
 
     /// Returns a score if all characters in `query` appear (in order) in `text`.
     /// Higher score = better match. Returns `None` if no match.
+    #[must_use]
     pub fn score(query: &str, text: &str) -> Option<f64> {
         Self::best_match_indices(query, text).map(|(score, _)| score)
     }
@@ -342,6 +352,7 @@ pub struct SearchIcon {
 impl SearchIcon {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             icon: "🔎".to_string(),
@@ -400,6 +411,7 @@ impl CommandInput {
         }
     }
 
+    #[must_use]
     pub fn text(&self) -> &str {
         self.input.text()
     }
@@ -408,6 +420,7 @@ impl CommandInput {
         self.input.set_text(value);
     }
 
+    #[must_use]
     pub fn input_node_id(&self) -> NodeId {
         self.input.node_id()
     }

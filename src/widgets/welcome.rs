@@ -3,7 +3,7 @@ use textual_macros::widget;
 
 use crate::compose::ComposeResult;
 use crate::event::Event;
-use crate::message::*;
+use crate::message::{ButtonPressed, MessageEvent, OverlayDismissRequested};
 
 use super::{Button, ButtonVariant, Focus, Interactive, Layout, NodeSeed, Render, Static};
 use crate::widgets::containers::Container;
@@ -54,7 +54,7 @@ impl std::fmt::Debug for Welcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Welcome")
             .field("close_label", &self.close_label)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -67,6 +67,7 @@ impl Default for Welcome {
 impl Welcome {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         let mut seed = NodeSeed::default();
         seed.classes.push("welcome".to_string());
@@ -76,6 +77,7 @@ impl Welcome {
         }
     }
 
+    #[must_use]
     pub fn markdown(&self) -> &str {
         WELCOME_MD
     }
@@ -169,7 +171,7 @@ impl Layout for Welcome {
 mod tests {
     use super::*;
     use crate::event::EventCtx;
-    use crate::message::MessageEvent;
+    use crate::message::{InputChanged, MessageEvent};
     use crate::node_id::NodeId;
 
     #[test]

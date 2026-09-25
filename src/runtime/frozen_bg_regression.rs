@@ -184,7 +184,7 @@ impl TextualApp for TranslucentApp {
     }
 }
 
-/// Frame positions of the label glyph run: ((x_first, y), bgs).
+/// Frame positions of the label glyph run: ((`x_first`, y), bgs).
 fn glyph_cells(app: &App) -> (Option<(usize, usize)>, Vec<crate::style::Color>) {
     let mut first = None;
     let mut bgs = Vec::new();

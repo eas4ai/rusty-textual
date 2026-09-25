@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::sync::OnceLock;
 
 use super::ast::{Combinator, PseudoClass, SelectorChain, SelectorMeta};
@@ -50,10 +51,10 @@ pub(super) fn selector_chain_string(chain: &SelectorChain) -> String {
 }
 
 pub(super) fn style_debug_matches(meta: &SelectorMeta) -> bool {
+    static FILTERS: OnceLock<Vec<String>> = OnceLock::new();
     if !crate::debug::channel_enabled(crate::debug::DebugChannel::Style) {
         return false;
     }
-    static FILTERS: OnceLock<Vec<String>> = OnceLock::new();
     let filters = FILTERS.get_or_init(|| {
         std::env::var("TEXTUAL_DEBUG_STYLE_FILTER")
             .ok()
@@ -154,32 +155,26 @@ pub(super) fn style_debug_meta_label(meta: &SelectorMeta) -> String {
         label.push_str(":nocolor");
     }
     if let Some(idx) = meta.states.child_index {
-        label.push_str(&format!(":child({})", idx));
+        let _ = write!(label, ":child({idx})");
     }
     label
 }
 
 pub(super) fn style_debug_summary(style: &Style) -> String {
-    let fg = style
-        .fg
-        .map(style_debug_color)
-        .unwrap_or_else(|| "-".to_string());
-    let fg_auto = style
-        .fg_auto
-        .map(|value| format!("{}%", value.alpha_percent))
-        .unwrap_or_else(|| "-".to_string());
-    let bg = style
-        .bg
-        .map(style_debug_color)
-        .unwrap_or_else(|| "-".to_string());
-    let tint = style
-        .tint
-        .map(|value| format!("{}@{}%", style_debug_color(value.color), value.percent))
-        .unwrap_or_else(|| "-".to_string());
-    let bg_tint = style
-        .background_tint
-        .map(|value| format!("{}@{}%", style_debug_color(value.color), value.percent))
-        .unwrap_or_else(|| "-".to_string());
+    let fg = style.fg.map_or_else(|| "-".to_string(), style_debug_color);
+    let fg_auto = style.fg_auto.map_or_else(
+        || "-".to_string(),
+        |value| format!("{}%", value.alpha_percent),
+    );
+    let bg = style.bg.map_or_else(|| "-".to_string(), style_debug_color);
+    let tint = style.tint.map_or_else(
+        || "-".to_string(),
+        |value| format!("{}@{}%", style_debug_color(value.color), value.percent),
+    );
+    let bg_tint = style.background_tint.map_or_else(
+        || "-".to_string(),
+        |value| format!("{}@{}%", style_debug_color(value.color), value.percent),
+    );
 
     format!(
         "fg={} fg_auto={} bg={} bold={:?} dim={:?} italic={:?} underline={:?} reverse={:?} text_opacity={:?} opacity={:?} padding={:?} width={:?} height={:?} min_width={:?} max_width={:?} min_height={:?} max_height={:?} layout={:?} display={:?} visibility={:?} overflow_x={:?} overflow_y={:?} dock={:?} grid_size_columns={:?} grid_size_rows={:?} grid_columns={:?} grid_rows={:?} grid_gutter_h={:?} grid_gutter_v={:?} tint={} bg_tint={}",

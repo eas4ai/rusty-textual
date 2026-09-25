@@ -2,6 +2,7 @@ use std::f32::consts::PI;
 
 use rich_rs::{Console, ConsoleOptions, Renderable, Segment, Segments};
 
+use crate::num::Cast;
 use crate::style::{Color, blend_colors};
 
 /// Vertical background gradient renderable.
@@ -14,6 +15,7 @@ pub struct VerticalGradient {
 }
 
 impl VerticalGradient {
+    #[must_use]
     pub fn new(from: Color, to: Color) -> Self {
         Self { from, to }
     }
@@ -29,7 +31,9 @@ impl Renderable for VerticalGradient {
             let pct = if height <= 1 {
                 0
             } else {
-                ((y as f32 / (height - 1) as f32) * 100.0).round() as u8
+                ((y.to_f32_lossy() / (height - 1).to_f32_lossy()) * 100.0)
+                    .round()
+                    .to_u8_sat()
             };
             let bg = blend_colors(self.from, self.to, pct);
             let style = rich_rs::Style::new().with_bgcolor(bg.to_simple_opaque());
@@ -62,6 +66,7 @@ pub struct LinearGradient {
 }
 
 impl LinearGradient {
+    #[must_use]
     pub fn new(angle_deg: f32, mut stops: Vec<(f32, Color)>) -> Self {
         if stops.is_empty() {
             stops.push((0.0, Color::rgb(0, 0, 0)));
@@ -76,6 +81,7 @@ impl LinearGradient {
     ///
     /// Matches Python `Gradient.get_color`: index into the precomputed
     /// `quality`-step ramp and blend between the two nearest entries.
+    #[must_use]
     pub fn get_color(&self, position: f32) -> Color {
         let position = position.clamp(0.0, 1.0);
         if position <= 0.0 {
@@ -84,12 +90,12 @@ impl LinearGradient {
         if position >= 1.0 {
             return self.ramp[self.ramp.len() - 1];
         }
-        let color_position = position * (GRADIENT_QUALITY - 1) as f32;
-        let color_index = color_position.floor() as usize;
+        let color_position = position * (GRADIENT_QUALITY - 1).to_f32_lossy();
+        let color_index = color_position.floor().to_usize_sat();
         let c1 = self.ramp[color_index];
         let c2 = self.ramp[(color_index + 1).min(self.ramp.len() - 1)];
-        let frac = color_position - color_index as f32;
-        let pct = (frac * 100.0).round() as u8;
+        let frac = color_position - color_index.to_f32_lossy();
+        let pct = (frac * 100.0).round().to_u8_sat();
         blend_colors(c1, c2, pct)
     }
 }
@@ -102,25 +108,25 @@ fn build_ramp(stops: &[(f32, Color)]) -> Vec<Color> {
     let mut colors = Vec::with_capacity(GRADIENT_QUALITY);
     let mut position = 0usize;
     for step_position in 0..GRADIENT_QUALITY {
-        let step = step_position as f32 / (GRADIENT_QUALITY - 1) as f32;
+        let step = step_position.to_f32_lossy() / (GRADIENT_QUALITY - 1).to_f32_lossy();
         // Advance to the stop pair that brackets `step`.
         while position + 1 < stops.len() && step > stops[position + 1].0 {
             position += 1;
         }
-        let (stop1, color1) = stops[position];
-        let (stop2, color2) = if position + 1 < stops.len() {
+        let (lower_stop, lower_color) = stops[position];
+        let (upper_stop, upper_color) = if position + 1 < stops.len() {
             stops[position + 1]
         } else {
             stops[position]
         };
-        let span = stop2 - stop1;
+        let span = upper_stop - lower_stop;
         let local = if span.abs() < f32::EPSILON {
             0.0
         } else {
-            (step - stop1) / span
+            (step - lower_stop) / span
         };
-        let pct = (local.clamp(0.0, 1.0) * 100.0).round() as u8;
-        colors.push(blend_colors(color1, color2, pct));
+        let pct = (local.clamp(0.0, 1.0) * 100.0).round().to_u8_sat();
+        colors.push(blend_colors(lower_color, upper_color, pct));
     }
     colors
 }
@@ -135,12 +141,12 @@ impl Renderable for LinearGradient {
         let sin_angle = angle_radians.sin();
         let cos_angle = angle_radians.cos();
 
-        let width_f = width as f32;
+        let width_f = width.to_f32_lossy();
         let center_x = width_f / 2.0;
-        let center_y = height as f32;
+        let center_y = height.to_f32_lossy();
 
         for line_y in 0..height {
-            let point_y = line_y as f32 * 2.0 - center_y;
+            let point_y = line_y.to_f32_lossy() * 2.0 - center_y;
             let point_x = 0.0 - center_x;
 
             let x1 = (center_x + (point_x * cos_angle - point_y * sin_angle)) / width_f;
@@ -160,7 +166,7 @@ impl Renderable for LinearGradient {
             } else {
                 let mut row = Segments::new();
                 for x in 0..width {
-                    let xf = x as f32;
+                    let xf = x.to_f32_lossy();
                     let top = self.get_color(x1 + xf * delta_x);
                     let bottom = self.get_color(x2 + xf * delta_x);
                     let style = rich_rs::Style::new()

@@ -3,11 +3,11 @@
 /// Demonstrates the `Link` widget centered on screen.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
-"#;
+";
 
 struct LinkApp;
 

@@ -1,7 +1,7 @@
 // DataTable widget defaults
 // DC-16: aligned with Python Textual _data_table.py DEFAULT_CSS
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 DataTable {
     bg: $surface;
     color: $foreground;
@@ -83,4 +83,4 @@ DataTable {
         bg: $block-hover-background;
     }
 }
-"#;
+";

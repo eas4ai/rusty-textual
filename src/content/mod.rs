@@ -1,5 +1,5 @@
 //! Textual `Content` subsystem — Phase A + B + C (data type, markup parser,
-//! wrap/format, truncate, pad/align, render_strips).
+//! wrap/format, truncate, pad/align, `render_strips`).
 //!
 //! `Content` is the styled-text model that replaces rich-rs `Text` for all
 //! Textual-level rendering.  It mirrors `textual/content.py`'s `Content` +
@@ -18,8 +18,8 @@
 //! ## Phase B scope
 //! - [`Content::truncate`] — cell-width truncation with optional ellipsis.
 //! - [`Content::pad_left`], [`Content::pad_right`], [`Content::pad`] — padding.
-//! - [`Content::center`], [`Content::right`] — alignment helpers.
-//! - [`Content::divide`], [`Content::split`] — splitting on offsets / separator.
+//! - [`Content::center`], [`Content::right_align`] — alignment helpers.
+//! - [`Content::divide`], [`Content::split_on`] — splitting on offsets / separator.
 //! - [`Content::rstrip`], [`Content::rstrip_end`], [`Content::right_crop`] —
 //!   trailing-whitespace removal.
 //! - [`Content::wrap_and_format`] — word-wrapped lines (reuses
@@ -34,13 +34,14 @@
 //!
 //! ## Phase D — wired for Label/Static
 //! - [`Content::render_strips`] is now called from `Label::render()` in `text.rs`.
-//! - Remaining widgets (Button, DataTable, Input, Tree, etc.) still use the
+//! - Remaining widgets (Button, `DataTable`, Input, Tree, etc.) still use the
 //!   rich-rs `Text` / `render_str` path; migration is a future phase.
 //!
 //! See `docs/devel/CONTENT_LAYER_KEYSTONE.md` for the full phasing plan.
 
 pub mod markup;
 
+use crate::num::Cast;
 use crate::style::Style;
 use markup::parse_markup;
 use std::sync::OnceLock;
@@ -90,6 +91,7 @@ impl SpanStyle {
     }
 
     /// Convenience: resolve without theme context.  Unknown tokens → `Style::new()`.
+    #[must_use]
     pub fn resolve_default(&self) -> Style {
         self.resolve_with(|raw| {
             markup::parse_tag_style(raw)
@@ -99,6 +101,7 @@ impl SpanStyle {
     }
 
     /// Return the raw tag body if this is a `Raw` variant.
+    #[must_use]
     pub fn raw(&self) -> Option<&str> {
         match self {
             SpanStyle::Raw(s) => Some(s.as_str()),
@@ -147,6 +150,7 @@ pub struct Span {
 
 impl Span {
     /// Create a new `Span` with a pre-resolved style.
+    #[must_use]
     pub fn new(start: usize, end: usize, style: Style) -> Self {
         Self {
             start,
@@ -183,20 +187,23 @@ impl Span {
 
     /// Return the concrete `Style` for this span using the default (no-context)
     /// resolver.  For render paths, prefer `span_style.resolve_with(parse_fn)`.
+    #[must_use]
     pub fn style(&self) -> Style {
         self.span_style.resolve_default()
     }
 
     /// Return true if this span covers a non-empty range.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.end <= self.start
     }
 
     /// Shift the span's start and end by `distance` bytes (can be negative via
     /// saturating arithmetic — start clamps to 0).
+    #[must_use]
     pub fn shift(&self, distance: isize) -> Self {
-        let start = (self.start as isize + distance).max(0) as usize;
-        let end = (self.end as isize + distance).max(0) as usize;
+        let start = (self.start.to_isize_sat() + distance).to_usize_sat();
+        let end = (self.end.to_isize_sat() + distance).to_usize_sat();
         Span {
             start,
             end,
@@ -206,6 +213,7 @@ impl Span {
     }
 
     /// Extend the span's end by `cells` bytes.
+    #[must_use]
     pub fn extend(&self, cells: usize) -> Self {
         Span {
             start: self.start,
@@ -245,7 +253,7 @@ impl Span {
 pub struct Content {
     text: String,
     spans: Vec<Span>,
-    /// Cached cell length (lazily computed; interior mutability via OnceLock).
+    /// Cached cell length (lazily computed; interior mutability via `OnceLock`).
     cell_length_cache: OnceLock<usize>,
 }
 
@@ -287,6 +295,7 @@ impl Content {
     /// Return the shared empty `Content` instance.
     ///
     /// Mirrors Python `Content.empty()`.
+    #[must_use]
     pub fn empty() -> Self {
         Self::new_uncached(String::new(), Vec::new())
     }
@@ -421,6 +430,7 @@ impl Content {
     /// styled.
     ///
     /// Mirrors Python `Content.blank(width, style)`.
+    #[must_use]
     pub fn blank(width: usize, style: Option<Style>) -> Self {
         if width == 0 {
             return Self::empty();
@@ -556,6 +566,7 @@ impl Content {
     /// correctly.
     ///
     /// Returns a new `Content` with all spans resolved to `SpanStyle::Parsed`.
+    #[must_use]
     pub fn resolve_styles<F>(&self, parse_fn: F) -> Self
     where
         F: Fn(&str) -> Style,
@@ -583,6 +594,7 @@ impl Content {
     // -----------------------------------------------------------------------
 
     /// Append another `Content` to this one, returning a new `Content`.
+    #[must_use]
     pub fn append(&self, other: &Content) -> Content {
         let offset = self.text.len();
         let mut spans = self.spans.clone();
@@ -603,6 +615,7 @@ impl Content {
     /// returning a new `Content` with the extra span inserted.
     ///
     /// Mirrors Python `Content.stylize(style, start, end)`.
+    #[must_use]
     pub fn stylize(&self, style: Style, start: usize, end: usize) -> Content {
         let end = end.min(self.text.len());
         if start >= end {
@@ -619,6 +632,7 @@ impl Content {
     /// (e.g. markup spans) layer on top of it at render time.
     ///
     /// Mirrors Python `Content.stylize_before(style, start, end)`.
+    #[must_use]
     pub fn stylize_before(&self, style: Style, start: usize, end: usize) -> Content {
         let end = end.min(self.text.len());
         if start >= end {
@@ -663,6 +677,7 @@ impl Content {
     /// most `max_width` cells wide, `self` is returned unchanged.
     ///
     /// Mirrors Python `Content.truncate(max_width, ellipsis=False)`.
+    #[must_use]
     pub fn truncate(&self, max_width: usize, ellipsis: bool) -> Content {
         let length = self.cell_length();
         if length <= max_width {
@@ -686,6 +701,7 @@ impl Content {
     /// Remove `amount` bytes from the end of the text.
     ///
     /// Mirrors Python `Content.right_crop(amount)`.
+    #[must_use]
     pub fn right_crop(&self, amount: usize) -> Content {
         if amount == 0 {
             return self.clone();
@@ -718,6 +734,7 @@ impl Content {
     /// Strip trailing whitespace from the plain text, adjusting spans.
     ///
     /// Mirrors Python `Content.rstrip()`.
+    #[must_use]
     pub fn rstrip(&self) -> Content {
         let stripped = self.text.trim_end();
         if stripped.len() == self.text.len() {
@@ -731,6 +748,7 @@ impl Content {
     ///
     /// If the text is longer than `size` bytes, up to that many trailing
     /// whitespace bytes are removed.  Mirrors Python `Content.rstrip_end(size)`.
+    #[must_use]
     pub fn rstrip_end(&self, size: usize) -> Content {
         let text_length = self.text.len();
         if text_length > size {
@@ -741,7 +759,7 @@ impl Content {
                 .chars()
                 .rev()
                 .take_while(|c| c.is_whitespace())
-                .map(|c| c.len_utf8())
+                .map(char::len_utf8)
                 .sum::<usize>();
             if trailing_ws > 0 {
                 let crop = trailing_ws.min(excess);
@@ -758,6 +776,7 @@ impl Content {
     /// Pad the left side with `count` spaces (no style on padding).
     ///
     /// Mirrors Python `Content.pad_left(count)`.
+    #[must_use]
     pub fn pad_left(&self, count: usize) -> Content {
         if count == 0 {
             return self.clone();
@@ -776,6 +795,7 @@ impl Content {
     /// Pad the right side with `count` spaces (no style on padding).
     ///
     /// Mirrors Python `Content.pad_right(count)`.
+    #[must_use]
     pub fn pad_right(&self, count: usize) -> Content {
         if count == 0 {
             return self.clone();
@@ -790,6 +810,7 @@ impl Content {
     /// Pad both the left (`left` spaces) and right (`right` spaces).
     ///
     /// Mirrors Python `Content.pad(left, right)`.
+    #[must_use]
     pub fn pad(&self, left: usize, right: usize) -> Content {
         match (left, right) {
             (0, 0) => self.clone(),
@@ -803,6 +824,7 @@ impl Content {
     ///
     /// rstrips trailing whitespace then truncates to `width` before centering.
     /// Mirrors Python `Content.center(width, ellipsis=False)`.
+    #[must_use]
     pub fn center(&self, width: usize, ellipsis: bool) -> Content {
         let content = self.rstrip().truncate(width, ellipsis);
         let len = content.cell_length();
@@ -815,6 +837,7 @@ impl Content {
     ///
     /// rstrips trailing whitespace then truncates to `width` before padding.
     /// Mirrors Python `Content.right(width, ellipsis=False)`.
+    #[must_use]
     pub fn right_align(&self, width: usize, ellipsis: bool) -> Content {
         let content = self.rstrip().truncate(width, ellipsis);
         let len = content.cell_length();
@@ -896,6 +919,10 @@ impl Content {
     /// trailing empty piece is dropped.
     ///
     /// Mirrors Python `Content.split(separator, allow_blank=False)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `separator` is empty.
     pub fn split_on(&self, separator: &str, allow_blank: bool) -> Vec<Content> {
         assert!(!separator.is_empty(), "separator must not be empty");
         if !self.text.contains(separator) {
@@ -969,8 +996,9 @@ impl Content {
             .collect()
     }
 
-    /// Like [`wrap_and_format`] but also returns, per output line, whether it is
-    /// the **last** wrapped line of its logical (newline-delimited) paragraph.
+    /// Like [`wrap_and_format`](Self::wrap_and_format) but also returns, per
+    /// output line, whether it is the **last** wrapped line of its logical
+    /// (newline-delimited) paragraph.
     ///
     /// Mirrors Python `_wrap_and_format` setting `new_lines[-1].line_end = True`.
     /// The flag matters for `text-align: justify`, where the final line of a
@@ -1105,7 +1133,7 @@ impl Content {
     /// # Phase D — wired into Label/Static render path
     ///
     /// `render_strips` is called from `Label::render()` in `text.rs` (Phase D).
-    /// Migration of remaining widgets (Button, DataTable, Input, Tree, etc.)
+    /// Migration of remaining widgets (Button, `DataTable`, Input, Tree, etc.)
     /// to this path is a future phase.
     #[allow(clippy::too_many_arguments)]
     pub fn render_strips<F>(
@@ -1339,7 +1367,7 @@ fn render_justified_line(
 ///
 /// The `has_glyph` guard is **not** applied here (C1 seam 1 fix).
 /// Bg-only treatment is restricted to alignment pad segments built by
-/// `make_bg_segment` (pad_left / pad_right in `render_content_line_to_segments`).
+/// `make_bg_segment` (`pad_left` / `pad_right` in `render_content_line_to_segments`).
 fn emit_rendered_segments(
     content: &Content,
     visual_style: &Style,
@@ -1390,7 +1418,7 @@ fn emit_rendered_segments(
         }
 
         // The text run is [offset, next_offset).
-        let next_offset = events.get(j).map(|e| e.0).unwrap_or(text.len());
+        let next_offset = events.get(j).map_or(text.len(), |e| e.0);
         if next_offset > pos {
             let run = &text[pos..next_offset];
             if !run.is_empty() {
@@ -1477,7 +1505,7 @@ fn attach_span_meta(seg: &mut rich_rs::Segment, meta: &[(String, String)]) {
 /// covered by a span with `reverse`, `underline`, etc. — must carry the full
 /// style, matching Python's `(style + text_style).rich_style`.
 ///
-/// - `effective_style` — the merged style (visual_style + span styles) for this run.
+/// - `effective_style` — the merged style (`visual_style` + span styles) for this run.
 /// - `visual_style`    — the base visual style (bg fallback when effective has none).
 fn make_segment(text: &str, effective_style: &Style, visual_style: &Style) -> rich_rs::Segment {
     make_full_segment_with_bg_fallback(text, effective_style, visual_style)
@@ -1615,7 +1643,7 @@ impl From<Content> for ContentPart {
 // ---------------------------------------------------------------------------
 
 /// Control codes that may break terminal output. Matches Python's
-/// `_STRIP_CONTROL_CODES`: Bell (7), Backspace (8), VTab (11), FF (12), CR (13).
+/// `_STRIP_CONTROL_CODES`: Bell (7), Backspace (8), `VTab` (11), FF (12), CR (13).
 fn strip_control_codes(mut s: String) -> String {
     const STRIP: &[char] = &['\x07', '\x08', '\x0B', '\x0C', '\r'];
     if s.chars().any(|c| STRIP.contains(&c)) {
@@ -1758,7 +1786,7 @@ mod tests {
         assert_eq!(c.plain(), "Hi Will and Will");
     }
 
-    /// `$$` is an escaped literal `$` (Python safe_substitute). Substitution only
+    /// `$$` is an escaped literal `$` (Python `safe_substitute`). Substitution only
     /// runs when variables are present (Python checks `variables or None`), so we
     /// pass a non-empty map here; the empty-map plain fast path is covered below.
     #[test]
@@ -2545,7 +2573,7 @@ mod tests {
         );
     }
 
-    /// With line_pad=1, every output line is padded 1 space on each side.
+    /// With `line_pad=1`, every output line is padded 1 space on each side.
     #[test]
     fn test_wrap_line_pad() {
         let c = Content::from_text("hello world");
@@ -2565,7 +2593,7 @@ mod tests {
         }
     }
 
-    /// no_wrap=true + overflow=fold should hard-fold.
+    /// `no_wrap=true` + overflow=fold should hard-fold.
     #[test]
     fn test_wrap_no_wrap_fold() {
         let c = Content::from_text("abcdefgh");
@@ -2575,7 +2603,7 @@ mod tests {
         assert_eq!(lines[1].plain(), "efgh");
     }
 
-    /// no_wrap=true + overflow=ellipsis should truncate with ellipsis.
+    /// `no_wrap=true` + overflow=ellipsis should truncate with ellipsis.
     #[test]
     fn test_wrap_no_wrap_ellipsis() {
         let c = Content::from_text("hello world");
@@ -2596,7 +2624,7 @@ mod tests {
         assert_eq!(lines[2].plain(), "baz");
     }
 
-    /// wrap_and_format with width=0 returns empty.
+    /// `wrap_and_format` with width=0 returns empty.
     #[test]
     fn test_wrap_zero_width() {
         let c = Content::from_text("hello");
@@ -2611,7 +2639,11 @@ mod tests {
         let lines = c.wrap_and_format(4, "fold", false, 0);
         // divide_line with fold=true should split the long word.
         assert!(!lines.is_empty());
-        let combined: String = lines.iter().map(|l| l.plain()).collect::<Vec<_>>().join("");
+        let combined: String = lines
+            .iter()
+            .map(super::Content::plain)
+            .collect::<Vec<_>>()
+            .join("");
         assert_eq!(combined, "abcdefghij");
     }
 
@@ -2663,7 +2695,7 @@ mod tests {
     }
 
     /// Python baseline: plain content, left-align, width=10, height=1.
-    /// Segments should contain the text and no explicit fg (visual_style has no fg).
+    /// Segments should contain the text and no explicit fg (`visual_style` has no fg).
     #[test]
     fn test_render_strips_plain_no_visual_style() {
         let c = Content::from_text("hello");
@@ -2744,11 +2776,12 @@ mod tests {
         );
     }
 
-    /// Whitespace-only pad segment (from line_pad or alignment) must NOT carry fg.
+    /// Whitespace-only pad segment (from `line_pad` or alignment) must NOT carry fg.
     ///
     /// Python: pad segments are emitted with `style.background_style.rich_style`,
     /// which has bg but NO fg.  This is the `has_glyph` invariant.
     #[test]
+    #[allow(clippy::similar_names)] // Paired names for the two colour channels (fg/bg).
     fn test_render_strips_pad_segment_no_fg() {
         // "hi" in width=6, right-align → 4 spaces pad-left + "hi"
         let blue = crate::style::Color::rgb(0, 0, 200);
@@ -2776,16 +2809,15 @@ mod tests {
         let pad_fg = pad_seg.style.as_ref().and_then(|s| s.color);
         assert!(
             pad_fg.is_none(),
-            "pad segment must not carry fg, got {:?}",
-            pad_fg
+            "pad segment must not carry fg, got {pad_fg:?}"
         );
         // But the pad segment should have the bg.
         let pad_bg = pad_seg.style.as_ref().and_then(|s| s.bgcolor);
         assert!(pad_bg.is_some(), "pad segment should carry bg");
     }
 
-    /// Span style (fg from markup) overrides visual_style fg on glyph cells.
-    /// Python: `style + text_style` (text_style from span wins over visual_style fg).
+    /// Span style (fg from markup) overrides `visual_style` fg on glyph cells.
+    /// Python: `style + text_style` (`text_style` from span wins over `visual_style` fg).
     #[test]
     fn test_render_strips_span_fg_overrides_visual() {
         // Content "[red]hi[/red]" with visual_style having blue fg.
@@ -2859,7 +2891,7 @@ mod tests {
     ///
     /// Python `Visual.to_strips` uses `(style + Style(reverse=False)).rich_style`
     /// for fill rows — NOT bg-only.  This test ensures the Rust implementation
-    /// matches: fill rows carry fg and bg from visual_style, with reverse=false.
+    /// matches: fill rows carry fg and bg from `visual_style`, with reverse=false.
     #[test]
     fn test_render_strips_vertical_fill_full_style() {
         let red = crate::style::Color::rgb(200, 0, 0);
@@ -2903,14 +2935,13 @@ mod tests {
                 assert_eq!(
                     rev,
                     Some(false),
-                    "fill row reverse must be false (not inherited true); got {:?}",
-                    rev
+                    "fill row reverse must be false (not inherited true); got {rev:?}"
                 );
             }
         }
     }
 
-    /// wrap_and_format integration: long text wraps into multiple rows.
+    /// `wrap_and_format` integration: long text wraps into multiple rows.
     #[test]
     fn test_render_strips_wraps_text() {
         let c = Content::from_text("hello world");
@@ -3026,7 +3057,7 @@ mod tests {
     /// produced by `wrap_and_format`), not alignment-pad segments.  Python's
     /// `Content.render()` yields them with `base_style` applied, and
     /// `_FormattedLine.to_strip` wraps them in `(style + text_style).rich_style` —
-    /// so they DO carry fg from the visual_style.
+    /// so they DO carry fg from the `visual_style`.
     ///
     /// This test verifies via a span-boundary approach: a span covering only the
     /// word ("hi") forces the leading/trailing spaces to be separate segments.
@@ -3131,8 +3162,7 @@ mod tests {
         assert_eq!(
             rev,
             Some(true),
-            "reverse on whitespace-only span must be preserved (C1 seam 1 fix); got {:?}",
-            rev
+            "reverse on whitespace-only span must be preserved (C1 seam 1 fix); got {rev:?}"
         );
     }
 
@@ -3175,8 +3205,7 @@ mod tests {
         assert_eq!(
             underline,
             Some(true),
-            "underline on whitespace-only span must be preserved (C1 seam 1 fix); got {:?}",
-            underline
+            "underline on whitespace-only span must be preserved (C1 seam 1 fix); got {underline:?}"
         );
     }
 
@@ -3236,8 +3265,7 @@ mod tests {
                     rev,
                     Some(false),
                     "fill row reverse must be false even when visual_style has reverse=true \
-                     (C1 seam 2); got {:?}",
-                    rev
+                     (C1 seam 2); got {rev:?}"
                 );
             }
         }
@@ -3261,8 +3289,7 @@ mod tests {
         let text = strip_text(&strips[0]);
         assert!(
             text.contains('…'),
-            "ellipsis overflow should produce '…'; got {:?}",
-            text
+            "ellipsis overflow should produce '…'; got {text:?}"
         );
     }
 

@@ -23,6 +23,7 @@ impl<R> Styled<R> {
         self.renderable
     }
 
+    #[must_use]
     pub fn process_segments(
         segments: Segments,
         pre_style: rich_rs::Style,

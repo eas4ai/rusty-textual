@@ -11,6 +11,8 @@
 
 use std::sync::Arc;
 
+use crate::num::Cast;
+
 /// Categorizes why a validation failed.
 ///
 /// Mirrors Python Textual's `Failure` subclasses (`Number.NotANumber`,
@@ -56,20 +58,24 @@ pub struct Failure {
 }
 
 impl Failure {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn with_kind(mut self, kind: FailureKind) -> Self {
         self.kind = kind;
         self
     }
 
+    #[must_use]
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         self.value = Some(value.into());
         self
     }
 
+    #[must_use]
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
         self
@@ -86,17 +92,19 @@ pub struct ValidationResult {
 }
 
 impl ValidationResult {
-    /// Construct a successful ValidationResult.
+    /// Construct a successful `ValidationResult`.
+    #[must_use]
     pub fn success() -> Self {
         Self::default()
     }
 
-    /// Construct a failure ValidationResult from a list of failures.
+    /// Construct a failure `ValidationResult` from a list of failures.
+    #[must_use]
     pub fn failure(failures: Vec<Failure>) -> Self {
         Self { failures }
     }
 
-    /// Merge multiple ValidationResult objects into one (Python
+    /// Merge multiple `ValidationResult` objects into one (Python
     /// `ValidationResult.merge`): valid only if all inputs are valid, with
     /// all failures aggregated in order.
     pub fn merge(results: impl IntoIterator<Item = ValidationResult>) -> Self {
@@ -109,6 +117,7 @@ impl ValidationResult {
     }
 
     /// True if the validation was successful.
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         self.failures.is_empty()
     }
@@ -116,6 +125,7 @@ impl ValidationResult {
     /// Utility for extracting failure descriptions as strings, skipping
     /// failures without a description (Python
     /// `ValidationResult.failure_descriptions`).
+    #[must_use]
     pub fn failure_descriptions(&self) -> Vec<String> {
         self.failures
             .iter()
@@ -130,7 +140,7 @@ impl ValidationResult {
 /// `self.success()` or `self.failure(...)`; the latter resolves the failure
 /// description through the priority ladder.
 pub trait Validator {
-    /// Validate the value and return a ValidationResult describing the outcome.
+    /// Validate the value and return a `ValidationResult` describing the outcome.
     fn validate(&self, value: &str) -> ValidationResult;
 
     /// An explicit, user-supplied description of why validation failed
@@ -244,15 +254,18 @@ pub struct Number {
 }
 
 impl Number {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn minimum(mut self, value: f64) -> Self {
         self.minimum = Some(value);
         self
     }
 
+    #[must_use]
     pub fn maximum(mut self, value: f64) -> Self {
         self.maximum = Some(value);
         self
@@ -260,6 +273,7 @@ impl Number {
 
     /// Set an explicit failure description (Python's `failure_description`
     /// constructor argument). Takes priority over the default messages.
+    #[must_use]
     pub fn with_failure_description(mut self, description: impl Into<String>) -> Self {
         self.failure_description = Some(description.into());
         self
@@ -320,15 +334,18 @@ pub struct Integer {
 }
 
 impl Integer {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn minimum(mut self, value: i64) -> Self {
         self.minimum = Some(value);
         self
     }
 
+    #[must_use]
     pub fn maximum(mut self, value: i64) -> Self {
         self.maximum = Some(value);
         self
@@ -336,6 +353,7 @@ impl Integer {
 
     /// Set an explicit failure description (Python's `failure_description`
     /// constructor argument). Takes priority over the default messages.
+    #[must_use]
     pub fn with_failure_description(mut self, description: impl Into<String>) -> Self {
         self.failure_description = Some(description.into());
         self
@@ -354,8 +372,8 @@ impl Validator for Integer {
                     .with_value(value),
             );
         };
-        let below = self.minimum.is_some_and(|min| num < min as f64);
-        let above = self.maximum.is_some_and(|max| num > max as f64);
+        let below = self.minimum.is_some_and(|min| num < min.to_f64_lossy());
+        let above = self.maximum.is_some_and(|max| num > max.to_f64_lossy());
         if below || above {
             return self.failure(
                 Failure::new()
@@ -400,15 +418,18 @@ pub struct Length {
 }
 
 impl Length {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn minimum(mut self, value: usize) -> Self {
         self.minimum = Some(value);
         self
     }
 
+    #[must_use]
     pub fn maximum(mut self, value: usize) -> Self {
         self.maximum = Some(value);
         self
@@ -416,6 +437,7 @@ impl Length {
 
     /// Set an explicit failure description (Python's `failure_description`
     /// constructor argument). Takes priority over the default messages.
+    #[must_use]
     pub fn with_failure_description(mut self, description: impl Into<String>) -> Self {
         self.failure_description = Some(description.into());
         self
@@ -465,12 +487,14 @@ pub struct Url {
 }
 
 impl Url {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Set an explicit failure description (Python's `failure_description`
     /// constructor argument). Takes priority over the default message.
+    #[must_use]
     pub fn with_failure_description(mut self, description: impl Into<String>) -> Self {
         self.failure_description = Some(description.into());
         self
@@ -521,6 +545,7 @@ pub struct Regex {
 }
 
 impl Regex {
+    #[must_use]
     pub fn new(pattern: regex::Regex) -> Self {
         Self {
             pattern,
@@ -529,6 +554,13 @@ impl Regex {
     }
 
     /// Create from a pattern string. Panics if the pattern is invalid.
+    ///
+    /// # Panics
+    ///
+    /// Panics when [`regex::Regex::new`] rejects `pattern`: the syntax is
+    /// invalid, or the compiled regex exceeds the `regex` crate's size limit.
+    /// Use [`Regex::try_compile`] to get `None` instead.
+    #[must_use]
     pub fn compile(pattern: &str) -> Self {
         Self::new(regex::Regex::new(pattern).expect("invalid regex pattern"))
     }
@@ -540,6 +572,7 @@ impl Regex {
 
     /// Set an explicit failure description (Python's `failure_description`
     /// constructor argument). Takes priority over the default message.
+    #[must_use]
     pub fn with_failure_description(mut self, description: impl Into<String>) -> Self {
         self.failure_description = Some(description.into());
         self
@@ -550,6 +583,7 @@ impl std::fmt::Debug for Regex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Regex")
             .field("pattern", &self.pattern.as_str())
+            .field("failure_description", &self.failure_description)
             .finish()
     }
 }
@@ -712,7 +746,7 @@ mod tests {
         Failure::new().with_value(value)
     }
 
-    /// Python: test_ValidationResult_merge_successes
+    /// Python: `test_ValidationResult_merge_successes`
     #[test]
     fn validation_result_merge_successes() {
         let results = vec![ValidationResult::success(), ValidationResult::success()];
@@ -722,7 +756,7 @@ mod tests {
         );
     }
 
-    /// Python: test_ValidationResult_merge_failures
+    /// Python: `test_ValidationResult_merge_failures`
     #[test]
     fn validation_result_merge_failures() {
         let failure_one = generic_failure("1");
@@ -738,7 +772,7 @@ mod tests {
         assert!(!merged.is_valid());
     }
 
-    /// Python: test_ValidationResult_failure_descriptions
+    /// Python: `test_ValidationResult_failure_descriptions`
     #[test]
     fn validation_result_failure_descriptions() {
         let result = ValidationResult::failure(vec![
@@ -758,7 +792,7 @@ mod tests {
         assert_eq!(result.failure_descriptions(), vec!["A"]);
     }
 
-    /// Python: ValidatorWithDescribeFailure
+    /// Python: `ValidatorWithDescribeFailure`
     struct ValidatorWithDescribeFailure {
         failure_description: Option<String>,
     }
@@ -777,7 +811,7 @@ mod tests {
         }
     }
 
-    /// Python: test_Failure_description_priorities_parameter_only
+    /// Python: `test_Failure_description_priorities_parameter_only`
     #[test]
     fn failure_description_priorities_parameter_only() {
         let number_validator = Number::new().with_failure_description("ABC");
@@ -786,7 +820,7 @@ mod tests {
         assert_eq!(result.failures[0].description.as_deref(), Some("ABC"));
     }
 
-    /// Python: test_Failure_description_priorities_parameter_and_describe_failure
+    /// Python: `test_Failure_description_priorities_parameter_and_describe_failure`
     #[test]
     fn failure_description_priorities_parameter_and_describe_failure() {
         let validator = ValidatorWithDescribeFailure {
@@ -798,7 +832,7 @@ mod tests {
         assert_eq!(result.failures[0].description.as_deref(), Some("ABC"));
     }
 
-    /// Python: test_Failure_description_priorities_describe_failure_only
+    /// Python: `test_Failure_description_priorities_describe_failure_only`
     #[test]
     fn failure_description_priorities_describe_failure_only() {
         let validator = ValidatorWithDescribeFailure {
@@ -811,7 +845,7 @@ mod tests {
         );
     }
 
-    /// Python: ValidatorWithFailureMessageAndNoDescribe
+    /// Python: `ValidatorWithFailureMessageAndNoDescribe`
     struct ValidatorWithFailureMessageAndNoDescribe;
 
     impl Validator for ValidatorWithFailureMessageAndNoDescribe {
@@ -820,7 +854,7 @@ mod tests {
         }
     }
 
-    /// Python: test_Failure_description_parameter_and_description_inside_validate
+    /// Python: `test_Failure_description_parameter_and_description_inside_validate`
     #[test]
     fn failure_description_parameter_and_description_inside_validate() {
         let validator = ValidatorWithFailureMessageAndNoDescribe;
@@ -828,7 +862,7 @@ mod tests {
         assert_eq!(result.failures[0].description.as_deref(), Some("ABC"));
     }
 
-    /// Python: ValidatorWithFailureMessageAndDescribe
+    /// Python: `ValidatorWithFailureMessageAndDescribe`
     struct ValidatorWithFailureMessageAndDescribe;
 
     impl Validator for ValidatorWithFailureMessageAndDescribe {
@@ -841,7 +875,7 @@ mod tests {
         }
     }
 
-    /// Python: test_Failure_description_describe_and_description_inside_validate
+    /// Python: `test_Failure_description_describe_and_description_inside_validate`
     #[test]
     fn failure_description_describe_and_description_inside_validate() {
         let validator = ValidatorWithFailureMessageAndDescribe;
@@ -852,7 +886,7 @@ mod tests {
         );
     }
 
-    /// Python: test_Integer_failure_description_when_NotANumber
+    /// Python: `test_Integer_failure_description_when_NotANumber`
     /// (regression test for Textualize/textual#4413)
     #[test]
     fn integer_failure_description_when_not_a_number() {

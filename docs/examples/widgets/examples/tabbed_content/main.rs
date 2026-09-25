@@ -1,22 +1,22 @@
 use textual::prelude::*;
 
-const LETO: &str = r#"
+const LETO: &str = r"
 # Duke Leto I Atreides
 
 Head of House Atreides.
-"#;
+";
 
-const JESSICA: &str = r#"
+const JESSICA: &str = r"
 # Lady Jessica
 
 Bene Gesserit and concubine of Leto, and mother of Paul and Alia.
-"#;
+";
 
-const PAUL: &str = r#"
+const PAUL: &str = r"
 # Paul Atreides
 
 Son of Leto and Jessica.
-"#;
+";
 
 struct TabbedContentApp;
 

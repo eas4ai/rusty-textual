@@ -1,5 +1,6 @@
 use rich_rs::{Console, ConsoleOptions, Renderable, Segments};
 
+use crate::num::Cast;
 use crate::style::{Color, color_from_simple};
 
 /// Renderable that applies a tint color over foreground/background colors.
@@ -16,6 +17,7 @@ impl<R> Tint<R> {
         Self { renderable, color }
     }
 
+    #[must_use]
     pub fn process_segments(segments: Segments, color: Color) -> Segments {
         let percent = Self::percent_from_alpha(color);
         if percent == 0 {
@@ -46,16 +48,18 @@ impl<R> Tint<R> {
             .collect()
     }
 
+    #[must_use]
     pub fn blend_color_with_percent(base: Color, tint: Color, percent: u8) -> Color {
         // Python `Color.tint`: `int(c1 + (c2 - c1) * a2)` per channel, where the
         // factor is the tint color's alpha and the result is TRUNCATED. Fold the
         // CSS percent in as the blend factor (the tint's alpha), matching the
         // float-faithful composite used everywhere else.
-        tint.blend_over_float(base, percent as f32 / 100.0)
+        tint.blend_over_float(base, f32::from(percent) / 100.0)
     }
 
+    #[must_use]
     pub fn percent_from_alpha(color: Color) -> u8 {
-        (color.a * 100.0).round() as u8
+        (color.a * 100.0).round().to_u8_sat()
     }
 }
 

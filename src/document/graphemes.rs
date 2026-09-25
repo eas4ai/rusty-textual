@@ -10,6 +10,7 @@ use unicode_width::UnicodeWidthStr;
 
 /// The nearest grapheme cluster boundary at or before `idx`, excluding `idx`
 /// itself (i.e. the boundary strictly before `idx`, or 0).
+#[must_use]
 pub fn prev_grapheme_boundary(s: &str, idx: usize) -> usize {
     let idx = idx.min(s.len());
     let idx = if s.is_char_boundary(idx) {
@@ -28,6 +29,7 @@ pub fn prev_grapheme_boundary(s: &str, idx: usize) -> usize {
 }
 
 /// The nearest grapheme cluster boundary strictly after `idx` (or `s.len()`).
+#[must_use]
 pub fn next_grapheme_boundary(s: &str, idx: usize) -> usize {
     let idx = idx.min(s.len());
     if idx >= s.len() {
@@ -47,6 +49,7 @@ pub fn next_grapheme_boundary(s: &str, idx: usize) -> usize {
 }
 
 /// Clamp `idx` to the nearest grapheme cluster boundary at or before it.
+#[must_use]
 pub fn clamp_grapheme_boundary(s: &str, idx: usize) -> usize {
     if idx >= s.len() {
         return s.len();
@@ -67,6 +70,7 @@ pub fn clamp_grapheme_boundary(s: &str, idx: usize) -> usize {
 }
 
 /// Total cell width of the prefix of `s` ending at byte offset `byte_end`.
+#[must_use]
 pub fn cell_len_prefix(s: &str, byte_end: usize) -> usize {
     let mut cells = 0usize;
     let end = byte_end.min(s.len());
@@ -81,12 +85,14 @@ pub fn cell_len_prefix(s: &str, byte_end: usize) -> usize {
 
 /// Total cell width of `s` (grapheme-cluster based; a tab counts as 1 cell,
 /// matching the pinned degenerate tab model).
+#[must_use]
 pub fn cell_len(s: &str) -> usize {
     cell_len_prefix(s, s.len())
 }
 
 /// Map a target cell offset to the byte index of the nearest grapheme
 /// boundary in `s` (used for hit-testing and vertical cursor movement).
+#[must_use]
 pub fn byte_index_from_cell_x(s: &str, target_cell: usize) -> usize {
     let mut cells = 0usize;
     let mut last = 0usize;
@@ -107,6 +113,7 @@ pub fn byte_index_from_cell_x(s: &str, target_cell: usize) -> usize {
 
 /// Cell width of a single grapheme cluster. Zero-width clusters (including
 /// the degenerate 1-cell tab model for `"\t"`) are widened to 1 cell.
+#[must_use]
 pub fn grapheme_cell_width(grapheme: &str) -> usize {
     UnicodeWidthStr::width(grapheme).max(1)
 }

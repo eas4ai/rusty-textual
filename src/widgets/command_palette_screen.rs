@@ -1,4 +1,4 @@
-//! Wave-1 CommandPalette as a real composed modal screen.
+//! Wave-1 `CommandPalette` as a real composed modal screen.
 //!
 //! This is the target architecture from `docs/devel/CMD_PALETTE_INVESTIGATION.md`
 //! §3: a `SystemModalScreen` (Python `CommandPalette(SystemModalScreen[None])`,
@@ -310,7 +310,7 @@ impl crate::widgets::Render for CommandPaletteBody {
 /// The command palette as a pushed `SystemModalScreen` (Python
 /// `CommandPalette(SystemModalScreen[None])`). Thin: it owns the command
 /// snapshot + the screen-scoped surface (bindings, auto-focus, dismiss); the
-/// [`CommandPaletteBody`] does the composing/searching.
+/// `CommandPaletteBody` does the composing/searching.
 pub struct CommandPaletteScreen {
     commands: Vec<CommandPaletteCommand>,
     placeholder: String,
@@ -319,6 +319,7 @@ pub struct CommandPaletteScreen {
 impl CommandPaletteScreen {
     /// Create the palette screen from a synchronous provider-command snapshot
     /// (`TextualAppAdapter::gather_command_palette_commands`).
+    #[must_use]
     pub fn new(commands: Vec<CommandPaletteCommand>) -> Self {
         Self {
             commands,
@@ -333,6 +334,9 @@ impl CommandPaletteScreen {
 impl super::command_palette::SystemModalScreen for CommandPaletteScreen {}
 
 impl Screen for CommandPaletteScreen {
+    // `Screen::name` returns `&str` so names may be runtime values; an impl
+    // cannot narrow it to `&'static str`, whatever clippy suggests.
+    #[allow(clippy::unnecessary_literal_bound)]
     fn name(&self) -> &str {
         "CommandPaletteScreen"
     }

@@ -36,6 +36,8 @@ pub struct AppActiveGuard(bool);
 pub struct AppRuntimePseudosGuard(AppRuntimePseudos);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+// Separate widget and CSS pseudo-class states; any combination is valid.
+#[allow(clippy::struct_excessive_bools)]
 pub struct AppRuntimePseudos {
     pub dark: bool,
     pub inline: bool,
@@ -43,6 +45,7 @@ pub struct AppRuntimePseudos {
     pub nocolor: bool,
 }
 
+#[must_use]
 pub fn set_app_active(active: bool) -> AppActiveGuard {
     let prev = APP_ACTIVE.with(|v| {
         let mut guard = v.borrow_mut();
@@ -66,6 +69,7 @@ pub(super) fn app_is_active() -> bool {
     APP_ACTIVE.with(|v| *v.borrow())
 }
 
+#[must_use]
 pub fn set_app_runtime_pseudos(pseudos: AppRuntimePseudos) -> AppRuntimePseudosGuard {
     let prev = APP_RUNTIME_PSEUDOS.with(|v| {
         let mut guard = v.borrow_mut();
@@ -159,19 +163,15 @@ impl Drop for LiveWidgetMetaGuard {
 /// guarantees: the stack as the CALLING widget's own `render()` sees it.
 pub(super) fn live_widget_meta_on_top(caller_type: &str, caller_aliases: &[&str]) -> bool {
     let depth = SELECTOR_STACK.with(|stack| stack.borrow().len());
-    if depth == 0 || LIVE_WIDGET_META_DEPTH.with(|cell| cell.get()) != Some(depth) {
+    if depth == 0 || LIVE_WIDGET_META_DEPTH.with(std::cell::Cell::get) != Some(depth) {
         return false;
     }
     SELECTOR_STACK.with(|stack| {
-        stack
-            .borrow()
-            .last()
-            .map(|meta| {
-                meta.type_name == caller_type
-                    || meta.type_aliases.iter().any(|a| a == caller_type)
-                    || caller_aliases.iter().any(|a| meta.type_name == *a)
-            })
-            .unwrap_or(false)
+        stack.borrow().last().is_some_and(|meta| {
+            meta.type_name == caller_type
+                || meta.type_aliases.iter().any(|a| a == caller_type)
+                || caller_aliases.iter().any(|a| meta.type_name == *a)
+        })
     })
 }
 
@@ -203,6 +203,7 @@ pub(crate) fn ancestor_selector_fingerprint() -> u64 {
 
 pub struct StyleContextGuard(Option<StyleSheet>);
 
+#[must_use]
 pub fn set_style_context(stylesheet: StyleSheet) -> StyleContextGuard {
     COMPUTED_STYLE_CACHE.with(|cache| cache.borrow_mut().set_stylesheet(stylesheet.clone()));
     let prev = STYLE_CONTEXT.with(|ctx| ctx.borrow_mut().replace(stylesheet));

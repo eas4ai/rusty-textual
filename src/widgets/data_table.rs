@@ -4,7 +4,13 @@ use textual_macros::widget;
 
 use crate::content::Content;
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::{
+    DataTableCellHighlighted, DataTableCellSelected, DataTableColumnHighlighted,
+    DataTableColumnSelected, DataTableHeaderSelected, DataTableRowHighlighted,
+    DataTableRowLabelSelected, DataTableRowSelected, MessageEvent, ScrollbarAxis,
+    ScrollbarScrollTo,
+};
+use crate::num::Cast;
 use crate::style::{Color, Style, TextAlign, parse_color_like};
 
 use crate::action::ParsedAction;
@@ -96,6 +102,7 @@ impl Cell {
     }
 
     /// Set the horizontal alignment (builder).
+    #[must_use]
     pub fn with_align(mut self, align: TextAlign) -> Self {
         self.align = align;
         self
@@ -129,6 +136,7 @@ pub enum SortKey {
 
 impl SortKey {
     /// A numeric key.
+    #[must_use]
     pub fn number(n: f64) -> Self {
         SortKey::Number(n)
     }
@@ -146,6 +154,7 @@ impl SortKey {
     /// Infer a numeric key from `s` if it parses as a number, else a string key.
     /// Mirrors Python where numeric cells compare numerically and text cells
     /// lexicographically.
+    #[must_use]
     pub fn infer(s: &str) -> Self {
         match s.trim().parse::<f64>() {
             Ok(n) => SortKey::Number(n),
@@ -181,7 +190,7 @@ impl Ord for SortKey {
             (SortKey::Tuple(a), SortKey::Tuple(b)) => {
                 for (x, y) in a.iter().zip(b.iter()) {
                     match x.cmp(y) {
-                        Ordering::Equal => continue,
+                        Ordering::Equal => {}
                         non_eq => return non_eq,
                     }
                 }
@@ -239,6 +248,8 @@ impl ColumnKey {
 
 #[derive(Debug, Clone)]
 #[widget(Focus, Interactive, Layout, Scrollable, StyleIdentity, Components)]
+// Independent flags; any combination is valid, so no enum fits.
+#[allow(clippy::struct_excessive_bools)]
 pub struct DataTable {
     column_keys: Vec<ColumnKey>,
     headers: Vec<String>,
@@ -285,6 +296,7 @@ struct HorizontalScrollbarState {
 impl DataTable {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new(headers: Vec<String>, rows: Vec<Vec<String>>) -> Self {
         let mut out = Self {
             column_keys: Vec::new(),
@@ -323,6 +335,7 @@ impl DataTable {
     }
 
     /// Create an empty table (columns and rows added later).
+    #[must_use]
     pub fn empty() -> Self {
         Self::default()
     }
@@ -344,11 +357,17 @@ impl DataTable {
         S: ToString,
     {
         for row in rows {
-            let row_values = row.as_ref().iter().map(|s| s.to_string()).collect();
+            let row_values = row
+                .as_ref()
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             let _ = self.add_row(row_values);
         }
     }
 
+    // Matches the table's `S: ToString` convention (`add_columns`, rows, ...).
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add_column<S>(&mut self, column: S) -> ColumnKey
     where
         S: ToString,
@@ -361,6 +380,8 @@ impl DataTable {
         key
     }
 
+    // Matches the table's `S: ToString` convention (`add_columns`, rows, ...).
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add_column_with_key<K, S>(&mut self, key: K, column: S) -> Option<ColumnKey>
     where
         K: Into<String>,
@@ -476,80 +497,96 @@ impl DataTable {
     /// every data cell in `Text(..., justify=…)`.
     pub fn set_all_data_cells_justify(&mut self, justify: CellJustify) {
         let align: TextAlign = justify.into();
-        for row in self.rows.iter_mut() {
+        for row in &mut self.rows {
             for cell in row.iter_mut() {
                 cell.align = align;
             }
         }
     }
 
+    #[must_use]
     pub fn row_key_at(&self, row: usize) -> Option<&RowKey> {
         self.row_keys.get(row)
     }
 
+    #[must_use]
     pub fn column_key_at(&self, column: usize) -> Option<&ColumnKey> {
         self.column_keys.get(column)
     }
 
+    #[must_use]
     pub fn row_index_of(&self, key: &RowKey) -> Option<usize> {
         self.row_keys.iter().position(|existing| existing == key)
     }
 
+    #[must_use]
     pub fn column_index_of(&self, key: &ColumnKey) -> Option<usize> {
         self.column_keys.iter().position(|existing| existing == key)
     }
 
+    #[must_use]
     pub fn cell_key_at(&self, row: usize, column: usize) -> Option<(RowKey, ColumnKey)> {
         let row_key = self.row_key_at(row)?;
         let column_key = self.column_key_at(column)?;
         Some((row_key.clone(), column_key.clone()))
     }
 
+    #[must_use]
     pub fn cursor_cell_key(&self) -> Option<(RowKey, ColumnKey)> {
         self.cell_key_at(self.selected, self.cursor_column)
     }
 
     // ── Reactive getters ─────────────────────────────────────────────────
 
+    #[must_use]
     pub fn selected(&self) -> usize {
         self.selected
     }
 
+    #[must_use]
     pub fn selected_column(&self) -> usize {
         self.cursor_column
     }
 
+    #[must_use]
     pub fn cursor(&self) -> (usize, usize) {
         (self.selected, self.cursor_column)
     }
 
+    #[must_use]
     pub fn fixed_rows(&self) -> usize {
         self.fixed_rows
     }
 
+    #[must_use]
     pub fn fixed_columns(&self) -> usize {
         self.fixed_columns
     }
 
+    #[must_use]
     pub fn show_header(&self) -> bool {
         self.show_header
     }
 
     /// Python `show_cursor`: cursor navigation and selection are suppressed
     /// while false (default true).
+    #[must_use]
     pub fn show_cursor(&self) -> bool {
         self.show_cursor
     }
 
     /// Python `header_height`: height of the header in rows (default 1).
+    #[must_use]
     pub fn header_height(&self) -> usize {
         self.header_height
     }
 
+    #[must_use]
     pub fn show_row_labels(&self) -> bool {
         self.show_row_labels
     }
 
+    #[must_use]
     pub fn zebra_stripes(&self) -> bool {
         self.zebra_stripes
     }
@@ -579,7 +616,9 @@ impl DataTable {
             return false;
         }
         let new_selected = index.min(self.rows.len() - 1);
-        if self.selected != new_selected {
+        if self.selected == new_selected {
+            false
+        } else {
             let old = self.selected;
             self.selected = new_selected;
             self.ensure_visible(self.visible_rows());
@@ -590,8 +629,6 @@ impl DataTable {
                 Box::new(self.selected),
             );
             true
-        } else {
-            false
         }
     }
 
@@ -743,30 +780,36 @@ impl DataTable {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_cursor_type(&mut self, _old: &CursorType, _new: &CursorType, _ctx: &mut ReactiveCtx) {
         // Visual change only — repaint is handled by ReactiveFlags.
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_show_header(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Visible row count changes — recompute scroll offsets.
         self.ensure_visible(self.visible_rows());
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_show_cursor(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Visual change only — repaint is handled by ReactiveFlags.
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_header_height(&mut self, _old: &usize, _new: &usize, _ctx: &mut ReactiveCtx) {
         // Visible row count changes — recompute scroll offsets.
         self.ensure_visible(self.visible_rows());
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unused_self)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_zebra_stripes(&mut self, _old: &bool, _new: &bool, _ctx: &mut ReactiveCtx) {
         // Visual change only — repaint is handled by ReactiveFlags.
     }
 
     // ── Builder methods ─────────────────────────────────────────────────
 
+    #[must_use]
     pub fn cursor_type(mut self, ct: CursorType) -> Self {
         self.cursor_type = ct;
         self
@@ -851,7 +894,7 @@ impl DataTable {
         self.sort_with(reverse, |row| {
             SortKey::tuple(
                 cols.iter()
-                    .map(|&c| SortKey::infer(row.get(c).map(|cell| cell.plain()).unwrap_or(""))),
+                    .map(|&c| SortKey::infer(row.get(c).map_or("", |cell| cell.plain()))),
             )
         });
     }
@@ -879,7 +922,7 @@ impl DataTable {
         self.sort_with(reverse, |row| {
             let values: Vec<&str> = cols
                 .iter()
-                .map(|&c| row.get(c).map(|cell| cell.plain()).unwrap_or(""))
+                .map(|&c| row.get(c).map_or("", |cell| cell.plain()))
                 .collect();
             key_fn(&values)
         });
@@ -910,6 +953,8 @@ impl DataTable {
     /// Update the value of a specific cell with plain text. Returns `true` if the
     /// cell existed and was updated, `false` if the coordinates are out of bounds.
     /// The cell's alignment is preserved; its styling is reset to plain.
+    // Matches the table's `S: ToString` convention (`add_columns`, rows, ...).
+    #[allow(clippy::needless_pass_by_value)]
     pub fn update_cell(&mut self, row: usize, col: usize, value: impl ToString) -> bool {
         if let Some(cell) = self.rows.get_mut(row).and_then(|r| r.get_mut(col)) {
             cell.content = Content::from_text(value.to_string());
@@ -943,6 +988,7 @@ impl DataTable {
 
     /// Get all plain-text values in a row, or `None` if the row index is out of
     /// bounds.
+    #[must_use]
     pub fn get_row(&self, row: usize) -> Option<Vec<String>> {
         self.rows
             .get(row)
@@ -950,11 +996,13 @@ impl DataTable {
     }
 
     /// Number of rows in the table.
+    #[must_use]
     pub fn row_count(&self) -> usize {
         self.rows.len()
     }
 
     /// Number of columns in the table.
+    #[must_use]
     pub fn column_count(&self) -> usize {
         self.headers.len()
     }
@@ -1223,7 +1271,7 @@ impl DataTable {
             .rendered_column_indices_with_offset(self.horizontal_offset)
             .len()
             .saturating_sub(self.fixed_column_count());
-        visible.saturating_sub(1).max((width > 0) as usize)
+        visible.saturating_sub(1).max(usize::from(width > 0))
     }
 
     fn scroll_horizontal_by_columns(&mut self, delta: i32) -> bool {
@@ -1237,7 +1285,7 @@ impl DataTable {
             self.horizontal_offset
                 .saturating_sub(delta.unsigned_abs() as usize)
         } else {
-            self.horizontal_offset.saturating_add(delta as usize)
+            self.horizontal_offset.saturating_add(delta.to_usize_sat())
         }
         .min(max_offset);
         if next == self.horizontal_offset {
@@ -1405,8 +1453,13 @@ impl DataTable {
     fn scroll_by_lines(&mut self, delta: isize) {
         let height = (self.content_height as usize).max(1);
         let visible = self.scrollable_visible_rows(height).max(1);
-        let max = self.scrollable_row_count().saturating_sub(visible) as isize;
-        self.offset = (self.offset as isize + delta).clamp(0, max.max(0)) as usize;
+        let max = self
+            .scrollable_row_count()
+            .saturating_sub(visible)
+            .to_isize_sat();
+        self.offset = (self.offset.to_isize_sat() + delta)
+            .clamp(0, max.max(0))
+            .to_usize_sat();
     }
 
     fn visible_rows(&self) -> usize {
@@ -1457,6 +1510,700 @@ impl DataTable {
         let fixed_rows = self.fixed_data_rows();
         let row_index = fixed_rows + self.effective_offset(visible_rows) + scroll_slot;
         (row_index < self.rows.len()).then_some(row_index)
+    }
+}
+
+/// What one `DataTable` navigation step did.
+#[derive(Debug, Clone, Copy, Default)]
+struct Nav {
+    handled: bool,
+    selection_changed: bool,
+    cursor_changed: bool,
+}
+
+impl Nav {
+    /// Handled, nothing moved.
+    const HANDLED: Self = Self {
+        handled: true,
+        selection_changed: false,
+        cursor_changed: false,
+    };
+}
+
+impl DataTable {
+    /// Handle a press on the table: row labels, column/row clicks, header
+    /// clicks, and activating the already-highlighted cell.
+    fn on_table_mouse_down(
+        &mut self,
+        mouse: &crate::event::MouseDownEvent,
+        visible_rows: usize,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
+        let mut selection_changed = false;
+        let mut cursor_changed = false;
+        let mut header_clicked: Option<usize> = None;
+
+        // Row-label prefix column: clicking it posts `RowLabelSelected`
+        // and does NOT move the cursor (Python `_on_click` with meta
+        // `column == -1`). The label region also offsets the x used for
+        // data-column hit-testing below.
+        let label_region = self.label_region_width();
+        let header_rows = u16::from(self.show_header);
+        if label_region > 0 && (mouse.x as usize) < label_region {
+            if mouse.y >= header_rows {
+                if let Some(row) = self.row_index_from_y(mouse.y as usize, visible_rows) {
+                    ctx.post_message(DataTableRowLabelSelected { row });
+                }
+            }
+            ctx.set_handled();
+            return;
+        }
+        let rendered_columns = self.rendered_column_indices();
+        let clicked_col = self.column_at_x_in_rendered_columns(
+            (mouse.x as usize).saturating_sub(label_region),
+            &rendered_columns,
+        );
+        // Clicks past the last column are out of bounds and ignored,
+        // except with a row cursor, where the click still selects the
+        // row (Python `_on_click` out_of_bounds handling).
+        let Some(clicked_col) =
+            clicked_col.or_else(|| matches!(self.cursor_type, CursorType::Row).then_some(0))
+        else {
+            ctx.set_handled();
+            return;
+        };
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
+            && self.cursor_column != clicked_col
+        {
+            self.cursor_column = clicked_col;
+            cursor_changed = true;
+        }
+
+        let mut data_row_clicked = false;
+        if mouse.y >= header_rows {
+            if let Some(clicked_row) = self.row_index_from_y(mouse.y as usize, visible_rows) {
+                data_row_clicked = true;
+                if self.selected != clicked_row {
+                    self.selected = clicked_row;
+                    selection_changed = true;
+                }
+            }
+        } else if self.show_header {
+            header_clicked = Some(clicked_col);
+        }
+        if selection_changed {
+            self.ensure_visible(visible_rows);
+        }
+        if cursor_changed {
+            self.ensure_cursor_column_visible(self.content_width as usize);
+        }
+        if let Some(col) = header_clicked {
+            ctx.post_message(DataTableHeaderSelected { column: col });
+        } else if selection_changed || cursor_changed {
+            if let Some(message) = self.highlighted_message() {
+                ctx.post_message_boxed(message);
+            }
+        } else if data_row_clicked {
+            // Clicking the already-highlighted position activates it
+            // (Python `_on_click` `highlight_click` posting the
+            // matching `*Selected` message).
+            if let Some(message) = self.selected_message() {
+                ctx.post_message_boxed(message);
+            }
+        }
+        ctx.set_handled();
+    }
+
+    /// Navigation for a scroll/cursor action event.
+    fn nav_for_action(
+        &mut self,
+        action: Action,
+        visible_rows: usize,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> Nav {
+        match action {
+            Action::ScrollUp => self.nav_row_up(),
+            Action::ScrollHome => self.nav_column_home(ctx),
+            Action::ScrollEnd => self.nav_column_end(ctx),
+            Action::ScrollDown => self.nav_row_down(),
+            Action::ScrollLeft => self.nav_column_left_or_scroll(-1, ctx),
+            Action::ScrollRight => self.nav_column_left_or_scroll(1, ctx),
+            Action::ScrollPageUp => self.nav_row_page_up(visible_rows),
+            Action::ScrollPageDown => self.nav_row_page_down(visible_rows),
+            Action::ScrollPageLeft => self.nav_page_left(ctx),
+            Action::ScrollPageRight => self.nav_page_right(ctx),
+            _ => Nav::default(),
+        }
+    }
+
+    /// Navigation for a key press.
+    fn nav_for_key(
+        &mut self,
+        key: &crate::keys::KeyEventData,
+        visible_rows: usize,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> Nav {
+        match key.code {
+            KeyCode::Up => self.nav_row_up(),
+            KeyCode::Down => self.nav_row_down(),
+            KeyCode::Left => self.nav_column_left(),
+            KeyCode::Right => self.nav_column_right(),
+            KeyCode::PageUp => self.nav_row_page_up(visible_rows),
+            KeyCode::PageDown => self.nav_row_page_down(visible_rows),
+            KeyCode::Home => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.nav_row_top()
+                } else {
+                    self.nav_column_home(ctx)
+                }
+            }
+            KeyCode::End => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.nav_row_bottom()
+                } else {
+                    self.nav_column_end(ctx)
+                }
+            }
+            // Python parity: enter-only (`Binding("enter", "select_cursor")`).
+            // The `show_cursor` gate lives in `selected_message`.
+            KeyCode::Enter if !self.rows.is_empty() && !self.headers.is_empty() => {
+                if let Some(message) = self.selected_message() {
+                    ctx.post_message_boxed(message);
+                }
+                Nav::HANDLED
+            }
+            _ => Nav::default(),
+        }
+    }
+
+    /// Row cursor up one row.
+    fn nav_row_up(&mut self) -> Nav {
+        let mut nav = Nav::default();
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
+            if self.selected > 0 {
+                self.selected -= 1;
+                nav.selection_changed = true;
+            }
+            nav.handled = true;
+        }
+        nav
+    }
+
+    /// Row cursor down one row.
+    fn nav_row_down(&mut self) -> Nav {
+        let mut nav = Nav::default();
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
+            if self.selected + 1 < self.rows.len() {
+                self.selected += 1;
+                nav.selection_changed = true;
+            }
+            nav.handled = true;
+        }
+        nav
+    }
+
+    /// Row cursor up one page.
+    fn nav_row_page_up(&mut self, visible_rows: usize) -> Nav {
+        let mut nav = Nav::default();
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
+            if self.selected > 0 {
+                let step = visible_rows.max(1).min(self.selected);
+                self.selected -= step;
+                nav.selection_changed = true;
+            }
+            nav.handled = true;
+        }
+        nav
+    }
+
+    /// Row cursor down one page.
+    fn nav_row_page_down(&mut self, visible_rows: usize) -> Nav {
+        let mut nav = Nav::default();
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
+            if self.selected + 1 < self.rows.len() {
+                let step = visible_rows
+                    .max(1)
+                    .min(self.rows.len().saturating_sub(1) - self.selected);
+                self.selected += step;
+                nav.selection_changed = true;
+            }
+            nav.handled = true;
+        }
+        nav
+    }
+
+    /// Column cursor left one column.
+    fn nav_column_left(&mut self) -> Nav {
+        let mut nav = Nav::default();
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Column) {
+            if self.cursor_column > 0 {
+                self.cursor_column -= 1;
+                nav.cursor_changed = true;
+            }
+            nav.handled = true;
+        }
+        nav
+    }
+
+    /// Column cursor right one column.
+    fn nav_column_right(&mut self) -> Nav {
+        let mut nav = Nav::default();
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Column) {
+            if self.cursor_column + 1 < self.headers.len() {
+                self.cursor_column += 1;
+                nav.cursor_changed = true;
+            }
+            nav.handled = true;
+        }
+        nav
+    }
+
+    /// Column cursor one column left (`delta < 0`) or right; without a
+    /// column cursor, scroll horizontally by one column instead.
+    fn nav_column_left_or_scroll(&mut self, delta: i32, ctx: &mut crate::event::WidgetCtx) -> Nav {
+        let nav = if delta < 0 {
+            self.nav_column_left()
+        } else {
+            self.nav_column_right()
+        };
+        if nav.handled {
+            nav
+        } else if self.scroll_horizontal_by_columns(delta) {
+            ctx.request_repaint();
+            Nav::HANDLED
+        } else {
+            nav
+        }
+    }
+
+    /// Column cursor five columns left, or scroll a page left.
+    fn nav_page_left(&mut self, ctx: &mut crate::event::WidgetCtx) -> Nav {
+        let mut nav = Nav::default();
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Column) {
+            if self.cursor_column > 0 {
+                let step = 5.min(self.cursor_column);
+                self.cursor_column -= step;
+                nav.cursor_changed = true;
+            }
+            nav.handled = true;
+        } else {
+            let step = self
+                .page_horizontal_step(self.content_width as usize)
+                .to_i32_sat();
+            if self.scroll_horizontal_by_columns(-step) {
+                nav.handled = true;
+                ctx.request_repaint();
+            }
+        }
+        nav
+    }
+
+    /// Column cursor five columns right, or scroll a page right.
+    fn nav_page_right(&mut self, ctx: &mut crate::event::WidgetCtx) -> Nav {
+        let mut nav = Nav::default();
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Column) {
+            if self.cursor_column + 1 < self.headers.len() {
+                let step = 5.min(self.headers.len().saturating_sub(1) - self.cursor_column);
+                self.cursor_column += step;
+                nav.cursor_changed = true;
+            }
+            nav.handled = true;
+        } else {
+            let step = self
+                .page_horizontal_step(self.content_width as usize)
+                .to_i32_sat();
+            if self.scroll_horizontal_by_columns(step) {
+                nav.handled = true;
+                ctx.request_repaint();
+            }
+        }
+        nav
+    }
+
+    /// Column cursor to the first column, else scroll to the left edge.
+    fn nav_column_home(&mut self, ctx: &mut crate::event::WidgetCtx) -> Nav {
+        let mut nav = Nav::HANDLED;
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
+            && self.cursor_column != 0
+        {
+            self.cursor_column = 0;
+            nav.cursor_changed = true;
+        } else if self.horizontal_offset != 0 {
+            self.horizontal_offset = 0;
+            ctx.request_repaint();
+        }
+        nav
+    }
+
+    /// Column cursor to the last column, else scroll to the right edge.
+    fn nav_column_end(&mut self, ctx: &mut crate::event::WidgetCtx) -> Nav {
+        let mut nav = Nav::HANDLED;
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
+            && !self.headers.is_empty()
+        {
+            let col = self.headers.len() - 1;
+            if self.cursor_column != col {
+                self.cursor_column = col;
+                nav.cursor_changed = true;
+            }
+        } else {
+            let max_offset = self.scrollable_column_count().saturating_sub(1);
+            if self.horizontal_offset != max_offset {
+                self.horizontal_offset = max_offset;
+                ctx.request_repaint();
+            }
+        }
+        nav
+    }
+
+    /// Row cursor to the first row.
+    fn nav_row_top(&mut self) -> Nav {
+        let mut nav = Nav::HANDLED;
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) && self.selected != 0 {
+            self.selected = 0;
+            nav.selection_changed = true;
+        }
+        nav
+    }
+
+    /// Row cursor to the last row.
+    fn nav_row_bottom(&mut self) -> Nav {
+        let mut nav = Nav::HANDLED;
+        if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) && !self.rows.is_empty() {
+            let row = self.rows.len() - 1;
+            if self.selected != row {
+                self.selected = row;
+                nav.selection_changed = true;
+            }
+        }
+        nav
+    }
+
+    /// `cursor_up` action: row cursor up, or scroll up a line with a hidden
+    /// cursor.
+    fn action_cursor_up(&mut self, ctx: &mut crate::event::WidgetCtx) -> Nav {
+        let mut nav = Nav::HANDLED;
+        if self.show_cursor {
+            if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) && self.selected > 0 {
+                self.selected -= 1;
+                nav.selection_changed = true;
+            }
+        } else {
+            self.scroll_by_lines(-1);
+            ctx.request_repaint();
+        }
+        nav
+    }
+
+    /// `cursor_down` action: row cursor down, or scroll down a line with a
+    /// hidden cursor.
+    fn action_cursor_down(&mut self, ctx: &mut crate::event::WidgetCtx) -> Nav {
+        let mut nav = Nav::HANDLED;
+        if self.show_cursor {
+            if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
+                && self.selected + 1 < self.rows.len()
+            {
+                self.selected += 1;
+                nav.selection_changed = true;
+            }
+        } else {
+            self.scroll_by_lines(1);
+            ctx.request_repaint();
+        }
+        nav
+    }
+
+    /// `cursor_left` action: column cursor left, or scroll left a column
+    /// with a hidden cursor.
+    fn action_cursor_left(&mut self, ctx: &mut crate::event::WidgetCtx) -> Nav {
+        let mut nav = Nav::HANDLED;
+        if self.show_cursor {
+            if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
+                && self.cursor_column > 0
+            {
+                self.cursor_column -= 1;
+                nav.cursor_changed = true;
+            }
+        } else if self.horizontal_offset > 0 {
+            self.horizontal_offset -= 1;
+            ctx.request_repaint();
+        }
+        nav
+    }
+
+    /// `cursor_right` action: column cursor right, or scroll right a column
+    /// with a hidden cursor.
+    fn action_cursor_right(&mut self, ctx: &mut crate::event::WidgetCtx) -> Nav {
+        let mut nav = Nav::HANDLED;
+        if self.show_cursor {
+            if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
+                && self.cursor_column + 1 < self.headers.len()
+            {
+                self.cursor_column += 1;
+                nav.cursor_changed = true;
+            }
+        } else {
+            let max_offset = self.scrollable_column_count().saturating_sub(1);
+            if self.horizontal_offset < max_offset {
+                self.horizontal_offset += 1;
+                ctx.request_repaint();
+            }
+        }
+        nav
+    }
+
+    /// `page_up` action: cursor up a page, or scroll up a page with a hidden
+    /// cursor.
+    fn action_page_up(&mut self, visible_rows: usize, ctx: &mut crate::event::WidgetCtx) -> Nav {
+        let mut nav = Nav::HANDLED;
+        if self.show_cursor {
+            if self.selected > 0 {
+                self.selected -= visible_rows.max(1).min(self.selected);
+                nav.selection_changed = true;
+            }
+        } else {
+            self.scroll_by_lines(-visible_rows.max(1).to_isize_sat());
+            ctx.request_repaint();
+        }
+        nav
+    }
+
+    /// `page_down` action: cursor down a page, or scroll down a page with a
+    /// hidden cursor.
+    fn action_page_down(&mut self, visible_rows: usize, ctx: &mut crate::event::WidgetCtx) -> Nav {
+        let mut nav = Nav::HANDLED;
+        if self.show_cursor {
+            let last = self.rows.len().saturating_sub(1);
+            if self.selected < last {
+                let step = visible_rows.max(1).min(last - self.selected);
+                self.selected += step;
+                nav.selection_changed = true;
+            }
+        } else {
+            self.scroll_by_lines(visible_rows.max(1).to_isize_sat());
+            ctx.request_repaint();
+        }
+        nav
+    }
+
+    /// Resolve the cell visuals for one render from the `datatable--*`
+    /// component styles and theme tokens.
+    fn render_palette(&self) -> TablePalette {
+        // Python paints the cursor regardless of focus: `.datatable--cursor`
+        // defaults to the BLURRED colours ($block-cursor-blurred-*) and only the
+        // `&:focus > .datatable--cursor` override switches to the strong ones.
+        let focused = self.node_state().focused;
+
+        // Component-sourced colours (component-classes Phase 2, Python
+        // `get_component_styles` parity): resolve the `datatable--*` component
+        // styles once per render through the canonical seam. During a tree
+        // render the widget's LIVE meta (arena id, runtime classes, dispatch
+        // pseudo states) is on top of the selector stack, so type-, id- and
+        // class-qualified user CSS (`DataTable > .datatable--cursor`,
+        // `#my-table > .datatable--cursor`, `DataTable.some-class >
+        // .datatable--cursor`) and the `&:focus > .datatable--cursor` /
+        // `&:dark > .datatable--even-row` parent-state branches all resolve
+        // here. Off-tree renders without a style context (plain
+        // `FrameBuffer::from_renderable` unit tests) resolve to empty styles;
+        // every consumer below falls back to the exact theme tokens the
+        // pre-migration hand-derived block used, byte-for-byte
+        // (tests/data_table_component_restyle.rs pins both sides).
+        let header_comp = crate::css::resolve_component_style(self, &["datatable--header"]);
+        let cursor_comp = crate::css::resolve_component_style(self, &["datatable--cursor"]);
+        let hover_comp = crate::css::resolve_component_style(self, &["datatable--hover"]);
+        let header_hover_comp =
+            crate::css::resolve_component_style(self, &["datatable--header-hover"]);
+        let fixed_comp = crate::css::resolve_component_style(self, &["datatable--fixed"]);
+        let even_row_comp = crate::css::resolve_component_style(self, &["datatable--even-row"]);
+        let odd_row_comp = crate::css::resolve_component_style(self, &["datatable--odd-row"]);
+
+        let row_bg = parse_color_like("$surface");
+        let hover_bg = hover_comp
+            .bg
+            .or_else(|| parse_color_like("$block-hover-background"));
+        let header_hover_bg = header_hover_comp
+            .bg
+            .or_else(|| parse_color_like("$header-hover-background"));
+        let fixed_bg = fixed_comp
+            .bg
+            .or_else(|| parse_color_like("$secondary-muted"));
+
+        let fallback_bg = parse_color_like("$background").unwrap_or(Color::rgb(0, 0, 0));
+        let row_base = row_bg.unwrap_or(fallback_bg);
+        // The widget's composited surface (own bg + `:focus` background-tint),
+        // used for the header trailing fill, the zebra blend base, and to
+        // flatten any semi-transparent user header background.
+        let composited_bg = crate::css::current_composited_background().unwrap_or(row_base);
+        let header_base = {
+            let c = header_comp
+                .bg
+                .or_else(|| parse_color_like("$panel"))
+                .unwrap_or(fallback_bg);
+            if c.a < 1.0 {
+                c.flatten_over(composited_bg)
+            } else {
+                c
+            }
+        };
+        let hover_bg = hover_bg.map(|c| c.flatten_over(row_base));
+        let header_hover_bg = header_hover_bg.map(|c| c.flatten_over(header_base));
+        let fixed_base = fixed_bg.map_or(row_base, |c| c.flatten_over(row_base));
+
+        let foreground = parse_color_like("$foreground").unwrap_or(Color::rgb(224, 224, 224));
+        let (header_style, header_fill_style) =
+            header_visuals(&header_comp, header_base, composited_bg, foreground);
+        let normal_style = CellVisual::new(row_base, false);
+        let fixed_style = CellVisual::new(fixed_base, false);
+        let selected_style = cursor_visual(&cursor_comp, focused, row_base);
+        let hover_style = CellVisual::new(hover_bg.unwrap_or(row_base), false);
+        let header_hover_style = CellVisual::new(header_hover_bg.unwrap_or(header_base), true);
+        let zebra_stripes = self.zebra_stripes;
+        let (zebra_style, zebra_fill_style) = even_row_visuals(
+            zebra_stripes,
+            &even_row_comp,
+            (row_base, composited_bg),
+            foreground,
+            normal_style,
+        );
+        let (odd_style, odd_fill_style) = odd_row_visuals(
+            zebra_stripes,
+            &odd_row_comp,
+            composited_bg,
+            foreground,
+            normal_style,
+        );
+        TablePalette {
+            header: header_style,
+            header_hover: header_hover_style,
+            header_fill: header_fill_style,
+            fixed: fixed_style,
+            selected: selected_style,
+            hover: hover_style,
+            zebra: zebra_style,
+            zebra_fill: zebra_fill_style,
+            odd: odd_style,
+            odd_fill: odd_fill_style,
+        }
+    }
+
+    /// Emit the header row (headers use `usize::MAX` as their row sentinel).
+    fn emit_header_row(&self, layout: &RowLayout<'_>, palette: &TablePalette, out: &mut Segments) {
+        let cursor_type = self.cursor_type;
+        let show_cursor = cursor_type != CursorType::None;
+        let cursor_coord = (self.selected, self.cursor_column);
+        let hover_coord = self.hover_coordinate;
+        let header_cells: Vec<Cell> = self.headers.iter().map(|h| Cell::text(h.clone())).collect();
+        let empty_label = Content::empty();
+        emit_row_per_cell(
+            &header_cells,
+            layout.column_widths,
+            &layout.rendered_columns,
+            layout.width,
+            (layout.label_col_width > 0).then_some((
+                &empty_label,
+                layout.label_col_width,
+                palette.header,
+            )),
+            |col_idx| {
+                let target = (usize::MAX, col_idx);
+                if show_cursor && should_highlight(cursor_coord, target, cursor_type) {
+                    return palette.selected.bold();
+                }
+                if let Some(hc) = hover_coord
+                    && should_highlight(hc, target, cursor_type)
+                {
+                    return palette.header_hover;
+                }
+                if col_idx < self.fixed_columns {
+                    return palette.fixed.bold();
+                }
+                palette.header
+            },
+            palette.header_fill,
+            out,
+        );
+        out.push(Segment::line());
+    }
+
+    /// Emit the visible body rows: the fixed rows, then the scrolled rows.
+    fn emit_body_rows(
+        &self,
+        layout: &RowLayout<'_>,
+        palette: &TablePalette,
+        (visible_rows, offset): (usize, usize),
+        out: &mut Segments,
+    ) {
+        let cursor_type = self.cursor_type;
+        let show_cursor = cursor_type != CursorType::None;
+        let cursor_coord = (self.selected, self.cursor_column);
+        let hover_coord = self.hover_coordinate;
+        let zebra_stripes = self.zebra_stripes;
+        let fixed_data_rows = self.fixed_data_rows();
+        let fixed_visible = self.visible_fixed_rows(visible_rows);
+        let mut rendered_rows = 0usize;
+
+        let mut emit_data_row = |row_idx: usize, out: &mut Segments| {
+            if rendered_rows >= visible_rows {
+                return;
+            }
+            let Some(row) = self.rows.get(row_idx) else {
+                return;
+            };
+            let is_even_row = row_idx % 2 == 0;
+            let (row_base_style, row_fill_style) = if zebra_stripes && is_even_row {
+                (palette.zebra, palette.zebra_fill)
+            } else {
+                (palette.odd, palette.odd_fill)
+            };
+            let empty_label = Content::empty();
+            let row_label = self
+                .row_labels
+                .get(row_idx)
+                .and_then(|l| l.as_ref())
+                .unwrap_or(&empty_label);
+            emit_row_per_cell(
+                row,
+                layout.column_widths,
+                &layout.rendered_columns,
+                layout.width,
+                (layout.label_col_width > 0).then_some((
+                    row_label,
+                    layout.label_col_width,
+                    row_base_style,
+                )),
+                |col_idx| {
+                    let target = (row_idx, col_idx);
+                    let is_fixed_target = row_idx < fixed_data_rows || col_idx < self.fixed_columns;
+                    let base = if is_fixed_target {
+                        palette.fixed
+                    } else {
+                        row_base_style
+                    };
+                    if show_cursor && should_highlight(cursor_coord, target, cursor_type) {
+                        return palette.selected;
+                    }
+                    if let Some(hc) = hover_coord
+                        && should_highlight(hc, target, cursor_type)
+                    {
+                        return palette.hover;
+                    }
+                    base
+                },
+                row_fill_style,
+                out,
+            );
+            out.push(Segment::line());
+            rendered_rows += 1;
+        };
+
+        for fixed_row_idx in 0..fixed_visible {
+            emit_data_row(fixed_row_idx, out);
+        }
+        let scroll_start = fixed_data_rows + offset;
+        let scrollable_slots = visible_rows.saturating_sub(fixed_visible);
+        for row_offset in 0..scrollable_slots {
+            emit_data_row(scroll_start + row_offset, out);
+        }
     }
 }
 
@@ -1553,7 +2300,7 @@ impl crate::widgets::Focus for DataTable {
         true
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "data-table"
     }
 
@@ -1580,175 +2327,47 @@ impl crate::widgets::Focus for DataTable {
         let width = self.content_width as usize;
         let height = self.content_height as usize;
         let visible_rows = self.visible_rows_for_viewport(height);
-        let mut selection_changed = false;
-        let mut cursor_changed = false;
 
-        let handled = match action.name.as_str() {
+        let nav = match action.name.as_str() {
             // Python parity: cursor moves apply only while the cursor is
             // shown; otherwise the matching scroll runs (cursor-fallback).
-            "cursor_up" => {
-                if self.show_cursor {
-                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
-                        && self.selected > 0
-                    {
-                        self.selected -= 1;
-                        selection_changed = true;
-                    }
-                } else {
-                    self.scroll_by_lines(-1);
-                    ctx.request_repaint();
-                }
-                true
-            }
-            "cursor_down" => {
-                if self.show_cursor {
-                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
-                        && self.selected + 1 < self.rows.len()
-                    {
-                        self.selected += 1;
-                        selection_changed = true;
-                    }
-                } else {
-                    self.scroll_by_lines(1);
-                    ctx.request_repaint();
-                }
-                true
-            }
-            "cursor_left" => {
-                if self.show_cursor {
-                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                        && self.cursor_column > 0
-                    {
-                        self.cursor_column -= 1;
-                        cursor_changed = true;
-                    }
-                } else if self.horizontal_offset > 0 {
-                    self.horizontal_offset -= 1;
-                    ctx.request_repaint();
-                }
-                true
-            }
-            "cursor_right" => {
-                if self.show_cursor {
-                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                        && self.cursor_column + 1 < self.headers.len()
-                    {
-                        self.cursor_column += 1;
-                        cursor_changed = true;
-                    }
-                } else {
-                    let max_offset = self.scrollable_column_count().saturating_sub(1);
-                    if self.horizontal_offset < max_offset {
-                        self.horizontal_offset += 1;
-                        ctx.request_repaint();
-                    }
-                }
-                true
-            }
+            "cursor_up" => self.action_cursor_up(ctx),
+            "cursor_down" => self.action_cursor_down(ctx),
+            "cursor_left" => self.action_cursor_left(ctx),
+            "cursor_right" => self.action_cursor_right(ctx),
             // Python `page_up` / `page_down`: move the cursor a page and
             // scroll with it; with a hidden cursor only the viewport moves
             // (`super().page_up()` / `super().page_down()`).
-            "page_up" => {
-                if self.show_cursor {
-                    if self.selected > 0 {
-                        self.selected -= visible_rows.max(1).min(self.selected);
-                        selection_changed = true;
-                    }
-                } else {
-                    self.scroll_by_lines(-(visible_rows.max(1) as isize));
-                    ctx.request_repaint();
-                }
-                true
-            }
-            "page_down" => {
-                if self.show_cursor {
-                    let last = self.rows.len().saturating_sub(1);
-                    if self.selected < last {
-                        let step = visible_rows.max(1).min(last - self.selected);
-                        self.selected += step;
-                        selection_changed = true;
-                    }
-                } else {
-                    self.scroll_by_lines(visible_rows.max(1) as isize);
-                    ctx.request_repaint();
-                }
-                true
-            }
-            "scroll_home" => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                    && self.cursor_column != 0
-                {
-                    self.cursor_column = 0;
-                    cursor_changed = true;
-                } else if self.horizontal_offset != 0 {
-                    self.horizontal_offset = 0;
-                    ctx.request_repaint();
-                }
-                true
-            }
-            "scroll_end" => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                    && !self.headers.is_empty()
-                {
-                    let col = self.headers.len() - 1;
-                    if self.cursor_column != col {
-                        self.cursor_column = col;
-                        cursor_changed = true;
-                    }
-                } else {
-                    let max_offset = self.scrollable_column_count().saturating_sub(1);
-                    if self.horizontal_offset != max_offset {
-                        self.horizontal_offset = max_offset;
-                        ctx.request_repaint();
-                    }
-                }
-                true
-            }
-            "scroll_top" => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
-                    && self.selected != 0
-                {
-                    self.selected = 0;
-                    selection_changed = true;
-                }
-                true
-            }
-            "scroll_bottom" => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
-                    && !self.rows.is_empty()
-                {
-                    let row = self.rows.len() - 1;
-                    if self.selected != row {
-                        self.selected = row;
-                        selection_changed = true;
-                    }
-                }
-                true
-            }
+            "page_up" => self.action_page_up(visible_rows, ctx),
+            "page_down" => self.action_page_down(visible_rows, ctx),
+            "scroll_home" => self.nav_column_home(ctx),
+            "scroll_end" => self.nav_column_end(ctx),
+            "scroll_top" => self.nav_row_top(),
+            "scroll_bottom" => self.nav_row_bottom(),
             "select_cursor" => {
                 if let Some(message) = self.selected_message() {
                     ctx.post_message_boxed(message);
                 }
-                true
+                Nav::HANDLED
             }
-            _ => false,
+            _ => Nav::default(),
         };
 
-        if selection_changed {
+        if nav.selection_changed {
             self.ensure_visible(visible_rows);
         }
-        if cursor_changed {
+        if nav.cursor_changed {
             self.ensure_cursor_column_visible(width);
         }
-        if selection_changed || cursor_changed {
+        if nav.selection_changed || nav.cursor_changed {
             if let Some(message) = self.highlighted_message() {
                 ctx.post_message_boxed(message);
             }
         }
-        if handled {
+        if nav.handled {
             ctx.set_handled();
         }
-        handled
+        nav.handled
     }
 }
 
@@ -1810,349 +2429,35 @@ impl crate::widgets::Interactive for DataTable {
 
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
         let visible_rows = self.visible_rows();
-        let mut selection_changed = false;
-        let mut cursor_changed = false;
-        let mut header_clicked: Option<usize> = None;
 
         // Handle mouse events regardless of focus state.
-        match event {
-            Event::MouseDown(mouse) if mouse.target == self.node_id() => {
-                // Row-label prefix column: clicking it posts `RowLabelSelected`
-                // and does NOT move the cursor (Python `_on_click` with meta
-                // `column == -1`). The label region also offsets the x used for
-                // data-column hit-testing below.
-                let label_region = self.label_region_width();
-                let header_rows = if self.show_header { 1 } else { 0 };
-                if label_region > 0 && (mouse.x as usize) < label_region {
-                    if mouse.y >= header_rows {
-                        if let Some(row) = self.row_index_from_y(mouse.y as usize, visible_rows) {
-                            ctx.post_message(DataTableRowLabelSelected { row });
-                        }
-                    }
-                    ctx.set_handled();
-                    return;
-                }
-                let rendered_columns = self.rendered_column_indices();
-                let clicked_col = self.column_at_x_in_rendered_columns(
-                    (mouse.x as usize).saturating_sub(label_region),
-                    &rendered_columns,
-                );
-                // Clicks past the last column are out of bounds and ignored,
-                // except with a row cursor, where the click still selects the
-                // row (Python `_on_click` out_of_bounds handling).
-                let Some(clicked_col) = clicked_col
-                    .or_else(|| matches!(self.cursor_type, CursorType::Row).then_some(0))
-                else {
-                    ctx.set_handled();
-                    return;
-                };
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                    && self.cursor_column != clicked_col
-                {
-                    self.cursor_column = clicked_col;
-                    cursor_changed = true;
-                }
-
-                let mut data_row_clicked = false;
-                if mouse.y >= header_rows {
-                    if let Some(clicked_row) = self.row_index_from_y(mouse.y as usize, visible_rows)
-                    {
-                        data_row_clicked = true;
-                        if self.selected != clicked_row {
-                            self.selected = clicked_row;
-                            selection_changed = true;
-                        }
-                    }
-                } else if self.show_header {
-                    header_clicked = Some(clicked_col);
-                }
-                if selection_changed {
-                    self.ensure_visible(visible_rows);
-                }
-                if cursor_changed {
-                    self.ensure_cursor_column_visible(self.content_width as usize);
-                }
-                if let Some(col) = header_clicked {
-                    ctx.post_message(DataTableHeaderSelected { column: col });
-                } else if selection_changed || cursor_changed {
-                    if let Some(message) = self.highlighted_message() {
-                        ctx.post_message_boxed(message);
-                    }
-                } else if data_row_clicked {
-                    // Clicking the already-highlighted position activates it
-                    // (Python `_on_click` `highlight_click` posting the
-                    // matching `*Selected` message).
-                    if let Some(message) = self.selected_message() {
-                        ctx.post_message_boxed(message);
-                    }
-                }
-                ctx.set_handled();
-                return;
-            }
-            _ => {}
+        if let Event::MouseDown(mouse) = event
+            && mouse.target == self.node_id()
+        {
+            self.on_table_mouse_down(mouse, visible_rows, ctx);
+            return;
         }
 
         if !self.node_state().focused {
             return;
         }
-        let mut handled = false;
-        match event {
-            Event::Action(Action::ScrollUp) => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
-                    if self.selected > 0 {
-                        self.selected -= 1;
-                        selection_changed = true;
-                    }
-                    handled = true;
-                }
-            }
-            Event::Action(Action::ScrollHome) => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                    && self.cursor_column != 0
-                {
-                    self.cursor_column = 0;
-                    cursor_changed = true;
-                } else if self.horizontal_offset != 0 {
-                    self.horizontal_offset = 0;
-                    ctx.request_repaint();
-                }
-                handled = true;
-            }
-            Event::Action(Action::ScrollEnd) => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                    && !self.headers.is_empty()
-                {
-                    let col = self.headers.len() - 1;
-                    if self.cursor_column != col {
-                        self.cursor_column = col;
-                        cursor_changed = true;
-                    }
-                } else {
-                    let max_offset = self.scrollable_column_count().saturating_sub(1);
-                    if self.horizontal_offset != max_offset {
-                        self.horizontal_offset = max_offset;
-                        ctx.request_repaint();
-                    }
-                }
-                handled = true;
-            }
-            Event::Action(Action::ScrollDown) => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
-                    if self.selected + 1 < self.rows.len() {
-                        self.selected += 1;
-                        selection_changed = true;
-                    }
-                    handled = true;
-                }
-            }
-            Event::Action(Action::ScrollLeft) => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Column) {
-                    if self.cursor_column > 0 {
-                        self.cursor_column -= 1;
-                        cursor_changed = true;
-                    }
-                    handled = true;
-                } else if self.scroll_horizontal_by_columns(-1) {
-                    handled = true;
-                    ctx.request_repaint();
-                }
-            }
-            Event::Action(Action::ScrollRight) => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Column) {
-                    if self.cursor_column + 1 < self.headers.len() {
-                        self.cursor_column += 1;
-                        cursor_changed = true;
-                    }
-                    handled = true;
-                } else if self.scroll_horizontal_by_columns(1) {
-                    handled = true;
-                    ctx.request_repaint();
-                }
-            }
-            Event::Action(Action::ScrollPageUp) => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
-                    if self.selected > 0 {
-                        let step = visible_rows.max(1).min(self.selected);
-                        self.selected -= step;
-                        selection_changed = true;
-                    }
-                    handled = true;
-                }
-            }
-            Event::Action(Action::ScrollPageDown) => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
-                    if self.selected + 1 < self.rows.len() {
-                        let step = visible_rows
-                            .max(1)
-                            .min(self.rows.len().saturating_sub(1) - self.selected);
-                        self.selected += step;
-                        selection_changed = true;
-                    }
-                    handled = true;
-                }
-            }
-            Event::Action(Action::ScrollPageLeft) => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Column) {
-                    if self.cursor_column > 0 {
-                        let step = 5.min(self.cursor_column);
-                        self.cursor_column -= step;
-                        cursor_changed = true;
-                    }
-                    handled = true;
-                } else {
-                    let step = self.page_horizontal_step(self.content_width as usize) as i32;
-                    if self.scroll_horizontal_by_columns(-step) {
-                        handled = true;
-                        ctx.request_repaint();
-                    }
-                }
-            }
-            Event::Action(Action::ScrollPageRight) => {
-                if matches!(self.cursor_type, CursorType::Cell | CursorType::Column) {
-                    if self.cursor_column + 1 < self.headers.len() {
-                        let step = 5.min(self.headers.len().saturating_sub(1) - self.cursor_column);
-                        self.cursor_column += step;
-                        cursor_changed = true;
-                    }
-                    handled = true;
-                } else {
-                    let step = self.page_horizontal_step(self.content_width as usize) as i32;
-                    if self.scroll_horizontal_by_columns(step) {
-                        handled = true;
-                        ctx.request_repaint();
-                    }
-                }
-            }
-            Event::Key(key) => match key.code {
-                KeyCode::Up => {
-                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
-                        if self.selected > 0 {
-                            self.selected -= 1;
-                            selection_changed = true;
-                        }
-                        handled = true;
-                    }
-                }
-                KeyCode::Down => {
-                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
-                        if self.selected + 1 < self.rows.len() {
-                            self.selected += 1;
-                            selection_changed = true;
-                        }
-                        handled = true;
-                    }
-                }
-                KeyCode::Left => {
-                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Column) {
-                        if self.cursor_column > 0 {
-                            self.cursor_column -= 1;
-                            cursor_changed = true;
-                        }
-                        handled = true;
-                    }
-                }
-                KeyCode::Right => {
-                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Column) {
-                        if self.cursor_column + 1 < self.headers.len() {
-                            self.cursor_column += 1;
-                            cursor_changed = true;
-                        }
-                        handled = true;
-                    }
-                }
-                KeyCode::PageUp => {
-                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
-                        if self.selected > 0 {
-                            let step = visible_rows.max(1).min(self.selected);
-                            self.selected -= step;
-                            selection_changed = true;
-                        }
-                        handled = true;
-                    }
-                }
-                KeyCode::PageDown => {
-                    if matches!(self.cursor_type, CursorType::Cell | CursorType::Row) {
-                        if self.selected + 1 < self.rows.len() {
-                            let step = visible_rows
-                                .max(1)
-                                .min(self.rows.len().saturating_sub(1) - self.selected);
-                            self.selected += step;
-                            selection_changed = true;
-                        }
-                        handled = true;
-                    }
-                }
-                KeyCode::Home => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) {
-                        if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
-                            && self.selected != 0
-                        {
-                            self.selected = 0;
-                            selection_changed = true;
-                        }
-                    } else if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                        && self.cursor_column != 0
-                    {
-                        self.cursor_column = 0;
-                        cursor_changed = true;
-                    } else if self.horizontal_offset != 0 {
-                        self.horizontal_offset = 0;
-                        ctx.request_repaint();
-                    }
-                    handled = true;
-                }
-                KeyCode::End => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) {
-                        if matches!(self.cursor_type, CursorType::Cell | CursorType::Row)
-                            && !self.rows.is_empty()
-                        {
-                            let row = self.rows.len() - 1;
-                            if self.selected != row {
-                                self.selected = row;
-                                selection_changed = true;
-                            }
-                        }
-                    } else if matches!(self.cursor_type, CursorType::Cell | CursorType::Column)
-                        && !self.headers.is_empty()
-                    {
-                        let col = self.headers.len() - 1;
-                        if self.cursor_column != col {
-                            self.cursor_column = col;
-                            cursor_changed = true;
-                        }
-                    } else {
-                        let max_offset = self.scrollable_column_count().saturating_sub(1);
-                        if self.horizontal_offset != max_offset {
-                            self.horizontal_offset = max_offset;
-                            ctx.request_repaint();
-                        }
-                    }
-                    handled = true;
-                }
-                // Python parity: enter-only (`Binding("enter", "select_cursor")`).
-                // The `show_cursor` gate lives in `selected_message`.
-                KeyCode::Enter if !self.rows.is_empty() && !self.headers.is_empty() => {
-                    if let Some(message) = self.selected_message() {
-                        ctx.post_message_boxed(message);
-                    }
-                    handled = true;
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-        if selection_changed {
+        let nav = match event {
+            Event::Action(action) => self.nav_for_action(*action, visible_rows, ctx),
+            Event::Key(key) => self.nav_for_key(key, visible_rows, ctx),
+            _ => Nav::default(),
+        };
+        if nav.selection_changed {
             self.ensure_visible(visible_rows);
         }
-        if cursor_changed {
+        if nav.cursor_changed {
             self.ensure_cursor_column_visible(self.content_width as usize);
         }
-        if selection_changed || cursor_changed {
+        if nav.selection_changed || nav.cursor_changed {
             if let Some(message) = self.highlighted_message() {
                 ctx.post_message_boxed(message);
             }
         }
-        if handled {
+        if nav.handled {
             ctx.set_handled();
         }
     }
@@ -2168,7 +2473,7 @@ impl crate::widgets::Interactive for DataTable {
         let Some(state) = self.horizontal_scrollbar_state(width) else {
             return;
         };
-        let target_pixels = payload.offset.max(0.0).round() as usize;
+        let target_pixels = payload.offset.max(0.0).round().to_usize_sat();
         let clamped_pixels = target_pixels.min(state.max_pixel_offset);
         let next = self.horizontal_offset_from_pixels(clamped_pixels);
         if next != self.horizontal_offset {
@@ -2181,7 +2486,7 @@ impl crate::widgets::Interactive for DataTable {
 
 impl crate::widgets::Layout for DataTable {
     fn layout_height(&self) -> Option<usize> {
-        let header_rows = if self.show_header { 1 } else { 0 };
+        let header_rows = usize::from(self.show_header);
         let intrinsic = header_rows + self.rows.len().max(1);
         Some(intrinsic)
     }
@@ -2246,7 +2551,7 @@ impl crate::widgets::Scrollable for DataTable {
 
     fn scroll_offset_f32(&self) -> (f32, f32) {
         let (x, y) = crate::widgets::Scrollable::scroll_offset(self);
-        (x as f32, y as f32)
+        (x.to_f32_lossy(), y.to_f32_lossy())
     }
 
     fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {
@@ -2325,353 +2630,246 @@ impl crate::widgets::Render for DataTable {
         let visible_rows = self.visible_rows_for_viewport(height);
         let offset = self.effective_offset(visible_rows);
 
-        let column_widths = self.column_widths();
-        let rendered_columns = self.rendered_column_indices();
-        let label_col_width = self.label_col_width();
-        let cursor_type = self.cursor_type;
-        // Python paints the cursor regardless of focus: `.datatable--cursor`
-        // defaults to the BLURRED colours ($block-cursor-blurred-*) and only the
-        // `&:focus > .datatable--cursor` override switches to the strong ones.
-        let focused = self.node_state().focused;
-        let show_cursor = cursor_type != CursorType::None;
+        let layout = RowLayout {
+            column_widths: self.column_widths(),
+            rendered_columns: self.rendered_column_indices(),
+            label_col_width: self.label_col_width(),
+            width,
+        };
+        let palette = self.render_palette();
+        let mut out = Segments::new();
+        if self.show_header {
+            self.emit_header_row(&layout, &palette, &mut out);
+        }
+        self.emit_body_rows(&layout, &palette, (visible_rows, offset), &mut out);
+        out
+    }
+}
+/// Column geometry shared by the header and body rows of one render.
+struct RowLayout<'a> {
+    column_widths: &'a [usize],
+    rendered_columns: Vec<usize>,
+    label_col_width: usize,
+    width: usize,
+}
 
-        // Cursor and hover coordinates.
-        let cursor_coord = (self.selected, self.cursor_column);
-        let hover_coord = self.hover_coordinate;
+/// Cell visuals for one `DataTable` render.
+#[derive(Debug, Clone, Copy)]
+struct TablePalette {
+    header: CellVisual,
+    header_hover: CellVisual,
+    header_fill: CellVisual,
+    fixed: CellVisual,
+    selected: CellVisual,
+    hover: CellVisual,
+    zebra: CellVisual,
+    zebra_fill: CellVisual,
+    odd: CellVisual,
+    odd_fill: CellVisual,
+}
 
-        // Component-sourced colours (component-classes Phase 2, Python
-        // `get_component_styles` parity): resolve the `datatable--*` component
-        // styles once per render through the canonical seam. During a tree
-        // render the widget's LIVE meta (arena id, runtime classes, dispatch
-        // pseudo states) is on top of the selector stack, so type-, id- and
-        // class-qualified user CSS (`DataTable > .datatable--cursor`,
-        // `#my-table > .datatable--cursor`, `DataTable.some-class >
-        // .datatable--cursor`) and the `&:focus > .datatable--cursor` /
-        // `&:dark > .datatable--even-row` parent-state branches all resolve
-        // here. Off-tree renders without a style context (plain
-        // `FrameBuffer::from_renderable` unit tests) resolve to empty styles;
-        // every consumer below falls back to the exact theme tokens the
-        // pre-migration hand-derived block used, byte-for-byte
-        // (tests/data_table_component_restyle.rs pins both sides).
-        let header_comp = crate::css::resolve_component_style(self, &["datatable--header"]);
-        let cursor_comp = crate::css::resolve_component_style(self, &["datatable--cursor"]);
-        let hover_comp = crate::css::resolve_component_style(self, &["datatable--hover"]);
-        let header_hover_comp =
-            crate::css::resolve_component_style(self, &["datatable--header-hover"]);
-        let fixed_comp = crate::css::resolve_component_style(self, &["datatable--fixed"]);
-        let even_row_comp = crate::css::resolve_component_style(self, &["datatable--even-row"]);
-        let odd_row_comp = crate::css::resolve_component_style(self, &["datatable--odd-row"]);
+/// Textual's `_should_highlight`: does `target` match `cursor` given the
+/// cursor type?
+fn should_highlight(cursor: (usize, usize), target: (usize, usize), ct: CursorType) -> bool {
+    match ct {
+        CursorType::Cell => cursor == target,
+        CursorType::Row => cursor.0 == target.0,
+        CursorType::Column => cursor.1 == target.1,
+        CursorType::None => false,
+    }
+}
 
-        let row_bg = parse_color_like("$surface");
-        let hover_bg = hover_comp
-            .bg
-            .or_else(|| parse_color_like("$block-hover-background"));
-        let header_hover_bg = header_hover_comp
-            .bg
-            .or_else(|| parse_color_like("$header-hover-background"));
-        let fixed_bg = fixed_comp
-            .bg
-            .or_else(|| parse_color_like("$secondary-muted"));
+/// The header cell visual and the header's trailing-fill visual.
+fn header_visuals(
+    header_comp: &Style,
+    header_base: Color,
+    composited_bg: Color,
+    foreground: Color,
+) -> (CellVisual, CellVisual) {
+    // Per-cell visual base = background color + bold flag. The cell's own
+    // foreground/italic/markup spans (carried by its `Content`) are composed
+    // on top of this base by `Content::render_strips`.
+    //
+    // The header carries its OWN `background-tint` rule
+    // (`DataTable:focus > .datatable--header { background-tint: $foreground 5% }`),
+    // so the tint arrives ON the resolved component style (Python folds it
+    // per-node in `rich_style`), NOT via a blanket widget pass. Fold it into
+    // `header_base`, stamp the header foreground, and tag the cells
+    // `no_style` so `apply_style_to_segments` (which now only tints the
+    // widget's own surface fill) does not re-tint the opaque header cells.
+    // The `current_self_style` fallback keeps the widget-level tint for
+    // off-tree contexts without a stylesheet.
+    let header_bg_tint = header_comp
+        .background_tint
+        .or_else(|| crate::css::current_self_style().and_then(|s| s.background_tint));
+    let header_final = if let Some(tint) = header_bg_tint {
+        crate::renderables::Tint::<()>::blend_color_with_percent(
+            header_base,
+            tint.color,
+            tint.percent,
+        )
+    } else {
+        header_base
+    };
+    let header_fg = header_comp.fg.unwrap_or(foreground);
+    let header_style = CellVisual {
+        bg: header_final,
+        fg: Some(header_fg),
+        bold: header_comp.bold.unwrap_or(true),
+        no_style: true,
+    };
 
-        let fallback_bg = parse_color_like("$background").unwrap_or(Color::rgb(0, 0, 0));
-        let row_base = row_bg.unwrap_or(fallback_bg);
-        // The widget's composited surface (own bg + `:focus` background-tint),
-        // used for the header trailing fill, the zebra blend base, and to
-        // flatten any semi-transparent user header background.
-        let composited_bg = crate::css::current_composited_background().unwrap_or(row_base);
-        let header_base = {
-            let c = header_comp
-                .bg
-                .or_else(|| parse_color_like("$panel"))
-                .unwrap_or(fallback_bg);
+    // Header trailing fill: Python fades the extend beyond the columns toward
+    // the widget background (`row_style.blend(background, 0.25)`). Compute it
+    // from the FINAL (tinted) header + surface backgrounds and tag `no_style`
+    // so it is not re-tinted. Only the header shows this (body rows share the
+    // surface colour, so the 25% blend is a no-op there).
+    let header_fill_bg = composited_bg.blend_over_float(header_final, 0.25);
+    let header_fill_style = CellVisual {
+        bg: header_fill_bg,
+        fg: None,
+        bold: false,
+        no_style: true,
+    };
+    (header_style, header_fill_style)
+}
+
+/// The cursor cell visual.
+fn cursor_visual(cursor_comp: &Style, focused: bool, row_base: Color) -> CellVisual {
+    // Cursor cell: the component style encodes the focus branch — the base
+    // `.datatable--cursor` rule carries the BLURRED tokens
+    // ($block-cursor-blurred-*) and `&:focus > .datatable--cursor` overrides
+    // with the strong ones ($block-cursor-background = opaque $primary,
+    // $block-cursor-foreground composed over it, bold) when the live meta is
+    // focused. Tagged `no_style` (via `final_fg`) so the `DataTable:focus`
+    // `background-tint` is not applied on top (which would shift the fill
+    // from `#0178d4` to `#0c7dd4`).
+    //
+    // Foregrounds flatten over the cursor surface only when
+    // semi-transparent: the blurred foreground ($foreground) is opaque and
+    // stays RAW, byte-for-byte with the pre-migration block.
+    let cursor_base = {
+        let raw = cursor_comp.bg.or_else(|| {
+            if focused {
+                parse_color_like("$primary")
+            } else {
+                parse_color_like("$block-cursor-blurred-background")
+            }
+        });
+        raw.map_or(row_base, |c| {
             if c.a < 1.0 {
-                c.flatten_over(composited_bg)
+                c.flatten_over(row_base)
             } else {
                 c
             }
-        };
-        let hover_bg = hover_bg.map(|c| c.flatten_over(row_base));
-        let header_hover_bg = header_hover_bg.map(|c| c.flatten_over(header_base));
-        let fixed_base = fixed_bg
-            .map(|c| c.flatten_over(row_base))
-            .unwrap_or(row_base);
+        })
+    };
+    let cursor_fg = {
+        let raw = cursor_comp.fg.or_else(|| {
+            if focused {
+                parse_color_like("$block-cursor-foreground")
+            } else {
+                parse_color_like("$block-cursor-blurred-foreground")
+            }
+        });
+        raw.map_or(cursor_base, |c| {
+            if c.a < 1.0 {
+                c.flatten_over(cursor_base)
+            } else {
+                c
+            }
+        })
+    };
+    let cursor_bold = cursor_comp
+        .bold
+        .unwrap_or(cursor_comp.bg.is_none() && focused);
+    CellVisual::new(cursor_base, cursor_bold).final_fg(cursor_fg)
+}
 
-        // Per-cell visual base = background color + bold flag. The cell's own
-        // foreground/italic/markup spans (carried by its `Content`) are composed
-        // on top of this base by `Content::render_strips`.
-        //
-        // The header carries its OWN `background-tint` rule
-        // (`DataTable:focus > .datatable--header { background-tint: $foreground 5% }`),
-        // so the tint arrives ON the resolved component style (Python folds it
-        // per-node in `rich_style`), NOT via a blanket widget pass. Fold it into
-        // `header_base`, stamp the header foreground, and tag the cells
-        // `no_style` so `apply_style_to_segments` (which now only tints the
-        // widget's own surface fill) does not re-tint the opaque header cells.
-        // The `current_self_style` fallback keeps the widget-level tint for
-        // off-tree contexts without a stylesheet.
-        let header_bg_tint = header_comp
-            .background_tint
-            .or_else(|| crate::css::current_self_style().and_then(|s| s.background_tint));
-        let header_final = if let Some(tint) = header_bg_tint {
-            crate::renderables::Tint::<()>::blend_color_with_percent(
-                header_base,
-                tint.color,
-                tint.percent,
-            )
-        } else {
-            header_base
-        };
-        let foreground = parse_color_like("$foreground").unwrap_or(Color::rgb(224, 224, 224));
-        let header_fg = header_comp.fg.unwrap_or(foreground);
-        let header_style = CellVisual {
-            bg: header_final,
-            fg: Some(header_fg),
-            bold: header_comp.bold.unwrap_or(true),
+/// Even-row visual and trailing-fill visual (zebra stripes), or the normal
+/// row visual when stripes are off.
+fn even_row_visuals(
+    zebra_stripes: bool,
+    even_row_comp: &Style,
+    (row_base, composited_bg): (Color, Color),
+    foreground: Color,
+    normal_style: CellVisual,
+) -> (CellVisual, CellVisual) {
+    // Zebra stripes: alternate (even) row background. The component style
+    // resolves Python's `&:dark > .datatable--even-row { bg:
+    // $surface-darken-1 40% }` (both the phantom and the live parent meta
+    // carry `:dark`, and the extra pseudo outranks the light-theme `& >
+    // .datatable--even-row { bg: $surface-lighten-1 50% }` rule). The
+    // 40%-alpha darken composites over the row's base surface — which
+    // itself carries the `:focus` `background-tint` (`#272727`), giving
+    // `#1c1c1c`. We compose the final colour here (over `composited_bg`)
+    // and tag it `no_style` so it is not tinted again; the glyph foreground
+    // is baked to `$foreground` (pre-migration behaviour: component fg
+    // inheritance is not consumed here).
+    if zebra_stripes {
+        let even_bg = even_row_comp
+            .bg
+            .unwrap_or_else(|| {
+                parse_color_like("$surface-darken-1")
+                    .unwrap_or(row_base)
+                    .with_alpha(0.4)
+            })
+            .flatten_over(composited_bg);
+        let even_style = CellVisual {
+            bg: even_bg,
+            fg: Some(foreground),
+            bold: false,
             no_style: true,
         };
-        let normal_style = CellVisual::new(row_base, false);
-        let fixed_style = CellVisual::new(fixed_base, false);
-        // Cursor cell: the component style encodes the focus branch — the base
-        // `.datatable--cursor` rule carries the BLURRED tokens
-        // ($block-cursor-blurred-*) and `&:focus > .datatable--cursor` overrides
-        // with the strong ones ($block-cursor-background = opaque $primary,
-        // $block-cursor-foreground composed over it, bold) when the live meta is
-        // focused. Tagged `no_style` (via `final_fg`) so the `DataTable:focus`
-        // `background-tint` is not applied on top (which would shift the fill
-        // from `#0178d4` to `#0c7dd4`).
-        //
-        // Foregrounds flatten over the cursor surface only when
-        // semi-transparent: the blurred foreground ($foreground) is opaque and
-        // stays RAW, byte-for-byte with the pre-migration block.
-        let cursor_base = {
-            let raw = cursor_comp.bg.or_else(|| {
-                if focused {
-                    parse_color_like("$primary")
-                } else {
-                    parse_color_like("$block-cursor-blurred-background")
-                }
-            });
-            raw.map(|c| {
-                if c.a < 1.0 {
-                    c.flatten_over(row_base)
-                } else {
-                    c
-                }
-            })
-            .unwrap_or(row_base)
-        };
-        let cursor_fg = {
-            let raw = cursor_comp.fg.or_else(|| {
-                if focused {
-                    parse_color_like("$block-cursor-foreground")
-                } else {
-                    parse_color_like("$block-cursor-blurred-foreground")
-                }
-            });
-            raw.map(|c| {
-                if c.a < 1.0 {
-                    c.flatten_over(cursor_base)
-                } else {
-                    c
-                }
-            })
-            .unwrap_or(cursor_base)
-        };
-        let cursor_bold = cursor_comp
-            .bold
-            .unwrap_or(cursor_comp.bg.is_none() && focused);
-        let selected_style = CellVisual::new(cursor_base, cursor_bold).final_fg(cursor_fg);
-        let hover_style = CellVisual::new(hover_bg.unwrap_or(row_base), false);
-        let header_hover_style = CellVisual::new(header_hover_bg.unwrap_or(header_base), true);
-
-        // Header trailing fill: Python fades the extend beyond the columns toward
-        // the widget background (`row_style.blend(background, 0.25)`). Compute it
-        // from the FINAL (tinted) header + surface backgrounds and tag `no_style`
-        // so it is not re-tinted. Only the header shows this (body rows share the
-        // surface colour, so the 25% blend is a no-op there).
-        let header_fill_bg = composited_bg.blend_over_float(header_final, 0.25);
-        let header_fill_style = CellVisual {
-            bg: header_fill_bg,
+        // Trailing fill fades 25% toward the widget background
+        // (Python `row_style.blend(background, 0.25)`), giving `#1e1e1e`.
+        let even_fill_style = CellVisual {
+            bg: composited_bg.blend_over_float(even_bg, 0.25),
             fg: None,
             bold: false,
             no_style: true,
         };
-
-        let mut out = Segments::new();
-
-        // Mirrors Textual's _should_highlight: does `target` match `cursor` given the type?
-        let should_highlight =
-            |cursor: (usize, usize), target: (usize, usize), ct: CursorType| -> bool {
-                match ct {
-                    CursorType::Cell => cursor == target,
-                    CursorType::Row => cursor.0 == target.0,
-                    CursorType::Column => cursor.1 == target.1,
-                    CursorType::None => false,
-                }
-            };
-
-        // Zebra stripes: alternate (even) row background. The component style
-        // resolves Python's `&:dark > .datatable--even-row { bg:
-        // $surface-darken-1 40% }` (both the phantom and the live parent meta
-        // carry `:dark`, and the extra pseudo outranks the light-theme `& >
-        // .datatable--even-row { bg: $surface-lighten-1 50% }` rule). The
-        // 40%-alpha darken composites over the row's base surface — which
-        // itself carries the `:focus` `background-tint` (`#272727`), giving
-        // `#1c1c1c`. We compose the final colour here (over `composited_bg`)
-        // and tag it `no_style` so it is not tinted again; the glyph foreground
-        // is baked to `$foreground` (pre-migration behaviour: component fg
-        // inheritance is not consumed here).
-        let zebra_stripes = self.zebra_stripes;
-        let (zebra_style, zebra_fill_style) = if zebra_stripes {
-            let even_bg = even_row_comp
-                .bg
-                .unwrap_or_else(|| {
-                    parse_color_like("$surface-darken-1")
-                        .unwrap_or(row_base)
-                        .with_alpha(0.4)
-                })
-                .flatten_over(composited_bg);
-            let even_style = CellVisual {
-                bg: even_bg,
-                fg: Some(foreground),
-                bold: false,
-                no_style: true,
-            };
-            // Trailing fill fades 25% toward the widget background
-            // (Python `row_style.blend(background, 0.25)`), giving `#1e1e1e`.
-            let even_fill_style = CellVisual {
-                bg: composited_bg.blend_over_float(even_bg, 0.25),
-                fg: None,
-                bold: false,
-                no_style: true,
-            };
-            (even_style, even_fill_style)
-        } else {
-            (normal_style, normal_style)
-        };
-        // Odd rows have no default rule (Python parity: `datatable--odd-row` is
-        // declared but unstyled), but a user-CSS background must be consumable
-        // under zebra stripes, with the same composition as the even rows.
-        let (odd_style, odd_fill_style) = match odd_row_comp.bg.filter(|_| zebra_stripes) {
-            Some(bg) => {
-                let odd_bg = bg.flatten_over(composited_bg);
-                (
-                    CellVisual {
-                        bg: odd_bg,
-                        fg: Some(foreground),
-                        bold: false,
-                        no_style: true,
-                    },
-                    CellVisual {
-                        bg: composited_bg.blend_over_float(odd_bg, 0.25),
-                        fg: None,
-                        bold: false,
-                        no_style: true,
-                    },
-                )
-            }
-            None => (normal_style, normal_style),
-        };
-
-        let fixed_data_rows = self.fixed_data_rows();
-        let fixed_visible = self.visible_fixed_rows(visible_rows);
-
-        // Header line (headers use usize::MAX as their row sentinel).
-        if self.show_header {
-            let header_cells: Vec<Cell> =
-                self.headers.iter().map(|h| Cell::text(h.clone())).collect();
-            let empty_label = Content::empty();
-            emit_row_per_cell(
-                &header_cells,
-                column_widths,
-                &rendered_columns,
-                width,
-                (label_col_width > 0).then_some((&empty_label, label_col_width, header_style)),
-                |col_idx| {
-                    let target = (usize::MAX, col_idx);
-                    if show_cursor && should_highlight(cursor_coord, target, cursor_type) {
-                        return selected_style.bold();
-                    }
-                    if let Some(hc) = hover_coord
-                        && should_highlight(hc, target, cursor_type)
-                    {
-                        return header_hover_style;
-                    }
-                    if col_idx < self.fixed_columns {
-                        return fixed_style.bold();
-                    }
-                    header_style
-                },
-                header_fill_style,
-                &mut out,
-            );
-            out.push(Segment::line());
-        }
-        let mut rendered_rows = 0usize;
-
-        let mut emit_data_row = |row_idx: usize, out: &mut Segments| {
-            if rendered_rows >= visible_rows {
-                return;
-            }
-            let Some(row) = self.rows.get(row_idx) else {
-                return;
-            };
-            let is_even_row = row_idx % 2 == 0;
-            let (row_base_style, row_fill_style) = if zebra_stripes && is_even_row {
-                (zebra_style, zebra_fill_style)
-            } else {
-                (odd_style, odd_fill_style)
-            };
-            let empty_label = Content::empty();
-            let row_label = self
-                .row_labels
-                .get(row_idx)
-                .and_then(|l| l.as_ref())
-                .unwrap_or(&empty_label);
-            emit_row_per_cell(
-                row,
-                column_widths,
-                &rendered_columns,
-                width,
-                (label_col_width > 0).then_some((row_label, label_col_width, row_base_style)),
-                |col_idx| {
-                    let target = (row_idx, col_idx);
-                    let is_fixed_target = row_idx < fixed_data_rows || col_idx < self.fixed_columns;
-                    let base = if is_fixed_target {
-                        fixed_style
-                    } else {
-                        row_base_style
-                    };
-                    if show_cursor && should_highlight(cursor_coord, target, cursor_type) {
-                        return selected_style;
-                    }
-                    if let Some(hc) = hover_coord
-                        && should_highlight(hc, target, cursor_type)
-                    {
-                        return hover_style;
-                    }
-                    base
-                },
-                row_fill_style,
-                out,
-            );
-            out.push(Segment::line());
-            rendered_rows += 1;
-        };
-
-        for fixed_row_idx in 0..fixed_visible {
-            emit_data_row(fixed_row_idx, &mut out);
-        }
-        let scroll_start = fixed_data_rows + offset;
-        let scrollable_slots = visible_rows.saturating_sub(fixed_visible);
-        for row_offset in 0..scrollable_slots {
-            emit_data_row(scroll_start + row_offset, &mut out);
-        }
-
-        out
+        (even_style, even_fill_style)
+    } else {
+        (normal_style, normal_style)
     }
 }
-/// Cell padding: 1 space on each side of each cell, matching Python DataTable.cell_padding = 1.
+
+/// Odd-row visual and trailing-fill visual: a user-CSS odd-row background
+/// under zebra stripes, else the normal row visual.
+fn odd_row_visuals(
+    zebra_stripes: bool,
+    odd_row_comp: &Style,
+    composited_bg: Color,
+    foreground: Color,
+    normal_style: CellVisual,
+) -> (CellVisual, CellVisual) {
+    // Odd rows have no default rule (Python parity: `datatable--odd-row` is
+    // declared but unstyled), but a user-CSS background must be consumable
+    // under zebra stripes, with the same composition as the even rows.
+    match odd_row_comp.bg.filter(|_| zebra_stripes) {
+        Some(bg) => {
+            let odd_bg = bg.flatten_over(composited_bg);
+            (
+                CellVisual {
+                    bg: odd_bg,
+                    fg: Some(foreground),
+                    bold: false,
+                    no_style: true,
+                },
+                CellVisual {
+                    bg: composited_bg.blend_over_float(odd_bg, 0.25),
+                    fg: None,
+                    bold: false,
+                    no_style: true,
+                },
+            )
+        }
+        None => (normal_style, normal_style),
+    }
+}
+
+/// Cell padding: 1 space on each side of each cell, matching Python `DataTable.cell_padding` = 1.
 /// Visual layout: [1 space][cell][2 spaces][cell][2 spaces]...[cell][fill to total_width]
 const CELL_PADDING: usize = 1;
 
@@ -3614,7 +3812,9 @@ mod tests {
         }
         let messages = ctx.take_messages();
         assert!(
-            !messages.iter().any(|m| m.is::<DataTableCellSelected>()),
+            !messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<DataTableCellSelected>),
             "space must not select (enter-only parity)"
         );
     }

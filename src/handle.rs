@@ -130,17 +130,25 @@ impl<W: Widget> Handle<W> {
     }
 
     /// Arena identity (for interop with NodeId-based APIs, e.g. focus, messages).
+    #[must_use]
     pub fn node_id(self) -> NodeId {
         self.node
     }
 
     /// Identity of the owning `WidgetTree` (screens own separate trees).
+    #[must_use]
     pub fn tree_id(self) -> u64 {
         self.tree_id
     }
 
     /// Checked typed upgrade of a `NodeId` within a specific tree.
     /// `Err(Unmounted)` when absent; `Err(TypeMismatch{..})` on wrong concrete type.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::Unmounted`] when `node` is not in `tree`.
+    /// Returns [`QueryError::TypeMismatch`] when the node holds a widget that
+    /// is not a `W`.
     pub fn resolve(tree: &WidgetTree, node: NodeId) -> Result<Self, QueryError> {
         // Attempt to resolve the node — this validates the type.
         let _widget: &W = resolve_node(tree, node, tree.tree_id())?;
@@ -148,11 +156,19 @@ impl<W: Widget> Handle<W> {
     }
 
     /// Whether the handle still names a live node in `tree`.
+    #[must_use]
     pub fn is_mounted_in(self, tree: &WidgetTree) -> bool {
         tree.tree_id() == self.tree_id && tree.contains(self.node)
     }
 
     /// Read-only typed access against an explicit tree (headless/test seam).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::Unmounted`] when `tree` is not the tree this
+    /// handle came from, or when the node is no longer in `tree`. Returns
+    /// [`QueryError::TypeMismatch`] when the node holds a widget that is not a
+    /// `W`. On error, `f` does not run.
     pub fn read_in<R>(self, tree: &WidgetTree, f: impl FnOnce(&W) -> R) -> Result<R, QueryError> {
         let widget = resolve_node::<W>(tree, self.node, self.tree_id)?;
         Ok(f(widget))
@@ -163,6 +179,13 @@ impl<W: Widget> Handle<W> {
     /// repaint/layout flags, enqueues a `RuntimeReactiveEntry` so the runtime
     /// reactive phase dispatches `watch_*` callbacks (same path as event
     /// handlers, src/runtime/event_loop.rs:4282-4370).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::Unmounted`] when `tree` is not the tree this
+    /// handle came from, or when the node is no longer in `tree`. Returns
+    /// [`QueryError::TypeMismatch`] when the node holds a widget that is not a
+    /// `W`. On error, `f` does not run and nothing is enqueued.
     pub fn update_in<R>(
         self,
         tree: &mut WidgetTree,
@@ -190,6 +213,14 @@ impl<W: Widget> Handle<W> {
     /// Typed wrapper over the same arena access as `with_widget_mut_as`;
     /// for imperative widget APIs. Application state belongs in reactive
     /// fields/signals (RA-3).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::Unmounted`] when the app has no active tree, when
+    /// the handle belongs to a different tree than the active one (for
+    /// example, another screen), or when the node has been removed. Returns
+    /// [`QueryError::TypeMismatch`] when the node holds a widget that is not a
+    /// `W`. On error, `f` does not run.
     pub fn read<R>(
         self,
         app: &crate::runtime::App,
@@ -203,6 +234,14 @@ impl<W: Widget> Handle<W> {
     /// Creates a fresh `ReactiveCtx`; changes flow into the runtime reactive
     /// phase so `watch_*` callbacks fire normally. Always requests a subtree
     /// repaint after mutation (mirrors Python's implicit refresh on mutation).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::Unmounted`] when the app has no active tree, when
+    /// the handle belongs to a different tree than the active one (for
+    /// example, another screen), or when the node has been removed. Returns
+    /// [`QueryError::TypeMismatch`] when the node holds a widget that is not a
+    /// `W`. On error, `f` does not run and no repaint is requested.
     pub fn update<R>(
         self,
         app: &mut crate::runtime::App,
@@ -212,6 +251,7 @@ impl<W: Widget> Handle<W> {
     }
 
     /// Whether the handle still names a live node in the active tree.
+    #[must_use]
     pub fn is_mounted(self, app: &crate::runtime::App) -> bool {
         app.handle_is_mounted(self)
     }
@@ -248,7 +288,7 @@ impl<W: Widget> fmt::Debug for HandleSlot<W> {
         let filled = self
             .cell
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .is_some();
         write!(f, "HandleSlot<{}>(filled: {})", type_name::<W>(), filled)
     }
@@ -256,6 +296,7 @@ impl<W: Widget> fmt::Debug for HandleSlot<W> {
 
 impl<W: Widget> HandleSlot<W> {
     /// Create a new, unfilled slot.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             cell: Arc::new(Mutex::new(None)),
@@ -264,12 +305,21 @@ impl<W: Widget> HandleSlot<W> {
     }
 
     /// `None` until the bound widget has been mounted.
+    #[must_use]
     pub fn get(&self) -> Option<Handle<W>> {
-        let guard = self.cell.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self
+            .cell
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.map(|(node, tree_id)| Handle::new(node, tree_id))
     }
 
     /// `Err(QueryError::Unmounted)` until the bound widget has been mounted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QueryError::Unmounted`] when the slot is still empty, that
+    /// is, when the mount pipeline has not yet mounted the bound widget.
     pub fn handle(&self) -> Result<Handle<W>, QueryError> {
         self.get().ok_or(QueryError::Unmounted)
     }
@@ -286,7 +336,9 @@ impl<W: Widget> HandleSlot<W> {
     pub(crate) fn make_sink(&self) -> HandleSink {
         let cell = Arc::clone(&self.cell);
         Box::new(move |node, tree_id| {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some((node, tree_id));
+            *cell
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((node, tree_id));
         })
     }
 }
@@ -365,7 +417,7 @@ mod tests {
             }) => {
                 assert_eq!(actual, "Probe");
             }
-            other => panic!("expected TypeMismatch, got {:?}", other),
+            other => panic!("expected TypeMismatch, got {other:?}"),
         }
     }
 

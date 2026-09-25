@@ -2,6 +2,7 @@ use crate::event::{
     AnimationEase, AnimationLevel, AnimationRequest, StyleAnimationRequest, StyleValue,
 };
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::style::{Color, Scalar, Spacing, Style, Tint};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -63,9 +64,10 @@ impl Default for Animator {
 }
 
 impl Animator {
+    #[must_use]
     pub fn new(frames_per_second: u32) -> Self {
         let fps = frames_per_second.max(1);
-        let frame_interval = Duration::from_secs_f32(1.0 / fps as f32);
+        let frame_interval = Duration::from_secs_f32(1.0 / fps.to_f32_lossy());
         Self {
             animations: HashMap::new(),
             style_animations: HashMap::new(),
@@ -73,10 +75,12 @@ impl Animator {
         }
     }
 
+    #[must_use]
     pub fn has_animations(&self) -> bool {
         !self.animations.is_empty() || !self.style_animations.is_empty()
     }
 
+    #[must_use]
     pub fn is_being_animated(&self, target: NodeId, attribute: &str) -> bool {
         let key = (target, attribute.to_string());
         self.animations.contains_key(&key) || self.style_animations.contains_key(&key)
@@ -107,6 +111,7 @@ impl Animator {
         }
     }
 
+    #[must_use]
     pub fn next_timeout(&self, now: Instant) -> Option<Duration> {
         if self.animations.is_empty() && self.style_animations.is_empty() {
             return None;
@@ -154,8 +159,7 @@ impl Animator {
 
                 let changed = animation
                     .last_value
-                    .map(|previous| (previous - value).abs() > 0.000_1)
-                    .unwrap_or(true);
+                    .is_none_or(|previous| (previous - value).abs() > 0.000_1);
                 if changed || done {
                     updates.push(AnimationUpdate {
                         target: animation.target,
@@ -237,8 +241,7 @@ impl Animator {
                 let changed = animation
                     .last_value
                     .as_ref()
-                    .map(|previous| *previous != value)
-                    .unwrap_or(true);
+                    .is_none_or(|previous| *previous != value);
                 if changed || done {
                     updates.push(StyleAnimationUpdate {
                         target: animation.target,
@@ -261,6 +264,7 @@ impl Animator {
     }
 }
 
+#[must_use]
 pub fn animation_level_from_env() -> AnimationLevel {
     let value = std::env::var("TEXTUAL_ANIMATIONS")
         .unwrap_or_else(|_| "full".to_string())
@@ -272,7 +276,7 @@ pub fn animation_level_from_env() -> AnimationLevel {
     }
 }
 
-/// Standard bounce-out helper used by InBounce, OutBounce, InOutBounce.
+/// Standard bounce-out helper used by `InBounce`, `OutBounce`, `InOutBounce`.
 fn bounce_out(x: f32) -> f32 {
     const N1: f32 = 7.5625;
     const D1: f32 = 2.75;
@@ -290,6 +294,10 @@ fn bounce_out(x: f32) -> f32 {
     }
 }
 
+// Exact 0.0 and 1.0 endpoints mirror the special cases in Python's easing
+// functions.
+#[allow(clippy::float_cmp)]
+#[allow(clippy::too_many_lines)] // One arm per easing function.
 fn apply_easing(ease: AnimationEase, x: f32) -> f32 {
     use std::f32::consts::PI;
 
@@ -383,7 +391,7 @@ fn apply_easing(ease: AnimationEase, x: f32) -> f32 {
             if x < 0.5 {
                 (1.0 - (1.0 - (2.0 * x).powi(2)).sqrt()) / 2.0
             } else {
-                ((1.0 - (-2.0 * x + 2.0).powi(2)).sqrt() + 1.0) / 2.0
+                f32::midpoint((1.0 - (-2.0 * x + 2.0).powi(2)).sqrt(), 1.0)
             }
         }
 
@@ -405,7 +413,10 @@ fn apply_easing(ease: AnimationEase, x: f32) -> f32 {
             if x < 0.5 {
                 ((2.0 * x).powi(2) * ((C2 + 1.0) * 2.0 * x - C2)) / 2.0
             } else {
-                ((2.0 * x - 2.0).powi(2) * ((C2 + 1.0) * (2.0 * x - 2.0) + C2) + 2.0) / 2.0
+                f32::midpoint(
+                    (2.0 * x - 2.0).powi(2) * ((C2 + 1.0) * (2.0 * x - 2.0) + C2),
+                    2.0,
+                )
             }
         }
 
@@ -416,7 +427,7 @@ fn apply_easing(ease: AnimationEase, x: f32) -> f32 {
             if x < 0.5 {
                 (1.0 - bounce_out(1.0 - 2.0 * x)) / 2.0
             } else {
-                (1.0 + bounce_out(2.0 * x - 1.0)) / 2.0
+                f32::midpoint(1.0, bounce_out(2.0 * x - 1.0))
             }
         }
 
@@ -459,11 +470,12 @@ fn apply_easing(ease: AnimationEase, x: f32) -> f32 {
 // ── Style property interpolation ─────────────────────────────────────────
 
 /// Linearly interpolate between two colors (RGBA channels independently).
+#[must_use]
 pub fn interpolate_color(from: Color, to: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
     let lerp = |a: u8, b: u8| -> u8 {
-        let v = a as f32 + (b as f32 - a as f32) * t;
-        v.round().clamp(0.0, 255.0) as u8
+        let v = f32::from(a) + (f32::from(b) - f32::from(a)) * t;
+        v.round().clamp(0.0, 255.0).to_u8_sat()
     };
     let alpha = (from.a + (to.a - from.a) * t).clamp(0.0, 1.0);
     Color::rgba_f(
@@ -475,18 +487,22 @@ pub fn interpolate_color(from: Color, to: Color, t: f32) -> Color {
 }
 
 /// Linearly interpolate two f32 values.
+#[must_use]
 pub fn interpolate_f32(from: f32, to: f32, t: f32) -> f32 {
     from + (to - from) * t.clamp(0.0, 1.0)
 }
 
 /// Interpolate two Scalar values. Only same-unit interpolation is supported.
 /// Returns `None` if units differ or either value is `Auto`.
+#[must_use]
 pub fn interpolate_scalar(from: &Scalar, to: &Scalar, t: f32) -> Option<Scalar> {
     let t = t.clamp(0.0, 1.0);
     match (from, to) {
         (Scalar::Cells(a), Scalar::Cells(b)) => {
-            let v = *a as f32 + (*b as f32 - *a as f32) * t;
-            Some(Scalar::Cells(v.round().clamp(0.0, u16::MAX as f32) as u16))
+            let v = f32::from(*a) + (f32::from(*b) - f32::from(*a)) * t;
+            Some(Scalar::Cells(
+                v.round().clamp(0.0, f32::from(u16::MAX)).to_u16_sat(),
+            ))
         }
         (Scalar::Percent(a), Scalar::Percent(b)) => {
             Some(Scalar::Percent(interpolate_f32(*a, *b, t)))
@@ -507,11 +523,12 @@ pub fn interpolate_scalar(from: &Scalar, to: &Scalar, t: f32) -> Option<Scalar> 
 }
 
 /// Interpolate two Spacing values (per-side independently).
+#[must_use]
 pub fn interpolate_spacing(from: &Spacing, to: &Spacing, t: f32) -> Spacing {
     let t = t.clamp(0.0, 1.0);
     let lerp_u16 = |a: u16, b: u16| -> u16 {
-        let v = a as f32 + (b as f32 - a as f32) * t;
-        v.round().clamp(0.0, u16::MAX as f32) as u16
+        let v = f32::from(a) + (f32::from(b) - f32::from(a)) * t;
+        v.round().clamp(0.0, f32::from(u16::MAX)).to_u16_sat()
     };
     Spacing::new(
         lerp_u16(from.top, to.top),
@@ -522,11 +539,13 @@ pub fn interpolate_spacing(from: &Spacing, to: &Spacing, t: f32) -> Spacing {
 }
 
 /// Interpolate two Tint values (color + percent).
+#[must_use]
 pub fn interpolate_tint(from: &Tint, to: &Tint, t: f32) -> Tint {
     let color = interpolate_color(from.color, to.color, t);
-    let percent = interpolate_f32(from.percent as f32, to.percent as f32, t)
+    let percent = interpolate_f32(f32::from(from.percent), f32::from(to.percent), t)
         .round()
-        .clamp(0.0, 100.0) as u8;
+        .clamp(0.0, 100.0)
+        .to_u8_sat();
     Tint::new(color, percent)
 }
 
@@ -554,6 +573,7 @@ pub fn interpolate_style_value(from: &StyleValue, to: &StyleValue, t: f32) -> Op
 }
 
 /// Check if a CSS property name is animatable.
+#[must_use]
 pub fn is_animatable_property(property: &str) -> bool {
     matches!(
         property,
@@ -577,6 +597,7 @@ pub fn is_animatable_property(property: &str) -> bool {
 ///
 /// Returns a `Style` with only the interpolated property set, or `None`
 /// if the property is non-animatable or the values are missing/incompatible.
+#[must_use]
 pub fn interpolate_style_property(
     property: &str,
     from: &Style,
@@ -596,14 +617,24 @@ pub fn interpolate_style_property(
             result.bg = Some(interpolate_color(a, b, t));
         }
         "opacity" => {
-            let a = from.opacity? as f32;
-            let b = to.opacity? as f32;
-            result.opacity = Some(interpolate_f32(a, b, t).round().clamp(0.0, 100.0) as u8);
+            let a = f32::from(from.opacity?);
+            let b = f32::from(to.opacity?);
+            result.opacity = Some(
+                interpolate_f32(a, b, t)
+                    .round()
+                    .clamp(0.0, 100.0)
+                    .to_u8_sat(),
+            );
         }
         "text_opacity" => {
-            let a = from.text_opacity? as f32;
-            let b = to.text_opacity? as f32;
-            result.text_opacity = Some(interpolate_f32(a, b, t).round().clamp(0.0, 100.0) as u8);
+            let a = f32::from(from.text_opacity?);
+            let b = f32::from(to.text_opacity?);
+            result.text_opacity = Some(
+                interpolate_f32(a, b, t)
+                    .round()
+                    .clamp(0.0, 100.0)
+                    .to_u8_sat(),
+            );
         }
         "width" => {
             result.width = Some(interpolate_scalar(&from.width?, &to.width?, t)?);
@@ -649,6 +680,9 @@ pub fn interpolate_style_property(
 }
 
 #[cfg(test)]
+// These tests assert exact float results (endpoints and values a float holds
+// exactly); a tolerance would hide off-by-epsilon regressions.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::event::{AnimationEase, AnimationRequest, StyleAnimationRequest, StyleValue};
@@ -891,7 +925,7 @@ mod tests {
         for ease in &monotonic {
             let mut prev = apply_easing(*ease, 0.0);
             for i in 1..=steps {
-                let t = i as f32 / steps as f32;
+                let t = i.to_f32_lossy() / steps.to_f32_lossy();
                 let cur = apply_easing(*ease, t);
                 assert!(
                     cur >= prev - 1e-5,

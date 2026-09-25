@@ -13,6 +13,7 @@ use crate::event::{
 use crate::message::{
     Message, TabActivated, TabClicked, TabDisabled, TabEnabled, TabHidden, TabShown, TabsCleared,
 };
+use crate::num::Cast;
 use crate::style::{Dock, TransitionTiming};
 
 use crate::content::Content;
@@ -58,6 +59,7 @@ impl Tab {
         }
     }
 
+    #[must_use]
     pub fn id(mut self, id: impl Into<String>) -> Self {
         let id = id.into();
         self.seed.css_id = Some(id.clone());
@@ -65,6 +67,7 @@ impl Tab {
         self
     }
 
+    #[must_use]
     pub fn class(mut self, class: impl Into<String>) -> Self {
         let class = class.into();
         self.seed.classes.push(class.clone());
@@ -72,6 +75,7 @@ impl Tab {
         self
     }
 
+    #[must_use]
     pub fn classes(mut self, classes: impl IntoIterator<Item = impl Into<String>>) -> Self {
         for class in classes {
             let class = class.into();
@@ -81,15 +85,18 @@ impl Tab {
         self
     }
 
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
+    #[must_use]
     pub fn label(&self) -> &str {
         self.label.as_str()
     }
 
+    #[must_use]
     pub fn tab_id(&self) -> Option<&str> {
         self.id.as_deref()
     }
@@ -155,8 +162,7 @@ impl crate::widgets::Render for Tab {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
         let mut render_style = visual_style.clone();
         render_style.bg = Some(effective_bg);
 
@@ -205,6 +211,89 @@ struct TabsState {
     active: Option<String>,
 }
 
+impl TabsState {
+    fn index_for_id(&self, id: &str) -> Option<usize> {
+        self.tabs.iter().position(|tab| tab.tab_id == id)
+    }
+
+    fn query_tab_by_id(&self, id: &str) -> Option<&TabEntry> {
+        let index = self.index_for_id(id)?;
+        self.tabs.get(index)
+    }
+
+    fn is_visible(&self, index: usize) -> bool {
+        self.tabs.get(index).is_some_and(|tab| !tab.hidden)
+    }
+
+    fn is_activatable(&self, index: usize) -> bool {
+        self.tabs
+            .get(index)
+            .is_some_and(|tab| !tab.hidden && !tab.disabled)
+    }
+
+    fn potential_active_indices(&self) -> Vec<usize> {
+        let active_idx = self.active.as_ref().and_then(|id| self.index_for_id(id));
+        self.tabs
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tab)| {
+                if tab.hidden {
+                    return None;
+                }
+                if tab.disabled && Some(index) != active_idx {
+                    return None;
+                }
+                Some(index)
+            })
+            .collect()
+    }
+
+    fn first_activatable(&self) -> Option<usize> {
+        self.tabs
+            .iter()
+            .enumerate()
+            .find(|(_, tab)| !tab.hidden && !tab.disabled)
+            .map(|(index, _)| index)
+    }
+
+    fn last_activatable(&self) -> Option<usize> {
+        self.tabs
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, tab)| !tab.hidden && !tab.disabled)
+            .map(|(index, _)| index)
+    }
+
+    fn ensure_active_exists(&mut self) {
+        if let Some(idx) = self.active.as_ref().and_then(|id| self.index_for_id(id)) {
+            if self.is_visible(idx) {
+                return;
+            }
+        }
+        if let Some(next) = self.first_activatable() {
+            self.active = Some(self.tabs[next].tab_id.clone());
+        } else {
+            self.active = None;
+        }
+    }
+
+    fn replacement_after_deactivation(&self, index: usize) -> Option<usize> {
+        let mut candidates = self.potential_active_indices();
+        let position = candidates
+            .iter()
+            .position(|candidate| *candidate == index)?;
+        candidates.remove(position);
+        if candidates.is_empty() {
+            None
+        } else if position < candidates.len() {
+            Some(candidates[position])
+        } else {
+            candidates.last().copied()
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct UnderlineState {
     highlight_start: f32,
@@ -233,7 +322,7 @@ impl crate::widgets::Render for Underline {
         "Underline"
     }
 
-    fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
+    fn render(&self, console: &Console, options: &ConsoleOptions) -> Segments {
         let width = options.size.0.max(1);
         let state = self.state.lock().expect("underline state lock");
         let (start, end) = if state.show_highlight {
@@ -255,7 +344,7 @@ impl crate::widgets::Render for Underline {
             active_style = active_style.with_color(fg);
         }
         let bar = crate::renderables::Bar::new((start, end), active_style, base_style).width(width);
-        bar.render(_console, options)
+        bar.render(console, options)
     }
 }
 static NEXT_TABS_SCOPE_ID: AtomicU64 = AtomicU64::new(1);
@@ -316,17 +405,25 @@ impl Tabs {
         }
     }
 
+    #[must_use]
     pub fn with_tab(mut self, tab: impl Into<Tab>) -> Self {
         self.add_tab(tab);
         self
     }
 
+    /// Append `tab`, giving it a `tab-N` id when it has none. When no tab is
+    /// active, the first tab in the list becomes active.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state or pending-message mutex is poisoned. A mutex
+    /// is poisoned only if an earlier panic occurred while it was held. Clones
+    /// of this `Tabs` share these mutexes.
     pub fn add_tab(&mut self, tab: impl Into<Tab>) {
         let mut tab = tab.into();
         let tab_id = tab
             .tab_id()
-            .map(str::to_string)
-            .unwrap_or_else(|| self.next_tab_id());
+            .map_or_else(|| self.next_tab_id(), str::to_string);
         tab.id = Some(tab_id.clone());
         let mut state = self.state.lock().expect("tabs state lock");
         let was_empty = state.active.is_none();
@@ -364,6 +461,7 @@ impl Tabs {
         drop(state);
     }
 
+    #[must_use]
     pub fn with_tab_id(mut self, id: impl Into<String>, title: impl Into<String>) -> Self {
         let tab = Tab::new(title).id(id.into());
         self.add_tab(tab);
@@ -379,50 +477,110 @@ impl Tabs {
         self.dock = Some(dock);
     }
 
+    /// Id of the active tab, or `None` when no tab is active.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
+    #[must_use]
     pub fn active(&self) -> Option<String> {
         let state = self.state.lock().expect("tabs state lock");
         state.active.clone()
     }
 
+    /// Whether the tab with id `id` is the active tab.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
+    #[must_use]
     pub fn is_active(&self, id: &str) -> bool {
         let state = self.state.lock().expect("tabs state lock");
         state.active.as_deref() == Some(id)
     }
 
+    /// Call `f` with the active tab id while the tab state mutex is held.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex. If `f` calls a method that locks the same mutex, on
+    /// this `Tabs` or a clone, the standard library may panic or deadlock.
     pub fn with_active_id<R>(&self, f: impl FnOnce(Option<&str>) -> R) -> R {
         let state = self.state.lock().expect("tabs state lock");
         f(state.active.as_deref())
     }
 
+    /// Index of the active tab, or `None` when no tab is active.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
+    #[must_use]
     pub fn active_index(&self) -> Option<usize> {
         let state = self.state.lock().expect("tabs state lock");
         let id = state.active.as_ref()?;
-        self.index_for_id(&state, id)
+        state.index_for_id(id)
     }
 
+    /// Whether the tab with id `id` is disabled. Returns `false` for an
+    /// unknown id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
+    #[must_use]
     pub fn is_tab_disabled(&self, id: &str) -> bool {
         let state = self.state.lock().expect("tabs state lock");
-        self.query_tab_by_id(&state, id)
-            .map(|tab| tab.disabled)
-            .unwrap_or(false)
+        state.query_tab_by_id(id).is_some_and(|tab| tab.disabled)
     }
 
+    /// Whether the tab with id `id` is hidden. Returns `false` for an unknown
+    /// id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
+    #[must_use]
     pub fn is_tab_hidden(&self, id: &str) -> bool {
         let state = self.state.lock().expect("tabs state lock");
-        self.query_tab_by_id(&state, id)
-            .map(|tab| tab.hidden)
-            .unwrap_or(false)
+        state.query_tab_by_id(id).is_some_and(|tab| tab.hidden)
     }
 
+    /// Activate the tab with id `id`. Returns whether the active tab changed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state, underline, or pending-message mutex is
+    /// poisoned. A mutex is poisoned only if an earlier panic occurred while
+    /// it was held. Clones of this `Tabs` share these mutexes.
     pub fn set_active_id(&mut self, id: &str, ctx: Option<&mut crate::event::WidgetCtx>) -> bool {
         let state = self.state.lock().expect("tabs state lock");
-        let Some(index) = self.index_for_id(&state, id) else {
+        let Some(index) = state.index_for_id(id) else {
             return false;
         };
         drop(state);
         self.activate(index, ctx)
     }
 
+    /// Activate the tab with id `id` and record the `active` change in `ctx`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state, underline, or pending-message mutex is
+    /// poisoned. A mutex is poisoned only if an earlier panic occurred while
+    /// it was held. Clones of this `Tabs` share these mutexes.
     pub fn set_active(&mut self, id: &str, ctx: &mut ReactiveCtx) {
         if self.active().as_deref() == Some(id) {
             return;
@@ -430,7 +588,7 @@ impl Tabs {
         let old = self.active();
         if let Some(index) = {
             let state = self.state.lock().expect("tabs state lock");
-            self.index_for_id(&state, id)
+            state.index_for_id(id)
         } {
             let _ = self.activate(index, None);
             ctx.record_change(
@@ -442,9 +600,17 @@ impl Tabs {
         }
     }
 
+    /// Disable or enable the tab with id `id`. Returns `false` when no tab has
+    /// that id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state, underline, or pending-message mutex is
+    /// poisoned. A mutex is poisoned only if an earlier panic occurred while
+    /// it was held. Clones of this `Tabs` share these mutexes.
     pub fn set_tab_disabled(&mut self, id: &str, disabled: bool, ctx: &mut ReactiveCtx) -> bool {
         let mut state = self.state.lock().expect("tabs state lock");
-        let Some(index) = self.index_for_id(&state, id) else {
+        let Some(index) = state.index_for_id(id) else {
             return false;
         };
         let updated = self.set_tab_disabled_index(&mut state, index, disabled, ctx);
@@ -463,9 +629,17 @@ impl Tabs {
         self.set_tab_disabled(id, false, ctx)
     }
 
+    /// Hide or show the tab with id `id`. Returns `false` when no tab has that
+    /// id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state, underline, or pending-message mutex is
+    /// poisoned. A mutex is poisoned only if an earlier panic occurred while
+    /// it was held. Clones of this `Tabs` share these mutexes.
     pub fn set_tab_hidden(&mut self, id: &str, hidden: bool, ctx: &mut ReactiveCtx) -> bool {
         let mut state = self.state.lock().expect("tabs state lock");
-        let Some(index) = self.index_for_id(&state, id) else {
+        let Some(index) = state.index_for_id(id) else {
             return false;
         };
         let updated = self.set_tab_hidden_index(&mut state, index, hidden, ctx);
@@ -513,14 +687,21 @@ impl Tabs {
         self.run_alias_reactive_update(|this, ctx| this.show_tab(id, ctx))
     }
 
+    /// Remove the tab with id `id`. Returns `false` when no tab has that id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state or underline mutex is poisoned. A mutex is
+    /// poisoned only if an earlier panic occurred while it was held. Clones of
+    /// this `Tabs` share these mutexes.
     pub fn remove_tab(&mut self, id: &str) -> bool {
         let mut state = self.state.lock().expect("tabs state lock");
-        let Some(index) = self.index_for_id(&state, id) else {
+        let Some(index) = state.index_for_id(id) else {
             return false;
         };
         let was_active = state.active.as_deref() == Some(id);
         let replacement = if was_active {
-            self.replacement_after_deactivation(&state, index)
+            state.replacement_after_deactivation(index)
         } else {
             None
         };
@@ -538,6 +719,13 @@ impl Tabs {
         true
     }
 
+    /// Remove all tabs and queue a [`TabsCleared`] message.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state, underline, or pending-message mutex is
+    /// poisoned. A mutex is poisoned only if an earlier panic occurred while
+    /// it was held. Clones of this `Tabs` share these mutexes.
     pub fn clear(&mut self) {
         let mut state = self.state.lock().expect("tabs state lock");
         state.tabs.clear();
@@ -551,6 +739,14 @@ impl Tabs {
             .push(Box::new(TabsCleared));
     }
 
+    /// Number of tabs, hidden tabs included.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tab state mutex is poisoned. A mutex is poisoned only if
+    /// an earlier panic occurred while it was held. Clones of this `Tabs`
+    /// share the mutex.
+    #[must_use]
     pub fn tab_count(&self) -> usize {
         let state = self.state.lock().expect("tabs state lock");
         state.tabs.len()
@@ -559,15 +755,6 @@ impl Tabs {
     fn next_tab_id(&mut self) -> String {
         let state = self.state.lock().expect("tabs state lock");
         format!("tab-{}", state.tabs.len() + 1)
-    }
-
-    fn index_for_id(&self, state: &TabsState, id: &str) -> Option<usize> {
-        state.tabs.iter().position(|tab| tab.tab_id == id)
-    }
-
-    fn query_tab_by_id<'a>(&self, state: &'a TabsState, id: &str) -> Option<&'a TabEntry> {
-        let index = self.index_for_id(state, id)?;
-        state.tabs.get(index)
     }
 
     fn scoped_tab_selector(&self, tab_id: &str) -> String {
@@ -621,7 +808,7 @@ impl Tabs {
                 disabled,
             }));
         if state.active.is_none() {
-            self.ensure_active_exists(state);
+            state.ensure_active_exists();
         }
         true
     }
@@ -644,7 +831,7 @@ impl Tabs {
         let prev_active = state.active.clone();
         let is_active = prev_active.as_deref() == Some(tab_id.as_str());
         let replacement = if hidden && is_active {
-            self.replacement_after_deactivation(state, index)
+            state.replacement_after_deactivation(index)
         } else {
             None
         };
@@ -702,6 +889,94 @@ impl Tabs {
         true
     }
 
+    /// Move the `-active` class from the previous tab to `new_id`: posted
+    /// through `ctx` when there is one, else queued as pending messages.
+    fn move_active_class(
+        &self,
+        prev_id: Option<String>,
+        new_id: &str,
+        mut ctx: Option<&mut crate::event::WidgetCtx>,
+    ) {
+        if let Some(ctx) = ctx.as_mut() {
+            if let Some(prev) = prev_id {
+                ctx.post_message(crate::message::AppRemoveClass {
+                    selector: self.scoped_tab_selector(&prev),
+                    class_name: "-active".to_string(),
+                });
+            }
+            ctx.post_message(crate::message::AppAddClass {
+                selector: self.scoped_tab_selector(new_id),
+                class_name: "-active".to_string(),
+            });
+        } else {
+            if let Some(prev) = prev_id {
+                self.pending_messages
+                    .lock()
+                    .expect("tabs pending lock")
+                    .push(Box::new(crate::message::AppRemoveClass {
+                        selector: self.scoped_tab_selector(&prev),
+                        class_name: "-active".to_string(),
+                    }));
+            }
+            self.pending_messages
+                .lock()
+                .expect("tabs pending lock")
+                .push(Box::new(crate::message::AppAddClass {
+                    selector: self.scoped_tab_selector(new_id),
+                    class_name: "-active".to_string(),
+                }));
+        }
+    }
+
+    /// Animate the underline from its current range (or the previous tab's
+    /// span when it has none) to `target_start..target_end`.
+    fn animate_underline_to(
+        &self,
+        (target_start, target_end): (f32, f32),
+        previous_active_index: Option<usize>,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
+        let (duration, delay, ease) = self.underline_animation_params();
+        let fallback_source = previous_active_index
+            .and_then(|prev| self.underline_span_for_index(prev))
+            .unwrap_or((target_start, target_end));
+        let (from_start, from_end) = self.current_underline_range();
+        let from_start = if from_end > from_start {
+            from_start
+        } else {
+            fallback_source.0
+        };
+        let from_end = if from_end > from_start {
+            from_end
+        } else {
+            fallback_source.1
+        };
+        ctx.request_animation(
+            AnimationRequest::new(
+                self.node_id(),
+                Self::UNDERLINE_START_ATTR,
+                from_start,
+                target_start,
+                duration,
+            )
+            .with_delay(delay)
+            .with_ease(ease)
+            .with_level(AnimationLevel::Basic),
+        );
+        ctx.request_animation(
+            AnimationRequest::new(
+                self.node_id(),
+                Self::UNDERLINE_END_ATTR,
+                from_end,
+                target_end,
+                duration,
+            )
+            .with_delay(delay)
+            .with_ease(ease)
+            .with_level(AnimationLevel::Basic),
+        );
+    }
+
     fn activate(&mut self, index: usize, mut ctx: Option<&mut crate::event::WidgetCtx>) -> bool {
         let mut state = self.state.lock().expect("tabs state lock");
         if state.tabs.is_empty() {
@@ -711,86 +986,23 @@ impl Tabs {
             return false;
         }
         let next = index.min(state.tabs.len() - 1);
-        if !self.is_activatable(&state, next) {
+        if !state.is_activatable(next) {
             return false;
         }
-        let previous_active_index =
-            self.index_for_id(&state, state.active.as_deref().unwrap_or(""));
+        let previous_active_index = state.index_for_id(state.active.as_deref().unwrap_or(""));
         if Some(next) != previous_active_index {
             let new_id = state.tabs[next].tab_id.clone();
             let prev_id = previous_active_index.map(|idx| state.tabs[idx].tab_id.clone());
             state.active = Some(new_id.clone());
             drop(state);
-            if let Some(ctx) = ctx.as_mut() {
-                if let Some(prev) = prev_id {
-                    ctx.post_message(crate::message::AppRemoveClass {
-                        selector: self.scoped_tab_selector(&prev),
-                        class_name: "-active".to_string(),
-                    });
-                }
-                ctx.post_message(crate::message::AppAddClass {
-                    selector: self.scoped_tab_selector(&new_id),
-                    class_name: "-active".to_string(),
-                });
-            } else {
-                if let Some(prev) = prev_id {
-                    self.pending_messages
-                        .lock()
-                        .expect("tabs pending lock")
-                        .push(Box::new(crate::message::AppRemoveClass {
-                            selector: self.scoped_tab_selector(&prev),
-                            class_name: "-active".to_string(),
-                        }));
-                }
-                self.pending_messages
-                    .lock()
-                    .expect("tabs pending lock")
-                    .push(Box::new(crate::message::AppAddClass {
-                        selector: self.scoped_tab_selector(&new_id),
-                        class_name: "-active".to_string(),
-                    }));
-            }
+            self.move_active_class(prev_id, &new_id, ctx.as_deref_mut());
             let target_span = self.underline_span_for_index(next);
             if let Some(ctx) = ctx.as_mut() {
                 if let Some((target_start, target_end)) = target_span {
-                    let (duration, delay, ease) = self.underline_animation_params();
-                    let fallback_source = previous_active_index
-                        .and_then(|prev| self.underline_span_for_index(prev))
-                        .unwrap_or((target_start, target_end));
-                    let (from_start, from_end) = self.current_underline_range();
-                    let from_start = if from_end > from_start {
-                        from_start
-                    } else {
-                        fallback_source.0
-                    };
-                    let from_end = if from_end > from_start {
-                        from_end
-                    } else {
-                        fallback_source.1
-                    };
-                    ctx.request_animation(
-                        AnimationRequest::new(
-                            self.node_id(),
-                            Self::UNDERLINE_START_ATTR,
-                            from_start,
-                            target_start,
-                            duration,
-                        )
-                        .with_delay(delay)
-                        .with_ease(ease)
-                        .with_level(AnimationLevel::Basic),
-                    );
-                    ctx.request_animation(
-                        AnimationRequest::new(
-                            self.node_id(),
-                            Self::UNDERLINE_END_ATTR,
-                            from_end,
-                            target_end,
-                            duration,
-                        )
-                        .with_delay(delay)
-                        .with_ease(ease)
-                        .with_level(AnimationLevel::Basic),
+                    self.animate_underline_to(
+                        (target_start, target_end),
+                        previous_active_index,
+                        ctx,
                     );
                 } else {
                     self.set_underline_range(0.0, 0.0);
@@ -831,109 +1043,18 @@ impl Tabs {
         self.move_active(1, ctx);
     }
 
-    fn ensure_active_exists(&self, state: &mut TabsState) {
-        if let Some(idx) = state
-            .active
-            .as_ref()
-            .and_then(|id| self.index_for_id(state, id))
-        {
-            if self.is_visible(state, idx) {
-                return;
-            }
-        }
-        if let Some(next) = self.first_activatable(state) {
-            state.active = Some(state.tabs[next].tab_id.clone());
-        } else {
-            state.active = None;
-        }
-    }
-
-    fn is_visible(&self, state: &TabsState, index: usize) -> bool {
-        state
-            .tabs
-            .get(index)
-            .map(|tab| !tab.hidden)
-            .unwrap_or(false)
-    }
-
-    fn is_activatable(&self, state: &TabsState, index: usize) -> bool {
-        state
-            .tabs
-            .get(index)
-            .map(|tab| !tab.hidden && !tab.disabled)
-            .unwrap_or(false)
-    }
-
-    fn potential_active_indices(&self, state: &TabsState) -> Vec<usize> {
-        let active_idx = state
-            .active
-            .as_ref()
-            .and_then(|id| self.index_for_id(state, id));
-        state
-            .tabs
-            .iter()
-            .enumerate()
-            .filter_map(|(index, tab)| {
-                if tab.hidden {
-                    return None;
-                }
-                if tab.disabled && Some(index) != active_idx {
-                    return None;
-                }
-                Some(index)
-            })
-            .collect()
-    }
-
-    fn first_activatable(&self, state: &TabsState) -> Option<usize> {
-        state
-            .tabs
-            .iter()
-            .enumerate()
-            .find(|(_, tab)| !tab.hidden && !tab.disabled)
-            .map(|(index, _)| index)
-    }
-
-    fn last_activatable(&self, state: &TabsState) -> Option<usize> {
-        state
-            .tabs
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, tab)| !tab.hidden && !tab.disabled)
-            .map(|(index, _)| index)
-    }
-
-    fn replacement_after_deactivation(&self, state: &TabsState, index: usize) -> Option<usize> {
-        let mut candidates = self.potential_active_indices(state);
-        let position = candidates
-            .iter()
-            .position(|candidate| *candidate == index)?;
-        candidates.remove(position);
-        if candidates.is_empty() {
-            None
-        } else if position < candidates.len() {
-            Some(candidates[position])
-        } else {
-            candidates.last().copied()
-        }
-    }
-
     fn move_active(&mut self, direction: i32, ctx: Option<&mut crate::event::WidgetCtx>) {
         let state = self.state.lock().expect("tabs state lock");
-        let candidates = self.potential_active_indices(&state);
+        let candidates = state.potential_active_indices();
         if candidates.is_empty() {
             return;
         }
-        let active_idx = state
-            .active
-            .as_ref()
-            .and_then(|id| self.index_for_id(&state, id));
+        let active_idx = state.active.as_ref().and_then(|id| state.index_for_id(id));
         let target = match active_idx {
             Some(active) => match candidates.iter().position(|index| *index == active) {
                 Some(position) => {
-                    let len = candidates.len() as i32;
-                    let next = (position as i32 + direction).rem_euclid(len) as usize;
+                    let len = candidates.len().to_i32_sat();
+                    let next = (position.to_i32_sat() + direction).rem_euclid(len) as usize;
                     candidates[next]
                 }
                 None => {
@@ -946,9 +1067,10 @@ impl Tabs {
             },
             None => {
                 if direction >= 0 {
-                    self.first_activatable(&state).unwrap_or(candidates[0])
+                    state.first_activatable().unwrap_or(candidates[0])
                 } else {
-                    self.last_activatable(&state)
+                    state
+                        .last_activatable()
                         .unwrap_or(*candidates.last().unwrap_or(&candidates[0]))
                 }
             }
@@ -991,19 +1113,18 @@ impl Tabs {
         let label_width = state
             .tabs
             .get(index)
-            .map(|tab| rich_rs::cell_len(tab.label.as_str()))
-            .unwrap_or(0)
+            .map_or(0, |tab| rich_rs::cell_len(tab.label.as_str()))
             .max(1);
         let span_width = end.saturating_sub(start);
         if span_width <= label_width {
-            return Some((start as f32, end as f32));
+            return Some((start.to_f32_lossy(), end.to_f32_lossy()));
         }
         let total_inset = span_width.saturating_sub(label_width);
         let left_inset = total_inset / 2;
         let right_inset = total_inset.saturating_sub(left_inset);
         Some((
-            start.saturating_add(left_inset) as f32,
-            end.saturating_sub(right_inset) as f32,
+            start.saturating_add(left_inset).to_f32_lossy(),
+            end.saturating_sub(right_inset).to_f32_lossy(),
         ))
     }
 
@@ -1025,10 +1146,10 @@ impl Tabs {
         let delay = style
             .transition_delay
             .unwrap_or(Self::UNDERLINE_ANIMATION_DELAY);
-        let ease = style
-            .transition_timing
-            .map(Self::transition_timing_to_animation_ease)
-            .unwrap_or(AnimationEase::InOutCubic);
+        let ease = style.transition_timing.map_or(
+            AnimationEase::InOutCubic,
+            Self::transition_timing_to_animation_ease,
+        );
         (duration, delay, ease)
     }
 
@@ -1099,7 +1220,7 @@ impl crate::widgets::Focus for Tabs {
         self.focused
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "tabs"
     }
 
@@ -1132,7 +1253,7 @@ impl crate::widgets::Focus for Tabs {
 
     fn binding_hints(&self) -> Vec<BindingHint> {
         let state = self.state.lock().expect("tabs state lock");
-        if self.potential_active_indices(&state).len() <= 1 {
+        if state.potential_active_indices().len() <= 1 {
             return Vec::new();
         }
         vec![
@@ -1161,7 +1282,7 @@ impl crate::widgets::Interactive for Tabs {
 
     fn on_mount(&mut self, _ctx: &mut crate::event::WidgetCtx) {
         let mut state = self.state.lock().expect("tabs state lock");
-        self.ensure_active_exists(&mut state);
+        state.ensure_active_exists();
         drop(state);
         self.sync_underline_to_active();
     }
@@ -1179,14 +1300,14 @@ impl crate::widgets::Interactive for Tabs {
         self.last_size = Some((width, height));
     }
 
-    fn on_layout(&mut self, width: u16, _height: u16) {
-        self.last_size = Some((width, _height));
+    fn on_layout(&mut self, width: u16, height: u16) {
+        self.last_size = Some((width, height));
         let next_layout_width = usize::from(width).max(1);
-        if next_layout_width != self.layout_width {
+        if next_layout_width == self.layout_width {
             self.layout_width = next_layout_width;
-            self.sync_underline_to_active();
         } else {
             self.layout_width = next_layout_width;
+            self.sync_underline_to_active();
         }
     }
 
@@ -1266,7 +1387,7 @@ impl crate::widgets::Interactive for Tabs {
                 return;
             }
             let state = self.state.lock().expect("tabs state lock");
-            let index = self.index_for_id(&state, &clicked.id);
+            let index = state.index_for_id(&clicked.id);
             drop(state);
             if let Some(index) = index {
                 self.request_runtime_focus(ctx);
@@ -1416,7 +1537,11 @@ mod tests {
         assert!(ctx.handled());
         assert!(ctx.repaint_requested());
         let messages = ctx.take_messages();
-        assert!(messages.iter().any(|m| m.is::<TabActivated>()));
+        assert!(
+            messages
+                .iter()
+                .any(crate::message::MessageEvent::is::<TabActivated>)
+        );
     }
 
     /// Python parity (`Tabs.BINDINGS`): left/right only, `previous_tab` /
@@ -1542,14 +1667,23 @@ mod tests {
             .with_tab("Paul");
         tabs.on_layout(80, 2);
         let (start, end) = tabs.current_underline_range();
-        assert_eq!((end - start).round() as usize, rich_rs::cell_len("Leto"));
+        assert_eq!(
+            (end - start).round().to_usize_sat(),
+            rich_rs::cell_len("Leto")
+        );
 
         assert!(tabs.activate(1, None));
         let (start, end) = tabs.current_underline_range();
-        assert_eq!((end - start).round() as usize, rich_rs::cell_len("Jessica"));
+        assert_eq!(
+            (end - start).round().to_usize_sat(),
+            rich_rs::cell_len("Jessica")
+        );
 
         assert!(tabs.activate(2, None));
         let (start, end) = tabs.current_underline_range();
-        assert_eq!((end - start).round() as usize, rich_rs::cell_len("Paul"));
+        assert_eq!(
+            (end - start).round().to_usize_sat(),
+            rich_rs::cell_len("Paul")
+        );
     }
 }

@@ -4,11 +4,11 @@
 /// on the Screen CSS rule.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
-"#;
+";
 
 struct CenterApp;
 

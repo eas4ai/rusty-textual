@@ -99,21 +99,25 @@ impl<'a> NodeRef<'a> {
     }
 
     /// This node's stable id.
+    #[must_use]
     pub fn id(&self) -> TreeNodeId {
         self.id
     }
 
     /// The node label.
+    #[must_use]
     pub fn label(&self) -> &'a str {
         &self.node().label
     }
 
     /// Optional user data.
+    #[must_use]
     pub fn data(&self) -> Option<&'a str> {
         self.node().data.as_deref()
     }
 
     /// The parent node, or `None` for a root.
+    #[must_use]
     pub fn parent(&self) -> Option<NodeRef<'a>> {
         self.node().parent.map(|id| NodeRef {
             tree: self.tree,
@@ -131,36 +135,43 @@ impl<'a> NodeRef<'a> {
     }
 
     /// The ordered child ids.
+    #[must_use]
     pub fn child_ids(&self) -> &'a [TreeNodeId] {
         &self.node().children
     }
 
     /// Number of children.
+    #[must_use]
     pub fn child_count(&self) -> usize {
         self.node().children.len()
     }
 
     /// Whether this node is a tree root.
+    #[must_use]
     pub fn is_root(&self) -> bool {
         self.node().parent.is_none()
     }
 
     /// Whether this node is the last of its siblings (Python `is_last`).
+    #[must_use]
     pub fn is_last(&self) -> bool {
         self.tree.is_last(self.id)
     }
 
     /// Whether this node is currently expanded.
+    #[must_use]
     pub fn is_expanded(&self) -> bool {
         self.node().expanded
     }
 
     /// Whether the node can be expanded by the user.
+    #[must_use]
     pub fn allow_expand(&self) -> bool {
         self.node().allow_expand
     }
 
     /// Whether this node is disabled.
+    #[must_use]
     pub fn is_disabled(&self) -> bool {
         self.node().disabled
     }
@@ -174,7 +185,7 @@ pub struct TreeNode {
     pub(super) disabled: bool,
     pub(super) component_classes: Vec<String>,
     pub(super) children: Vec<TreeNode>,
-    /// Optional user data associated with this node (e.g. block_id for TOC headings).
+    /// Optional user data associated with this node (e.g. `block_id` for TOC headings).
     pub(super) data: Option<String>,
 }
 
@@ -191,43 +202,51 @@ impl TreeNode {
         }
     }
 
+    #[must_use]
     pub fn expanded(mut self, value: bool) -> Self {
         self.expanded = value;
         self
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: TreeNode) -> Self {
         self.children.push(child);
         self
     }
 
+    #[must_use]
     pub fn allow_expand(mut self, value: bool) -> Self {
         self.allow_expand = value;
         self
     }
 
+    #[must_use]
     pub fn disabled(mut self, value: bool) -> Self {
         self.disabled = value;
         self
     }
 
+    #[must_use]
     pub fn with_component_class(mut self, class: impl Into<String>) -> Self {
         self.component_classes.push(class.into());
         self
     }
 
     /// Set optional user data on this node (builder pattern).
+    #[must_use]
     pub fn with_data(mut self, data: impl Into<String>) -> Self {
         self.data = Some(data.into());
         self
     }
 
     /// Read-only access to the node's data.
+    #[must_use]
     pub fn data(&self) -> Option<&str> {
         self.data.as_deref()
     }
 
     /// Read-only access to this node's children.
+    #[must_use]
     pub fn children_slice(&self) -> &[TreeNode] {
         &self.children
     }
@@ -239,6 +258,11 @@ impl TreeNode {
     /// let child = parent.add_child(TreeNode::new("child"));
     /// child.add_child(TreeNode::new("grandchild"));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Does not panic. The `expect` on the last child cannot fail because
+    /// `child` is pushed onto the list just before it.
     pub fn add_child(&mut self, child: TreeNode) -> &mut TreeNode {
         self.children.push(child);
         self.children.last_mut().expect("just pushed")
@@ -257,6 +281,7 @@ impl TreeNode {
     }
 
     /// Read-only access to the node's label.
+    #[must_use]
     pub fn label(&self) -> &str {
         &self.label
     }
@@ -276,6 +301,7 @@ impl TreeNode {
     }
 
     /// Whether this node is currently expanded.
+    #[must_use]
     pub fn is_expanded(&self) -> bool {
         self.expanded
     }

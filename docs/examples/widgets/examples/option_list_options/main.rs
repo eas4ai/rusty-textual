@@ -9,7 +9,7 @@
 /// `OptionItem::disabled_with_id`, and `OptionItem::Separator`.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -18,7 +18,7 @@ OptionList {
     width: 70%;
     height: 80%;
 }
-"#;
+";
 
 struct OptionListApp;
 
@@ -83,7 +83,12 @@ mod tests {
     fn option_items_build_correctly() {
         let opt = OptionItem::with_id("Aerilon", "aer");
         match &opt {
-            OptionItem::Option { prompt, id, disabled, .. } => {
+            OptionItem::Option {
+                prompt,
+                id,
+                disabled,
+                ..
+            } => {
                 assert_eq!(prompt, "Aerilon");
                 assert_eq!(id.as_ref().map(|o| o.as_str()), Some("aer"));
                 assert!(!disabled);

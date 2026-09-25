@@ -3,7 +3,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments, StyleMeta};
 use textual_macros::widget;
 
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::LinkClicked;
 
 use super::{Focus, Interactive, Layout, NodeSeed, Render};
 
@@ -42,15 +42,18 @@ impl Link {
         }
     }
 
+    #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
 
+    #[must_use]
     pub fn url(&self) -> &str {
         &self.url
     }
 
     /// Get the tooltip text, if set.
+    #[must_use]
     pub fn tooltip(&self) -> Option<&str> {
         self.tooltip.as_deref()
     }
@@ -65,15 +68,17 @@ impl Link {
 
     /// Set the tooltip text. Pass `None` to clear.
     pub fn set_tooltip(&mut self, tooltip: Option<impl Into<String>>) {
-        self.tooltip = tooltip.map(|t| t.into());
+        self.tooltip = tooltip.map(std::convert::Into::into);
     }
 
+    #[must_use]
     pub fn with_url(mut self, url: impl Into<String>) -> Self {
         self.url = url.into();
         self
     }
 
     /// Builder-style tooltip setter.
+    #[must_use]
     pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
         self.tooltip = Some(tooltip.into());
         self
@@ -97,7 +102,7 @@ impl Link {
 }
 
 /// Apply [`TextStyleFlags`] onto a `rich_rs::Style`.
-fn apply_text_style_flags(style: &mut rich_rs::Style, flags: &crate::style::TextStyleFlags) {
+fn apply_text_style_flags(style: &mut rich_rs::Style, flags: crate::style::TextStyleFlags) {
     if flags.bold {
         *style = (*style).with_bold(true);
     }
@@ -210,7 +215,7 @@ impl Render for Link {
                 }
             }
             if let Some(flags) = resolved.link_style_hover.or(resolved.link_style) {
-                apply_text_style_flags(&mut style, &flags);
+                apply_text_style_flags(&mut style, flags);
             }
         } else {
             // Normal state (also used for disabled links).
@@ -223,7 +228,7 @@ impl Render for Link {
                 }
             }
             if let Some(flags) = resolved.link_style {
-                apply_text_style_flags(&mut style, &flags);
+                apply_text_style_flags(&mut style, flags);
             }
         }
 
@@ -361,7 +366,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            link.activate(&mut __w)
+            link.activate(&mut __w);
         };
         assert!(ctx.handled());
         let messages = ctx.take_messages();
@@ -383,7 +388,7 @@ mod tests {
                 crate::node_id::NodeId::default(),
                 &mut ctx,
             );
-            link.activate(&mut __w)
+            link.activate(&mut __w);
         };
         let messages = ctx.take_messages();
         assert!(messages.is_empty());

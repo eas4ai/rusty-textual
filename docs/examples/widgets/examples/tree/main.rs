@@ -76,10 +76,7 @@ mod tests {
 
     #[test]
     fn tree_new_accepts_multiple_roots() {
-        let _tree = Tree::new(vec![
-            TreeNode::new("Alpha"),
-            TreeNode::new("Beta"),
-        ]);
+        let _tree = Tree::new(vec![TreeNode::new("Alpha"), TreeNode::new("Beta")]);
         // Multi-root tree is accepted.
     }
 

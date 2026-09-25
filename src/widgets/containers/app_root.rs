@@ -12,6 +12,7 @@ use crate::debug::debug_input;
 use crate::event::{AnimationEase, AnimationLevel, AnimationRequest, AnimationValueEvent, Event};
 use crate::message::{MessageEvent, ScrollbarAxis, ScrollbarScrollTo};
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::style::parse_color_like;
 use crate::widgets::{NodeSeed, ScrollBar, ScrollBarCorner, Widget, scrollbar_max_offset};
 
@@ -34,7 +35,7 @@ pub struct AppRoot {
     /// (index into `children`, sink) recorded by `with_child_handle` /
     /// `with_compose` (for decls bound via `HandleSlot::bind`).
     child_handle_sinks: Vec<(usize, crate::handle::HandleSink)>,
-    /// (index into `children`, css_id, classes) recorded by `with_compose` so
+    /// (index into `children`, `css_id`, classes) recorded by `with_compose` so
     /// `.with_id()`/`.with_classes()` metadata on declared children reaches the
     /// mounted node.
     child_decl_meta: Vec<crate::widgets::ChildDeclMeta>,
@@ -55,7 +56,7 @@ fn scrollbar_clamp_offset_f32(offset: f32, content_len: usize, viewport_len: usi
     if !offset.is_finite() {
         return 0.0;
     }
-    let max = scrollbar_max_offset(content_len.max(1), viewport_len.max(1)) as f32;
+    let max = scrollbar_max_offset(content_len.max(1), viewport_len.max(1)).to_f32_lossy();
     offset.clamp(0.0, max)
 }
 
@@ -64,7 +65,7 @@ fn scrollbar_drag_trace_enabled() -> bool {
     *ENABLED.get_or_init(|| {
         std::env::var("TEXTUAL_DEBUG_SCROLLBAR_DRAG_TRACE")
             .ok()
-            .map(|value| {
+            .is_some_and(|value| {
                 let normalized = value.trim().to_ascii_lowercase();
                 !(normalized.is_empty()
                     || normalized == "0"
@@ -72,13 +73,13 @@ fn scrollbar_drag_trace_enabled() -> bool {
                     || normalized == "off"
                     || normalized == "no")
             })
-            .unwrap_or(false)
     })
 }
 
 impl AppRoot {
     crate::seed_ident_methods!();
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             children: Vec::new(),
@@ -100,6 +101,7 @@ impl AppRoot {
         }
     }
 
+    #[must_use]
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(Box::new(child));
         self
@@ -107,6 +109,7 @@ impl AppRoot {
 
     /// Add a child and bind `slot` to it; the slot is filled with the child's
     /// arena identity when the widget tree is built.
+    #[must_use]
     pub fn with_child_handle<W: Widget + 'static>(
         mut self,
         child: W,
@@ -123,6 +126,7 @@ impl AppRoot {
     /// Preserves each `ChildDecl`'s `id`/`classes` (so CSS id/class selectors
     /// match the mounted nodes) and any `handle_sink` bound via
     /// `HandleSlot::bind`, mirroring `App::mount_declarations`.
+    #[must_use]
     pub fn with_compose(mut self, children: ComposeResult) -> Self {
         for decl in children {
             let crate::compose::ChildDecl {
@@ -193,7 +197,8 @@ impl AppRoot {
         scrollbar_max_offset(
             self.content_height.load(Ordering::Relaxed).max(1),
             self.viewport_height.load(Ordering::Relaxed).max(1),
-        ) as f32
+        )
+        .to_f32_lossy()
     }
 
     fn clamp_offsets(&mut self) {
@@ -216,7 +221,7 @@ impl AppRoot {
             ScrollbarAxis::Vertical => self.offset_y = offset,
         }
         self.clamp_offsets();
-        self.offset_x != before_x || self.offset_y != before_y
+        super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y))
     }
 
     fn clamped_axis_offset(&self, axis: ScrollbarAxis, offset: f32) -> f32 {
@@ -298,7 +303,7 @@ impl crate::widgets::Interactive for AppRoot {
         if scrollbar_drag_trace_enabled() {
             debug_input(&format!(
                 "[app-root-layout] self=0x{:x} node={} layout={}x{}",
-                self as *const _ as usize,
+                std::ptr::from_ref(self) as usize,
                 crate::node_id::node_id_to_ffi(self.node_id()),
                 self.last_layout_width,
                 self.last_layout_height
@@ -351,38 +356,38 @@ impl crate::widgets::Interactive for AppRoot {
             crate::event::Action::ScrollHome => self.offset_y = 0.0,
             crate::event::Action::ScrollEnd => self.offset_y = self.max_offset_y(),
             crate::event::Action::ScrollUp => {
-                self.offset_y = (self.offset_y - self.scroll_step_y as f32).max(0.0);
+                self.offset_y = (self.offset_y - self.scroll_step_y.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollDown => {
-                self.offset_y += self.scroll_step_y as f32;
+                self.offset_y += self.scroll_step_y.to_f32_lossy();
             }
             crate::event::Action::ScrollPageUp => {
                 let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                self.offset_y = (self.offset_y - page as f32).max(0.0);
+                self.offset_y = (self.offset_y - page.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollPageDown => {
                 let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                self.offset_y += page as f32;
+                self.offset_y += page.to_f32_lossy();
             }
             crate::event::Action::ScrollLeft => {
-                self.offset_x = (self.offset_x - self.scroll_step_x as f32).max(0.0);
+                self.offset_x = (self.offset_x - self.scroll_step_x.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollRight => {
-                self.offset_x += self.scroll_step_x as f32;
+                self.offset_x += self.scroll_step_x.to_f32_lossy();
             }
             crate::event::Action::ScrollPageLeft => {
                 let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                self.offset_x = (self.offset_x - page as f32).max(0.0);
+                self.offset_x = (self.offset_x - page.to_f32_lossy()).max(0.0);
             }
             crate::event::Action::ScrollPageRight => {
                 let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                self.offset_x += page as f32;
+                self.offset_x += page.to_f32_lossy();
             }
             _ => return,
         }
         self.clamp_offsets();
 
-        if self.offset_x != before_x || self.offset_y != before_y {
+        if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {
             // Root scrolling can move large portions of the composed frame
             // (content + scrollbar thumbs + dock interactions). Request a
             // full-frame invalidation to avoid stale partial-region artifacts.
@@ -438,14 +443,18 @@ impl crate::widgets::Scrollable for AppRoot {
         let before_y = self.offset_y;
 
         if delta_y != 0 {
-            self.offset_y += delta_y.saturating_mul(self.scroll_step_y as i32) as f32;
+            self.offset_y += delta_y
+                .saturating_mul(self.scroll_step_y.to_i32_sat())
+                .to_f32_lossy();
         }
         if delta_x != 0 {
-            self.offset_x += delta_x.saturating_mul(self.scroll_step_x as i32) as f32;
+            self.offset_x += delta_x
+                .saturating_mul(self.scroll_step_x.to_i32_sat())
+                .to_f32_lossy();
         }
         self.clamp_offsets();
 
-        if self.offset_x != before_x || self.offset_y != before_y {
+        if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {
             // Root scrolling can move large portions of the composed frame
             // (content + scrollbar thumbs + dock interactions). Request a
             // full-frame invalidation to avoid stale partial-region artifacts.
@@ -461,13 +470,15 @@ impl crate::widgets::Scrollable for AppRoot {
                 self.content_width.load(Ordering::Relaxed).max(1),
                 self.viewport_width.load(Ordering::Relaxed).max(1),
             )
-            .round() as usize,
+            .round()
+            .to_usize_sat(),
             scrollbar_clamp_offset_f32(
                 self.offset_y,
                 self.content_height.load(Ordering::Relaxed).max(1),
                 self.viewport_height.load(Ordering::Relaxed).max(1),
             )
-            .round() as usize,
+            .round()
+            .to_usize_sat(),
         )
     }
 
@@ -572,7 +583,7 @@ impl crate::widgets::Render for AppRoot {
         if scrollbar_drag_trace_enabled() {
             debug_input(&format!(
                 "[app-root-geom] self=0x{:x} node={} widget={}x{} content={}x{} viewport={}x{} offsets=({:.3}, {:.3})",
-                self as *const _ as usize,
+                std::ptr::from_ref(self) as usize,
                 crate::node_id::node_id_to_ffi(self.node_id()),
                 width,
                 height,
@@ -652,7 +663,7 @@ mod focus_tests {
         let ids: Vec<_> = tree
             .walk_depth_first(root_id)
             .into_iter()
-            .filter(|&id| tree.get(id).map(|n| n.widget.focusable()).unwrap_or(false))
+            .filter(|&id| tree.get(id).is_some_and(|n| n.widget.focusable()))
             .collect();
         assert_eq!(ids.len(), 2);
         assert_eq!(ids[0], first_id);
@@ -735,8 +746,16 @@ mod focus_tests {
         let requests = ctx.take_animation_requests();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].attribute, ScrollView::OFFSET_Y_ATTR);
-        assert_eq!(requests[0].start, 0.0);
-        assert_eq!(requests[0].end, 1.0);
+        assert!(
+            requests[0].start.abs() < f32::EPSILON,
+            "start = {}",
+            requests[0].start
+        );
+        assert!(
+            (requests[0].end - 1.0).abs() < f32::EPSILON,
+            "end = {}",
+            requests[0].end
+        );
     }
 
     #[test]
@@ -960,17 +979,25 @@ mod focus_tests {
         }
 
         assert!(ctx.handled());
-        assert_eq!(
-            root.scroll_offset_f32().1,
-            0.0,
-            "animated message should not jump offset immediately"
+        let offset_y = root.scroll_offset_f32().1;
+        assert!(
+            offset_y.abs() < f32::EPSILON,
+            "animated message should not jump offset immediately (offset_y = {offset_y})"
         );
         let requests = ctx.take_animation_requests();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].target, root.node_id());
         assert_eq!(requests[0].attribute, APP_ROOT_OFFSET_Y_ATTR);
-        assert_eq!(requests[0].start, 0.0);
-        assert_eq!(requests[0].end, 24.5);
+        assert!(
+            requests[0].start.abs() < f32::EPSILON,
+            "start = {}",
+            requests[0].start
+        );
+        assert!(
+            (requests[0].end - 24.5).abs() < f32::EPSILON,
+            "end = {}",
+            requests[0].end
+        );
     }
 
     #[test]
@@ -1036,7 +1063,11 @@ mod focus_tests {
         }
 
         assert!(ctx.handled());
-        assert_eq!(root.scroll_offset_f32().1, 24.5);
+        let offset_y = root.scroll_offset_f32().1;
+        assert!(
+            (offset_y - 24.5).abs() < f32::EPSILON,
+            "offset_y = {offset_y}"
+        );
         assert_eq!(root.scroll_offset().1, 25);
     }
 }

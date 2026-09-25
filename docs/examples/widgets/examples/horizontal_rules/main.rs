@@ -7,7 +7,7 @@
 /// a `Vertical` container that is centered on the screen.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 Screen {
     align: center middle;
 }
@@ -21,7 +21,7 @@ Label {
     width: 100%;
     text-align: center;
 }
-"#;
+";
 
 struct HorizontalRulesApp;
 

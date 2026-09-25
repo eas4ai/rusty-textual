@@ -12,6 +12,7 @@ use crate::message::{
     MarkdownTableOfContentsSelected, MarkdownTableOfContentsUpdated, MessageEvent,
     NavigatorUpdated, ScrollbarAxis, ScrollbarScrollTo, TreeNodeActivated,
 };
+use crate::num::Cast;
 
 use super::containers::VerticalScroll;
 use super::delegate::{delegate_renderable, delegate_widget_method};
@@ -39,6 +40,7 @@ pub struct MarkdownTableOfContents {
 }
 
 impl MarkdownTableOfContents {
+    #[must_use]
     pub fn new(headings: Vec<HeadingEntry>) -> Self {
         Self {
             shared_headings: Arc::new(RwLock::new(headings)),
@@ -236,7 +238,7 @@ impl Widget for MarkdownTableOfContents {
     fn on_message(&mut self, message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
         if let Some(m) = message.downcast_ref::<MarkdownTableOfContentsUpdated>() {
             if let Ok(mut shared) = self.shared_headings.write() {
-                *shared = m.headings.clone();
+                shared.clone_from(&m.headings);
             }
             // TOC width is content-driven (`width: auto` with dock). Heading changes
             // must invalidate layout so the sidebar width can be recomputed.
@@ -281,6 +283,25 @@ fn build_heading_nodes(headings: &[HeadingEntry]) -> Vec<TreeNode> {
         children: Vec<TocNode>,
     }
 
+    // Convert TocNode tree to TreeNode tree.
+    // Python parity: parent nodes start expanded (Python expands as it walks down
+    // to place child headings), leaf nodes have allow_expand=false.
+    // Each node carries its block_id as data for click-to-scroll.
+    // Labels are prefixed with Roman numeral by heading level.
+    fn to_tree_node(toc: &TocNode) -> TreeNode {
+        let has_children = !toc.children.is_empty();
+        let numeral = NUMERALS.get(toc.level).copied().unwrap_or(' ');
+        let prefixed_label = format!("{} {}", numeral, toc.label);
+        let mut node = TreeNode::new(prefixed_label)
+            .expanded(has_children)
+            .allow_expand(has_children)
+            .with_data(toc.block_id.clone());
+        for child in &toc.children {
+            node = node.with_child(to_tree_node(child));
+        }
+        node
+    }
+
     let mut roots: Vec<TocNode> = Vec::new();
 
     for (level, title, block_id) in headings {
@@ -302,25 +323,6 @@ fn build_heading_nodes(headings: &[HeadingEntry]) -> Vec<TreeNode> {
             target = &mut last.children;
         }
         target.push(new_node);
-    }
-
-    // Convert TocNode tree to TreeNode tree.
-    // Python parity: parent nodes start expanded (Python expands as it walks down
-    // to place child headings), leaf nodes have allow_expand=false.
-    // Each node carries its block_id as data for click-to-scroll.
-    // Labels are prefixed with Roman numeral by heading level.
-    fn to_tree_node(toc: &TocNode) -> TreeNode {
-        let has_children = !toc.children.is_empty();
-        let numeral = NUMERALS.get(toc.level).copied().unwrap_or(' ');
-        let prefixed_label = format!("{} {}", numeral, toc.label);
-        let mut node = TreeNode::new(prefixed_label)
-            .expanded(has_children)
-            .allow_expand(has_children)
-            .with_data(toc.block_id.clone());
-        for child in &toc.children {
-            node = node.with_child(to_tree_node(child));
-        }
-        node
     }
 
     roots.iter().map(to_tree_node).collect()
@@ -356,7 +358,7 @@ impl Navigator {
         let location = location.into();
         // Truncate forward history.
         self.history
-            .truncate(self.cursor + if self.history.is_empty() { 0 } else { 1 });
+            .truncate(self.cursor + usize::from(!self.history.is_empty()));
         self.history.push(location);
         self.cursor = self.history.len() - 1;
         true
@@ -383,11 +385,13 @@ impl Navigator {
     }
 
     /// True if at the start of history (can't go back).
+    #[must_use]
     pub fn at_start(&self) -> bool {
         self.cursor == 0
     }
 
     /// True if at the end of history (can't go forward).
+    #[must_use]
     pub fn at_end(&self) -> bool {
         self.history.is_empty() || self.cursor >= self.history.len() - 1
     }
@@ -408,11 +412,12 @@ impl Navigator {
 /// a `Markdown` widget and a `MarkdownTableOfContents` sidebar).
 ///
 /// ## Architecture
-/// Internally delegates to a [`ScrollableContainer`], making this widget a scroll
-/// host. Children are composed as:
+/// Internally delegates to a [`VerticalScroll`](crate::widgets::VerticalScroll)
+/// (itself a [`ScrollableContainer`](crate::widgets::ScrollableContainer)),
+/// making this widget a scroll host. Children are composed as:
 /// - `Markdown` — the rendered content (scrollable)
 /// - `MarkdownTableOfContents` — docked left via CSS
-/// - Scrollbar widgets (from ScrollableContainer)
+/// - Scrollbar widgets (from `ScrollableContainer`)
 ///
 /// ## CSS class `-show-table-of-contents`
 /// Added when `show_table_of_contents` is true; the default CSS uses this class
@@ -447,7 +452,7 @@ pub struct MarkdownViewer {
 impl MarkdownViewer {
     crate::seed_ident_methods!();
 
-    /// Create a new MarkdownViewer with initial content.
+    /// Create a new `MarkdownViewer` with initial content.
     ///
     /// For path-based navigation, use `register_content()` and `go()`.
     /// For simple single-document display, pass content directly.
@@ -479,6 +484,7 @@ impl MarkdownViewer {
     }
 
     /// Set a CSS id for this viewer (for query routing via `#id` selectors).
+    #[must_use]
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         let id = id.into();
         self.seed.css_id = Some(id);
@@ -490,6 +496,7 @@ impl MarkdownViewer {
         self.content_map.insert(path.into(), content.into());
     }
 
+    #[must_use]
     pub fn show_table_of_contents(mut self, show: bool) -> Self {
         self.set_show_table_of_contents(show);
         self
@@ -586,7 +593,7 @@ impl MarkdownViewer {
     fn apply_content_update(&mut self, content: String) {
         self.content = content;
         if let Ok(mut shared) = self.shared_markup.write() {
-            *shared = self.content.clone();
+            shared.clone_from(&self.content);
         }
         let headings = Self::parse_headings(&self.content);
         if let Ok(mut shared_headings) = self.shared_headings.write() {
@@ -614,8 +621,7 @@ impl MarkdownViewer {
         let viewport_width = self
             .inner
             .scroll_viewport_size()
-            .map(|(w, _)| w)
-            .unwrap_or(80)
+            .map_or(80, |(w, _)| w)
             .max(1);
 
         let toc_width = if self.is_showing_table_of_contents() {
@@ -671,6 +677,7 @@ impl MarkdownViewer {
         parse_markdown_heading_lines(content)
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn style_type(&self) -> &'static str {
         "MarkdownViewer"
     }
@@ -694,14 +701,17 @@ impl MarkdownViewer {
         seed
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn focusable(&self) -> bool {
         false
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn can_focus(&self) -> bool {
         false
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn can_focus_children(&self) -> bool {
         true
     }
@@ -720,7 +730,7 @@ impl MarkdownViewer {
         self.flush_toc_message(ctx);
         if let Some(m) = message.downcast_ref::<MarkdownTableOfContentsUpdated>() {
             if let Ok(mut shared_headings) = self.shared_headings.write() {
-                *shared_headings = m.headings.clone();
+                shared_headings.clone_from(&m.headings);
             }
             // MarkdownViewer docks TOC with `width:auto`; heading updates must trigger
             // a relayout so the dock width tracks the rebuilt TOC tree width.
@@ -738,7 +748,7 @@ impl MarkdownViewer {
             let scroll_duration = Some(Duration::from_millis(200));
             ctx.post_message(ScrollbarScrollTo {
                 axis: ScrollbarAxis::Vertical,
-                offset: target_line as f32,
+                offset: target_line.to_f32_lossy(),
                 animate: true,
                 scroll_duration,
             });
@@ -748,10 +758,12 @@ impl MarkdownViewer {
         self.inner.on_message(message, ctx);
     }
 
-    fn action_namespace(&self) -> &str {
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
+    fn action_namespace(&self) -> &'static str {
         "markdown_viewer"
     }
 
+    #[allow(clippy::unused_self)] // `#[widget(override(..))]` forwards the trait method here.
     fn action_registry(&self) -> &[ActionDecl] {
         MARKDOWN_VIEWER_ACTIONS
     }

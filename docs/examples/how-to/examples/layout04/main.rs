@@ -6,7 +6,7 @@
 /// Rust ports these as CSS rules targeting the placeholder ids.
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 #Header {
     height: 3;
     dock: top;
@@ -18,7 +18,7 @@ const CSS: &str = r#"
     dock: bottom;
     width: 1fr;
 }
-"#;
+";
 
 struct LayoutApp;
 

@@ -1,7 +1,7 @@
 // Input widget defaults
 // DC-14: aligned with Python Textual _input.py DEFAULT_CSS
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 Input {
     bg: $surface;
     color: $foreground;
@@ -161,4 +161,4 @@ MaskedInput {
         }
     }
 }
-"#;
+";

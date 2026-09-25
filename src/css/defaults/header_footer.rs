@@ -2,7 +2,7 @@
 // DC-27: Header aligned with Python Textual _header.py DEFAULT_CSS
 // DC-28: Footer aligned with Python Textual _footer.py DEFAULT_CSS
 
-pub(super) const DEFAULT_CSS: &str = r#"
+pub(super) const DEFAULT_CSS: &str = r"
 HeaderIcon {
     dock: left;
     padding: 0 1;
@@ -197,4 +197,4 @@ Footer {
         }
     }
 }
-"#;
+";

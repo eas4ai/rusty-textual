@@ -60,7 +60,7 @@ impl StyleSheet {
         let debug_style_meta = style_debug_matches(meta);
         for (idx, rule) in self.rules.iter().enumerate() {
             if let Some(score) = rule_specificity(rule, meta) {
-                let layer = if rule.is_default { 0 } else { 1 };
+                let layer = u8::from(!rule.is_default);
                 matches.push(((layer, score, idx), rule.style.clone()));
                 if debug_style_meta {
                     crate::debug::debug_style(&format!(
@@ -122,7 +122,7 @@ pub(crate) fn selector_meta_generic<T: Widget + ?Sized>(widget: &T) -> SelectorM
             .iter()
             .map(|name| (*name).to_string())
             .collect(),
-        id: widget.style_id().map(|s| s.to_string()),
+        id: widget.style_id().map(std::string::ToString::to_string),
         classes: widget.style_classes().to_vec(),
         states: dispatch_states(widget),
         component_phantom: false,
@@ -240,10 +240,10 @@ pub(crate) fn resolve_node_style(tree: &WidgetTree, node_id: NodeId, meta: &Sele
         .get(node_id)
         .expect("resolve_node_style called with absent node_id");
     // Inline style: node record wins over widget behavior contribution.
-    let node_inline = if node.styles.style != Default::default() {
-        Some(node.styles.style.clone())
-    } else {
+    let node_inline = if node.styles.style == Style::default() {
         node.widget.style()
+    } else {
+        Some(node.styles.style.clone())
     };
     let key = super::context::ComputedStyleKey {
         meta: meta.clone(),
@@ -274,7 +274,7 @@ pub(crate) fn resolve_node_style(tree: &WidgetTree, node_id: NodeId, meta: &Sele
     COMPUTED_STYLE_CACHE.with(|cache| {
         cache
             .borrow_mut()
-            .store(node_id, key, style.clone(), layout_affected_changed)
+            .store(node_id, key, style.clone(), layout_affected_changed);
     });
     style
 }
@@ -288,7 +288,7 @@ pub(crate) fn current_parent_style() -> Option<Style> {
 /// During a `render()` call, `render_widget_with_meta` pushes the widget's own
 /// resolved style onto `STYLE_STACK` before invoking `widget.render(...)`, so the
 /// top-of-stack entry *is* the widget's own style. Widgets that need to read their
-/// own resolved style (e.g. ScrollBar reading scrollbar color tokens from the CSS)
+/// own resolved style (e.g. `ScrollBar` reading scrollbar color tokens from the CSS)
 /// call this instead of holding a `WidgetStyles` field.
 ///
 /// Outside of a render call (e.g. in event handlers) this returns `None`.
@@ -410,11 +410,11 @@ impl Drop for FrozenAncestorBgGuard {
 /// Consumed ONLY by the blank FILL cells in `render_widget_with_meta`
 /// (content-align padding / fg-bearing vertical extend), which Python renders
 /// from the cached `visual_style.rich_style` (`Strip.align` /
-/// `render_line` IndexError -> `Strip.blank(width, visual_style.rich_style)`).
+/// `render_line` `IndexError` -> `Strip.blank(width, visual_style.rich_style)`).
 /// NOT read by `current_ancestor_composited_background()`, so content GLYPH
 /// foregrounds keep resolving against the LIVE surface (see the thread-local).
 pub(crate) fn frozen_ancestor_bg_override() -> Option<crate::style::Color> {
-    FROZEN_ANCESTOR_BG_OVERRIDE.with(|cell| cell.get())
+    FROZEN_ANCESTOR_BG_OVERRIDE.with(std::cell::Cell::get)
 }
 
 /// Returns the composited background of ALL ANCESTORS of the widget currently
@@ -448,7 +448,7 @@ pub(crate) fn current_ancestor_composited_background() -> Option<crate::style::C
         };
         let mut saw_background = false;
         let mut composited = fallback;
-        for style in ancestor_slice.iter() {
+        for style in ancestor_slice {
             if let Some(bg) = style.bg {
                 let flat = bg.flatten_over(composited);
                 // Mirror Python dom.py: apply background_tint when compositing
@@ -517,7 +517,7 @@ pub(crate) fn resolve_style_for_meta(meta: &SelectorMeta) -> Style {
 /// Public so external/custom widgets can read component-class styling from CSS
 /// (Python parity: `Widget.get_component_styles`). The component name(s) are
 /// resolved on a typeless virtual phantom node
-/// ([`selector_meta_component_phantom`]).
+/// (`selector_meta_component_phantom`).
 ///
 /// Multi-name semantics: all `classes` go onto ONE phantom (the COMPOUND
 /// form), so compound rules like `.a.b { ... }` match. This is the right form
@@ -694,26 +694,6 @@ pub(crate) fn take_layout_affected_style_changes() -> bool {
 /// `resolve_style` returns correct results. Typically invoked once per
 /// render pass, right after `begin_style_render_pass()`.
 pub(crate) fn apply_display_visibility_to_tree(tree: &mut WidgetTree) {
-    let root = match tree.root() {
-        Some(r) => r,
-        None => return,
-    };
-
-    // Build the :focus-within set: the focused node + all its ancestors.
-    let mut focus_within_ids = std::collections::HashSet::new();
-    for node_id in tree.walk_depth_first(root) {
-        if let Some(node) = tree.get(node_id) {
-            if node.state.focused {
-                focus_within_ids.insert(node_id);
-                for ancestor in tree.ancestors(node_id) {
-                    focus_within_ids.insert(ancestor);
-                }
-                break;
-            }
-        }
-    }
-    let _fw_guard = super::context::set_focus_within(focus_within_ids);
-
     // `inherited_vis` is the effective visibility flowing down from ancestors.
     // Python (`DOMNode.visible`): a node with no OWN `visibility` rule inherits
     // its parent's effective visibility; an explicit rule overrides it. So a
@@ -745,6 +725,25 @@ pub(crate) fn apply_display_visibility_to_tree(tree: &mut WidgetTree) {
             }
         });
     }
+
+    let Some(root) = tree.root() else {
+        return;
+    };
+
+    // Build the :focus-within set: the focused node + all its ancestors.
+    let mut focus_within_ids = std::collections::HashSet::new();
+    for node_id in tree.walk_depth_first(root) {
+        if let Some(node) = tree.get(node_id) {
+            if node.state.focused {
+                focus_within_ids.insert(node_id);
+                for ancestor in tree.ancestors(node_id) {
+                    focus_within_ids.insert(ancestor);
+                }
+                break;
+            }
+        }
+    }
+    let _fw_guard = super::context::set_focus_within(focus_within_ids);
 
     apply_node(tree, root, Visibility::Visible);
 }

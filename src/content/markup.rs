@@ -4,7 +4,7 @@
 //! This mirrors `textual/markup.py`'s `_to_content` function semantics, but is a
 //! clean Rust implementation — **not** a wrapper around rich-rs markup.
 //!
-//! ## Design rules (from CONTENT_LAYER_KEYSTONE.md and Python fidelity review)
+//! ## Design rules (from `CONTENT_LAYER_KEYSTONE.md` and Python fidelity review)
 //!
 //! ### Deferred resolution (Python-faithful)
 //! Python's `Span.style` is `Style | str` — the raw tag body (e.g. `"bold"`,
@@ -38,7 +38,7 @@
 //!   parsed into a `crate::style::Style` and stored in the span's style field at
 //!   resolve time.
 //! - `[@click=...]` / `[key=value]` key-value pairs are stored as meta on
-//!   [`RawSpan`] so they are not lost during span manipulation.
+//!   `RawSpan` so they are not lost during span manipulation.
 
 use crate::style::{Color, Style, parse_color_like};
 
@@ -84,7 +84,7 @@ fn resolve_style_keyword(token: &str) -> Option<&'static str> {
 /// This function is called at **render / resolve time** (not at parse time).
 /// It handles the same token grammar as Python's `parse_style`:
 /// - `bold`, `italic`, etc. → set the respective style flag.
-/// - `not bold` → set bold=false (style_state toggle).
+/// - `not bold` → set bold=false (`style_state` toggle).
 /// - `on <color>` → background color.
 /// - `link=url`, `@click=action` → key-value meta (no visual style).
 /// - `auto` → leave color as None (resolved at Theme level).
@@ -322,13 +322,13 @@ pub(crate) struct RawSpan {
 /// Parse Textual markup into `(plain_text, spans)`.
 ///
 /// Behaviour mirrors `_to_content` in `textual/markup.py`:
-/// - `[bold]text[/bold]` → RawSpan covering "text" with raw_tag="bold".
-/// - `[foobar]text[/foobar]` → RawSpan with raw_tag="foobar" (null style at render).
-/// - `[link=url]text[/link]` → RawSpan with link in meta, raw_tag="link=url".
-/// - `[@click=action]text[/]` → RawSpan with @click in meta.
+/// - `[bold]text[/bold]` → `RawSpan` covering "text" with `raw_tag="bold`".
+/// - `[foobar]text[/foobar]` → `RawSpan` with `raw_tag="foobar`" (null style at render).
+/// - `[link=url]text[/link]` → `RawSpan` with link in meta, `raw_tag="link=url`".
+/// - `[@click=action]text[/]` → `RawSpan` with @click in meta.
 /// - Tags with genuine *text* content inside the brackets (unparsable by the
 ///   style tokeniser because they contain non-token characters) are emitted as
-///   literal text, matching Python's "contains_text" branch.
+///   literal text, matching Python's "`contains_text`" branch.
 /// - `\[` → literal `[` (escape).
 /// - Auto-closing unclosed opening tags at end of input.
 ///
@@ -407,72 +407,10 @@ pub(crate) fn parse_markup_with_vars(
 
                 if is_closing {
                     // Closing tag `[/tag]` or `[/]`
-                    let closing = tag_body.trim();
-                    if closing.is_empty() {
-                        // `[/]` → auto-close the most recent open tag
-                        if let Some((tag_pos, raw_tag, _norm)) = style_stack.pop() {
-                            let current_pos = text.len();
-                            if tag_pos != current_pos {
-                                // Extract meta from raw_tag for metadata-only tags
-                                let meta = extract_meta_only(&raw_tag);
-                                spans.push(RawSpan {
-                                    start: tag_pos,
-                                    end: current_pos,
-                                    raw_tag,
-                                    meta,
-                                });
-                            }
-                        }
-                        // (If nothing to close, silently ignore — matches Python)
-                    } else {
-                        let norm_closing = normalize_tag(closing);
-                        // Find matching open tag (most recent first)
-                        let stack_len = style_stack.len();
-                        let mut found = false;
-                        for rev_idx in 0..stack_len {
-                            let stack_idx = stack_len - 1 - rev_idx;
-                            if style_stack[stack_idx].2 == norm_closing {
-                                let (tag_pos, raw_tag, _norm) = style_stack.remove(stack_idx);
-                                let current_pos = text.len();
-                                if tag_pos != current_pos {
-                                    let meta = extract_meta_only(&raw_tag);
-                                    spans.push(RawSpan {
-                                        start: tag_pos,
-                                        end: current_pos,
-                                        raw_tag,
-                                        meta,
-                                    });
-                                }
-                                found = true;
-                                break;
-                            }
-                        }
-                        if !found {
-                            // Unmatched closing tag → emit as literal text
-                            let literal = format!("[/{closing}]");
-                            text.push_str(&literal);
-                        }
-                    }
+                    close_tag(tag_body.trim(), &mut text, &mut style_stack, &mut spans);
                 } else {
                     // Opening tag
-                    let tag_trimmed = tag_body.trim();
-                    if tag_trimmed.is_empty() {
-                        // Empty tag `[ ]` or `[]` → literal (matches Python "blank tag")
-                        let literal = format!("[{tag_body}]");
-                        text.push_str(&literal);
-                    } else if contains_literal_text(tag_trimmed) {
-                        // Tag body contains characters that the style tokeniser would
-                        // see as text tokens (e.g. embedded `[` or control chars) —
-                        // emit as literal text, matching Python's "contains_text" branch.
-                        let literal = format!("[{tag_body}]");
-                        text.push_str(&literal);
-                    } else {
-                        // Valid tag candidate: push to stack with raw body.
-                        // We do NOT pre-parse the style here — defer to render time.
-                        let norm = normalize_tag(tag_trimmed);
-                        let pos = text.len();
-                        style_stack.push((pos, tag_trimmed.to_string(), norm));
-                    }
+                    open_tag(tag_body, &mut text, &mut style_stack);
                 }
             } else {
                 // No closing `]` found → emit `[` literally and continue
@@ -513,9 +451,88 @@ pub(crate) fn parse_markup_with_vars(
     (text, spans)
 }
 
+/// Handle a closing tag with (trimmed) body `closing`: `[/]` closes the
+/// most recent open tag, `[/tag]` the most recent matching one; an
+/// unmatched closing tag is kept as literal text.
+fn close_tag(
+    closing: &str,
+    text: &mut String,
+    style_stack: &mut Vec<(usize, String, String)>,
+    spans: &mut Vec<RawSpan>,
+) {
+    if closing.is_empty() {
+        // `[/]` → auto-close the most recent open tag
+        if let Some((tag_pos, raw_tag, _norm)) = style_stack.pop() {
+            let current_pos = text.len();
+            if tag_pos != current_pos {
+                // Extract meta from raw_tag for metadata-only tags
+                let meta = extract_meta_only(&raw_tag);
+                spans.push(RawSpan {
+                    start: tag_pos,
+                    end: current_pos,
+                    raw_tag,
+                    meta,
+                });
+            }
+        }
+        // (If nothing to close, silently ignore — matches Python)
+    } else {
+        let norm_closing = normalize_tag(closing);
+        // Find matching open tag (most recent first)
+        let stack_len = style_stack.len();
+        let mut found = false;
+        for rev_idx in 0..stack_len {
+            let stack_idx = stack_len - 1 - rev_idx;
+            if style_stack[stack_idx].2 == norm_closing {
+                let (tag_pos, raw_tag, _norm) = style_stack.remove(stack_idx);
+                let current_pos = text.len();
+                if tag_pos != current_pos {
+                    let meta = extract_meta_only(&raw_tag);
+                    spans.push(RawSpan {
+                        start: tag_pos,
+                        end: current_pos,
+                        raw_tag,
+                        meta,
+                    });
+                }
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            // Unmatched closing tag → emit as literal text
+            let literal = format!("[/{closing}]");
+            text.push_str(&literal);
+        }
+    }
+}
+
+/// Handle an opening tag with body `tag_body`: push it on the style stack,
+/// or keep it as literal text when it is blank or contains text.
+fn open_tag(tag_body: &str, text: &mut String, style_stack: &mut Vec<(usize, String, String)>) {
+    let tag_trimmed = tag_body.trim();
+    if tag_trimmed.is_empty() {
+        // Empty tag `[ ]` or `[]` → literal (matches Python "blank tag")
+        let literal = format!("[{tag_body}]");
+        text.push_str(&literal);
+    } else if contains_literal_text(tag_trimmed) {
+        // Tag body contains characters that the style tokeniser would
+        // see as text tokens (e.g. embedded `[` or control chars) —
+        // emit as literal text, matching Python's "contains_text" branch.
+        let literal = format!("[{tag_body}]");
+        text.push_str(&literal);
+    } else {
+        // Valid tag candidate: push to stack with raw body.
+        // We do NOT pre-parse the style here — defer to render time.
+        let norm = normalize_tag(tag_trimmed);
+        let pos = text.len();
+        style_stack.push((pos, tag_trimmed.to_string(), norm));
+    }
+}
+
 /// Apply `string.Template.safe_substitute` semantics to a single text token.
 ///
-/// Mirrors CPython `string.Template` with its default `delimiter = '$'` and
+/// Mirrors `CPython` `string.Template` with its default `delimiter = '$'` and
 /// `idpattern = (?a:[_a-z][_a-z0-9]*)` (ASCII, case-insensitive matching):
 ///
 /// - `$$` → literal `$` (escape)
@@ -729,7 +746,7 @@ fn find_close_bracket(s: &str, start: usize) -> Option<usize> {
 
 /// Return the byte length of the UTF-8 character starting at `pos` in `s`.
 fn char_len_at(s: &str, pos: usize) -> usize {
-    s[pos..].chars().next().map_or(1, |c| c.len_utf8())
+    s[pos..].chars().next().map_or(1, char::len_utf8)
 }
 
 // ---------------------------------------------------------------------------
@@ -917,7 +934,7 @@ mod tests {
     }
 
     /// Python-faithful: unrecognised tag like [foobar] is CONSUMED (not literal text).
-    /// The tag body is stored as raw_tag; it resolves to null style at render time.
+    /// The tag body is stored as `raw_tag`; it resolves to null style at render time.
     #[test]
     fn test_unrecognised_tag_is_consumed_not_literal() {
         let (text, spans) = parse_markup("[foobar]test[/foobar]");

@@ -4,7 +4,7 @@ use textual_macros::widget;
 
 use crate::content::{Content, ContentPart};
 use crate::event::{Action, Event};
-use crate::message::*;
+use crate::message::CheckboxChanged;
 #[cfg(test)]
 use crate::node_id::NodeId;
 use crate::reactive::{
@@ -66,6 +66,7 @@ impl Checkbox {
 
     // ── Reactive getters ─────────────────────────────────────────────────
 
+    #[must_use]
     pub fn checked(&self) -> bool {
         self.checked
     }
@@ -89,6 +90,7 @@ impl Checkbox {
 
     // ── Watchers ─────────────────────────────────────────────────────────
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_checked(&mut self, _old: &bool, _new: &bool, ctx: &mut ReactiveCtx) {
         // Keep the detached seed classes in sync (pre-mount identity — the node
         // inherits them at mount) AND queue a class op so the arena node toggles
@@ -101,6 +103,7 @@ impl Checkbox {
 
     // ── Builder methods ──────────────────────────────────────────────────
 
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self.rebuild_classes_in_place();
@@ -161,7 +164,7 @@ impl Focus for Checkbox {
         self.pressed && crate::widgets::Widget::node_state(self).hovered
     }
 
-    fn action_namespace(&self) -> &str {
+    fn action_namespace(&self) -> &'static str {
         "checkbox"
     }
 
@@ -266,8 +269,7 @@ impl Render for Checkbox {
         });
         let effective_bg = visual_style
             .bg
-            .map(|c| c.flatten_over(parent_bg))
-            .unwrap_or(parent_bg);
+            .map_or(parent_bg, |c| c.flatten_over(parent_bg));
         let mut render_style = visual_style.clone();
         render_style.bg = Some(effective_bg);
 

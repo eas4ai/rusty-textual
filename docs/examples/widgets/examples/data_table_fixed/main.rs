@@ -1,15 +1,15 @@
 /// Port of Python Textual `docs/examples/widgets/data_table_fixed.py`.
 ///
-/// Demonstrates DataTable fixed rows/columns and zebra stripes:
+/// Demonstrates `DataTable` fixed rows/columns and zebra stripes:
 /// - Columns: A, B, C
 /// - 99 rows (1..=99) with values n, n*2, n*3
-/// - fixed_rows = 2, fixed_columns = 1
-/// - cursor_type = "row", zebra_stripes = true
+/// - `fixed_rows` = 2, `fixed_columns` = 1
+/// - `cursor_type` = "row", `zebra_stripes` = true
 use textual::prelude::*;
 
-const CSS: &str = r#"
+const CSS: &str = r"
 DataTable {height: 1fr}
-"#;
+";
 
 struct TableApp;
 
@@ -43,7 +43,7 @@ impl TextualApp for TableApp {
         }
 
         // Focus the table on mount.
-        let _ = app.query_mut("DataTable").map(|q| q.focus());
+        let _ = app.query_mut("DataTable").map(textual::DomQueryMut::focus);
     }
 }
 

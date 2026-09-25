@@ -4,6 +4,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 
 use crate::event::{AnimationLevel, WidgetCtx};
+use crate::num::Cast;
 use crate::renderables::{Bar as BarRenderable, LinearGradient};
 #[cfg(test)]
 use crate::style::Color;
@@ -24,7 +25,7 @@ struct Eta {
     estimation_period: f64,
     /// Maximum seconds of extrapolation after the last sample.
     max_extrapolate: f64,
-    /// (time_secs, progress_ratio) samples, sorted by time.
+    /// (`time_secs`, `progress_ratio`) samples, sorted by time.
     samples: Vec<(f64, f64)>,
     /// Counter for periodic pruning.
     add_count: u64,
@@ -63,7 +64,7 @@ impl Eta {
         if self.samples.len() <= 10 {
             return;
         }
-        let prune_time = self.samples.last().map(|s| s.0).unwrap_or(0.0) - self.estimation_period;
+        let prune_time = self.samples.last().map_or(0.0, |s| s.0) - self.estimation_period;
         // Binary search for the first sample at or after prune_time.
         let index = self.samples.partition_point(|&(t, _)| t < prune_time);
         if index > 0 {
@@ -120,7 +121,7 @@ impl Eta {
         let time_since_sample = (time - recent_time).min(self.max_extrapolate);
         let extrapolated = speed * time_since_sample;
         let eta = ((remaining - extrapolated) / speed).max(1.0);
-        Some(eta.ceil() as u64)
+        Some(eta.ceil().to_u64_sat())
     }
 }
 
@@ -132,7 +133,7 @@ impl Eta {
 /// the right alignment comes from the widget's `content-align-horizontal`).
 fn format_percentage(pct: Option<f64>) -> String {
     match pct {
-        Some(p) => format!("{}%", (p * 100.0).round() as u64),
+        Some(p) => format!("{}%", (p * 100.0).round().to_u64_sat()),
         None => "--%".to_string(),
     }
 }
@@ -146,12 +147,12 @@ fn format_eta(eta_secs: Option<u64>) -> String {
             let s = secs % 60;
             let m = (secs / 60) % 60;
             let h = secs / 3600;
-            if h > 999999 {
+            if h > 999_999 {
                 "+999999h".to_string()
             } else if h > 99 {
-                format!("{}h", h)
+                format!("{h}h")
             } else {
-                format!("{:02}:{:02}:{:02}", h, m, s)
+                format!("{h:02}:{m:02}:{s:02}")
             }
         }
     }
@@ -206,6 +207,7 @@ impl Bar {
     }
 
     /// The completed ratio in `0.0..=1.0`, or `None` for indeterminate.
+    #[must_use]
     pub fn percentage(&self) -> Option<f64> {
         self.percentage
     }
@@ -248,7 +250,9 @@ impl Bar {
         // Python passes the FRACTIONAL highlight extent (`size.width * percentage`)
         // to the Bar renderable, which rounds to the nearest half-cell (`╸`/`╺`).
         // Pre-rounding to an integer here would drop that half-cell precision.
-        let highlight_end = (pct * width as f64).min(width as f64) as f32;
+        let highlight_end = (pct * width.to_f64_lossy())
+            .min(width.to_f64_lossy())
+            .to_f32_lossy();
         let segments: Vec<Segment> =
             BarRenderable::new((0.0, highlight_end), highlight_style, background_style)
                 .width(width)
@@ -272,16 +276,16 @@ impl Bar {
 
         let mut start;
         let end;
-        let highlighted_bar_width = (0.25 * width as f32).max(1.0);
-        let total_imaginary_width = width as f32 + highlighted_bar_width;
+        let highlighted_bar_width = (0.25 * width.to_f32_lossy()).max(1.0);
+        let total_imaginary_width = width.to_f32_lossy() + highlighted_bar_width;
         if self.animation_level == AnimationLevel::None {
             start = 0.0;
-            end = width as f32;
+            end = width.to_f32_lossy();
         } else {
             // Match Python Textual: time-based movement at 30 cells/sec.
             let speed = 30.0_f32;
             start = if total_imaginary_width > 0.0 {
-                (speed * self.elapsed_secs() as f32) % (2.0 * total_imaginary_width)
+                (speed * self.elapsed_secs().to_f32_lossy()) % (2.0 * total_imaginary_width)
             } else {
                 0.0
             };
@@ -293,7 +297,7 @@ impl Bar {
         }
 
         let (highlight_style, background_style) = self.component_bar_styles(component);
-        let range = (start.max(0.0), end.min(width as f32));
+        let range = (start.max(0.0), end.min(width.to_f32_lossy()));
         let segments: Vec<Segment> = BarRenderable::new(range, highlight_style, background_style)
             .width(width)
             .render_for_width(width)
@@ -330,8 +334,8 @@ fn apply_gradient(
 ) -> Vec<Segment> {
     // Mirror the renderable's half-cell quantization to count highlighted
     // cells: full cells plus one half-cell boundary glyph when present.
-    let end = (highlight_end.clamp(0.0, width as f32) * 2.0).round() / 2.0;
-    let full_cells = end.trunc() as usize;
+    let end = (highlight_end.clamp(0.0, width.to_f32_lossy()) * 2.0).round() / 2.0;
+    let full_cells = end.trunc().to_usize_sat();
     let has_half = (end - end.trunc()).abs() > f32::EPSILON;
     let highlighted_count = full_cells + usize::from(has_half);
     let max_width = width.saturating_sub(1);
@@ -350,7 +354,7 @@ fn apply_gradient(
                 let t = if max_width == 0 {
                     0.0
                 } else {
-                    bar_offset as f32 / max_width as f32
+                    bar_offset.to_f32_lossy() / max_width.to_f32_lossy()
                 };
                 let color = gradient.get_color(t);
                 out.push(Segment::styled(
@@ -590,6 +594,7 @@ impl ProgressBar {
     /// Create a new `ProgressBar`.
     ///
     /// Pass `Some(total)` for a determinate bar, or `None` for indeterminate.
+    #[must_use]
     pub fn new(total: Option<f64>) -> Self {
         let mut seed = NodeSeed::default();
         seed.classes.push("progress-bar".to_string());
@@ -611,16 +616,19 @@ impl ProgressBar {
     // ── Public API ──────────────────────────────────────────────────
 
     /// Current progress value.
+    #[must_use]
     pub fn progress(&self) -> f64 {
         self.progress
     }
 
     /// Current total, or `None` if indeterminate.
+    #[must_use]
     pub fn total(&self) -> Option<f64> {
         self.total
     }
 
     /// The percentage of completion as a value in `0.0..=1.0`, or `None` if indeterminate.
+    #[must_use]
     pub fn percentage(&self) -> Option<f64> {
         match self.total {
             Some(total) if total > 0.0 => Some((self.progress / total).clamp(0.0, 1.0)),
@@ -639,6 +647,7 @@ impl ProgressBar {
     }
 
     /// Builder: set the initial progress (pre-mount configuration).
+    #[must_use]
     pub fn with_progress(mut self, progress: f64) -> Self {
         self.progress = progress;
         self
@@ -666,6 +675,9 @@ impl ProgressBar {
     /// Reactive setter for `progress`. Records the change in the provided
     /// [`ReactiveCtx`]; the watcher samples the ETA estimator and recomposes
     /// the children.
+    // Exact on purpose: only a real change records a reactive update, as
+    // Python's reactive `!=` check does.
+    #[allow(clippy::float_cmp)]
     pub fn set_progress(&mut self, progress: f64, ctx: &mut ReactiveCtx) {
         if self.progress != progress {
             let old = self.progress;
@@ -732,22 +744,26 @@ impl ProgressBar {
     // ── Reactive getters ─────────────────────────────────────────────
 
     /// Whether the bar portion is shown.
+    #[must_use]
     pub fn show_bar(&self) -> bool {
         self.show_bar
     }
 
     /// Whether the percentage label is shown.
+    #[must_use]
     pub fn show_percentage(&self) -> bool {
         self.show_percentage
     }
 
     /// Whether the ETA countdown is shown.
+    #[must_use]
     pub fn show_eta(&self) -> bool {
         self.show_eta
     }
 
     // ── Watchers ─────────────────────────────────────────────────────
 
+    #[allow(clippy::ref_option)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_total(&mut self, _old: &Option<f64>, _new: &Option<f64>, ctx: &mut ReactiveCtx) {
         // Reset ETA when total changes (matching Python behavior), then
         // rebuild the composed children with the new state (the Rust
@@ -756,6 +772,7 @@ impl ProgressBar {
         ctx.request_recompose();
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // `#[derive(Reactive)]` calls watchers as methods, passing `&T`.
     fn watch_progress(&mut self, _old: &f64, _new: &f64, ctx: &mut ReactiveCtx) {
         self.record_eta_sample();
         ctx.request_recompose();
@@ -783,6 +800,7 @@ impl ProgressBar {
     }
 
     /// Current animation level.
+    #[must_use]
     pub fn animation_level(&self) -> AnimationLevel {
         self.animation_level
     }
@@ -796,6 +814,7 @@ impl ProgressBar {
     }
 
     /// Current gradient, if set.
+    #[must_use]
     pub fn gradient(&self) -> Option<&LinearGradient> {
         self.gradient.as_ref()
     }
@@ -812,12 +831,14 @@ impl ProgressBar {
     /// Builder: attach a multi-stop gradient to this bar.
     ///
     /// Mirrors Python `ProgressBar(gradient=Gradient.from_colors(...))`.
+    #[must_use]
     pub fn with_gradient(mut self, gradient: LinearGradient) -> Self {
         self.gradient = Some(gradient);
         self
     }
 
     /// Estimated seconds until completion, or `None` if unknown.
+    #[must_use]
     pub fn eta_seconds(&self) -> Option<u64> {
         self.total?;
         let now = self.elapsed_secs();
@@ -950,6 +971,9 @@ impl ReactiveWidget for ProgressBar {
 }
 
 #[cfg(test)]
+// These tests assert exact float results (endpoints and values a float holds
+// exactly); a tolerance would hide off-by-epsilon regressions.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::node_id::NodeId;
@@ -1154,7 +1178,7 @@ mod tests {
         assert_eq!(format_eta(Some(0)), "00:00:00");
         assert_eq!(format_eta(Some(61)), "00:01:01");
         assert_eq!(format_eta(Some(3661)), "01:01:01");
-        assert_eq!(format_eta(Some(360000)), "100h");
+        assert_eq!(format_eta(Some(360_000)), "100h");
         assert_eq!(format_eta(Some(u64::MAX)), "+999999h");
     }
 
@@ -1203,8 +1227,8 @@ mod tests {
         let mut eta = Eta::new();
         // Add many samples spanning a long period.
         for i in 0..250 {
-            let t = i as f64;
-            let p = (i as f64 / 250.0).min(1.0);
+            let t = f64::from(i);
+            let p = (f64::from(i) / 250.0).min(1.0);
             eta.add_sample(t, p);
         }
         // After pruning, samples older than (last_time - estimation_period) are removed.
@@ -1486,13 +1510,13 @@ mod tests {
     ///
     /// Python applies the gradient REVERSED, keyed off highlighted length:
     ///
-    ///   text_length = len(highlight_bar)
-    ///   for offset in range(text_length):
-    ///       bar_offset = text_length - offset   # DOWN: high left, low right
-    ///       t = bar_offset / (width - 1)
+    ///   `text_length` = `len(highlight_bar)`
+    ///   for offset in `range(text_length)`:
+    ///       `bar_offset` = `text_length` - offset   # DOWN: high left, low right
+    ///       t = `bar_offset` / (width - 1)
     ///
-    /// For a fully-filled bar of width=5 (max_width=4):
-    ///   - text_length = 5 (all 5 cells highlighted)
+    /// For a fully-filled bar of width=5 (`max_width=4)`:
+    ///   - `text_length` = 5 (all 5 cells highlighted)
     ///   - cell 0 (leftmost):  t = 5/4 = 1.25 → clamped to 1.0 → end color
     ///   - cell 4 (rightmost): t = 1/4 = 0.25 → low end → closer to start color
     ///

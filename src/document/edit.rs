@@ -2,14 +2,17 @@
 
 use super::{Document, EditResult, Location, Selection};
 
+use crate::num::Cast;
+
 /// A single undoable replacement of text at some range within a document.
 ///
 /// Borrow shape (deviation from Python, which passes the whole `TextArea`):
 /// [`Edit::apply`] and [`Edit::undo`] take `(&mut Document, Selection)` and
 /// record the selection intent in [`Edit::updated_selection`]; the `TextArea`
 /// edit funnel owns applying that selection after re-wrap, preserving the
-/// Python ordering (edit, wrap_range, then selection restore).
+/// Python ordering (edit, `wrap_range`, then selection restore).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_field_names)] // Named like its public getter `Edit::edit_result`.
 pub struct Edit {
     /// The text to insert. An empty string is equivalent to deletion.
     pub text: String,
@@ -51,26 +54,31 @@ impl Edit {
     }
 
     /// The location impacted by this edit nearest the document start.
+    #[must_use]
     pub fn top(&self) -> Location {
         self.from_location.min(self.to_location)
     }
 
     /// The location impacted by this edit nearest the document end.
+    #[must_use]
     pub fn bottom(&self) -> Location {
         self.from_location.max(self.to_location)
     }
 
     /// The result of the original [`Edit::apply`], if performed.
+    #[must_use]
     pub fn edit_result(&self) -> Option<&EditResult> {
         self.edit_result.as_ref()
     }
 
     /// Where the selection should move to after this edit (or after undo).
+    #[must_use]
     pub fn updated_selection(&self) -> Option<Selection> {
         self.updated_selection
     }
 
     /// The selection recorded when the edit was originally performed.
+    #[must_use]
     pub fn original_selection(&self) -> Option<Selection> {
         self.original_selection
     }
@@ -100,29 +108,29 @@ impl Edit {
         let edit_result = document.replace_range(self.top(), self.bottom(), &self.text);
         let (new_edit_to_row, new_edit_to_column) = edit_result.end_location;
 
-        let column_offset = new_edit_to_column as isize - edit_bottom_column as isize;
+        let column_offset = new_edit_to_column.to_isize_sat() - edit_bottom_column.to_isize_sat();
         let target_selection_start_column = if edit_bottom_row == selection_start_row
             && edit_bottom_column <= selection_start_column
         {
-            (selection_start_column as isize + column_offset).max(0) as usize
+            (selection_start_column.to_isize_sat() + column_offset).to_usize_sat()
         } else {
             selection_start_column
         };
         let target_selection_end_column =
             if edit_bottom_row == selection_end_row && edit_bottom_column <= selection_end_column {
-                (selection_end_column as isize + column_offset).max(0) as usize
+                (selection_end_column.to_isize_sat() + column_offset).to_usize_sat()
             } else {
                 selection_end_column
             };
 
-        let row_offset = new_edit_to_row as isize - edit_bottom_row as isize;
+        let row_offset = new_edit_to_row.to_isize_sat() - edit_bottom_row.to_isize_sat();
         let target_selection_start_row = if edit_bottom_row <= selection_start_row {
-            (selection_start_row as isize + row_offset).max(0) as usize
+            (selection_start_row.to_isize_sat() + row_offset).to_usize_sat()
         } else {
             selection_start_row
         };
         let target_selection_end_row = if edit_bottom_row <= selection_end_row {
-            (selection_end_row as isize + row_offset).max(0) as usize
+            (selection_end_row.to_isize_sat() + row_offset).to_usize_sat()
         } else {
             selection_end_row
         };
