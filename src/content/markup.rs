@@ -407,72 +407,10 @@ pub(crate) fn parse_markup_with_vars(
 
                 if is_closing {
                     // Closing tag `[/tag]` or `[/]`
-                    let closing = tag_body.trim();
-                    if closing.is_empty() {
-                        // `[/]` → auto-close the most recent open tag
-                        if let Some((tag_pos, raw_tag, _norm)) = style_stack.pop() {
-                            let current_pos = text.len();
-                            if tag_pos != current_pos {
-                                // Extract meta from raw_tag for metadata-only tags
-                                let meta = extract_meta_only(&raw_tag);
-                                spans.push(RawSpan {
-                                    start: tag_pos,
-                                    end: current_pos,
-                                    raw_tag,
-                                    meta,
-                                });
-                            }
-                        }
-                        // (If nothing to close, silently ignore — matches Python)
-                    } else {
-                        let norm_closing = normalize_tag(closing);
-                        // Find matching open tag (most recent first)
-                        let stack_len = style_stack.len();
-                        let mut found = false;
-                        for rev_idx in 0..stack_len {
-                            let stack_idx = stack_len - 1 - rev_idx;
-                            if style_stack[stack_idx].2 == norm_closing {
-                                let (tag_pos, raw_tag, _norm) = style_stack.remove(stack_idx);
-                                let current_pos = text.len();
-                                if tag_pos != current_pos {
-                                    let meta = extract_meta_only(&raw_tag);
-                                    spans.push(RawSpan {
-                                        start: tag_pos,
-                                        end: current_pos,
-                                        raw_tag,
-                                        meta,
-                                    });
-                                }
-                                found = true;
-                                break;
-                            }
-                        }
-                        if !found {
-                            // Unmatched closing tag → emit as literal text
-                            let literal = format!("[/{closing}]");
-                            text.push_str(&literal);
-                        }
-                    }
+                    close_tag(tag_body.trim(), &mut text, &mut style_stack, &mut spans);
                 } else {
                     // Opening tag
-                    let tag_trimmed = tag_body.trim();
-                    if tag_trimmed.is_empty() {
-                        // Empty tag `[ ]` or `[]` → literal (matches Python "blank tag")
-                        let literal = format!("[{tag_body}]");
-                        text.push_str(&literal);
-                    } else if contains_literal_text(tag_trimmed) {
-                        // Tag body contains characters that the style tokeniser would
-                        // see as text tokens (e.g. embedded `[` or control chars) —
-                        // emit as literal text, matching Python's "contains_text" branch.
-                        let literal = format!("[{tag_body}]");
-                        text.push_str(&literal);
-                    } else {
-                        // Valid tag candidate: push to stack with raw body.
-                        // We do NOT pre-parse the style here — defer to render time.
-                        let norm = normalize_tag(tag_trimmed);
-                        let pos = text.len();
-                        style_stack.push((pos, tag_trimmed.to_string(), norm));
-                    }
+                    open_tag(tag_body, &mut text, &mut style_stack);
                 }
             } else {
                 // No closing `]` found → emit `[` literally and continue
@@ -511,6 +449,85 @@ pub(crate) fn parse_markup_with_vars(
     spans.sort_by_key(|s| s.start);
 
     (text, spans)
+}
+
+/// Handle a closing tag with (trimmed) body `closing`: `[/]` closes the
+/// most recent open tag, `[/tag]` the most recent matching one; an
+/// unmatched closing tag is kept as literal text.
+fn close_tag(
+    closing: &str,
+    text: &mut String,
+    style_stack: &mut Vec<(usize, String, String)>,
+    spans: &mut Vec<RawSpan>,
+) {
+    if closing.is_empty() {
+        // `[/]` → auto-close the most recent open tag
+        if let Some((tag_pos, raw_tag, _norm)) = style_stack.pop() {
+            let current_pos = text.len();
+            if tag_pos != current_pos {
+                // Extract meta from raw_tag for metadata-only tags
+                let meta = extract_meta_only(&raw_tag);
+                spans.push(RawSpan {
+                    start: tag_pos,
+                    end: current_pos,
+                    raw_tag,
+                    meta,
+                });
+            }
+        }
+        // (If nothing to close, silently ignore — matches Python)
+    } else {
+        let norm_closing = normalize_tag(closing);
+        // Find matching open tag (most recent first)
+        let stack_len = style_stack.len();
+        let mut found = false;
+        for rev_idx in 0..stack_len {
+            let stack_idx = stack_len - 1 - rev_idx;
+            if style_stack[stack_idx].2 == norm_closing {
+                let (tag_pos, raw_tag, _norm) = style_stack.remove(stack_idx);
+                let current_pos = text.len();
+                if tag_pos != current_pos {
+                    let meta = extract_meta_only(&raw_tag);
+                    spans.push(RawSpan {
+                        start: tag_pos,
+                        end: current_pos,
+                        raw_tag,
+                        meta,
+                    });
+                }
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            // Unmatched closing tag → emit as literal text
+            let literal = format!("[/{closing}]");
+            text.push_str(&literal);
+        }
+    }
+}
+
+/// Handle an opening tag with body `tag_body`: push it on the style stack,
+/// or keep it as literal text when it is blank or contains text.
+fn open_tag(tag_body: &str, text: &mut String, style_stack: &mut Vec<(usize, String, String)>) {
+    let tag_trimmed = tag_body.trim();
+    if tag_trimmed.is_empty() {
+        // Empty tag `[ ]` or `[]` → literal (matches Python "blank tag")
+        let literal = format!("[{tag_body}]");
+        text.push_str(&literal);
+    } else if contains_literal_text(tag_trimmed) {
+        // Tag body contains characters that the style tokeniser would
+        // see as text tokens (e.g. embedded `[` or control chars) —
+        // emit as literal text, matching Python's "contains_text" branch.
+        let literal = format!("[{tag_body}]");
+        text.push_str(&literal);
+    } else {
+        // Valid tag candidate: push to stack with raw body.
+        // We do NOT pre-parse the style here — defer to render time.
+        let norm = normalize_tag(tag_trimmed);
+        let pos = text.len();
+        style_stack.push((pos, tag_trimmed.to_string(), norm));
+    }
 }
 
 /// Apply `string.Template.safe_substitute` semantics to a single text token.
