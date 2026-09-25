@@ -1129,6 +1129,19 @@ pub(crate) fn join_lines(out_lines: Vec<Vec<Segment>>) -> Segments {
     out
 }
 
+/// Push the pending text run (if any) with its style.
+pub(crate) fn flush_run(
+    out: &mut Segments,
+    pending_style: &mut Option<rich_rs::Style>,
+    pending_text: &mut String,
+) {
+    if pending_text.is_empty() {
+        return;
+    }
+    let style = pending_style.take().unwrap_or_default();
+    out.push(Segment::styled(std::mem::take(pending_text), style));
+}
+
 #[cfg(test)]
 mod tests {
     use super::{WindowsSafeBordersMode, parse_windows_safe_borders_mode};

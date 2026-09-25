@@ -8,6 +8,7 @@ use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 use tree_sitter::{Parser, Query, QueryCursor};
 
+use super::helpers::flush_run;
 use crate::event::Event;
 use crate::message::{
     MessageEvent, TextAreaChanged, TextAreaSelectionChanged, TextEditClipboardCopyRequested,
@@ -2203,19 +2204,6 @@ struct RowRender<'a> {
     text_w: usize,
     /// Soft-wrap width (0 when unwrapped).
     wrap_width: usize,
-}
-
-/// Push the pending text run (if any) with its style.
-fn flush_run(
-    out: &mut Segments,
-    pending_style: &mut Option<rich_rs::Style>,
-    pending_text: &mut String,
-) {
-    if pending_text.is_empty() {
-        return;
-    }
-    let style = pending_style.take().unwrap_or_default();
-    out.push(Segment::styled(std::mem::take(pending_text), style));
 }
 
 fn compose_rich(style: &Style, base_bg: Color) -> rich_rs::Style {
