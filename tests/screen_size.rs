@@ -36,21 +36,42 @@ fn cell(screen: &vt100::Screen, row: u16, col: u16) -> String {
         .unwrap_or_default()
 }
 
+/// The inline frame's height where the rules fix it (INL-004): `height: 10`
+/// plus the tall top and bottom border rows, and a floor taller than any
+/// terminal, which gives the whole terminal. `None` for the max sizes: the
+/// frame is then as tall as the content and its border, capped at 10 rows,
+/// and a screen that fills less than it still leaves the side borders short.
+fn inline_frame_rows(rules: &str, rows: u16) -> Option<u16> {
+    match rules {
+        SIZED => Some(12),
+        RAISED => Some(rows),
+        _ => None,
+    }
+}
+
 /// The first and last rows of the area the app draws in. Full-screen, that
 /// is the whole terminal. Inline, the frame starts after the two shell lines
-/// and the probe's one padding line, and ends on the last row with text. A
-/// frame as tall as the terminal (INL-004) pushes those lines off the top.
-fn area_rows(screen: &vt100::Screen, mode: &str, rows: u16) -> (u16, u16) {
+/// and the probe's one padding line, or on the first row once a frame as
+/// tall as the terminal has pushed them off the top. It is
+/// `inline_frame_rows` tall where the rules fix that, and otherwise ends on
+/// the last row with text.
+fn area_rows(screen: &vt100::Screen, mode: &str, rules: &str, rows: u16) -> (u16, u16) {
     if mode == "full" {
         return (0, rows - 1);
     }
     let top = row_of(screen, "shell-2").map_or(0, |shell| shell + 2);
     let top = u16::try_from(top).expect("row fits");
-    let last = lines(screen)
-        .iter()
-        .rposition(|line| !line.is_empty())
-        .expect("the app draws something");
-    (top, u16::try_from(last).expect("row fits"))
+    let bottom = match inline_frame_rows(rules, rows) {
+        Some(height) => top + height - 1,
+        None => {
+            let last = lines(screen)
+                .iter()
+                .rposition(|line| !line.is_empty())
+                .expect("the app draws something");
+            u16::try_from(last).expect("row fits")
+        }
+    };
+    (top, bottom)
 }
 
 /// Starts the probe with `rules` in a terminal of `rows` by `cols` and checks
@@ -67,7 +88,7 @@ fn check_screen_fills_its_area(mode: &str, rules: &str, (rows, cols): (u16, u16)
     );
     term.wait_for("probe status", has_text("keys:0"));
     let screen = term.settle();
-    let (top, bottom) = area_rows(&screen, mode, rows);
+    let (top, bottom) = area_rows(&screen, mode, rules, rows);
     let what = format!("{mode} {cols}x{rows} with {rules:?}");
     let mut wrong = Vec::new();
     for row in top..=bottom {

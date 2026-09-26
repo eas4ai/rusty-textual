@@ -420,7 +420,8 @@ fn inline_screen_node(tree: &WidgetTree) -> Option<NodeId> {
 }
 
 /// The region a layout root lays its children out in. A Screen root (a
-/// pushed screen's `ScreenHost`) keeps its own border and padding, so its
+/// pushed screen's `ScreenHost`), like the app's Screen that
+/// `resolve_layout` places, keeps its own border and padding, so its
 /// children sit inside them, as Python arranges a screen's children inside
 /// its gutter; any other root lays them out on the whole viewport.
 pub(crate) fn root_content_region(tree: &WidgetTree, root: NodeId, available: Region) -> Region {
@@ -453,13 +454,13 @@ fn is_screen_node(tree: &WidgetTree, node: NodeId) -> bool {
     })
 }
 
-/// Whether `node` is the app tree's Screen (the Screen child of a root that
-/// stands for the App). Python lays every screen out on the whole region it
-/// is given, the terminal or, inline, the inline frame (`screen.py:1316-1320`,
-/// `_compositor.py:743-752`), whatever its own size and margin rules say;
-/// inline, its height rules only set the frame's height (INL-004, INL-017,
-/// SCR-003). A pushed screen is the root of its own tree and already gets
-/// the whole viewport.
+/// Whether `node` is the app tree's Screen (the Screen child of the node
+/// that stands for the App). Python lays every screen out on the whole
+/// region it is given, the terminal or, inline, the inline frame
+/// (`screen.py:1316-1320`, `_compositor.py:743-752`), whatever its own
+/// rules say; inline, its height rules only set the frame's height
+/// (INL-004). `resolve_layout` places it so (INL-017, SCR-003). A pushed
+/// screen is the root of its own tree and already gets the whole viewport.
 pub(super) fn is_app_screen(tree: &WidgetTree, node: NodeId) -> bool {
     is_screen_node(tree, node)
         && tree
@@ -469,7 +470,7 @@ pub(super) fn is_app_screen(tree: &WidgetTree, node: NodeId) -> bool {
 
 /// Whether `node` stands for the App: the root of the app tree, not itself
 /// a Screen, with the app's Screen among its children. Python never lays
-/// the App out, so its own layout rule does not place the Screen (SCR-003).
+/// the App out, so no rule of this node places the Screen (SCR-003).
 pub(super) fn is_app_node(tree: &WidgetTree, node: NodeId) -> bool {
     tree.root() == Some(node)
         && !is_screen_node(tree, node)

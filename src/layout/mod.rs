@@ -239,8 +239,28 @@ pub fn resolve_layout(
         return;
     }
 
+    // Python places the app's screen as the compositor root on the whole
+    // region (`_compositor.py:743-752`): no rule of the App (layout, align)
+    // and no size, margin or placement rule of the screen sizes or moves it
+    // (SCR-003). So the node that stands for the App places its Screen
+    // directly and groups only its other children.
+    let screens: Vec<NodeId> = if common::is_app_node(tree, node) {
+        children
+            .iter()
+            .copied()
+            .filter(|&child| common::is_app_screen(tree, child))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let others: Vec<NodeId> = children
+        .iter()
+        .copied()
+        .filter(|child| !screens.contains(child))
+        .collect();
+
     // Separate children into categories: split, docked, absolute, and flow.
-    let groups = group_children(tree, &children);
+    let groups = group_children(tree, &others);
 
     // Arrange split children first → reduced available region.
     let after_split = if groups.split.is_empty() {
@@ -249,8 +269,19 @@ pub fn resolve_layout(
         arrange_split(tree, &groups.split, child_available, viewport)
     };
 
-    // Arrange docked children → further reduced available region.
-    let inner = arrange_docked(tree, &groups.docked, &groups.flow, after_split, viewport);
+    // Arrange docked children → further reduced available region. The
+    // Screen counts as flow here, so a dock on another layer (the toast
+    // rack) overlays it rather than carving the region.
+    let laid_out_screens: Vec<NodeId> = screens
+        .iter()
+        .copied()
+        .filter(|&screen| laid_out_style(tree, screen).is_some())
+        .collect();
+    let flow_for_docks = [groups.flow.as_slice(), laid_out_screens.as_slice()].concat();
+    let inner = arrange_docked(tree, &groups.docked, &flow_for_docks, after_split, viewport);
+    for &screen in &laid_out_screens {
+        place_app_screen(tree, screen, child_available);
+    }
 
     // Dispatch flow children to the appropriate layout.
     if !groups.flow.is_empty() {
@@ -267,6 +298,16 @@ pub fn resolve_layout(
     }
 
     resolve_child_layouts(tree, children, viewport);
+}
+
+/// Place the app's Screen on `region`, its content inside its own border
+/// and padding, as a layout root is placed on the viewport.
+fn place_app_screen(tree: &mut WidgetTree, screen: NodeId, region: Region) {
+    let content = common::root_content_region(tree, screen, region);
+    if let Some(node) = tree.get_mut(screen) {
+        node.layout_rect = region.to_rect();
+        node.content_rect = content.to_rect();
+    }
 }
 
 /// `available` minus the chrome the widget reserves before child layout
@@ -393,12 +434,7 @@ fn layout_flow(
     inner: Region,
     viewport: (u16, u16),
 ) {
-    // The App's own layout rule never places its Screen (SCR-003).
-    let strategy = if common::is_app_node(tree, node) {
-        Layout::Vertical
-    } else {
-        style.layout.unwrap_or(Layout::Vertical)
-    };
+    let strategy = style.layout.unwrap_or(Layout::Vertical);
     let (allow_h_overflow, allow_v_overflow) = flow_overflow_axes(tree, node, style);
     let effective_align = effective_flow_align(tree, node, style);
     // Python parity (`_arrange.py::arrange` + `_build_layers`): flow
@@ -2192,41 +2228,82 @@ mod tests {
         );
     }
 
+    /// Lays out an app tree, a root typed after the app (as the runtime
+    /// types the node that stands for the App) holding a Screen, with
+    /// `app` applied to the root's style and `screen` to the Screen's, and
+    /// returns the Screen's layout rect.
+    fn app_screen_rect(app: impl FnOnce(&mut Style), screen: impl FnOnce(&mut Style)) -> Rect {
+        let mut app_style = Style::new();
+        app(&mut app_style);
+        let mut screen_style = Style::new();
+        s_margin_and_size(&mut screen_style);
+        screen(&mut screen_style);
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(LayoutTestWidget::boxed_with_style("ProbeApp", app_style));
+        let node = tree.mount(
+            root,
+            LayoutTestWidget::boxed_with_style("Screen", screen_style),
+        );
+        let _guard = crate::css::set_style_context(crate::css::StyleSheet::parse(""));
+        resolve_layout(&mut tree, root, Region::new(0, 0, 80, 24), (80, 24));
+        tree.get(node).expect("screen").layout_rect
+    }
+
+    /// The size and margin rules SCR-003 names.
+    fn s_margin_and_size(s: &mut Style) {
+        s.width = Some(Scalar::Cells(20));
+        s.height = Some(Scalar::Cells(10));
+        s.margin = Some(Spacing::all(2));
+    }
+
+    /// A named rule for the app-screen tests.
+    type StyleCase = (&'static str, fn(&mut Style));
+
+    const WHOLE: Rect = Rect {
+        x0: 0,
+        y0: 0,
+        x1: 80,
+        y1: 24,
+    };
+
     #[test]
-    fn app_screen_fills_the_viewport_whatever_the_apps_layout() {
-        // SCR-003: Python never lays the App out, so an `App { layout: ... }`
-        // rule cannot route its Screen through another layout that honors
-        // the Screen's size rules.
-        for layout in [Layout::Horizontal, Layout::Grid] {
-            let mut tree = WidgetTree::new();
-            let root = tree.set_root(LayoutTestWidget::boxed_with_style("App", {
-                let mut s = Style::new();
-                s.layout = Some(layout);
-                s
-            }));
-            let screen = tree.mount(
-                root,
-                LayoutTestWidget::boxed_with_style("Screen", {
-                    let mut s = Style::new();
-                    s.width = Some(Scalar::Cells(20));
-                    s.height = Some(Scalar::Cells(10));
-                    s
-                }),
-            );
+    fn app_screen_fills_the_viewport_whatever_the_apps_rules() {
+        // SCR-003: Python never lays the App out, so a layout or align rule
+        // that reaches the node standing for it (a rule on the app's type
+        // or on `Widget`) cannot move or size the Screen.
+        const CENTER: Align = Align {
+            horizontal: HorizontalAlign::Center,
+            vertical: VerticalAlign::Middle,
+        };
+        let cases: [StyleCase; 3] = [
+            ("horizontal", |s| s.layout = Some(Layout::Horizontal)),
+            ("grid", |s| s.layout = Some(Layout::Grid)),
+            ("align", |s| s.align = Some(CENTER)),
+        ];
+        for (name, rule) in cases {
+            assert_eq!(app_screen_rect(rule, |_| {}), WHOLE, "{name}");
+        }
+    }
 
-            let _guard = crate::css::set_style_context(crate::css::StyleSheet::parse(""));
-            resolve_layout(&mut tree, root, Region::new(0, 0, 80, 24), (80, 24));
-
-            assert_eq!(
-                tree.get(screen).expect("screen").layout_rect,
-                Rect {
-                    x0: 0,
-                    y0: 0,
-                    x1: 80,
-                    y1: 24
-                },
-                "{layout:?}"
-            );
+    #[test]
+    fn app_screen_fills_the_viewport_whatever_its_placement_rules() {
+        // Python places the screen as the compositor root, where its dock,
+        // position, split and offset rules do not apply either.
+        let cases: [StyleCase; 4] = [
+            ("dock", |s| s.dock = Some(Dock::Top)),
+            ("absolute", |s| {
+                s.position = Some(crate::style::Position::Absolute);
+            }),
+            ("split", |s| s.split = Some(crate::style::Split::Top)),
+            ("offset", |s| {
+                s.offset = Some(crate::style::Offset {
+                    x: crate::style::OffsetValue::Cells(5),
+                    y: crate::style::OffsetValue::Cells(3),
+                });
+            }),
+        ];
+        for (name, rule) in cases {
+            assert_eq!(app_screen_rect(|_| {}, rule), WHOLE, "{name}");
         }
     }
 

@@ -93,13 +93,6 @@ pub(super) fn app_runtime_pseudos() -> AppRuntimePseudos {
     APP_RUNTIME_PSEUDOS.with(|v| *v.borrow())
 }
 
-/// Whether the current render pass runs the app inline (the `:inline`
-/// state). Layout reads it to skip the seeded measurement of the inline
-/// app Screen (`layout::vertical::vertical_child_spec`).
-pub(crate) fn app_runtime_inline() -> bool {
-    app_runtime_pseudos().inline
-}
-
 // -- Focus-within context ---------------------------------------------------
 
 /// RAII guard that restores the previous `:focus-within` set on drop.
