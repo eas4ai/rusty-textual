@@ -22,26 +22,8 @@ use std::sync::OnceLock;
 use pty::Answers;
 use pty::{
     ROWS, SHELL_AROUND, SHELL_THEN_EXEC, Term, built, calculator, contains, dump, has_text, lines,
-    painted_rows, repo_root, row_of,
+    painted_rows, probe, row_of,
 };
-
-fn probe() -> PathBuf {
-    static CELL: OnceLock<pty::Built> = OnceLock::new();
-    let target_dir = repo_root().join("target/inline-probe");
-    let target_arg = target_dir.display().to_string();
-    let manifest = "tests/fixtures/inline_probe/Cargo.toml";
-    built(
-        &CELL,
-        &[
-            "build",
-            "--manifest-path",
-            manifest,
-            "--target-dir",
-            &target_arg,
-        ],
-        "inline_probe",
-    )
-}
 
 fn docs_example(name: &str) -> PathBuf {
     static HOW_TO: OnceLock<pty::Built> = OnceLock::new();
