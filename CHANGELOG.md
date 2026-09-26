@@ -90,6 +90,20 @@ until the API stabilizes.
   reply is still consumed; startup takes one round trip instead of two.
   macOS and the BSDs no longer send the queries (synchronized output stays
   off there); Windows is unchanged.
+- A pushed `Screen` or `ModalScreen` taller than the terminal now scrolls
+  with the mouse wheel and by dragging its scrollbar, as in Python Textual
+  (`overflow-y: auto`). Before, its scrollbar was drawn but the screen did
+  not move. In inline mode the scrolled content stays inside the
+  `Screen:inline` border.
+- A widget changed through `App::with_widget_mut`, `with_widget_mut_as`,
+  `with_query_one_mut` or `with_query_one_mut_as` is now redrawn in the
+  next frame, as Python's `Static.update` refreshes it, even when its size
+  stays the same. Before, the change showed only once something else
+  redrew that part of the screen, and in full-screen mode it could be lost
+  for good when an input (a hover, say) repainted another widget in the
+  same frame. Every such call now repaints the widget, reads included; to
+  read without a repaint, use `Handle::read` through `App::query_one_typed`
+  or `App::typed_handle`.
 
 ## [1.1.0] - 2026-07-16
 
