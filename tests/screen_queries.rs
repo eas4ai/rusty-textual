@@ -15,7 +15,7 @@
 #[path = "support/pty.rs"]
 mod pty;
 
-use pty::{Answers, SHELL_THEN_EXEC, Term, dump, has_text, lines, probe};
+use pty::{Answers, SHELL_THEN_EXEC, Term, has_text, lines, probe};
 
 /// Pushes the probe's screen, presses `hide` and checks that its text is
 /// gone, then presses `show` and checks that its text is back.
@@ -28,14 +28,12 @@ fn check_query_hides_and_shows_pushed_text(mode: &str, push: &str, hide: &[u8], 
     term.wait_for(&format!("{env:?}: the pushed screen"), has_text("pushed 1"));
     term.settle();
     term.send(hide);
-    let screen = term.wait_for(&format!("{env:?}: pushed 1 hidden"), |s| {
-        !lines(s).iter().any(|line| line.contains("pushed 1"))
+    // The terminal can take a frame in several reads, so wait for all of
+    // the pushed text to go, not just its first line: a line the frame
+    // leaves on screen still fails, when the wait times out.
+    term.wait_for(&format!("{env:?}: the pushed text hidden"), |s| {
+        !lines(s).iter().any(|line| line.contains("pushed"))
     });
-    assert!(
-        !lines(&screen).iter().any(|line| line.contains("pushed")),
-        "{env:?}: pushed text is still shown:\n{}",
-        dump(&screen)
-    );
     term.send(show);
     term.wait_for(
         &format!("{env:?}: pushed 1 shown again"),
