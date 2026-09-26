@@ -10,6 +10,9 @@
 //! - `PROBE_SCREEN_OVERFLOW`: when set, the `overflow-y` of a `Screen` rule
 //!   (for example `hidden`), for every screen, pushed or not.
 //! - `PROBE_BUTTON`: when set, a `Press` button follows the body.
+//! - `PROBE_HOVER`: when set, a `hover here` line comes before the body, away
+//!   from the status line. Moving the pointer over it posts a message, and
+//!   the app's message handler updates the status line.
 //! - `PROBE_EXIT_MESSAGE`: when set, `q` exits through `App::exit` with this
 //!   message (Python `App.exit(message=...)`).
 //! - `PROBE_EXIT_RESULT`: when set, the app returns this value
@@ -23,17 +26,48 @@
 //! Keys: `s` shrinks the body to one line, `z` tries `App::suspend`, `x`
 //! runs the suspend-process action, `p` pushes the `PROBE_PUSH` screen, `q`
 //! quits. The status line counts every
-//! other key that arrives (`keys:N`) and shows the last suspend result, and
-//! `clicked` once the button has been pressed.
+//! other key that arrives (`keys:N`) and shows the last suspend result,
+//! `clicked` once the button has been pressed, and `hovered` once the
+//! pointer has moved over the hover line.
 
 use textual::prelude::*;
 
 const CSS: &str = "
 #cssmark { display: none; }
 Screen:inline #cssmark { display: block; }
+HoverLine { height: 1; }
 ";
 
 const PUSHED_LINES: usize = 60;
+
+/// Posted when the pointer moves over the `PROBE_HOVER` line.
+#[derive(Debug, Clone)]
+struct Hovered;
+
+textual::impl_message!(Hovered);
+
+/// The `PROBE_HOVER` line: posts `Hovered` for each pointer move over it.
+struct HoverLine(Static);
+
+impl Widget for HoverLine {
+    fn style_type(&self) -> &'static str {
+        "HoverLine"
+    }
+
+    fn render(
+        &self,
+        console: &rich_rs::Console,
+        options: &rich_rs::ConsoleOptions,
+    ) -> rich_rs::Segments {
+        self.0.render(console, options)
+    }
+
+    fn on_event(&mut self, event: &Event, ctx: &mut WidgetCtx) {
+        if matches!(event, Event::MouseMove(_)) {
+            ctx.post_message(Hovered);
+        }
+    }
+}
 
 /// The screen `p` pushes: taller than the 30-row test terminal.
 struct Pushed {
@@ -57,6 +91,7 @@ struct Probe {
     screen_height: Option<String>,
     screen_overflow: Option<String>,
     button: bool,
+    hover: bool,
     exit_message: Option<String>,
     exit_result: Option<String>,
     exit_in_configure: bool,
@@ -64,6 +99,7 @@ struct Probe {
     other_keys: usize,
     suspend: &'static str,
     clicked: bool,
+    hovered: bool,
 }
 
 impl Probe {
@@ -80,6 +116,7 @@ impl Probe {
             screen_height: std::env::var("PROBE_SCREEN_HEIGHT").ok(),
             screen_overflow: std::env::var("PROBE_SCREEN_OVERFLOW").ok(),
             button: std::env::var_os("PROBE_BUTTON").is_some(),
+            hover: std::env::var_os("PROBE_HOVER").is_some(),
             exit_message: std::env::var("PROBE_EXIT_MESSAGE").ok(),
             exit_result: std::env::var("PROBE_EXIT_RESULT").ok(),
             exit_in_configure: std::env::var_os("PROBE_EXIT_IN_CONFIGURE").is_some(),
@@ -87,6 +124,7 @@ impl Probe {
             other_keys: 0,
             suspend: "none",
             clicked: false,
+            hovered: false,
         }
     }
 
@@ -99,7 +137,11 @@ impl Probe {
 
     fn status(&self) -> String {
         let clicked = if self.clicked { " clicked" } else { "" };
-        format!("keys:{} suspend:{}{clicked}", self.other_keys, self.suspend)
+        let hovered = if self.hovered { " hovered" } else { "" };
+        format!(
+            "keys:{} suspend:{}{clicked}{hovered}",
+            self.other_keys, self.suspend
+        )
     }
 
     fn refresh(&self, app: &mut App) {
@@ -127,7 +169,11 @@ impl TextualApp for Probe {
     }
 
     fn compose(&mut self) -> AppRoot {
-        let root = AppRoot::new()
+        let mut root = AppRoot::new();
+        if self.hover {
+            root = root.with_child(HoverLine(Static::new("hover here")));
+        }
+        let root = root
             .with_child(Static::new(self.body()).id("body"))
             .with_child(Static::new(self.status()).id("status"))
             .with_child(Static::new("inline-css").id("cssmark"));
@@ -183,6 +229,11 @@ impl TextualApp for Probe {
         if message.downcast_ref::<ButtonPressed>().is_some() {
             self.clicked = true;
             ctx.set_handled();
+            self.refresh(app);
+        } else if message.downcast_ref::<Hovered>().is_some() && !self.hovered {
+            // Not marked handled, like the mouse01 example: a handled message
+            // repaints the whole frame, so only the update asks for a repaint.
+            self.hovered = true;
             self.refresh(app);
         }
     }
