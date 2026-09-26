@@ -647,15 +647,16 @@ impl<'a> DomQueryMut<'a> {
         }
     }
 
+    /// Remove each matched node and its subtree through
+    /// [`App::remove_node`], which drops focus from the subtree and lays out
+    /// and repaints the former parent.
     pub fn remove(self) -> AwaitRemove {
         let generation = self.app.lifecycle_drain_generation();
         let mut removed = Vec::new();
-        if let Some(tree) = self.app.active_widget_tree_mut() {
-            for &id in &self.nodes {
-                if tree.contains(id) {
-                    removed.extend(tree.walk_depth_first(id));
-                    tree.remove(id);
-                }
+        for &id in &self.nodes {
+            // A node inside an earlier match's subtree is already gone.
+            if let Ok(done) = self.app.remove_node(id) {
+                removed.extend(done.removed);
             }
         }
         AwaitRemove {
@@ -7382,6 +7383,33 @@ mod tests {
     }
 
     #[test]
+    fn dom_query_mut_remove_takes_nested_matches_and_asks_for_a_redraw() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(AppRoot::new()));
+        let outer = tree.mount(root, Box::new(crate::widgets::Container::new()));
+        let inner = tree.mount(outer, Box::new(Button::new("inner")));
+        let kept = tree.mount(root, Box::new(Button::new("kept")));
+        tree.add_class(outer, "gone");
+        tree.add_class(inner, "gone");
+        let mut app = App::new().expect("app should initialize");
+        app.widget_tree = Some(tree);
+        let _ = app.take_pending_force_relayout();
+        let _ = app.take_pending_query_refresh_nodes();
+
+        // The inner match goes with the outer one; it is listed once.
+        let done = app.query_mut(".gone").expect("query").remove();
+        assert_eq!(done.removed, vec![outer, inner]);
+        let tree = app.widget_tree.as_ref().expect("tree exists");
+        assert!(!tree.contains(outer) && !tree.contains(inner));
+        assert!(tree.contains(kept));
+        assert!(app.take_pending_force_relayout(), "remove relayouts");
+        assert!(
+            app.take_pending_query_refresh_nodes().contains(&root),
+            "remove repaints the parent"
+        );
+    }
+
+    #[test]
     fn dom_query_mut_set_supports_disabled_and_loading() {
         #[derive(Default)]
         struct StateProbe;
@@ -7802,6 +7830,7 @@ mod tests {
         );
         let _ = app.query_mut("#pushed").expect("query").remove();
         assert!(!active(&app).contains(pushed), "remove");
+        assert!(app.take_pending_force_relayout(), "remove relayouts");
 
         assert_eq!(
             seen(app.widget_tree.as_ref().expect("base tree")),
