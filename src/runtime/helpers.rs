@@ -349,8 +349,7 @@ pub fn widget_at_tree_layout(tree: &WidgetTree, x: u16, y: u16) -> Option<NodeId
         if !node.display || node.visibility != crate::style::Visibility::Visible {
             continue;
         }
-        let node_css_id = node.css_id.as_deref();
-        if node_css_id == Some(SYSTEM_TOOLTIP_STYLE_ID) {
+        if node_is_system_tooltip(tree, node_id) {
             continue;
         }
         let mut render_shift_x: i32 = 0;
@@ -478,6 +477,15 @@ fn descendant_uses_ancestor_scroll(
 
 fn node_is_docked(tree: &WidgetTree, node_id: NodeId) -> bool {
     resolve_style_in_tree(tree, node_id).is_some_and(|style| style.dock.is_some())
+}
+
+/// Whether `node_id` is the runtime's system tooltip. It is placed in screen
+/// coordinates, so a scrolling root neither moves it nor counts it as content.
+/// (On the app tree it hangs off the stub root, beside `AppRoot`; on a pushed
+/// screen it is a child of the screen's root.)
+pub(crate) fn node_is_system_tooltip(tree: &WidgetTree, node_id: NodeId) -> bool {
+    tree.get(node_id)
+        .is_some_and(|node| node.css_id.as_deref() == Some(SYSTEM_TOOLTIP_STYLE_ID))
 }
 
 /// Whether `node_id` is one of the scrollbar lanes a scroll host owns. A
