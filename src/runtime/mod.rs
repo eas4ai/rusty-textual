@@ -367,7 +367,7 @@ impl<'a> DomQueryMut<'a> {
 
     pub fn set_class(self, add: bool, class_names: &[&str]) -> Self {
         let mut changed_nodes: Vec<NodeId> = Vec::new();
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 let mut changed = false;
                 for class in class_names {
@@ -411,7 +411,7 @@ impl<'a> DomQueryMut<'a> {
 
     pub fn toggle_classes(self, class_names: &[&str]) -> Self {
         let mut changed_nodes: Vec<NodeId> = Vec::new();
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 let mut changed = false;
                 for class in class_names {
@@ -430,7 +430,7 @@ impl<'a> DomQueryMut<'a> {
 
     pub fn set_classes(self, classes: &[&str]) -> Self {
         let mut changed_nodes: Vec<NodeId> = Vec::new();
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             let target: std::collections::HashSet<&str> = classes.iter().copied().collect();
             for &id in &self.nodes {
                 let same = tree.get(id).is_some_and(|node| {
@@ -482,7 +482,7 @@ impl<'a> DomQueryMut<'a> {
         let mut f = f;
         let mut layout_changed = false;
         let mut changed_nodes: Vec<NodeId> = Vec::new();
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 let before = tree.styles(id).cloned();
                 tree.update_styles(id, |s| f(s));
@@ -518,7 +518,7 @@ impl<'a> DomQueryMut<'a> {
     }
 
     pub fn set_focus(self, focused: bool) -> Self {
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 tree.set_focus_state(id, focused);
             }
@@ -547,7 +547,7 @@ impl<'a> DomQueryMut<'a> {
             .and_then(routing::focused_node_id_tree);
         if let Some(focused_id) = focused
             && self.nodes.contains(&focused_id)
-            && let Some(tree) = self.app.widget_tree.as_mut()
+            && let Some(tree) = self.app.active_widget_tree_mut()
         {
             tree.set_focus_state(focused_id, false);
         }
@@ -556,7 +556,7 @@ impl<'a> DomQueryMut<'a> {
 
     pub fn set_display(self, display: bool) -> Self {
         let mut changed_nodes: Vec<NodeId> = Vec::new();
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 let before = tree.is_displayed(id);
                 tree.set_runtime_display(id, display);
@@ -573,7 +573,7 @@ impl<'a> DomQueryMut<'a> {
 
     pub fn set_visible(self, visible: bool) -> Self {
         let mut changed_nodes: Vec<NodeId> = Vec::new();
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             let visibility = if visible {
                 Visibility::Visible
             } else {
@@ -612,7 +612,7 @@ impl<'a> DomQueryMut<'a> {
 
         let query = if let Some(disabled) = disabled {
             let mut changed_nodes: Vec<NodeId> = Vec::new();
-            if let Some(tree) = query.app.widget_tree.as_mut() {
+            if let Some(tree) = query.app.active_widget_tree_mut() {
                 for &id in &query.nodes {
                     if tree
                         .get(id)
@@ -630,7 +630,7 @@ impl<'a> DomQueryMut<'a> {
         };
 
         if let Some(loading) = loading {
-            if let Some(tree) = query.app.widget_tree.as_mut() {
+            if let Some(tree) = query.app.active_widget_tree_mut() {
                 for &id in &query.nodes {
                     tree.set_loading(id, loading);
                 }

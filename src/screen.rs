@@ -408,7 +408,7 @@ impl Widget for ScreenHost {
     }
 
     fn set_virtual_content_size(&mut self, width: usize, height: usize) {
-        let _ = (width, height);
+        self.scroll.set_content_size(width, height);
     }
 
     fn on_mouse_scroll(&mut self, delta_x: i32, delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
