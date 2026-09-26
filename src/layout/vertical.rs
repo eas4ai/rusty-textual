@@ -3,7 +3,7 @@ use crate::style::Style;
 use crate::widget_tree::WidgetTree;
 
 use super::common::{
-    ChildSpec, apply_wrapper_sizing, extract_child_spec, get_node_style, is_inline_app_screen,
+    ChildSpec, apply_wrapper_sizing, extract_child_spec, get_node_style, is_app_screen,
     measure_intrinsic_content_height, measure_intrinsic_content_width,
 };
 use super::region::Region;
@@ -111,15 +111,25 @@ fn vertical_child_spec(
 ) -> ChildSpec {
     let mut style = get_node_style(tree, child);
     apply_wrapper_sizing(tree, child, &mut style);
-    let inline_app_screen = is_inline_app_screen(tree, child);
-    if inline_app_screen {
-        // Inline, the viewport is the inline height, and the Screen fills it
-        // as it fills the terminal in full-screen mode: its height rules
-        // (`Screen:inline { height: auto }`) already set the inline height.
+    let app_screen = is_app_screen(tree, child);
+    if app_screen {
+        // The Screen fills the viewport, the terminal or the inline frame,
+        // whatever its own size and margin rules say. Inline, its height
+        // rules (`Screen:inline { height: auto }`) already set the frame's
+        // height.
+        style.width = None;
+        style.min_width = None;
+        style.max_width = None;
         style.height = None;
         style.min_height = None;
         style.max_height = None;
-    } else {
+        style.margin = None;
+        style.margin_top = None;
+        style.margin_right = None;
+        style.margin_bottom = None;
+        style.margin_left = None;
+    }
+    if !(app_screen && crate::css::app_runtime_inline()) {
         // Not for the inline Screen: it fills the viewport, so no seeded
         // measurement sizes it, and seeding would clamp its scroll offset
         // against the outer height (`AppRoot::on_layout`), in the measuring
