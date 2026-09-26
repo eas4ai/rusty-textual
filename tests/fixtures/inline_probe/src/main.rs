@@ -109,7 +109,9 @@ impl Probe {
 impl TextualApp for Probe {
     fn configure(&mut self, app: &mut App) -> textual::Result<()> {
         match &self.screen_height {
-            Some(height) => app.load_stylesheet(&format!("{CSS}Screen:inline {{ height: {height}; }}\n")),
+            Some(height) => {
+                app.load_stylesheet(&format!("{CSS}Screen:inline {{ height: {height}; }}\n"))
+            }
             None => app.load_stylesheet(CSS),
         }
         if self.exit_in_configure {

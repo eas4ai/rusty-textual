@@ -89,6 +89,26 @@ pub fn calculator() -> PathBuf {
     built(&CELL, &["build", "--example", "calculator"], "calculator")
 }
 
+/// The probe app in `tests/fixtures/inline_probe`, a standalone package built
+/// into its own target directory.
+pub fn probe() -> PathBuf {
+    static CELL: OnceLock<Built> = OnceLock::new();
+    let target_dir = repo_root().join("target/inline-probe");
+    let target_arg = target_dir.display().to_string();
+    let manifest = "tests/fixtures/inline_probe/Cargo.toml";
+    built(
+        &CELL,
+        &[
+            "build",
+            "--manifest-path",
+            manifest,
+            "--target-dir",
+            &target_arg,
+        ],
+        "inline_probe",
+    )
+}
+
 /// Which terminal queries the harness answers, and after what delay.
 #[derive(Clone, Copy)]
 pub struct Answers {
