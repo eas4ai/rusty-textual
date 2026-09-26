@@ -239,18 +239,31 @@ pub struct Term {
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn Child + Send + Sync>,
     reader: Option<JoinHandle<()>>,
+    cols: u16,
 }
 
 impl Term {
     /// Run `/bin/sh -c script bin` (the script runs the binary as `$0`) with
     /// `env` in a fresh terminal that answers queries as `answers` says. The
     /// shell is `/bin/sh`, not the first `sh` on `PATH`, so the mechanisms'
-    /// identity can name it.
+    /// identity can name it. The terminal has `ROWS` rows of `COLS` cells.
     pub fn spawn(script: &str, bin: &Path, env: &[(&str, &str)], answers: Answers) -> Self {
+        Self::spawn_sized(script, bin, env, answers, ROWS, COLS)
+    }
+
+    /// [`Term::spawn`] in a terminal of `rows` rows of `cols` cells.
+    pub fn spawn_sized(
+        script: &str,
+        bin: &Path,
+        env: &[(&str, &str)],
+        answers: Answers,
+        rows: u16,
+        cols: u16,
+    ) -> Self {
         let pty = native_pty_system()
             .openpty(PtySize {
-                rows: ROWS,
-                cols: COLS,
+                rows,
+                cols,
                 pixel_width: 0,
                 pixel_height: 0,
             })
@@ -279,7 +292,7 @@ impl Term {
         let reader = pty.master.try_clone_reader().expect("pty reader");
         let writer: SharedWriter =
             Arc::new(Mutex::new(pty.master.take_writer().expect("pty writer")));
-        let parser = Arc::new(Mutex::new(vt100::Parser::new(ROWS, COLS, 0)));
+        let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0)));
         let raw = Arc::new(Mutex::new(Vec::new()));
         let (replies, due) = channel::<(Instant, Vec<u8>)>();
         let reply_writer = Arc::clone(&writer);
@@ -302,6 +315,7 @@ impl Term {
             master: pty.master,
             child,
             reader: Some(thread),
+            cols,
         }
     }
 
@@ -365,11 +379,11 @@ impl Term {
     }
 
     pub fn resize(&self, rows: u16) {
-        self.parser.lock().unwrap().set_size(rows, COLS);
+        self.parser.lock().unwrap().set_size(rows, self.cols);
         self.master
             .resize(PtySize {
                 rows,
-                cols: COLS,
+                cols: self.cols,
                 pixel_width: 0,
                 pixel_height: 0,
             })
