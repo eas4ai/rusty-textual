@@ -19,9 +19,11 @@ sys.dont_write_bytecode = True
 from mechanism_env import clean_env  # noqa: E402
 
 REQUIREMENTS = ["SCR-001", "SCR-002"]
+# --no-fail-fast: a failing target must not keep the other from running.
 COMMAND = [
     "cargo",
     "test",
+    "--no-fail-fast",
     "--test",
     "screen_scroll",
     "--test",
