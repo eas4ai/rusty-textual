@@ -367,7 +367,7 @@ impl<'a> DomQueryMut<'a> {
 
     pub fn set_class(self, add: bool, class_names: &[&str]) -> Self {
         let mut changed_nodes: Vec<NodeId> = Vec::new();
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 let mut changed = false;
                 for class in class_names {
@@ -411,7 +411,7 @@ impl<'a> DomQueryMut<'a> {
 
     pub fn toggle_classes(self, class_names: &[&str]) -> Self {
         let mut changed_nodes: Vec<NodeId> = Vec::new();
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 let mut changed = false;
                 for class in class_names {
@@ -430,7 +430,7 @@ impl<'a> DomQueryMut<'a> {
 
     pub fn set_classes(self, classes: &[&str]) -> Self {
         let mut changed_nodes: Vec<NodeId> = Vec::new();
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             let target: std::collections::HashSet<&str> = classes.iter().copied().collect();
             for &id in &self.nodes {
                 let same = tree.get(id).is_some_and(|node| {
@@ -482,7 +482,7 @@ impl<'a> DomQueryMut<'a> {
         let mut f = f;
         let mut layout_changed = false;
         let mut changed_nodes: Vec<NodeId> = Vec::new();
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 let before = tree.styles(id).cloned();
                 tree.update_styles(id, |s| f(s));
@@ -518,7 +518,7 @@ impl<'a> DomQueryMut<'a> {
     }
 
     pub fn set_focus(self, focused: bool) -> Self {
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 tree.set_focus_state(id, focused);
             }
@@ -543,12 +543,11 @@ impl<'a> DomQueryMut<'a> {
     pub fn blur(self) -> Self {
         let focused = self
             .app
-            .widget_tree
-            .as_ref()
+            .active_widget_tree()
             .and_then(routing::focused_node_id_tree);
         if let Some(focused_id) = focused
             && self.nodes.contains(&focused_id)
-            && let Some(tree) = self.app.widget_tree.as_mut()
+            && let Some(tree) = self.app.active_widget_tree_mut()
         {
             tree.set_focus_state(focused_id, false);
         }
@@ -556,24 +555,41 @@ impl<'a> DomQueryMut<'a> {
     }
 
     pub fn set_display(self, display: bool) -> Self {
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        let mut changed_nodes: Vec<NodeId> = Vec::new();
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
+                let before = tree.is_displayed(id);
                 tree.set_runtime_display(id, display);
+                if tree.is_displayed(id) != before {
+                    changed_nodes.push(id);
+                }
             }
         }
-        self
+        // Python's `display` setter refreshes with `layout=True` when the value
+        // changes: a node that appears or disappears moves the nodes around
+        // it. That is the class flip's invalidation.
+        self.absorb_class_change(&changed_nodes)
     }
 
     pub fn set_visible(self, visible: bool) -> Self {
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        let mut changed_nodes: Vec<NodeId> = Vec::new();
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             let visibility = if visible {
                 Visibility::Visible
             } else {
                 Visibility::Hidden
             };
             for &id in &self.nodes {
-                tree.set_visibility(id, visibility);
+                if tree.contains(id) && tree.visibility(id) != visibility {
+                    tree.set_visibility(id, visibility);
+                    changed_nodes.push(id);
+                }
             }
+        }
+        // A hidden node keeps its space, so a repaint is enough. An empty
+        // request would clear the whole screen, so skip it.
+        if !changed_nodes.is_empty() {
+            self.app.request_query_refresh(&changed_nodes);
         }
         self
     }
@@ -598,18 +614,26 @@ impl<'a> DomQueryMut<'a> {
         };
 
         let query = if let Some(disabled) = disabled {
-            if let Some(tree) = query.app.widget_tree.as_mut() {
+            let mut changed_nodes: Vec<NodeId> = Vec::new();
+            if let Some(tree) = query.app.active_widget_tree_mut() {
                 for &id in &query.nodes {
-                    tree.set_disabled(id, disabled);
+                    if tree
+                        .get(id)
+                        .is_some_and(|node| node.state.disabled != disabled)
+                    {
+                        tree.set_disabled(id, disabled);
+                        changed_nodes.push(id);
+                    }
                 }
             }
-            query
+            // `:disabled` restyles the node, as a class flip does.
+            query.absorb_class_change(&changed_nodes)
         } else {
             query
         };
 
         if let Some(loading) = loading {
-            if let Some(tree) = query.app.widget_tree.as_mut() {
+            if let Some(tree) = query.app.active_widget_tree_mut() {
                 for &id in &query.nodes {
                     tree.set_loading(id, loading);
                 }
@@ -629,7 +653,7 @@ impl<'a> DomQueryMut<'a> {
     pub fn remove(self) -> AwaitRemove {
         let generation = self.app.lifecycle_drain_generation();
         let mut removed = Vec::new();
-        if let Some(tree) = self.app.widget_tree.as_mut() {
+        if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 if tree.contains(id) {
                     removed.extend(tree.walk_depth_first(id));
@@ -7685,6 +7709,155 @@ mod tests {
             app.query_one("ScreenMarker"),
             Err(QueryError::NoMatch)
         ));
+    }
+
+    #[test]
+    fn query_changes_act_on_the_pushed_screens_nodes() {
+        // SCR-002: App::query_mut matches in the active screen's tree, so
+        // every DomQueryMut change must act there and leave the app's own
+        // tree alone; changes that show must also ask for a redraw.
+        struct QueryScreen;
+        impl crate::screen::Screen for QueryScreen {
+            fn compose(&self) -> Box<dyn Widget> {
+                Box::new(AppRoot::new().with_child(Button::new("Pushed").id("pushed")))
+            }
+        }
+        type Seen = (
+            bool,
+            Visibility,
+            bool,
+            crate::widgets::NodeState,
+            Option<WidgetStyles>,
+        );
+        fn seen(tree: &WidgetTree) -> Vec<Seen> {
+            let root = tree.root().expect("root");
+            tree.walk_depth_first(root)
+                .into_iter()
+                .map(|id| {
+                    (
+                        tree.is_displayed(id),
+                        tree.visibility(id),
+                        tree.has_class(id, "picked"),
+                        tree.get(id).expect("node").state,
+                        tree.styles(id).cloned(),
+                    )
+                })
+                .collect()
+        }
+        fn active(app: &App) -> &WidgetTree {
+            app.active_widget_tree().expect("active tree")
+        }
+
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(AppRoot::new()));
+        tree.mount(root, Box::new(Button::new("Base").id("base")));
+        let mut app = App::new().expect("app should initialize");
+        app.widget_tree = Some(tree);
+        app.push_screen(Box::new(QueryScreen))
+            .expect("push succeeds");
+        let base_before = seen(app.widget_tree.as_ref().expect("base tree"));
+        let pushed = app.query_one("#pushed").expect("pushed button");
+        let _ = app.take_pending_force_relayout();
+        let _ = app.take_pending_query_refresh_nodes();
+
+        app.query_mut("#pushed").expect("query").add_class("picked");
+        assert!(active(&app).has_class(pushed, "picked"), "add_class");
+        app.query_mut("#pushed")
+            .expect("query")
+            .set_styles(|s| s.style.bold = Some(true));
+        assert_eq!(
+            active(&app).styles(pushed).and_then(|s| s.style.bold),
+            Some(true),
+            "set_styles"
+        );
+        app.query_mut("#pushed")
+            .expect("query")
+            .set(None, None, Some(true), None);
+        assert!(
+            active(&app).get(pushed).expect("node").state.disabled,
+            "set disabled"
+        );
+        // Focus first: a hidden node cannot be the focused one.
+        app.query_mut("#pushed").expect("query").set_focus(true);
+        assert!(
+            active(&app).get(pushed).expect("node").state.focused,
+            "set_focus"
+        );
+        app.query_mut("#pushed").expect("query").blur();
+        assert!(
+            !active(&app).get(pushed).expect("node").state.focused,
+            "blur"
+        );
+        app.query_mut("#pushed").expect("query").set_visible(false);
+        assert_eq!(
+            active(&app).visibility(pushed),
+            Visibility::Hidden,
+            "set_visible"
+        );
+        let _ = app.take_pending_force_relayout();
+        let _ = app.take_pending_query_refresh_nodes();
+        app.query_mut("#pushed").expect("query").set_display(false);
+        assert!(!active(&app).is_displayed(pushed), "set_display");
+        assert!(app.take_pending_force_relayout(), "set_display relayouts");
+        assert!(
+            app.take_pending_query_refresh_nodes().contains(&pushed),
+            "set_display repaints"
+        );
+        let _ = app.query_mut("#pushed").expect("query").remove();
+        assert!(!active(&app).contains(pushed), "remove");
+
+        assert_eq!(
+            seen(app.widget_tree.as_ref().expect("base tree")),
+            base_before,
+            "the app's own tree must not change"
+        );
+    }
+
+    #[test]
+    fn query_display_visibility_and_disabled_changes_ask_for_a_redraw() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(AppRoot::new()));
+        let button = tree.mount(root, Box::new(Button::new("Base").id("base")));
+        let mut app = App::new().expect("app should initialize");
+        app.widget_tree = Some(tree);
+        let _ = app.take_pending_force_relayout();
+        let _ = app.take_pending_query_refresh_nodes();
+
+        app.query_mut("#base").expect("query").set_visible(false);
+        assert!(
+            app.take_pending_query_refresh_nodes().contains(&button),
+            "visibility repaints"
+        );
+        app.query_mut("#base")
+            .expect("query")
+            .set(None, None, Some(true), None);
+        assert!(app.take_pending_force_relayout(), "disabled relayouts");
+        assert!(
+            app.take_pending_query_refresh_nodes().contains(&button),
+            "disabled repaints"
+        );
+        app.query_mut("#base").expect("query").set_display(false);
+        assert!(app.take_pending_force_relayout(), "display relayouts");
+        assert!(
+            app.take_pending_query_refresh_nodes().contains(&button),
+            "display repaints"
+        );
+
+        // As in Python, setting a value a node already has asks for nothing,
+        // and neither does a query that matched nothing.
+        app.clear_on_next_render = false;
+        app.query_mut("#base")
+            .expect("query")
+            .set(Some(false), Some(false), Some(true), None);
+        app.query_mut("#missing")
+            .expect("query")
+            .set(Some(false), Some(false), Some(true), None);
+        assert!(!app.take_pending_force_relayout(), "no relayout");
+        assert!(
+            app.take_pending_query_refresh_nodes().is_empty(),
+            "no repaint"
+        );
+        assert!(!app.clear_on_next_render, "no full redraw");
     }
 
     #[test]
