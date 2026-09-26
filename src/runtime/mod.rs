@@ -846,7 +846,8 @@ pub struct App {
     /// Last resolved CSS style per node, used for automatic style-transition
     /// dispatch (P2-36).
     style_snapshot_cache: HashMap<NodeId, crate::style::Style>,
-    /// Pending refresh targets requested via `DomQueryMut::refresh()`.
+    /// Nodes to repaint in the next frame, queued by `request_query_refresh`
+    /// (`DomQueryMut::refresh`, `Handle::update`, the App's widget access).
     pending_query_refresh_nodes: Vec<NodeId>,
     /// Pending subtree recomposition targets requested by widgets via `EventCtx`.
     pending_recompose_nodes: Vec<NodeId>,
@@ -3334,13 +3335,21 @@ impl App {
     ///
     /// The widget is repainted in the next frame, as `Handle::update` does:
     /// Python refreshes a widget whose content is updated (`Static.update`,
-    /// `_static.py:85-95`), and the closure has no ctx to ask for it.
+    /// `_static.py:85-95`), and the closure has no ctx to ask for it. Every
+    /// call that finds the node asks for the repaint, even when `f` only
+    /// reads. To read without a repaint, use
+    /// [`Handle::read`](crate::handle::Handle::read) through
+    /// [`Self::typed_handle`] or [`Self::query_one_typed`].
     pub fn with_widget_mut<R>(
         &mut self,
         node_id: NodeId,
         f: impl FnOnce(&mut dyn Widget) -> R,
     ) -> Option<R> {
-        self.widget_mut_quiet(node_id, f)
+        let result = self.widget_mut_quiet(node_id, f);
+        if result.is_some() {
+            self.request_query_refresh(&[node_id]);
+        }
+        result
     }
 
     /// [`Self::with_widget_mut`] without the repaint request: the runtime's own
@@ -3399,7 +3408,11 @@ impl App {
         node_id: NodeId,
         f: impl FnOnce(&mut T) -> R,
     ) -> Option<R> {
-        self.widget_mut_as_quiet(node_id, f)
+        let result = self.widget_mut_as_quiet(node_id, f);
+        if result.is_some() {
+            self.request_query_refresh(&[node_id]);
+        }
+        result
     }
 
     /// [`Self::with_widget_mut_as`] without the repaint request (see
@@ -3417,6 +3430,8 @@ impl App {
     }
 
     /// Query one widget by selector and borrow it mutably for a scoped update.
+    /// The widget is repainted in the next frame, as for
+    /// [`Self::with_widget_mut`].
     ///
     /// Escape hatch; prefer `query_one_typed` + `Handle` for typed single-widget access.
     ///
@@ -3433,7 +3448,9 @@ impl App {
         self.with_widget_mut(node_id, f).ok_or(QueryError::NoMatch)
     }
 
-    /// Query one widget by selector and mutably downcast it to `T`.
+    /// Query one widget by selector and mutably downcast it to `T`. The
+    /// widget is repainted in the next frame when it is a `T`, as for
+    /// [`Self::with_widget_mut`].
     ///
     /// Escape hatch; prefer `query_one_typed` + `Handle` for typed single-widget access.
     ///
