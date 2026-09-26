@@ -4815,11 +4815,10 @@ impl App {
         pending_invalidation: &mut PendingInvalidation,
     ) -> crate::Result<u128> {
         let render_started = Instant::now();
-        // A region-scoped frame composes the whole tree but writes only its
-        // regions, and still keeps every composed cell as drawn. A change the
-        // app queued since the last absorb (for example `with_widget_mut` in a
-        // handler of the input this frame answers) must be in this frame's
-        // regions, or no later frame writes it.
+        // A region-scoped frame writes only its regions. Fold in the repaints
+        // the app queued since the last absorb (for example `with_widget_mut`
+        // in a handler of the input this frame answers), so this frame writes
+        // them instead of leaving them until a later frame covers them.
         self.absorb_pending_app_repaints(pending_invalidation);
         let regions = pending_invalidation
             .content_regions
