@@ -13,6 +13,8 @@
 //! - `PROBE_HOVER`: when set, a `hover here` line comes before the body, away
 //!   from the status line. Moving the pointer over it posts a message, and
 //!   the app's message handler updates the status line.
+//! - `PROBE_HOVER_PATH`: the key whose update path that message handler uses
+//!   (see `Probe::show_status`; unset: `with_query_one_mut_as`).
 //! - `PROBE_SHARED`: when set, a `shared:N` line comes two rows below the
 //!   status line. It draws a count kept outside the widget: `c` adds one
 //!   without asking for a repaint, and `r` repaints the line with
@@ -140,6 +142,7 @@ struct Probe {
     screen_height: Option<String>,
     screen_overflow: Option<String>,
     extras: Extras,
+    hover_path: String,
     exit_message: Option<String>,
     exit_result: Option<String>,
     exit_in_configure: bool,
@@ -169,6 +172,7 @@ impl Probe {
                 hover: std::env::var_os("PROBE_HOVER").is_some(),
                 shared: std::env::var_os("PROBE_SHARED").is_some(),
             },
+            hover_path: std::env::var("PROBE_HOVER_PATH").unwrap_or_default(),
             exit_message: std::env::var("PROBE_EXIT_MESSAGE").ok(),
             exit_result: std::env::var("PROBE_EXIT_RESULT").ok(),
             exit_in_configure: std::env::var_os("PROBE_EXIT_IN_CONFIGURE").is_some(),
@@ -338,7 +342,7 @@ impl TextualApp for Probe {
         } else if message.downcast_ref::<Hovered>().is_some() && self.mark("hovered") {
             // Not marked handled, like the mouse01 example: a handled message
             // repaints the whole frame, so only the update asks for a repaint.
-            self.show_status(app, "");
+            self.show_status(app, &self.hover_path);
         }
     }
 
