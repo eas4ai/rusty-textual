@@ -24,7 +24,7 @@ pub(crate) trait PlatformDriver {
         &mut self,
         options: DriverOptions,
         keyboard_protocol: KeyboardProtocol,
-    ) -> io::Result<(bool, super::negotiate::NegotiatedModes)>;
+    ) -> io::Result<(bool, super::live::Negotiation)>;
 
     fn stop(&mut self, options: DriverOptions, keyboard_enhanced: bool) -> io::Result<()>;
 

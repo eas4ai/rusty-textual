@@ -21,7 +21,7 @@ impl PlatformDriver for PosixPlatformDriver {
         &mut self,
         options: DriverOptions,
         keyboard_protocol: KeyboardProtocol,
-    ) -> io::Result<(bool, crate::driver::negotiate::NegotiatedModes)> {
+    ) -> io::Result<(bool, crate::driver::live::Negotiation)> {
         let enable_keyboard = detect_kitty_keyboard_support(keyboard_protocol);
 
         #[cfg(feature = "trace")]

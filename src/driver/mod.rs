@@ -79,6 +79,7 @@ impl Default for DriverOptions {
 
 pub(crate) mod live;
 pub(crate) mod negotiate;
+pub(crate) mod typeahead;
 
 /// Bracketed-paste mode commands (PR-15a).
 ///
@@ -102,6 +103,9 @@ pub struct TerminalDriver {
     keyboard_enhanced: bool,
     capabilities: CapabilityProfile,
     negotiated: negotiate::NegotiatedModes,
+    /// Keys typed while the driver last started; see
+    /// [`take_typed_ahead`](Self::take_typed_ahead).
+    typed_ahead: Vec<crossterm::event::Event>,
     platform: Box<dyn platform::PlatformDriver>,
     /// Runs while the driver is started; see [`hangup`].
     #[cfg(target_os = "linux")]
@@ -125,6 +129,7 @@ impl TerminalDriver {
             keyboard_enhanced: false,
             capabilities: platform::capability_profile(),
             negotiated: negotiate::NegotiatedModes::default(),
+            typed_ahead: Vec::new(),
             platform,
             #[cfg(target_os = "linux")]
             hangup_watch: None,
@@ -175,6 +180,14 @@ impl TerminalDriver {
         self.negotiated
     }
 
+    /// The keys typed while the driver last started, as events, in order
+    /// (TRM-004). The startup exchange reads them from stdin with the
+    /// terminal's replies, so the input loop must take them before it
+    /// reads. A second call returns nothing until the driver starts again.
+    pub(crate) fn take_typed_ahead(&mut self) -> Vec<crossterm::event::Event> {
+        std::mem::take(&mut self.typed_ahead)
+    }
+
     /// Put the terminal into application mode. Does nothing when the driver
     /// has already started.
     ///
@@ -190,11 +203,12 @@ impl TerminalDriver {
         if self.started {
             return Ok(());
         }
-        let (keyboard_enhanced, negotiated) = self
+        let (keyboard_enhanced, negotiation) = self
             .platform
             .start(self.options, self.options.keyboard_protocol)?;
         self.keyboard_enhanced = keyboard_enhanced;
-        self.negotiated = negotiated;
+        self.negotiated = negotiation.modes;
+        self.typed_ahead = typeahead::parse(&negotiation.input);
         self.started = true;
         // Best effort: without the watch, a terminal that closes without a
         // SIGHUP leaves the process spinning inside crossterm (see `hangup`).

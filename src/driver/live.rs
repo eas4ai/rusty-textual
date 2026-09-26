@@ -32,24 +32,34 @@ use super::negotiate;
 /// Primary device attributes query (DA1).
 #[cfg(any(test, target_os = "linux"))]
 const DEVICE_ATTRIBUTES_QUERY: &[u8] = b"\x1b[c";
-/// Last byte of a DA1 reply (`CSI ? Ps ; ... c`). DECRQM replies contain
-/// no `c`.
+/// The longest DA1 reply (`CSI ? Ps ; ... c`) looked for at the end of the
+/// exchange.
 #[cfg(any(test, target_os = "linux"))]
-const DEVICE_ATTRIBUTES_END: u8 = b'c';
-/// Room for both DECRQM replies and the DA1 reply.
+const DEVICE_ATTRIBUTES_MAX: usize = 64;
+/// Room for the replies and for keys typed or pasted while they arrive
+/// (TRM-004). Past it the exchange stops, and later replies reach crossterm.
 #[cfg(any(test, target_os = "linux"))]
-const EXCHANGE_CAP: usize = 256;
+const EXCHANGE_CAP: usize = 64 * 1024;
 /// Budget for the whole exchange: the same worst case as the two
 /// per-query round-trips it replaces, for a terminal that answers nothing.
 #[cfg(target_os = "linux")]
 const EXCHANGE_TIMEOUT: Duration = negotiate::QUERY_TIMEOUT.saturating_mul(2);
+
+/// What the startup exchange learned: the modes the terminal reported, and
+/// every byte it read from stdin, the replies and any keys typed while
+/// they arrived. [`super::typeahead`] turns the keys back into events.
+#[derive(Debug, Default)]
+pub(crate) struct Negotiation {
+    pub(crate) modes: negotiate::NegotiatedModes,
+    pub(crate) input: Vec<u8>,
+}
 
 /// Production negotiation against the real terminal.
 ///
 /// Reads `TERM_PROGRAM`/tty state from the environment. Call only from
 /// driver `start()`, before the input loop owns stdin.
 #[cfg(target_os = "linux")]
-pub(crate) fn negotiate_live() -> negotiate::NegotiatedModes {
+pub(crate) fn negotiate_live() -> Negotiation {
     use std::io::IsTerminal;
     let is_tty = io::stdin().is_terminal();
     let term_program = std::env::var("TERM_PROGRAM").unwrap_or_default();
@@ -61,12 +71,12 @@ pub(crate) fn negotiate_live() -> negotiate::NegotiatedModes {
         queries.extend(negotiate::decrqm_query(negotiate::IN_BAND_RESIZE_MODE));
     }
     if queries.is_empty() {
-        return negotiate::NegotiatedModes::default();
+        return Negotiation::default();
     }
     queries.extend_from_slice(DEVICE_ATTRIBUTES_QUERY);
     let replies = exchange_with(
         &queries,
-        DEVICE_ATTRIBUTES_END,
+        ends_with_device_attributes_reply,
         EXCHANGE_CAP,
         EXCHANGE_TIMEOUT,
         |q| {
@@ -78,25 +88,50 @@ pub(crate) fn negotiate_live() -> negotiate::NegotiatedModes {
         read_stdin_byte,
     );
     // Each mode parses its own reply out of the collected bytes.
-    negotiate::negotiate_with(is_tty, &term_program, |_| replies.clone())
+    let modes = negotiate::negotiate_with(is_tty, &term_program, |_| replies.clone());
+    Negotiation {
+        modes,
+        input: replies.unwrap_or_default(),
+    }
+}
+
+/// Whether `buf` ends with a complete primary device attributes reply,
+/// `CSI ? <digits and ;> c`, so a `c` typed as a key does not end the
+/// exchange (TRM-004).
+#[cfg(any(test, target_os = "linux"))]
+fn ends_with_device_attributes_reply(buf: &[u8]) -> bool {
+    if buf.last() != Some(&b'c') {
+        return false;
+    }
+    let tail = &buf[buf.len().saturating_sub(DEVICE_ATTRIBUTES_MAX)..];
+    let Some(start) = tail.iter().rposition(|&b| b == 0x1b) else {
+        return false;
+    };
+    let reply = &tail[start..];
+    reply.len() >= 4
+        && reply.starts_with(b"\x1b[?")
+        && reply[3..reply.len() - 1]
+            .iter()
+            .all(|b| b.is_ascii_digit() || *b == b';')
 }
 
 /// Other Unix systems: no negotiation (see the module docs).
 #[cfg(all(unix, not(target_os = "linux")))]
-pub(crate) fn negotiate_live() -> negotiate::NegotiatedModes {
-    negotiate::NegotiatedModes::default()
+pub(crate) fn negotiate_live() -> Negotiation {
+    Negotiation::default()
 }
 
 /// Windows: one DECRQM round-trip per mode, waiting through crossterm.
+/// Keys typed meanwhile are not kept (TRM-004 covers Unix only).
 #[cfg(windows)]
-pub(crate) fn negotiate_live() -> negotiate::NegotiatedModes {
+pub(crate) fn negotiate_live() -> Negotiation {
     use std::io::IsTerminal;
     let is_tty = io::stdin().is_terminal();
     let term_program = std::env::var("TERM_PROGRAM").unwrap_or_default();
-    negotiate::negotiate_with(is_tty, &term_program, |mode| {
+    let modes = negotiate::negotiate_with(is_tty, &term_program, |mode| {
         exchange_with(
             &negotiate::decrqm_query(mode),
-            b'y',
+            |buf: &[u8]| buf.last() == Some(&b'y'),
             64,
             negotiate::QUERY_TIMEOUT,
             |q| {
@@ -107,7 +142,11 @@ pub(crate) fn negotiate_live() -> negotiate::NegotiatedModes {
             crossterm::event::poll,
             read_stdin_byte,
         )
-    })
+    });
+    Negotiation {
+        modes,
+        input: Vec::new(),
+    }
 }
 
 /// Whether stdin has input within `timeout`, without reading any.
@@ -146,8 +185,8 @@ fn read_stdin_byte() -> io::Result<Option<u8>> {
     }
 }
 
-/// One bounded exchange over injected I/O: write `query`, then collect reply
-/// bytes up to and including the first `end` byte, `cap` bytes, or
+/// One bounded exchange over injected I/O: write `query`, then collect
+/// bytes until `is_done` holds for the bytes read so far, `cap` bytes, or
 /// `timeout`, whichever comes first. `None` when nothing arrived.
 ///
 /// `poll_ready` reports stdin readiness within the remaining budget without
@@ -157,7 +196,7 @@ fn read_stdin_byte() -> io::Result<Option<u8>> {
 #[cfg(any(test, target_os = "linux", windows))]
 fn exchange_with(
     query: &[u8],
-    end: u8,
+    is_done: impl Fn(&[u8]) -> bool,
     cap: usize,
     timeout: Duration,
     write: impl FnOnce(&[u8]) -> io::Result<()>,
@@ -180,7 +219,7 @@ fn exchange_with(
         match read_byte() {
             Ok(Some(b)) => {
                 buf.push(b);
-                if b == end || buf.len() >= cap {
+                if is_done(&buf) || buf.len() >= cap {
                     break;
                 }
             }
@@ -219,7 +258,7 @@ mod tests {
         fn run(&mut self, query: &[u8], timeout: Duration) -> Option<Vec<u8>> {
             exchange_with(
                 query,
-                b'y',
+                |buf: &[u8]| buf.last() == Some(&b'y'),
                 64,
                 timeout,
                 |q| {
@@ -286,7 +325,7 @@ mod tests {
     fn write_failure_yields_none() {
         let out = exchange_with(
             b"\x1b[?2026$p",
-            b'y',
+            |buf: &[u8]| buf.last() == Some(&b'y'),
             64,
             Duration::from_secs(5),
             |_| Err(io::Error::other("no stdout")),
@@ -307,7 +346,7 @@ mod tests {
         let mut script = Script::new(&vec![true; stream.len()], &stream);
         let out = exchange_with(
             b"queries",
-            DEVICE_ATTRIBUTES_END,
+            ends_with_device_attributes_reply,
             EXCHANGE_CAP,
             Duration::from_secs(5),
             |_| Ok(()),
@@ -317,6 +356,39 @@ mod tests {
         assert_eq!(out, Some(replies.to_vec()));
         // Input after the DA1 reply is left for the input loop.
         assert_eq!(script.bytes.iter().copied().collect::<Vec<u8>>(), b"typed");
+    }
+
+    #[test]
+    fn keys_typed_before_the_replies_are_kept_and_a_typed_c_does_not_end_it() {
+        // TRM-004: keys typed while the app starts arrive before the
+        // replies; a `c` among them is not the end of the DA1 reply.
+        let typed = b"cat \x1b[15~";
+        let replies = b"\x1b[?2026;2$y\x1b[?62;22c";
+        let mut stream: Vec<u8> = typed.to_vec();
+        stream.extend_from_slice(replies);
+        stream.extend_from_slice(b"later");
+        let mut script = Script::new(&vec![true; stream.len()], &stream);
+        let out = exchange_with(
+            b"queries",
+            ends_with_device_attributes_reply,
+            EXCHANGE_CAP,
+            Duration::from_secs(5),
+            |_| Ok(()),
+            |_| Ok(script.ready.pop_front().unwrap_or(false)),
+            || Ok(script.bytes.pop_front()),
+        );
+        assert_eq!(out, Some([typed.as_slice(), replies].concat()));
+        assert_eq!(script.bytes.iter().copied().collect::<Vec<u8>>(), b"later");
+    }
+
+    #[test]
+    fn only_a_device_attributes_reply_ends_the_exchange() {
+        assert!(ends_with_device_attributes_reply(b"ab\x1b[?62;22c"));
+        assert!(ends_with_device_attributes_reply(b"\x1b[?1c"));
+        assert!(!ends_with_device_attributes_reply(b"c"));
+        assert!(!ends_with_device_attributes_reply(b"\x1b[?62;22cat"));
+        assert!(!ends_with_device_attributes_reply(b"\x1b[?2026;2$yc"));
+        assert!(!ends_with_device_attributes_reply(b"\x1b[1;5c"));
     }
 
     #[test]
