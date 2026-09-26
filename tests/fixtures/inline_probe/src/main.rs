@@ -30,6 +30,8 @@
 //! `clicked` once the button has been pressed, and `hovered` once the
 //! pointer has moved over the hover line.
 
+use std::fmt::Write as _;
+
 use textual::prelude::*;
 
 const CSS: &str = "
@@ -98,8 +100,9 @@ struct Probe {
     push: Option<String>,
     other_keys: usize,
     suspend: &'static str,
-    clicked: bool,
-    hovered: bool,
+    /// Marks shown after the counts, in the order they first happened:
+    /// `clicked` and `hovered`.
+    marks: Vec<&'static str>,
 }
 
 impl Probe {
@@ -123,8 +126,7 @@ impl Probe {
             push: std::env::var("PROBE_PUSH").ok(),
             other_keys: 0,
             suspend: "none",
-            clicked: false,
-            hovered: false,
+            marks: Vec::new(),
         }
     }
 
@@ -136,12 +138,22 @@ impl Probe {
     }
 
     fn status(&self) -> String {
-        let clicked = if self.clicked { " clicked" } else { "" };
-        let hovered = if self.hovered { " hovered" } else { "" };
-        format!(
-            "keys:{} suspend:{}{clicked}{hovered}",
-            self.other_keys, self.suspend
-        )
+        let mut status = format!("keys:{} suspend:{}", self.other_keys, self.suspend);
+        for mark in &self.marks {
+            status.push(' ');
+            status.push_str(mark);
+        }
+        status
+    }
+
+    /// Adds `mark` to the status line unless it is there already; returns
+    /// whether it was added.
+    fn mark(&mut self, mark: &'static str) -> bool {
+        let added = !self.marks.contains(&mark);
+        if added {
+            self.marks.push(mark);
+        }
+        added
     }
 
     fn refresh(&self, app: &mut App) {
@@ -156,10 +168,10 @@ impl TextualApp for Probe {
     fn configure(&mut self, app: &mut App) -> textual::Result<()> {
         let mut css = CSS.to_string();
         if let Some(height) = &self.screen_height {
-            css.push_str(&format!("Screen:inline {{ height: {height}; }}\n"));
+            let _ = writeln!(css, "Screen:inline {{ height: {height}; }}");
         }
         if let Some(overflow) = &self.screen_overflow {
-            css.push_str(&format!("Screen {{ overflow-y: {overflow}; }}\n"));
+            let _ = writeln!(css, "Screen {{ overflow-y: {overflow}; }}");
         }
         app.load_stylesheet(&css);
         if self.exit_in_configure {
@@ -227,13 +239,12 @@ impl TextualApp for Probe {
 
     fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut WidgetCtx) {
         if message.downcast_ref::<ButtonPressed>().is_some() {
-            self.clicked = true;
+            self.mark("clicked");
             ctx.set_handled();
             self.refresh(app);
-        } else if message.downcast_ref::<Hovered>().is_some() && !self.hovered {
+        } else if message.downcast_ref::<Hovered>().is_some() && self.mark("hovered") {
             // Not marked handled, like the mouse01 example: a handled message
             // repaints the whole frame, so only the update asks for a repaint.
-            self.hovered = true;
             self.refresh(app);
         }
     }
