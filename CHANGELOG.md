@@ -114,6 +114,13 @@ until the API stabilizes.
   later repaints too, until they changed again. Each frame is now compared
   with what the terminal shows, as Python writes each repainted region from
   the current render.
+- While a screen is pushed, changes made through `App::query_mut(...)`
+  (class changes, styles, display, visibility, focus, blur, `set` and
+  `remove`) act on that screen's nodes instead of the app's own tree.
+- Query changes to display, visibility and disabled state, and query
+  removals, now lay out and redraw at once. A visibility change set through
+  a query lasts through later layout passes. A query removal also drops
+  focus from the removed widgets.
 
 ## [1.1.0] - 2026-07-16
 
