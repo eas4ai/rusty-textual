@@ -4776,11 +4776,7 @@ impl App {
             pending_invalidation.request_full_content();
         }
         self.absorb_pending_recompositions(pending_invalidation);
-        self.absorb_pending_query_refreshes(pending_invalidation);
-        if self.take_pending_force_relayout() {
-            pending_invalidation.request_flags(crate::event::InvalidationFlags::layout());
-            pending_invalidation.request_full_content();
-        }
+        self.absorb_pending_app_repaints(pending_invalidation);
         LoopStep::Proceed
     }
 
@@ -4819,6 +4815,12 @@ impl App {
         pending_invalidation: &mut PendingInvalidation,
     ) -> crate::Result<u128> {
         let render_started = Instant::now();
+        // A region-scoped frame composes the whole tree but writes only its
+        // regions, and still keeps every composed cell as drawn. A change the
+        // app queued since the last absorb (for example `with_widget_mut` in a
+        // handler of the input this frame answers) must be in this frame's
+        // regions, or no later frame writes it.
+        self.absorb_pending_app_repaints(pending_invalidation);
         let regions = pending_invalidation
             .content_regions
             .as_render_regions(self.frame.width, self.frame.height);
@@ -6607,6 +6609,16 @@ impl App {
         }
         for id in affected {
             pending.request_widget_rect(&self.hit_test, id);
+        }
+    }
+
+    /// Fold the repaints and the relayout that app-side code queued (widget
+    /// access, queries, dynamic mounts) into `pending`.
+    fn absorb_pending_app_repaints(&mut self, pending: &mut PendingInvalidation) {
+        self.absorb_pending_query_refreshes(pending);
+        if self.take_pending_force_relayout() {
+            pending.request_flags(crate::event::InvalidationFlags::layout());
+            pending.request_full_content();
         }
     }
 
