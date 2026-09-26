@@ -1,0 +1,225 @@
+//! Interactive styled-parity harness — extends the styled layer to POST-INTERACTION
+//! frames (focus / hover / active states), which the static `visual_parity` harness
+//! never exercises. Sends keys, waits for re-stabilization, then captures per-cell RGB
+//! and compares against a committed golden. The golden was captured once from Python
+//! Textual and is now a fixed reference; this harness never runs Python. This is how
+//! focus-state color bugs (e.g. a focused Button's `text-style: reverse` band) get
+//! caught instead of eyeballed.
+//!
+//!   `DEBUG_CASE`=<name>    cargo test --test `visual_parity_interactive`   # print first per-cell diffs
+//!   cargo test --test `visual_parity_interactive`                       # assert
+
+use std::io::{Read, Write};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+
+const ROWS: u16 = 30;
+const COLS: u16 = 120;
+
+struct Case {
+    name: &'static str,
+    bin: &'static str,
+    keys: &'static str,
+}
+
+// Interactive cases. keys are sent after the initial frame stabilizes.
+// button_focus (review §1.7, PR-16): Tab focuses the first Button, exercising
+// the `:focus` text-style reverse band plus the surface/blend background. The
+// reverse-band width was fixed with the line-pad render change; this case pins
+// the residual bg parity. Real asserting case — no pending flag.
+const CASES: &[Case] = &[Case {
+    name: "button_focus",
+    bin: "button",
+    keys: "\t",
+}];
+
+fn repo() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn col(c: vt100::Color) -> String {
+    match c {
+        vt100::Color::Default => "def".into(),
+        vt100::Color::Idx(i) => format!("idx{i}"),
+        vt100::Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+    }
+}
+
+fn serialize(parser: &vt100::Parser) -> String {
+    use std::fmt::Write as _;
+
+    let screen = parser.screen();
+    let mut serial = String::new();
+    for r in 0..ROWS {
+        let (mut start, mut fg, mut bg, mut run) =
+            (0u16, String::new(), String::new(), String::new());
+        for c in 0..COLS {
+            let cell = screen.cell(r, c);
+            let (ch, cfg, cbg) = match cell {
+                Some(cl) => {
+                    // include the reverse attr so focus-reverse divergences are visible
+                    let rev = if cl.inverse() { "/rev" } else { "" };
+                    (cl.contents(), col(cl.fgcolor()) + rev, col(cl.bgcolor()))
+                }
+                None => (String::new(), "def".into(), "def".into()),
+            };
+            let chs = if ch.is_empty() { " ".to_string() } else { ch };
+            if c == 0 {
+                start = 0;
+                fg = cfg;
+                bg = cbg;
+                run = chs;
+            } else if cfg == fg && cbg == bg {
+                run.push_str(&chs);
+            } else {
+                // Writing to a `String` cannot fail.
+                let _ = writeln!(serial, "[{start}-{}] {run:?} fg={fg} bg={bg}", c - 1);
+                start = c;
+                fg = cfg;
+                bg = cbg;
+                run = chs;
+            }
+        }
+        let _ = writeln!(
+            serial,
+            "[{start}-{}] {run:?} fg={fg} bg={bg}\n--row {r}--",
+            COLS - 1
+        );
+    }
+    serial
+}
+
+fn capture(mut cmd: CommandBuilder, cwd: PathBuf, keys: &str) -> String {
+    cmd.cwd(cwd);
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd.env("LANG", "en_US.UTF-8");
+    cmd.env("TEXTUAL_KEYBOARD_PROTOCOL", "off");
+    cmd.env("TEXTUAL_SYNC_OUTPUT", "0");
+    cmd.env("TEXTUAL_COLOR_SYSTEM", "truecolor");
+
+    let pty = native_pty_system()
+        .openpty(PtySize {
+            rows: ROWS,
+            cols: COLS,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .expect("openpty");
+    let mut child = pty.slave.spawn_command(cmd).expect("spawn");
+    drop(pty.slave);
+    let mut reader = pty.master.try_clone_reader().expect("reader");
+    let mut writer = pty.master.take_writer().expect("writer");
+    let parser = Arc::new(Mutex::new(vt100::Parser::new(ROWS, COLS, 0)));
+    let feed = Arc::clone(&parser);
+    let t = std::thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        while let Ok(n) = reader.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            feed.lock().unwrap().process(&buf[..n]);
+        }
+    });
+
+    // wait for initial stable
+    let mut prev = String::new();
+    for _ in 0..40 {
+        std::thread::sleep(Duration::from_millis(200));
+        let s = { serialize(&parser.lock().unwrap()) };
+        let txt: String = s.lines().filter(|l| l.starts_with('[')).collect();
+        if !txt.trim().is_empty() && s == prev {
+            break;
+        }
+        prev = s;
+    }
+    // send keys, let them land, wait for re-stable
+    if !keys.is_empty() {
+        writer.write_all(keys.as_bytes()).ok();
+        writer.flush().ok();
+        std::thread::sleep(Duration::from_millis(400));
+        let mut p2 = String::new();
+        for _ in 0..30 {
+            std::thread::sleep(Duration::from_millis(200));
+            let s = { serialize(&parser.lock().unwrap()) };
+            if s == p2 {
+                break;
+            }
+            p2 = s;
+        }
+    }
+    let out = serialize(&parser.lock().unwrap());
+
+    child.kill().ok();
+    child.wait().ok();
+    drop(pty.master);
+    t.join().ok();
+    out
+}
+
+fn golden_path(name: &str) -> PathBuf {
+    repo()
+        .join("tests/pty_parity/golden_styled_interactive")
+        .join(format!("{name}.styled"))
+}
+
+#[test]
+fn interactive_parity() {
+    let debug = std::env::var("DEBUG_CASE").ok();
+    let mut failures = Vec::new();
+
+    for case in CASES {
+        let bin = repo()
+            .join("docs/examples/target/debug/examples")
+            .join(case.bin);
+        // Every case is expected to pass, so a missing binary or golden is a
+        // failure: skipping it would pass the case unchecked.
+        if !bin.exists() {
+            eprintln!("FAIL {} (no bin)", case.name);
+            failures.push(case.name);
+            continue;
+        }
+        let Ok(golden) = std::fs::read_to_string(golden_path(case.name)) else {
+            eprintln!("FAIL {} (no golden)", case.name);
+            failures.push(case.name);
+            continue;
+        };
+        let actual = capture(
+            CommandBuilder::new(bin.to_str().unwrap()),
+            repo(),
+            case.keys,
+        );
+        if actual.trim() == golden.trim() {
+            eprintln!("PASS {}", case.name);
+        } else {
+            if debug.as_deref() == Some(case.name) {
+                let (gl, al): (Vec<&str>, Vec<&str>) =
+                    (golden.lines().collect(), actual.lines().collect());
+                eprintln!("--- DEBUG {} (py vs rust) ---", case.name);
+                let mut shown = 0;
+                for i in 0..gl.len().max(al.len()) {
+                    let (g, a) = (
+                        gl.get(i).copied().unwrap_or("<none>"),
+                        al.get(i).copied().unwrap_or("<none>"),
+                    );
+                    if g != a {
+                        eprintln!("  py  : {g}\n  rust: {a}");
+                        shown += 1;
+                        if shown >= 14 {
+                            break;
+                        }
+                    }
+                }
+            }
+            eprintln!("FAIL {}", case.name);
+            failures.push(case.name);
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "interactive styled parity FAILED: {failures:?}"
+    );
+}
