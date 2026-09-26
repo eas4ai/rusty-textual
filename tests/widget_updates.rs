@@ -10,8 +10,9 @@
 //! write into the status line (`keys:N ... hovered`), which keeps its size
 //! for a key. The key chooses the update path (`1` `with_widget_mut`, `2`
 //! `with_widget_mut_as`, `3` `with_query_one_mut`, `5` `with_widget_taken_as`,
-//! `6` `query_mut` then `DomQueryMut::update`, any other key and the message
-//! handler `with_query_one_mut_as`).
+//! `6` `query_mut` then `DomQueryMut::update`, any other key
+//! `with_query_one_mut_as`); `PROBE_HOVER_PATH` names the key whose path the
+//! message handler uses.
 //!
 //! UPD-002: the probe's shared line draws a count kept outside the widget.
 //! `c` changes it without asking for a repaint, a hover elsewhere draws a
@@ -31,6 +32,26 @@ const INLINE: &[(&str, &str)] = &[("PROBE_MODE", "inline")];
 const INLINE_BUTTON: &[(&str, &str)] = &[("PROBE_MODE", "inline"), ("PROBE_BUTTON", "1")];
 const FULL_HOVER: &[(&str, &str)] = &[("PROBE_MODE", "full"), ("PROBE_HOVER", "1")];
 const INLINE_HOVER: &[(&str, &str)] = &[("PROBE_MODE", "inline"), ("PROBE_HOVER", "1")];
+const FULL_HOVER_TAKEN: &[(&str, &str)] = &[
+    ("PROBE_MODE", "full"),
+    ("PROBE_HOVER", "1"),
+    ("PROBE_HOVER_PATH", "5"),
+];
+const INLINE_HOVER_TAKEN: &[(&str, &str)] = &[
+    ("PROBE_MODE", "inline"),
+    ("PROBE_HOVER", "1"),
+    ("PROBE_HOVER_PATH", "5"),
+];
+const FULL_HOVER_QUERY: &[(&str, &str)] = &[
+    ("PROBE_MODE", "full"),
+    ("PROBE_HOVER", "1"),
+    ("PROBE_HOVER_PATH", "6"),
+];
+const INLINE_HOVER_QUERY: &[(&str, &str)] = &[
+    ("PROBE_MODE", "inline"),
+    ("PROBE_HOVER", "1"),
+    ("PROBE_HOVER_PATH", "6"),
+];
 const FULL_SHARED: &[(&str, &str)] = &[("PROBE_MODE", "full"), ("PROBE_SHARED", "1")];
 const INLINE_SHARED: &[(&str, &str)] = &[("PROBE_MODE", "inline"), ("PROBE_SHARED", "1")];
 
@@ -133,6 +154,26 @@ fn upd_001_a_hover_message_handler_update_is_redrawn_in_full_screen() {
 #[test]
 fn upd_001_a_hover_message_handler_update_is_redrawn_inline() {
     check_status_redrawn(INLINE_HOVER, hover_line, "hovered");
+}
+
+#[test]
+fn upd_001_with_widget_taken_as_from_a_hover_message_handler_is_redrawn_in_full_screen() {
+    check_status_redrawn(FULL_HOVER_TAKEN, hover_line, "hovered");
+}
+
+#[test]
+fn upd_001_with_widget_taken_as_from_a_hover_message_handler_is_redrawn_inline() {
+    check_status_redrawn(INLINE_HOVER_TAKEN, hover_line, "hovered");
+}
+
+#[test]
+fn upd_001_a_query_update_from_a_hover_message_handler_is_redrawn_in_full_screen() {
+    check_status_redrawn(FULL_HOVER_QUERY, hover_line, "hovered");
+}
+
+#[test]
+fn upd_001_a_query_update_from_a_hover_message_handler_is_redrawn_inline() {
+    check_status_redrawn(INLINE_HOVER_QUERY, hover_line, "hovered");
 }
 
 #[test]
