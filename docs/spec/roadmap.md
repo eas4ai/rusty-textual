@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: frame-keeps-unwritten-cells
+Current: query-mut-acts-on-app-tree
 
 ## inline-render-mode
 
@@ -73,6 +73,21 @@ where an earlier frame drew a change without writing it (UPD-002). Inline
 frames still use relative cursor moves (INL-005), and full-screen output
 does not change: the terminal goldens (TRM-002) and the Python goldens
 (TRM-003) still match.
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, and the full test gate, strict clippy, and
+rustfmt pass.
+
+## query-mut-acts-on-app-tree
+
+Requirements: SCR-001, SCR-002, TRM-003
+
+Delivers: while a screen is pushed, every change an app makes through
+`App::query_mut(...)` (class changes, styles, display, visibility, focus,
+blur, removal and `set`) acts on the nodes its query matched on that
+screen, as Python's `App.query` acts on the active screen (SCR-002).
+Pushed screens still scroll (SCR-001), and full-screen apps still match
+the Python goldens (TRM-003).
 
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and
