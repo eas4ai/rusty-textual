@@ -2153,6 +2153,50 @@ mod tests {
     }
 
     #[test]
+    fn runtime_visibility_outlasts_the_css_sync_and_flows_down() {
+        // Python's `visible` setter writes the inline `visibility` rule: it
+        // beats the stylesheet, descendants with no rule inherit it, and a
+        // descendant with its own rule keeps it.
+        use crate::style::Visibility;
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(LayoutTestWidget::boxed("Screen"));
+        let shown_by_css = tree.mount(
+            root,
+            LayoutTestWidget::boxed_with_style("Shown", {
+                let mut s = Style::new();
+                s.visibility = Some(Visibility::Visible);
+                s
+            }),
+        );
+        let inherits = tree.mount(shown_by_css, LayoutTestWidget::boxed("Inherits"));
+        let own_rule = tree.mount(
+            shown_by_css,
+            LayoutTestWidget::boxed_with_style("Own", {
+                let mut s = Style::new();
+                s.visibility = Some(Visibility::Visible);
+                s
+            }),
+        );
+
+        assert!(tree.set_runtime_visibility(shown_by_css, Visibility::Hidden));
+        assert!(
+            !tree.set_runtime_visibility(shown_by_css, Visibility::Hidden),
+            "the same rule again is no change"
+        );
+        let _guard = crate::css::set_style_context(crate::css::StyleSheet::parse(""));
+        crate::css::apply_display_visibility_to_tree(&mut tree);
+
+        assert_eq!(tree.visibility(shown_by_css), Visibility::Hidden);
+        assert_eq!(tree.visibility(inherits), Visibility::Hidden);
+        assert_eq!(tree.visibility(own_rule), Visibility::Visible);
+
+        assert!(tree.set_runtime_visibility(shown_by_css, Visibility::Visible));
+        crate::css::apply_display_visibility_to_tree(&mut tree);
+        assert_eq!(tree.visibility(shown_by_css), Visibility::Visible);
+        assert_eq!(tree.visibility(inherits), Visibility::Visible);
+    }
+
+    #[test]
     fn visibility_inherits_to_descendants_with_explicit_override() {
         // Mirrors Python `DOMNode.visible`: a `visibility:hidden` container hides
         // its descendants by inheritance, but a descendant with an explicit
