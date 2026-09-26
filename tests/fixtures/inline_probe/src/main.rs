@@ -14,9 +14,13 @@
 //!   (`take_exit_output`, Python `App.exit(result=...)`); `main` prints it.
 //! - `PROBE_EXIT_IN_CONFIGURE`: when set, `configure` calls `App::exit`, so the
 //!   app stops before it starts.
+//! - `PROBE_PUSH`: `screen` or `modal`; `p` then pushes a `Screen` or a
+//!   `ModalScreen` of 60 lines, `pushed 1` to `pushed 60`, then `pushed-end`
+//!   (Python `App.push_screen`).
 //!
 //! Keys: `s` shrinks the body to one line, `z` tries `App::suspend`, `x`
-//! runs the suspend-process action, `q` quits. The status line counts every
+//! runs the suspend-process action, `p` pushes the `PROBE_PUSH` screen, `q`
+//! quits. The status line counts every
 //! other key that arrives (`keys:N`) and shows the last suspend result, and
 //! `clicked` once the button has been pressed.
 
@@ -27,6 +31,24 @@ const CSS: &str = "
 Screen:inline #cssmark { display: block; }
 ";
 
+const PUSHED_LINES: usize = 60;
+
+/// The screen `p` pushes: taller than the 30-row test terminal.
+struct Pushed {
+    modal: bool,
+}
+
+impl Screen for Pushed {
+    fn compose(&self) -> Box<dyn Widget> {
+        let lines: Vec<String> = (1..=PUSHED_LINES).map(|n| format!("pushed {n}")).collect();
+        Box::new(Static::new(format!("{}\npushed-end", lines.join("\n"))))
+    }
+
+    fn is_modal(&self) -> bool {
+        self.modal
+    }
+}
+
 struct Probe {
     lines: usize,
     padding: usize,
@@ -35,6 +57,7 @@ struct Probe {
     exit_message: Option<String>,
     exit_result: Option<String>,
     exit_in_configure: bool,
+    push: Option<String>,
     other_keys: usize,
     suspend: &'static str,
     clicked: bool,
@@ -56,6 +79,7 @@ impl Probe {
             exit_message: std::env::var("PROBE_EXIT_MESSAGE").ok(),
             exit_result: std::env::var("PROBE_EXIT_RESULT").ok(),
             exit_in_configure: std::env::var_os("PROBE_EXIT_IN_CONFIGURE").is_some(),
+            push: std::env::var("PROBE_PUSH").ok(),
             other_keys: 0,
             suspend: "none",
             clicked: false,
@@ -125,6 +149,13 @@ impl TextualApp for Probe {
                 } else {
                     "process-refused"
                 };
+            }
+            "p" if self.push.is_some() => {
+                let modal = self.push.as_deref() == Some("modal");
+                app.push_screen(Box::new(Pushed { modal }))
+                    .expect("push the PROBE_PUSH screen");
+                ctx.set_handled();
+                return;
             }
             "q" => {
                 if let Some(message) = self.exit_message.take() {
