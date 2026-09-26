@@ -698,8 +698,13 @@ fn inl_017_a_scrolled_pushed_screen_keeps_its_border_inside_the_frame() {
     // second case makes the frame shorter than the terminal, where the
     // measuring pass lays the screen out taller than the frame. Its frame
     // is the height rule plus the two border rows (`screen.py:1445-1450`).
-    let cases: [(&[(&str, &str)], u16, &str); 2] = [
-        (&[("PROBE_PUSH", "screen")], ROWS, "60 lines in a 30-row terminal"),
+    type Env = &'static [(&'static str, &'static str)];
+    let cases: [(Env, u16, &str); 2] = [
+        (
+            &[("PROBE_PUSH", "screen")],
+            ROWS,
+            "60 lines in a 30-row terminal",
+        ),
         (
             &[("PROBE_PUSH", "screen"), ("PROBE_SCREEN_HEIGHT", "10")],
             12,
