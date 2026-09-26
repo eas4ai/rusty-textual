@@ -2014,24 +2014,19 @@ fn render_screen_tree_layer(
         clip: ClipRect::for_frame(frame),
         overlay_root_exempt: None,
     };
-    // The scroll viewport starts at the root's content box, inside its border
-    // and padding (an inline screen's top border), so scrolled content never
-    // paints over them.
-    let frame_clip = ClipRect::for_frame(frame);
+    // The root's flow children are clipped to its content box: inside its
+    // border and padding (an inline screen's top and bottom border), and
+    // inside its scrollbar gutter when it scrolls (the layout pass sets the
+    // content box to the scroll viewport then). Python clips a container's
+    // children to that region whatever its overflow (`_compositor.py:584-607`).
     let content = root_node.content_rect;
-    let scroll_clip =
-        root_node
-            .widget
-            .scroll_viewport_size()
-            .map_or(Some(frame_clip), |(vw, vh)| {
-                let viewport = ClipRect {
-                    x0: content.x0,
-                    y0: content.y0,
-                    x1: content.x0 + vw.to_i32_sat(),
-                    y1: content.y0 + vh.to_i32_sat(),
-                };
-                viewport.intersect(frame_clip)
-            });
+    let scroll_clip = ClipRect {
+        x0: content.x0,
+        y0: content.y0,
+        x1: content.x1,
+        y1: content.y1,
+    }
+    .intersect(ClipRect::for_frame(frame));
     let scroll_ctx = scroll_clip.map(|clip| TreeRenderCtx {
         origin_x: -root_scroll.0.round().to_i32_sat(),
         origin_y: -root_scroll.1.round().to_i32_sat(),
