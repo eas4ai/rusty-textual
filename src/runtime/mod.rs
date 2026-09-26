@@ -735,9 +735,9 @@ pub struct App {
     /// testing, headless reads and snapshots use it.
     frame: FrameBuffer,
     /// What the terminal shows: the cells the frames wrote. A region-scoped
-    /// frame writes only its regions, so outside them this keeps what an
-    /// earlier frame wrote, and the next diff starts from what the terminal
-    /// really shows (UPD-002).
+    /// frame writes only its regions (and the rest of any wide glyph it
+    /// touches), so elsewhere this keeps what an earlier frame wrote, and the
+    /// next diff starts from what the terminal really shows (UPD-002).
     shown: FrameBuffer,
     /// Headless mode (set by `App::run_test`): suppress real terminal I/O and
     /// pin a virtual screen size so the event loop renders into the in-memory
