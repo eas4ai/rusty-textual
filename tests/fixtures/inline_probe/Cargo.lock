@@ -182,6 +182,7 @@ dependencies = [
 name = "inline_probe"
 version = "0.1.0"
 dependencies = [
+ "rich-rs",
  "rusty-textual",
 ]
 
