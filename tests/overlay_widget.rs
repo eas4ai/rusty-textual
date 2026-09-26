@@ -1,0 +1,179 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use rich_rs::Console;
+use rich_rs::{ConsoleOptions, Segment, Segments};
+use rusty_textual::event::EventCtx;
+use rusty_textual::event::MouseDownEvent;
+use rusty_textual::message::MessageEvent;
+use rusty_textual::prelude::*;
+use rusty_textual::render::FrameBuffer;
+
+struct EventProbe {
+    events: Arc<AtomicUsize>,
+}
+
+impl EventProbe {
+    fn new(events: Arc<AtomicUsize>) -> Self {
+        Self { events }
+    }
+}
+
+impl Widget for EventProbe {
+    fn render(&self, _console: &Console, options: &ConsoleOptions) -> Segments {
+        let mut out = Segments::new();
+        out.push(Segment::new(" ".repeat(options.size.0.max(1))));
+        out
+    }
+
+    fn on_event(&mut self, _event: &Event, _ctx: &mut rusty_textual::event::WidgetCtx) {
+        self.events.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[test]
+fn overlay_shows_modal_over_base() {
+    let console = Console::new();
+    let mut options = console.options().clone();
+    options.size = (12, 3);
+    options.max_width = 12;
+    options.max_height = 3;
+
+    let base = Label::new("base content");
+    let modal = Frame::new(Label::new("modal"));
+    let overlay = Overlay::new(base, modal);
+
+    let buf = FrameBuffer::from_renderable(&console, &options, &overlay, None);
+    insta::assert_snapshot!(buf.debug_dump());
+}
+
+#[test]
+fn overlay_traps_base_events_when_visible() {
+    let base_events = Arc::new(AtomicUsize::new(0));
+    let base = EventProbe::new(base_events.clone());
+    let modal = Label::new("modal");
+    let mut overlay = Overlay::new(base, modal);
+
+    let key = KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+    let mut ctx = EventCtx::default();
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        overlay.on_event(&Event::Key(key), &mut __w);
+    }
+
+    assert_eq!(base_events.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn overlay_escape_hides_modal() {
+    let console = Console::new();
+    let mut options = console.options().clone();
+    options.size = (12, 3);
+    options.max_width = 12;
+    options.max_height = 3;
+
+    let base = Label::new("base");
+    let modal = Label::new("modal");
+    let mut overlay = Overlay::new(base, modal);
+
+    let key = KeyEventData::from_crossterm(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    let mut ctx = EventCtx::default();
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        overlay.on_event(&Event::Key(key), &mut __w);
+    }
+
+    let buf = FrameBuffer::from_renderable(&console, &options, &overlay, None);
+    assert!(buf.debug_dump().contains("base"));
+}
+
+#[test]
+fn overlay_dismiss_message_hides_modal() {
+    let console = Console::new();
+    let mut options = console.options().clone();
+    options.size = (12, 3);
+    options.max_width = 12;
+    options.max_height = 3;
+
+    let base = Label::new("base");
+    let modal = Label::new("modal");
+    let mut overlay = Overlay::new(base, modal);
+
+    let mut ctx = EventCtx::default();
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        overlay.on_message(
+            &MessageEvent::new(NodeId::default(), OverlayDismissRequested { overlay: None }),
+            &mut __w,
+        );
+    }
+
+    let buf = FrameBuffer::from_renderable(&console, &options, &overlay, None);
+    assert!(buf.debug_dump().contains("base"));
+}
+
+#[test]
+fn toast_click_posts_notification_expired_with_its_id() {
+    // Auto-dismiss timing is owned by the ToastRack; the Toast view only
+    // click-dismisses by posting `NotificationExpired { id }`.
+    let mut toast = Toast::new("hello", ToastSeverity::Information).with_notification_id(42);
+    let mut ctx = EventCtx::default();
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        toast.on_event(
+            &Event::MouseDown(MouseDownEvent {
+                target: NodeId::default(),
+                screen_x: 0,
+                screen_y: 0,
+                x: 0,
+                y: 0,
+            }),
+            &mut __w,
+        );
+    }
+
+    assert!(ctx.handled());
+    assert!(ctx.repaint_requested());
+    assert!(
+        ctx.has_pending_message::<rusty_textual::message::NotificationExpired>(),
+        "toast click should post a NotificationExpired message"
+    );
+}
+
+#[test]
+fn toast_click_dismisses_and_posts_message() {
+    let mut toast = Toast::new("click me", ToastSeverity::Warning);
+    let mut ctx = EventCtx::default();
+    {
+        let mut __w = rusty_textual::event::WidgetCtx::__from_dispatch(
+            rusty_textual::node_id::NodeId::default(),
+            &mut ctx,
+        );
+        toast.on_event(
+            &Event::MouseDown(MouseDownEvent {
+                target: NodeId::default(),
+                screen_x: 0,
+                screen_y: 0,
+                x: 0,
+                y: 0,
+            }),
+            &mut __w,
+        );
+    }
+
+    assert!(ctx.handled());
+    assert!(ctx.repaint_requested());
+}
