@@ -28,7 +28,7 @@ use std::sync::OnceLock;
 
 use super::App;
 use super::dispatch_ctx::set_dispatch_recipient;
-use super::helpers::node_is_dedicated_scrollbar;
+use super::helpers::{node_is_dedicated_scrollbar, node_is_system_tooltip};
 use super::types::{HitTestMap, SYNC_END, SYNC_START, SegmentStreamStats, resize_trace_enabled};
 
 /// Console options sized to a `(width, height)` render area.
@@ -2250,7 +2250,9 @@ fn root_child_uses_root_scroll(tree: &WidgetTree, root_id: NodeId, child_id: Nod
 }
 
 fn child_uses_parent_scroll(tree: &WidgetTree, child_id: NodeId) -> bool {
-    !node_is_docked(tree, child_id) && !node_is_dedicated_scrollbar(tree, child_id)
+    !node_is_docked(tree, child_id)
+        && !node_is_dedicated_scrollbar(tree, child_id)
+        && !node_is_system_tooltip(tree, child_id)
 }
 
 fn node_is_docked(tree: &WidgetTree, node_id: NodeId) -> bool {
@@ -3212,7 +3214,7 @@ fn root_tree_virtual_content_size(tree: &WidgetTree) -> Option<(usize, usize)> {
         let Some(child) = tree.get(child_id) else {
             continue;
         };
-        if node_is_dedicated_scrollbar(tree, child_id) {
+        if node_is_dedicated_scrollbar(tree, child_id) || node_is_system_tooltip(tree, child_id) {
             continue;
         }
         if !child.display {
@@ -3356,6 +3358,7 @@ fn host_content_extent(
             Some(c) != scrollbar_children.vertical
                 && Some(c) != scrollbar_children.horizontal
                 && Some(c) != scrollbar_children.corner
+                && !node_is_system_tooltip(tree, c)
                 && !node_is_docked(tree, c)
                 && tree.get(c).is_some_and(|n| n.display)
         })
@@ -3365,6 +3368,7 @@ fn host_content_extent(
         if Some(child_id) == scrollbar_children.vertical
             || Some(child_id) == scrollbar_children.horizontal
             || Some(child_id) == scrollbar_children.corner
+            || node_is_system_tooltip(tree, child_id)
         {
             continue;
         }
@@ -5678,6 +5682,72 @@ Parent.show > Child { display: block; }
     /// virtual height by the dock height, shifting the scrollbar thumb glyph;
     /// and a horizontal scroll of margined columns (`how-to/layout06`)
     /// under-reports its virtual width by the outer column margins.
+    #[test]
+    fn a_shown_system_tooltip_is_neither_scrolled_nor_scrolled_content() {
+        // On a pushed screen the system tooltip is a child of the scrolling
+        // root. Like the app tree's tooltip it is placed in screen
+        // coordinates, so the root's scroll must not move it, and it must
+        // not add to the root's scroll range.
+        use crate::widget_tree::{Rect, WidgetTree};
+        use crate::widgets::{Label, VerticalScroll};
+
+        let _guard = crate::css::set_style_context(crate::css::default_widget_stylesheet());
+        let mut tree = WidgetTree::new();
+        let host = tree.set_root(Box::new(VerticalScroll::new()));
+        let flow = tree.mount(host, Box::new(Label::new("x")));
+        let tooltip = super::App::mount_system_tooltip(&mut tree, host);
+        tree.set_runtime_display(tooltip, true);
+        let content = Rect {
+            x0: 0,
+            y0: 0,
+            x1: 40,
+            y1: 30,
+        };
+        for (id, rect) in [
+            (host, content),
+            (
+                flow,
+                Rect {
+                    x0: 0,
+                    y0: 0,
+                    x1: 40,
+                    y1: 10,
+                },
+            ),
+            (
+                tooltip,
+                Rect {
+                    x0: 0,
+                    y0: 20,
+                    x1: 20,
+                    y1: 25,
+                },
+            ),
+        ] {
+            let node = tree.get_mut(id).expect("node exists");
+            node.layout_rect = rect;
+            node.content_rect = rect;
+        }
+        assert!(
+            tree.get(tooltip).is_some_and(|node| node.display),
+            "the tooltip is shown"
+        );
+
+        assert!(child_uses_parent_scroll(&tree, flow));
+        assert!(
+            !child_uses_parent_scroll(&tree, tooltip),
+            "the root's scroll must not move the system tooltip"
+        );
+        let (_, virtual_h, _) =
+            host_content_extent(&tree, host, content, ScrollbarHostChildren::default());
+        assert_eq!(virtual_h, 10, "the tooltip is not scrolled content");
+        assert_eq!(
+            root_tree_virtual_content_size(&tree),
+            Some((40, 10)),
+            "the tooltip is not the root's content"
+        );
+    }
+
     #[test]
     fn host_content_extent_includes_dock_spacing_and_child_margins() {
         use crate::style::{Dock, Spacing};
