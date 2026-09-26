@@ -715,8 +715,12 @@ pub(crate) fn apply_display_visibility_to_tree(tree: &mut WidgetTree) {
         let display_bool = !matches!(resolved.display, Some(Display::None));
         tree.set_css_display(node_id, display_bool);
 
-        // Effective visibility: own rule if explicitly set, else inherited.
-        let effective_vis = resolved.visibility.unwrap_or(inherited_vis);
+        // Effective visibility: the node's runtime rule (Python's inline rule
+        // from the `visible` setter), else its own CSS rule, else inherited.
+        let effective_vis = tree
+            .runtime_visibility(node_id)
+            .or(resolved.visibility)
+            .unwrap_or(inherited_vis);
         tree.set_visibility(node_id, effective_vis);
 
         with_style_stack(meta, resolved, || {

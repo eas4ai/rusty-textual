@@ -580,8 +580,8 @@ impl<'a> DomQueryMut<'a> {
                 Visibility::Hidden
             };
             for &id in &self.nodes {
-                if tree.contains(id) && tree.visibility(id) != visibility {
-                    tree.set_visibility(id, visibility);
+                // The runtime rule, so the next CSS sync keeps it.
+                if tree.set_runtime_visibility(id, visibility) {
                     changed_nodes.push(id);
                 }
             }
@@ -7750,7 +7750,7 @@ mod tests {
         type Seen = (
             bool,
             Visibility,
-            bool,
+            Vec<String>,
             crate::widgets::NodeState,
             Option<WidgetStyles>,
         );
@@ -7759,11 +7759,14 @@ mod tests {
             tree.walk_depth_first(root)
                 .into_iter()
                 .map(|id| {
+                    let node = tree.get(id).expect("node");
+                    let mut classes: Vec<String> = node.classes.iter().cloned().collect();
+                    classes.sort();
                     (
                         tree.is_displayed(id),
                         tree.visibility(id),
-                        tree.has_class(id, "picked"),
-                        tree.get(id).expect("node").state,
+                        classes,
+                        node.state,
                         tree.styles(id).cloned(),
                     )
                 })
@@ -7787,6 +7790,17 @@ mod tests {
 
         app.query_mut("#pushed").expect("query").add_class("picked");
         assert!(active(&app).has_class(pushed, "picked"), "add_class");
+        app.query_mut("#pushed")
+            .expect("query")
+            .toggle_classes(&["flipped"]);
+        assert!(active(&app).has_class(pushed, "flipped"), "toggle_classes");
+        app.query_mut("#pushed")
+            .expect("query")
+            .set_classes(&["picked", "listed"]);
+        assert!(
+            active(&app).has_class(pushed, "listed") && !active(&app).has_class(pushed, "flipped"),
+            "set_classes"
+        );
         app.query_mut("#pushed")
             .expect("query")
             .set_styles(|s| s.style.bold = Some(true));
@@ -7828,6 +7842,13 @@ mod tests {
             app.take_pending_query_refresh_nodes().contains(&pushed),
             "set_display repaints"
         );
+        app.query_mut("#pushed")
+            .expect("query")
+            .set(None, None, None, Some(true));
+        assert!(
+            active(&app).get(pushed).expect("node").state.loading,
+            "set loading"
+        );
         let _ = app.query_mut("#pushed").expect("query").remove();
         assert!(!active(&app).contains(pushed), "remove");
         assert!(app.take_pending_force_relayout(), "remove relayouts");
@@ -7837,6 +7858,82 @@ mod tests {
             base_before,
             "the app's own tree must not change"
         );
+    }
+
+    #[test]
+    fn query_visibility_change_shows_in_the_frame_and_lasts() {
+        // Python's `visible` setter writes the node's inline `visibility`
+        // rule, so a later style and layout pass keeps it.
+        struct VisibilityApp;
+        impl crate::TextualApp for VisibilityApp {
+            fn compose(&mut self) -> AppRoot {
+                AppRoot::new().with_child(crate::widgets::Static::new("base-text").id("base"))
+            }
+        }
+        struct VisibilityScreen;
+        impl crate::screen::Screen for VisibilityScreen {
+            fn compose(&self) -> Box<dyn Widget> {
+                Box::new(
+                    AppRoot::new()
+                        .with_child(crate::widgets::Static::new("pushed-text").id("pushed")),
+                )
+            }
+        }
+        fn shows(app: &App, needle: &str) -> bool {
+            app.frame
+                .as_plain_lines()
+                .iter()
+                .any(|line| line.contains(needle))
+        }
+
+        crate::run_test(VisibilityApp, |pilot| {
+            pilot.pause()?;
+            assert!(shows(pilot.app(), "base-text"));
+            pilot
+                .app_mut()
+                .query_mut("#base")
+                .expect("query")
+                .set_visible(false);
+            pilot.pause()?;
+            assert!(
+                !shows(pilot.app(), "base-text"),
+                "hidden on the app's screen"
+            );
+            // A class change lays the tree out again; the node stays hidden.
+            pilot
+                .app_mut()
+                .query_mut("#base")
+                .expect("query")
+                .add_class("again");
+            pilot.pause()?;
+            assert!(!shows(pilot.app(), "base-text"), "hidden after a relayout");
+
+            pilot
+                .app_mut()
+                .push_screen(Box::new(VisibilityScreen))
+                .expect("push succeeds");
+            pilot.pause()?;
+            assert!(shows(pilot.app(), "pushed-text"));
+            pilot
+                .app_mut()
+                .query_mut("#pushed")
+                .expect("query")
+                .set_visible(false);
+            pilot.pause()?;
+            assert!(
+                !shows(pilot.app(), "pushed-text"),
+                "hidden on the pushed screen"
+            );
+            pilot
+                .app_mut()
+                .query_mut("#pushed")
+                .expect("query")
+                .set_visible(true);
+            pilot.pause()?;
+            assert!(shows(pilot.app(), "pushed-text"), "shown again");
+            Ok(())
+        })
+        .expect("headless run_test must succeed");
     }
 
     #[test]

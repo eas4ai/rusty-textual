@@ -158,6 +158,10 @@ pub struct WidgetNode {
     /// CSS visibility state. When `Hidden`, the node still participates in
     /// layout but is not rendered (preserves space).
     pub(crate) visibility: Visibility,
+    /// The node's own visibility set at runtime (`DomQueryMut::set_visible`),
+    /// as Python's `visible` setter writes the inline `visibility` rule. It
+    /// wins over the stylesheet when the CSS sync recomputes `visibility`.
+    pub(crate) runtime_visibility: Option<Visibility>,
     /// Lifecycle state — `true` after mount, `false` after removal.
     pub(crate) mounted: bool,
     /// Positioned region from layout solver (co-designed with Pillar 2).
@@ -192,6 +196,7 @@ impl WidgetNode {
             css_display: true,
             runtime_display: true,
             visibility: Visibility::Visible,
+            runtime_visibility: None,
             mounted: false,
             layout_rect: Rect::ZERO,
             content_rect: Rect::ZERO,
@@ -767,6 +772,28 @@ impl WidgetTree {
         self.arena
             .get(node)
             .map_or(Visibility::Visible, |n| n.visibility)
+    }
+
+    /// Set the node's own runtime visibility, which the CSS sync keeps (Python
+    /// `DOMNode.visible = ...`, which writes the inline `visibility` rule).
+    /// It wins over the stylesheet, and descendants with no rule of their own
+    /// inherit it. The node's visibility changes at once; its descendants
+    /// follow at the next layout pass. Returns `true` when the rule changed.
+    pub fn set_runtime_visibility(&mut self, node: NodeId, visibility: Visibility) -> bool {
+        if let Some(n) = self.arena.get_mut(node)
+            && n.runtime_visibility != Some(visibility)
+        {
+            n.runtime_visibility = Some(visibility);
+            n.visibility = visibility;
+            return true;
+        }
+        false
+    }
+
+    /// Returns the node's own runtime visibility, if one was set.
+    #[must_use]
+    pub fn runtime_visibility(&self, node: NodeId) -> Option<Visibility> {
+        self.arena.get(node).and_then(|n| n.runtime_visibility)
     }
 
     // -- CSS id (T-4) --------------------------------------------------------
