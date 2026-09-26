@@ -27,12 +27,14 @@
 //!   app stops before it starts.
 //! - `PROBE_PUSH`: `screen` or `modal`; `p` then pushes a `Screen` or a
 //!   `ModalScreen` of 60 lines, `pushed 1` to `pushed 60`, then `pushed-end`
-//!   (Python `App.push_screen`), and `h` hides them through
-//!   `App::query_mut("#pushed-body")` then `set_display(false)`.
+//!   (Python `App.push_screen`). Through `App::query_mut("#pushed-body")`,
+//!   `h` hides them with `set_display(false)` and `u` shows them again with
+//!   `set_display(true)`; `v` hides them with `set_visible(false)` and `w`
+//!   shows them again with `set_visible(true)`.
 //!
 //! Keys: `s` shrinks the body to one line, `z` tries `App::suspend`, `x`
-//! runs the suspend-process action, `p` pushes the `PROBE_PUSH` screen, `h`
-//! hides its text, `c`
+//! runs the suspend-process action, `p` pushes the `PROBE_PUSH` screen, `h`,
+//! `u`, `v` and `w` hide and show its text, `c`
 //! and `r` change and repaint the `PROBE_SHARED` line, `q` quits. The status
 //! line counts every other key that arrives (`keys:N`) and shows the last
 //! suspend result, `clicked` once the button has been pressed, and `hovered`
@@ -312,10 +314,13 @@ impl TextualApp for Probe {
                 ctx.set_handled();
                 return;
             }
-            "h" if self.push.is_some() => {
-                let _ = app
-                    .query_mut("#pushed-body")
-                    .map(|query| query.set_display(false));
+            "h" | "u" | "v" | "w" if self.push.is_some() => {
+                let _ = app.query_mut("#pushed-body").map(|query| match key {
+                    "h" => query.set_display(false),
+                    "u" => query.set_display(true),
+                    "v" => query.set_visible(false),
+                    _ => query.set_visible(true),
+                });
                 ctx.set_handled();
                 return;
             }
