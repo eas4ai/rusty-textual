@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: query-mut-acts-on-app-tree
+Current: full-screen-screen-honors-size-rules
 
 ## inline-render-mode
 
@@ -88,6 +88,23 @@ blur, removal and `set`) acts on the nodes its query matched on that
 screen, as Python's `App.query` acts on the active screen (SCR-002).
 Pushed screens still scroll (SCR-001), and full-screen apps still match
 the Python goldens (TRM-003).
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, and the full test gate, strict clippy, and
+rustfmt pass.
+
+## full-screen-screen-honors-size-rules
+
+Requirements: SCR-001, SCR-002, SCR-003, INL-004, INL-017, TRM-003
+
+Delivers: the app's own screen fills the whole terminal in full-screen
+mode and the whole inline frame in inline mode, as Python places every
+screen, whatever its own width, height, min/max size and margin rules
+say, checked at 100x30 and at 512x144 (SCR-003). Inline height still
+follows the screen's height rules (INL-004) and inline content still
+scrolls inside the screen's border (INL-017). Pushed screens still scroll
+and take query changes (SCR-001, SCR-002), and full-screen apps still
+match the Python goldens (TRM-003).
 
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and
