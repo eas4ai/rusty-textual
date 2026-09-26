@@ -13,6 +13,10 @@
 //! - `PROBE_HOVER`: when set, a `hover here` line comes before the body, away
 //!   from the status line. Moving the pointer over it posts a message, and
 //!   the app's message handler updates the status line.
+//! - `PROBE_SHARED`: when set, a `shared:N` line comes two rows below the
+//!   status line. It draws a count kept outside the widget: `c` adds one
+//!   without asking for a repaint, and `r` repaints the line with
+//!   `DomQueryMut::refresh`.
 //! - `PROBE_EXIT_MESSAGE`: when set, `q` exits through `App::exit` with this
 //!   message (Python `App.exit(message=...)`).
 //! - `PROBE_EXIT_RESULT`: when set, the app returns this value
@@ -24,13 +28,16 @@
 //!   (Python `App.push_screen`).
 //!
 //! Keys: `s` shrinks the body to one line, `z` tries `App::suspend`, `x`
-//! runs the suspend-process action, `p` pushes the `PROBE_PUSH` screen, `q`
-//! quits. The status line counts every
-//! other key that arrives (`keys:N`) and shows the last suspend result,
-//! `clicked` once the button has been pressed, and `hovered` once the
-//! pointer has moved over the hover line.
+//! runs the suspend-process action, `p` pushes the `PROBE_PUSH` screen, `c`
+//! and `r` change and repaint the `PROBE_SHARED` line, `q` quits. The status
+//! line counts every other key that arrives (`keys:N`) and shows the last
+//! suspend result, `clicked` once the button has been pressed, and `hovered`
+//! once the pointer has moved over the hover line. The key chooses the path
+//! that writes the status line (see `Probe::show_status`).
 
+use std::any::Any;
 use std::fmt::Write as _;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use textual::prelude::*;
 
@@ -38,6 +45,7 @@ const CSS: &str = "
 #cssmark { display: none; }
 Screen:inline #cssmark { display: block; }
 HoverLine { height: 1; }
+SharedLine { height: 1; margin-top: 2; }
 ";
 
 const PUSHED_LINES: usize = 60;
@@ -71,6 +79,37 @@ impl Widget for HoverLine {
     }
 }
 
+/// The count the `PROBE_SHARED` line draws. It lives outside the widget, so
+/// changing it changes what the line draws without asking for a repaint.
+static SHARED: AtomicUsize = AtomicUsize::new(0);
+
+/// The `PROBE_SHARED` line: draws `shared:N` from `SHARED`. Its top margin
+/// keeps it out of the status line's repaint region, which the renderer
+/// widens by one cell.
+struct SharedLine;
+
+impl Widget for SharedLine {
+    fn style_type(&self) -> &'static str {
+        "SharedLine"
+    }
+
+    fn render(
+        &self,
+        console: &rich_rs::Console,
+        options: &rich_rs::ConsoleOptions,
+    ) -> rich_rs::Segments {
+        let count = SHARED.load(Ordering::Relaxed);
+        Static::new(format!("shared:{count}")).render(console, options)
+    }
+}
+
+/// Sets the text of `widget` when it is a `Static`.
+fn set_static(widget: &mut dyn Widget, text: String) {
+    if let Some(label) = (widget as &mut dyn Any).downcast_mut::<Static>() {
+        label.update(text);
+    }
+}
+
 /// The screen `p` pushes: taller than the 30-row test terminal.
 struct Pushed {
     modal: bool,
@@ -87,13 +126,20 @@ impl Screen for Pushed {
     }
 }
 
+/// The optional widgets the probe shows (`PROBE_BUTTON`, `PROBE_HOVER`,
+/// `PROBE_SHARED`).
+struct Extras {
+    button: bool,
+    hover: bool,
+    shared: bool,
+}
+
 struct Probe {
     lines: usize,
     padding: usize,
     screen_height: Option<String>,
     screen_overflow: Option<String>,
-    button: bool,
-    hover: bool,
+    extras: Extras,
     exit_message: Option<String>,
     exit_result: Option<String>,
     exit_in_configure: bool,
@@ -118,8 +164,11 @@ impl Probe {
             padding: number("PROBE_PADDING", 1),
             screen_height: std::env::var("PROBE_SCREEN_HEIGHT").ok(),
             screen_overflow: std::env::var("PROBE_SCREEN_OVERFLOW").ok(),
-            button: std::env::var_os("PROBE_BUTTON").is_some(),
-            hover: std::env::var_os("PROBE_HOVER").is_some(),
+            extras: Extras {
+                button: std::env::var_os("PROBE_BUTTON").is_some(),
+                hover: std::env::var_os("PROBE_HOVER").is_some(),
+                shared: std::env::var_os("PROBE_SHARED").is_some(),
+            },
             exit_message: std::env::var("PROBE_EXIT_MESSAGE").ok(),
             exit_result: std::env::var("PROBE_EXIT_RESULT").ok(),
             exit_in_configure: std::env::var_os("PROBE_EXIT_IN_CONFIGURE").is_some(),
@@ -156,11 +205,37 @@ impl Probe {
         added
     }
 
-    fn refresh(&self, app: &mut App) {
-        let body = self.body();
+    /// Writes the status line through the update path `key` names: `1`
+    /// `App::with_widget_mut`, `2` `with_widget_mut_as`, `3`
+    /// `with_query_one_mut`, `5` `with_widget_taken_as`, `6` `query_mut` then
+    /// `DomQueryMut::update`, and any other key `with_query_one_mut_as`.
+    fn show_status(&self, app: &mut App, key: &str) {
         let status = self.status();
-        let _ = app.with_query_one_mut_as::<Static, _>("#body", |s| s.update(body));
-        let _ = app.with_query_one_mut_as::<Static, _>("#status", |s| s.update(status));
+        let Ok(id) = app.query_one("#status") else {
+            return;
+        };
+        match key {
+            "1" => {
+                let _ = app.with_widget_mut(id, |w| set_static(w, status));
+            }
+            "2" => {
+                let _ = app.with_widget_mut_as::<Static, _>(id, |s| s.update(status));
+            }
+            "3" => {
+                let _ = app.with_query_one_mut("#status", |w| set_static(w, status));
+            }
+            "5" => {
+                let _ = app.with_widget_taken_as::<Static, _>(id, |s, _| s.update(status));
+            }
+            "6" => {
+                let _ = app
+                    .query_mut("#status")
+                    .map(|query| query.update(|w| set_static(w, status.clone())));
+            }
+            _ => {
+                let _ = app.with_query_one_mut_as::<Static, _>("#status", |s| s.update(status));
+            }
+        }
     }
 }
 
@@ -182,14 +257,17 @@ impl TextualApp for Probe {
 
     fn compose(&mut self) -> AppRoot {
         let mut root = AppRoot::new();
-        if self.hover {
+        if self.extras.hover {
             root = root.with_child(HoverLine(Static::new("hover here")));
         }
-        let root = root
+        root = root
             .with_child(Static::new(self.body()).id("body"))
-            .with_child(Static::new(self.status()).id("status"))
-            .with_child(Static::new("inline-css").id("cssmark"));
-        if self.button {
+            .with_child(Static::new(self.status()).id("status"));
+        if self.extras.shared {
+            root = root.with_child(SharedLine);
+        }
+        let root = root.with_child(Static::new("inline-css").id("cssmark"));
+        if self.extras.button {
             root.with_child(Button::new("Press").id("press"))
         } else {
             root
@@ -201,8 +279,13 @@ impl TextualApp for Probe {
     }
 
     fn on_key_with_app(&mut self, app: &mut App, key: &KeyEventData, ctx: &mut WidgetCtx) {
-        match key.key.as_str() {
-            "s" => self.lines = 1,
+        let key = key.key.as_str();
+        match key {
+            "s" => {
+                self.lines = 1;
+                let body = self.body();
+                let _ = app.with_query_one_mut_as::<Static, _>("#body", |s| s.update(body));
+            }
             "z" => {
                 self.suspend = match app.suspend() {
                     Ok(_guard) => "ok",
@@ -223,6 +306,16 @@ impl TextualApp for Probe {
                 ctx.set_handled();
                 return;
             }
+            "c" if self.extras.shared => {
+                SHARED.fetch_add(1, Ordering::Relaxed);
+                ctx.set_handled();
+                return;
+            }
+            "r" if self.extras.shared => {
+                let _ = app.query_mut("SharedLine").map(DomQueryMut::refresh);
+                ctx.set_handled();
+                return;
+            }
             "q" => {
                 if let Some(message) = self.exit_message.take() {
                     app.exit(None, 0, Some(message));
@@ -234,18 +327,18 @@ impl TextualApp for Probe {
             _ => self.other_keys += 1,
         }
         ctx.set_handled();
-        self.refresh(app);
+        self.show_status(app, key);
     }
 
     fn on_message_with_app(&mut self, app: &mut App, message: &MessageEvent, ctx: &mut WidgetCtx) {
         if message.downcast_ref::<ButtonPressed>().is_some() {
             self.mark("clicked");
             ctx.set_handled();
-            self.refresh(app);
+            self.show_status(app, "");
         } else if message.downcast_ref::<Hovered>().is_some() && self.mark("hovered") {
             // Not marked handled, like the mouse01 example: a handled message
             // repaints the whole frame, so only the update asks for a repaint.
-            self.refresh(app);
+            self.show_status(app, "");
         }
     }
 
