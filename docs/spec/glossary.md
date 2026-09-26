@@ -25,6 +25,10 @@ query `CSI 6 n`.
 
 **Screen stack.** The screens an app has pushed; the top one is visible.
 
+**Pushed screen.** A screen on top of the app's own screen, pushed with
+`App::push_screen` (Python `App.push_screen`), such as the command palette
+or a modal dialog.
+
 **Frame.** One complete rendering of the app, written to the terminal.
 
 **Driver.** The code that puts the terminal into and out of application

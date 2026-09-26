@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: overflow-paints-over-screen-border
+Current: pushed-screens-do-not-scroll
 
 ## inline-render-mode
 
@@ -26,6 +26,21 @@ height, as in Python, so an app taller than the terminal keeps its screen
 border inside the frame and scrolls its content instead of painting over
 the border. The inline height itself (INL-004) and full-screen behavior
 (TRM-003) do not change.
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, and the full test gate, strict clippy, and
+rustfmt pass.
+
+## pushed-screens-do-not-scroll
+
+Requirements: SCR-001, INL-004, INL-017, TRM-003
+
+Delivers: a pushed screen, such as the command palette or a modal
+dialog, whose content is taller than the screen scrolls like the app's
+own screen: the mouse wheel and a scrollbar drag move its content as far
+as its last line, in full-screen and in inline mode, as Python's Screen
+and ModalScreen do. The inline height (INL-004), the app's own screen
+(INL-017) and full-screen output (TRM-003) do not change.
 
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and
