@@ -18,7 +18,7 @@ use crossterm::event::{
 };
 use rich_rs::Renderable;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
@@ -2069,6 +2069,9 @@ struct LiveLoop {
     previous_focus: Option<NodeId>,
     /// Input read ahead (mouse-motion coalescing, input draining).
     pending_input_event: Option<CrosstermEvent>,
+    /// Keys typed while the terminal started (TRM-004): the driver's
+    /// startup exchange read them, so they come before any input read here.
+    typed_ahead: VecDeque<CrosstermEvent>,
     /// Last pointer position, for the hit probe's direction.
     last_mouse_pos: Option<(u16, u16)>,
 }
@@ -2769,11 +2772,23 @@ impl App {
         let mut tick: u64 = 0;
         let tick_rate = Duration::from_millis(100);
         let mut last_tick = Instant::now();
+        // Keys typed while the terminal started come first (TRM-004).
+        let mut typed_ahead: VecDeque<CrosstermEvent> = VecDeque::new();
 
         loop {
+            if typed_ahead.is_empty() {
+                typed_ahead.extend(self.driver.take_typed_ahead());
+            }
             let timeout = tick_rate.saturating_sub(last_tick.elapsed());
-            if event::poll(timeout)? {
-                match event::read()? {
+            let input = if let Some(typed) = typed_ahead.pop_front() {
+                Some(typed)
+            } else if event::poll(timeout)? {
+                Some(event::read()?)
+            } else {
+                None
+            };
+            if let Some(input) = input {
+                match input {
                     CrosstermEvent::Key(key) if key.kind == KeyEventKind::Press => {
                         if matches!(
                             key.code,
@@ -2898,6 +2913,7 @@ impl App {
             prev_any_active: false,
             previous_focus,
             pending_input_event: None,
+            typed_ahead: VecDeque::new(),
             last_mouse_pos: None,
         }))
     }
@@ -3120,8 +3136,15 @@ impl App {
             .next_timeout(self.timers.now())
             .map_or(timeout, |timer_timeout| timeout.min(timer_timeout));
         let poll_started = Instant::now();
+        // The driver keeps the keys typed while it last started; take them
+        // after it starts or restarts (a resume after a suspend).
+        if lp.typed_ahead.is_empty() {
+            lp.typed_ahead.extend(self.driver.take_typed_ahead());
+        }
         let input_event = if let Some(pending) = lp.pending_input_event.take() {
             Some(pending)
+        } else if let Some(typed) = lp.typed_ahead.pop_front() {
+            Some(typed)
         } else if event::poll(timeout)? {
             Some(event::read()?)
         } else {
@@ -4673,7 +4696,12 @@ impl App {
 
         // If more input is already queued after an immediate render, keep
         // draining input first to avoid visible backlog.
-        if rendered_immediately_for_input && event::poll(Duration::ZERO)? {
+        // Keys typed while the terminal started go first, so no later input
+        // is read ahead of them.
+        if rendered_immediately_for_input
+            && lp.typed_ahead.is_empty()
+            && event::poll(Duration::ZERO)?
+        {
             lp.pending_input_event = Some(event::read()?);
             // Fairness guard: keep low-latency input draining, but do not
             // starve Tick delivery under sustained keyboard input.
