@@ -1,0 +1,18 @@
+[package]
+name = "textual-docs-guide-workers"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+http-examples = ["dep:ureq"]
+
+[dependencies]
+textual = { package = "rusty-textual", path = "../../../.." }
+rich-rs = "1.1.0"
+crossterm = "0.28"
+tree-sitter-java = "0.23"
+ureq = { version = "3", optional = true }
+
+[lints]
+workspace = true
