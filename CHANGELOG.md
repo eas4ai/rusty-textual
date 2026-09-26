@@ -121,6 +121,11 @@ until the API stabilizes.
   removals, now lay out and redraw at once. A visibility change set through
   a query lasts through later layout passes. A query removal also drops
   focus from the removed widgets.
+- The app's own screen now fills the whole terminal in full-screen mode,
+  and the whole inline frame in inline mode, whatever its width, height,
+  min/max size, margin, dock, position, split or offset rules say, as in
+  Python. Before, `Screen { height: 10 }` left the rest of a full-screen
+  terminal blank.
 
 ## [1.1.0] - 2026-07-16
 
