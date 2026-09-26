@@ -691,6 +691,46 @@ fn inl_017_a_pushed_screen_keeps_its_border_inside_the_frame() {
 }
 
 #[test]
+fn inl_017_a_scrolled_pushed_screen_keeps_its_border_inside_the_frame() {
+    // A pushed screen taller than the terminal scrolls inside its
+    // `Screen:inline` borders: after it has scrolled to its last line, the
+    // frame's first and last rows are still its top and bottom border.
+    let term = Term::spawn(
+        SHELL_THEN_EXEC,
+        &probe(),
+        &[("PROBE_PUSH", "screen")],
+        Answers::TERMINAL,
+    );
+    term.wait_for("probe status", has_text("keys:0"));
+    term.settle();
+    term.send(b"p");
+    term.wait_for("the pushed screen", has_text("pushed 1"));
+    let screen = term.settle();
+    let rows = painted_rows(&screen);
+    let (top, bottom) = (rows[0], rows[rows.len() - 1]);
+    let y = top.midpoint(bottom) + 1;
+    for _ in 0..80 {
+        term.send(format!("\x1b[<65;10;{y}M").as_bytes()); // wheel down
+    }
+    term.wait_for("the pushed screen's last line", has_text("pushed-end"));
+    let screen = term.settle();
+    let text = lines(&screen);
+    let (_, cols) = screen.size();
+    let edge = |row: u16, glyph: char| {
+        text[usize::from(row)]
+            .chars()
+            .filter(|&c| c == glyph)
+            .count()
+            >= usize::from(cols - 2)
+    };
+    assert!(
+        edge(top, '\u{2594}') && edge(bottom, '\u{2581}'),
+        "the scrolled pushed screen's border is not on the frame's first and last rows:\n{}",
+        dump(&screen)
+    );
+}
+
+#[test]
 fn inl_017_the_inline_screen_scrolls_to_its_last_line() {
     // The body, then the status line, then the `inline-css` marker: the
     // marker is the last line, so it shows only once the screen has
