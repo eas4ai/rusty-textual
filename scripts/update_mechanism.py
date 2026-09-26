@@ -17,7 +17,7 @@ sys.dont_write_bytecode = True
 
 from mechanism_env import clean_env  # noqa: E402
 
-REQUIREMENTS = ["UPD-001"]
+REQUIREMENTS = ["UPD-001", "UPD-002"]
 COMMAND = ["cargo", "test", "--test", "widget_updates", "--", "--test-threads=1"]
 RESULT = re.compile(r"^test (\S+) \.\.\. (ok|FAILED|ignored)", re.MULTILINE)
 NAME = re.compile(r"(?:^|::)upd_(\d{3})_")
