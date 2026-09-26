@@ -228,11 +228,9 @@ impl ScrollHost {
         match action {
             Action::ScrollHome => self.offset_y = 0.0,
             Action::ScrollEnd => {
-                self.offset_y = scrollbar::max_offset(
-                    self.content_height.max(1),
-                    self.viewport_height.max(1),
-                )
-                .to_f32_lossy();
+                self.offset_y =
+                    scrollbar::max_offset(self.content_height.max(1), self.viewport_height.max(1))
+                        .to_f32_lossy();
             }
             Action::ScrollUp => self.offset_y = (self.offset_y - step_y).max(0.0),
             Action::ScrollDown => self.offset_y += step_y,

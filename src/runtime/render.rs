@@ -2007,33 +2007,44 @@ fn render_screen_tree_layer(
         ));
     }
 
-    let width = frame.width;
-    let height = frame.height;
     let base_ctx = TreeRenderCtx {
         origin_x: 0,
         origin_y: 0,
         clip: ClipRect::for_frame(frame),
         overlay_root_exempt: None,
     };
-    let scroll_clip = root_node.widget.scroll_viewport_size().map_or_else(
-        || ClipRect::for_frame(frame),
-        |(vw, vh)| ClipRect {
-            x0: 0,
-            y0: 0,
-            x1: vw.min(width).to_i32_sat(),
-            y1: vh.min(height).to_i32_sat(),
-        },
-    );
-    let scroll_ctx = TreeRenderCtx {
+    // The scroll viewport starts at the root's content box, inside its border
+    // and padding (an inline screen's top border), so scrolled content never
+    // paints over them.
+    let frame_clip = ClipRect::for_frame(frame);
+    let content = root_node.content_rect;
+    let scroll_clip =
+        root_node
+            .widget
+            .scroll_viewport_size()
+            .map_or(Some(frame_clip), |(vw, vh)| {
+                let viewport = ClipRect {
+                    x0: content.x0,
+                    y0: content.y0,
+                    x1: content.x0 + vw.to_i32_sat(),
+                    y1: content.y0 + vh.to_i32_sat(),
+                };
+                viewport.intersect(frame_clip)
+            });
+    let scroll_ctx = scroll_clip.map(|clip| TreeRenderCtx {
         origin_x: -root_scroll.0.round().to_i32_sat(),
         origin_y: -root_scroll.1.round().to_i32_sat(),
-        clip: scroll_clip,
+        clip,
         overlay_root_exempt: None,
-    };
+    });
 
     let mut overlays: Vec<QueuedOverlay> = Vec::new();
     for child_id in child_ids {
         let child_ctx = if root_child_uses_root_scroll(tree, root_id, child_id) {
+            // An empty viewport shows none of the scrolled children.
+            let Some(scroll_ctx) = scroll_ctx else {
+                continue;
+            };
             scroll_ctx
         } else {
             base_ctx

@@ -1,5 +1,3 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use rich_rs::{Console, ConsoleOptions, Segment, Segments};
 use textual_macros::widget;
 
@@ -7,10 +5,11 @@ use crate::compose::ComposeResult;
 use crate::css;
 use crate::debug::DebugLayout;
 use crate::event::Event;
-use crate::message::{MessageEvent, ScrollbarAxis, ScrollbarScrollTo};
+use crate::message::{MessageEvent, ScrollbarScrollTo};
 use crate::num::Cast;
-use crate::style::Overflow;
-use crate::widgets::{NodeSeed, Widget, helpers::apply_debug_box, scrollbar_max_offset};
+use crate::widgets::{NodeSeed, Widget, helpers::apply_debug_box};
+
+use super::scroll_core::ScrollHost;
 
 /// Synthetic css-ids for the scrollbar lane children a plain container injects
 /// when its resolved `overflow` is `auto`/`scroll`. The runtime layout pass
@@ -19,14 +18,6 @@ use crate::widgets::{NodeSeed, Widget, helpers::apply_debug_box, scrollbar_max_o
 pub(crate) const CONTAINER_VSCROLLBAR_ID: &str = "__container_vscrollbar";
 pub(crate) const CONTAINER_HSCROLLBAR_ID: &str = "__container_hscrollbar";
 pub(crate) const CONTAINER_SCROLLBAR_CORNER_ID: &str = "__container_scrollbar_corner";
-
-fn clamp_offset_f32(offset: f32, content_len: usize, viewport_len: usize) -> f32 {
-    if !offset.is_finite() {
-        return 0.0;
-    }
-    let max = scrollbar_max_offset(content_len.max(1), viewport_len.max(1)).to_f32_lossy();
-    offset.clamp(0.0, max)
-}
 
 #[widget(Interactive, Layout, Scrollable, StyleIdentity)]
 pub struct Container {
@@ -48,23 +39,11 @@ pub struct Container {
     //
     // A plain container reserves a scrollbar gutter and scrolls its overflowing
     // children when its resolved `overflow-x`/`overflow-y` is `auto`/`scroll`.
-    // This mirrors how `AppRoot` (a multi-child arena container) already works:
-    // scrollbar lane children are injected at compose time and the runtime's
-    // `apply_host_scrollbar_layout` reserves the gutter + drives the bars.
-    offset_x: f32,
-    offset_y: f32,
-    scroll_step_x: usize,
-    scroll_step_y: usize,
-    /// Virtual content extent (`set_virtual_content_size`, runtime-driven).
-    content_width: AtomicUsize,
-    content_height: AtomicUsize,
-    /// Visible viewport size after the gutter is reserved (`on_layout`).
-    viewport_width: AtomicUsize,
-    viewport_height: AtomicUsize,
-    /// Resolved overflow per axis, cached during `on_layout` so the scroll-host
-    /// trait methods don't depend on a per-node CSS context being active.
-    overflow_x: Overflow,
-    overflow_y: Overflow,
+    // The runtime mounts its scrollbar lanes and `apply_host_scrollbar_layout`
+    // reserves the gutter + drives the bars. The resolved overflow is cached
+    // during `on_layout`, so the scroll-host trait methods don't depend on a
+    // per-node CSS context being active.
+    scroll: ScrollHost,
     /// When `true`, `compose` does NOT inject scrollbar lanes and
     /// the scroll-host trait methods stay inert. Set for the inner content
     /// holder of `ScrollView`/`ScrollableContainer`, which manage their own
@@ -92,19 +71,7 @@ impl Container {
             border_subtitle: None,
             child_decl_meta: Vec::new(),
             child_handle_sinks: Vec::new(),
-            offset_x: 0.0,
-            offset_y: 0.0,
-            scroll_step_x: 2,
-            scroll_step_y: 1,
-            content_width: AtomicUsize::new(0),
-            content_height: AtomicUsize::new(0),
-            viewport_width: AtomicUsize::new(0),
-            viewport_height: AtomicUsize::new(0),
-            // Plain-container default (Python `Container`/`Horizontal`/`Vertical`
-            // default CSS is `overflow: hidden hidden`). Overwritten in
-            // `on_layout` once the real CSS-resolved overflow is known.
-            overflow_x: Overflow::Hidden,
-            overflow_y: Overflow::Hidden,
+            scroll: ScrollHost::new(),
             suppress_scrollbars: false,
         }
     }
@@ -121,46 +88,10 @@ impl Container {
         self.suppress_scrollbars
     }
 
-    /// Whether the container's resolved overflow allows scrolling on an axis.
-    fn scrollable_x(&self) -> bool {
-        matches!(self.overflow_x, Overflow::Auto | Overflow::Scroll)
-    }
-
-    fn scrollable_y(&self) -> bool {
-        matches!(self.overflow_y, Overflow::Auto | Overflow::Scroll)
-    }
-
     /// Whether the container is currently acting as a scroll host: its overflow
-    /// allows scrolling AND a viewport has been measured. Content/viewport are
-    /// compared in the per-axis accessors below.
+    /// allows scrolling AND a viewport has been measured.
     fn is_scroll_host(&self) -> bool {
-        !self.suppress_scrollbars
-            && (self.scrollable_x() || self.scrollable_y())
-            && self.viewport_width.load(Ordering::Relaxed) > 0
-            && self.viewport_height.load(Ordering::Relaxed) > 0
-    }
-
-    fn clamp_offsets(&mut self) {
-        self.offset_x = clamp_offset_f32(
-            self.offset_x,
-            self.content_width.load(Ordering::Relaxed).max(1),
-            self.viewport_width.load(Ordering::Relaxed).max(1),
-        );
-        self.offset_y = clamp_offset_f32(
-            self.offset_y,
-            self.content_height.load(Ordering::Relaxed).max(1),
-            self.viewport_height.load(Ordering::Relaxed).max(1),
-        );
-    }
-
-    fn apply_scrollbar_offset(&mut self, axis: ScrollbarAxis, offset: f32) -> bool {
-        let (before_x, before_y) = (self.offset_x, self.offset_y);
-        match axis {
-            ScrollbarAxis::Horizontal => self.offset_x = offset,
-            ScrollbarAxis::Vertical => self.offset_y = offset,
-        }
-        self.clamp_offsets();
-        super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y))
+        !self.suppress_scrollbars && self.scroll.is_active()
     }
 
     #[must_use]
@@ -247,21 +178,11 @@ impl crate::widgets::Interactive for Container {
         // `width`/`height` are the post-gutter CONTENT box size (the scroll
         // viewport) — `apply_layout_info_tree_from_layout_rects` calls this
         // AFTER `apply_host_scrollbar_layout` has reserved any scrollbar lane.
-        self.viewport_width
-            .store(width.max(1) as usize, Ordering::Relaxed);
-        self.viewport_height
-            .store(height.max(1) as usize, Ordering::Relaxed);
-
-        // Cache the CSS-resolved overflow so the scroll-host trait methods (which
-        // run without a guaranteed per-node style context) can read it cheaply.
-        // The layout/render pass guarantees the global stylesheet context is set.
+        // The layout/render pass guarantees the global stylesheet context is
+        // set, so the overflow resolves here.
         let meta = css::selector_meta_generic(self);
         let resolved = css::resolve_style(self, &meta);
-        let fallback = resolved.overflow.unwrap_or(Overflow::Hidden);
-        self.overflow_x = resolved.overflow_x.unwrap_or(fallback);
-        self.overflow_y = resolved.overflow_y.unwrap_or(fallback);
-
-        self.clamp_offsets();
+        self.scroll.layout(width, height, &resolved);
     }
 
     fn on_event_capture(&mut self, _event: &Event, _ctx: &mut crate::event::WidgetCtx) {}
@@ -273,49 +194,7 @@ impl crate::widgets::Interactive for Container {
         let Event::Action(action) = event else {
             return;
         };
-        let before_x = self.offset_x;
-        let before_y = self.offset_y;
-        match action {
-            crate::event::Action::ScrollHome => self.offset_y = 0.0,
-            crate::event::Action::ScrollEnd => {
-                self.offset_y = scrollbar_max_offset(
-                    self.content_height.load(Ordering::Relaxed).max(1),
-                    self.viewport_height.load(Ordering::Relaxed).max(1),
-                )
-                .to_f32_lossy();
-            }
-            crate::event::Action::ScrollUp => {
-                self.offset_y = (self.offset_y - self.scroll_step_y.to_f32_lossy()).max(0.0);
-            }
-            crate::event::Action::ScrollDown => {
-                self.offset_y += self.scroll_step_y.to_f32_lossy();
-            }
-            crate::event::Action::ScrollPageUp => {
-                let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                self.offset_y = (self.offset_y - page.to_f32_lossy()).max(0.0);
-            }
-            crate::event::Action::ScrollPageDown => {
-                let page = self.viewport_height.load(Ordering::Relaxed).max(1);
-                self.offset_y += page.to_f32_lossy();
-            }
-            crate::event::Action::ScrollLeft => {
-                self.offset_x = (self.offset_x - self.scroll_step_x.to_f32_lossy()).max(0.0);
-            }
-            crate::event::Action::ScrollRight => {
-                self.offset_x += self.scroll_step_x.to_f32_lossy();
-            }
-            crate::event::Action::ScrollPageLeft => {
-                let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                self.offset_x = (self.offset_x - page.to_f32_lossy()).max(0.0);
-            }
-            crate::event::Action::ScrollPageRight => {
-                let page = self.viewport_width.load(Ordering::Relaxed).max(1);
-                self.offset_x += page.to_f32_lossy();
-            }
-            _ => return,
-        }
-        self.clamp_offsets();
-        if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {
+        if self.scroll.scroll_action(*action) == Some(true) {
             ctx.request_layout_invalidation();
             ctx.set_handled();
         }
@@ -329,7 +208,7 @@ impl crate::widgets::Interactive for Container {
         if !self.is_scroll_host() {
             return;
         }
-        if self.apply_scrollbar_offset(*axis, *offset) {
+        if self.scroll.scroll_to(*axis, *offset) {
             ctx.request_layout_invalidation();
         }
         ctx.set_handled();
@@ -370,8 +249,7 @@ impl crate::widgets::Layout for Container {
     }
 
     fn set_virtual_content_size(&mut self, width: usize, height: usize) {
-        self.content_width.store(width.max(1), Ordering::Relaxed);
-        self.content_height.store(height.max(1), Ordering::Relaxed);
+        self.scroll.set_content_size(width, height);
     }
 
     fn clips_descendants_to_content(&self) -> bool {
@@ -395,20 +273,7 @@ impl crate::widgets::Scrollable for Container {
         if !self.is_scroll_host() {
             return;
         }
-        let before_x = self.offset_x;
-        let before_y = self.offset_y;
-        if delta_y != 0 && self.scrollable_y() {
-            self.offset_y += delta_y
-                .saturating_mul(self.scroll_step_y.to_i32_sat())
-                .to_f32_lossy();
-        }
-        if delta_x != 0 && self.scrollable_x() {
-            self.offset_x += delta_x
-                .saturating_mul(self.scroll_step_x.to_i32_sat())
-                .to_f32_lossy();
-        }
-        self.clamp_offsets();
-        if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {
+        if self.scroll.scroll_by(delta_x, delta_y) {
             ctx.request_layout_invalidation();
             ctx.set_handled();
         }
@@ -423,40 +288,21 @@ impl crate::widgets::Scrollable for Container {
         if !self.is_scroll_host() {
             return (0.0, 0.0);
         }
-        (
-            clamp_offset_f32(
-                self.offset_x,
-                self.content_width.load(Ordering::Relaxed).max(1),
-                self.viewport_width.load(Ordering::Relaxed).max(1),
-            ),
-            clamp_offset_f32(
-                self.offset_y,
-                self.content_height.load(Ordering::Relaxed).max(1),
-                self.viewport_height.load(Ordering::Relaxed).max(1),
-            ),
-        )
+        self.scroll.offset()
     }
 
     fn scroll_viewport_size(&self) -> Option<(usize, usize)> {
         if !self.is_scroll_host() {
             return None;
         }
-        let vw = self.viewport_width.load(Ordering::Relaxed);
-        let vh = self.viewport_height.load(Ordering::Relaxed);
-        Some((vw.max(1), vh.max(1)))
+        Some(self.scroll.viewport())
     }
 
     fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {
         if !self.is_scroll_host() {
             return None;
         }
-        let cw = self.content_width.load(Ordering::Relaxed);
-        let ch = self.content_height.load(Ordering::Relaxed);
-        if cw == 0 || ch == 0 {
-            None
-        } else {
-            Some((cw, ch))
-        }
+        self.scroll.content_size()
     }
 }
 
