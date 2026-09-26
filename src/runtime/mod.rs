@@ -322,6 +322,19 @@ impl IntoIterator for DomQuery {
     }
 }
 
+/// The sizes the layout reads from a widget. A content update that changes
+/// them needs a relayout.
+type IntrinsicSize = [Option<usize>; 4];
+
+fn intrinsic_size(widget: &dyn Widget) -> IntrinsicSize {
+    [
+        widget.layout_height(),
+        widget.content_width(),
+        widget.auto_content_width(),
+        widget.auto_content_height(),
+    ]
+}
+
 /// Mutable query handle with chainable bulk mutation helpers.
 pub struct DomQueryMut<'a> {
     app: &'a mut App,
@@ -455,13 +468,12 @@ impl<'a> DomQueryMut<'a> {
         self
     }
 
+    /// Run `f` on each matched widget through [`App::with_widget_mut`], so
+    /// each one is repainted in the next frame and laid out again when its
+    /// size changed.
     pub fn update(self, mut f: impl FnMut(&mut dyn Widget)) -> Self {
-        if let Some(tree) = self.app.widget_tree.as_mut() {
-            for &id in &self.nodes {
-                if let Some(node) = tree.get_mut(id) {
-                    f(node.widget.as_mut());
-                }
-            }
+        for &id in &self.nodes {
+            self.app.with_widget_mut(id, &mut f);
         }
         self
     }
@@ -3215,7 +3227,7 @@ impl App {
                 // can run without a tree borrow held. Inside: run the child's
                 // reactive setter (records the change) then dispatch its `watch_*`
                 // with app access, iterating chained changes.
-                app.with_widget_taken_as::<W, _>(node_id, |child, app| {
+                app.widget_taken_as_quiet::<W, _>(node_id, |child, app| {
                     let mut rctx = crate::reactive::ReactiveCtx::new(node_id);
                     set_child(child, value_ref, &mut rctx);
                     let result = crate::reactive::run_reactive_phase_with_dispatch(
@@ -3247,6 +3259,9 @@ impl App {
     /// [`data_bind_reactive`](Self::data_bind_reactive) so a child's
     /// `reactive_dispatch_with_app` (`watch_with_app`) can run during fan-out.
     ///
+    /// The widget is repainted in the next frame and laid out again when its
+    /// size changed, as for [`Self::with_widget_mut`].
+    ///
     /// Returns `None` if the node is absent or its widget is not a `W`.
     ///
     /// # Panics
@@ -3255,6 +3270,26 @@ impl App {
     /// widget to `W`, and that same widget passed the `W` check just before
     /// it was taken.
     pub fn with_widget_taken_as<W, R>(
+        &mut self,
+        node_id: NodeId,
+        f: impl FnOnce(&mut W, &mut App) -> R,
+    ) -> Option<R>
+    where
+        W: Widget + 'static,
+    {
+        let before = self.node_intrinsic_size(node_id);
+        let result = self.widget_taken_as_quiet(node_id, f)?;
+        if self.node_intrinsic_size(node_id) != before {
+            self.pending_force_relayout = true;
+        }
+        self.request_query_refresh(&[node_id]);
+        Some(result)
+    }
+
+    /// [`Self::with_widget_taken_as`] without the repaint and relayout
+    /// requests, for the `data_bind_reactive` fan-out, which keeps its own
+    /// behavior.
+    pub(crate) fn widget_taken_as_quiet<W, R>(
         &mut self,
         node_id: NodeId,
         f: impl FnOnce(&mut W, &mut App) -> R,
@@ -3373,17 +3408,9 @@ impl App {
                 // probes matter for `width: auto`/`height: auto` widgets whose
                 // fill-default hints are `None` (e.g. `Label::set_text` on an
                 // auto-width label reports only through `auto_content_width`).
-                let probe = |w: &dyn Widget| {
-                    (
-                        w.layout_height(),
-                        w.content_width(),
-                        w.auto_content_width(),
-                        w.auto_content_height(),
-                    )
-                };
-                let before = probe(widget);
+                let before = intrinsic_size(widget);
                 let out = f(widget);
-                if probe(widget) != before {
+                if intrinsic_size(widget) != before {
                     ctx.request_layout();
                 }
                 out
@@ -3398,6 +3425,12 @@ impl App {
             self.pending_force_relayout = true;
         }
         result
+    }
+
+    /// The intrinsic size of the widget at `node_id` in the active tree.
+    fn node_intrinsic_size(&self, node_id: NodeId) -> Option<IntrinsicSize> {
+        let node = self.active_widget_tree()?.get(node_id)?;
+        Some(intrinsic_size(node.widget.as_ref()))
     }
 
     /// Borrow a widget mutably by node id and downcast to `T`. The widget is
@@ -6364,11 +6397,12 @@ mod tests {
         let _ = app.take_pending_query_refresh_nodes();
 
         app.widget_mut_quiet(status, |_| ());
+        app.widget_taken_as_quiet::<StatusProbe, _>(status, |_, _| ());
         assert!(
             app.take_pending_query_refresh_nodes().is_empty(),
-            "the quiet variant requests no repaint"
+            "the quiet variants request no repaint"
         );
-        let calls: [(&str, Call); 4] = [
+        let calls: [(&str, Call); 6] = [
             ("with_widget_mut", |app, id| {
                 app.with_widget_mut(id, |_| ());
             }),
@@ -6384,6 +6418,14 @@ mod tests {
                 })
                 .expect("match");
             }),
+            ("with_widget_taken_as", |app, id| {
+                app.with_widget_taken_as::<StatusProbe, _>(id, |status, _| status.text.push('!'));
+            }),
+            ("DomQueryMut::update", |app, _| {
+                app.query_mut("StatusLine")
+                    .expect("selector")
+                    .update(|_| ());
+            }),
         ];
         for (name, call) in calls {
             call(&mut app, status);
@@ -6394,7 +6436,32 @@ mod tests {
         }
         // A type mismatch runs nothing, so it asks for nothing.
         app.with_widget_mut_as::<Button, _>(status, |_| ());
+        app.with_widget_taken_as::<Button, _>(status, |_, _| ());
         assert!(app.take_pending_query_refresh_nodes().is_empty());
+    }
+
+    #[test]
+    fn widget_taken_as_relayouts_when_the_size_changes() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(AppRoot::new()));
+        let label = tree.mount(root, Box::new(crate::widgets::Static::new("a")));
+
+        let mut app = App::new().expect("app should initialize");
+        app.widget_tree = Some(tree);
+        let _ = app.take_pending_force_relayout();
+
+        app.with_widget_taken_as::<crate::widgets::Static, _>(label, |label, _| label.update("a"));
+        assert!(
+            !app.take_pending_force_relayout(),
+            "the same text keeps the size"
+        );
+        app.with_widget_taken_as::<crate::widgets::Static, _>(label, |label, _| {
+            label.update("a much longer line");
+        });
+        assert!(
+            app.take_pending_force_relayout(),
+            "a longer line changes the size, so the layout must run again"
+        );
     }
 
     #[test]
