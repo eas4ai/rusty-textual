@@ -305,7 +305,7 @@ impl App {
         let diff = prepend_clear_if_needed(
             diff_body_for_draw(
                 &next,
-                &self.frame,
+                &self.shown,
                 clear_before_draw,
                 None,
                 self.theme.base.to_rich(),
@@ -351,6 +351,7 @@ impl App {
         self.print_segments(&diff)?;
         self.resized_since_last_render = false;
         self.clear_on_next_render = false;
+        self.shown.clone_from(&next);
         self.frame = next;
         Ok(())
     }
@@ -534,6 +535,7 @@ impl App {
         self.clear_on_next_render = false;
         self.hit_test = HitTestMap::from_frame(&next);
         Self::apply_layout_info(widget, &self.hit_test);
+        self.shown.clone_from(&next);
         self.frame = next;
         Ok(())
     }
@@ -676,7 +678,7 @@ impl App {
         let clear_before_draw = self.clear_on_next_render;
         let diff_body = diff_body_for_draw(
             &next,
-            &self.frame,
+            &self.shown,
             clear_before_draw,
             dirty_regions,
             self.theme.base.to_rich(),
@@ -726,6 +728,12 @@ impl App {
         self.hit_test = next_hit_test;
         if layout_invalidation || geometry_changed || layout_affected_style_change {
             Self::apply_layout_info(widget, &self.hit_test);
+        }
+        // Keep what this frame wrote: outside its regions the terminal still
+        // shows what earlier frames wrote, even where `next` differs.
+        match dirty_regions {
+            Some(regions) if !clear_before_draw => self.shown.copy_regions_from(&next, regions),
+            _ => self.shown.clone_from(&next),
         }
         self.frame = next;
         Ok(())
@@ -5473,6 +5481,54 @@ Parent.show > Child { display: block; }
             title_symbol(&tree, title_id).contains('\u{25b6}'),
             "collapsed Collapsible title should render the ▶ symbol after relayout"
         );
+    }
+
+    #[test]
+    fn a_region_frame_keeps_the_cells_it_did_not_write_as_shown() {
+        // UPD-002: a region-scoped frame writes only its regions, so the
+        // terminal keeps the old cells elsewhere; a later frame that covers
+        // them must write them.
+        let mut app = App::new().expect("app should initialize");
+        app.headless = true;
+        app.options.size = (40, 10);
+        app.options.max_width = 40;
+        app.options.max_height = 10;
+        let mut root = crate::widgets::AppRoot::new()
+            .with_child(crate::widgets::Static::new("top"))
+            .with_child(crate::widgets::Static::new("bottom").id("bottom"));
+        app.build_widget_tree(&mut root);
+        app.render_widget(&mut root).expect("render should succeed");
+        let bottom = app.query_one("#bottom").expect("bottom label");
+        let row = |frame: &FrameBuffer| frame.as_plain_lines()[1].trim_end().to_string();
+        assert_eq!(row(&app.shown), "bottom");
+
+        // Change the label without asking for a repaint, then draw a frame
+        // whose only region is the first row.
+        app.widget_mut_quiet(bottom, |widget| {
+            let label = (widget as &mut dyn std::any::Any)
+                .downcast_mut::<crate::widgets::Static>()
+                .expect("a Static");
+            label.update("changed");
+        });
+        let first_row = DirtyRegion {
+            x0: 0,
+            y0: 0,
+            x1: 39,
+            y1: 0,
+        };
+        app.render_widget_with_regions(&mut root, Some(&[first_row]), false)
+            .expect("render should succeed");
+        assert_eq!(row(&app.frame), "changed", "the frame composes the change");
+        assert_eq!(row(&app.shown), "bottom", "but did not write it");
+
+        let second_row = DirtyRegion {
+            y0: 1,
+            y1: 1,
+            ..first_row
+        };
+        app.render_widget_with_regions(&mut root, Some(&[second_row]), false)
+            .expect("render should succeed");
+        assert_eq!(row(&app.shown), "changed", "a frame covering it writes it");
     }
 
     fn render_with_optional_screen(screen: Option<Box<dyn crate::screen::Screen>>) -> String {

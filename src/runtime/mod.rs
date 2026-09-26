@@ -731,7 +731,14 @@ pub struct App {
     driver: TerminalDriver,
     console: Console,
     options: ConsoleOptions,
+    /// The last composed frame: every cell the last render drew. Hit
+    /// testing, headless reads and snapshots use it.
     frame: FrameBuffer,
+    /// What the terminal shows: the cells the frames wrote. A region-scoped
+    /// frame writes only its regions, so outside them this keeps what an
+    /// earlier frame wrote, and the next diff starts from what the terminal
+    /// really shows (UPD-002).
+    shown: FrameBuffer,
     /// Headless mode (set by `App::run_test`): suppress real terminal I/O and
     /// pin a virtual screen size so the event loop renders into the in-memory
     /// [`FrameBuffer`] without a TTY. See `src/runtime/pilot.rs`.
@@ -1050,6 +1057,7 @@ impl App {
             driver,
             console,
             options,
+            shown: frame.clone(),
             frame,
             headless: false,
             headless_size: (80, 24),
@@ -5569,6 +5577,7 @@ impl App {
                 debug_render(&format!("[app] resize: mode reassert failed: {error}"));
             }
             self.frame = FrameBuffer::new(size.width as usize, size.height as usize, None);
+            self.shown = self.frame.clone();
             self.resized_since_last_render = true;
             self.clear_on_next_render = true;
         }
