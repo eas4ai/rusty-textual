@@ -3340,11 +3340,7 @@ impl App {
         node_id: NodeId,
         f: impl FnOnce(&mut dyn Widget) -> R,
     ) -> Option<R> {
-        let result = self.widget_mut_quiet(node_id, f);
-        if result.is_some() {
-            self.request_query_refresh(&[node_id]);
-        }
-        result
+        self.widget_mut_quiet(node_id, f)
     }
 
     /// [`Self::with_widget_mut`] without the repaint request: the runtime's own
@@ -3403,11 +3399,7 @@ impl App {
         node_id: NodeId,
         f: impl FnOnce(&mut T) -> R,
     ) -> Option<R> {
-        let result = self.widget_mut_as_quiet(node_id, f);
-        if result.is_some() {
-            self.request_query_refresh(&[node_id]);
-        }
-        result
+        self.widget_mut_as_quiet(node_id, f)
     }
 
     /// [`Self::with_widget_mut_as`] without the repaint request (see

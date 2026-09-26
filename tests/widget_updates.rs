@@ -89,4 +89,3 @@ fn upd_001_a_hover_message_handler_update_is_redrawn_in_full_screen() {
 fn upd_001_a_hover_message_handler_update_is_redrawn_inline() {
     check_status_redrawn(INLINE_HOVER, hover_line, "hovered");
 }
-
