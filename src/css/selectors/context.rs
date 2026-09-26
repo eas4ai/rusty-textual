@@ -94,8 +94,8 @@ pub(super) fn app_runtime_pseudos() -> AppRuntimePseudos {
 }
 
 /// Whether the current render pass runs the app inline (the `:inline`
-/// state). Layout reads it for the one inline-only sizing rule
-/// (`layout::common::is_inline_app_screen`).
+/// state). Layout reads it to skip the seeded measurement of the inline
+/// app Screen (`layout::vertical::vertical_child_spec`).
 pub(crate) fn app_runtime_inline() -> bool {
     app_runtime_pseudos().inline
 }

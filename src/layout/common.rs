@@ -454,14 +454,14 @@ fn is_screen_node(tree: &WidgetTree, node: NodeId) -> bool {
 }
 
 /// Whether `node` is the app tree's Screen (the Screen child of a root that
-/// stands for the App) while the app runs inline. Python lays the screen out
-/// on the whole region it is given, which inline is the inline height
-/// (`screen.py:1316-1320`, `_compositor.py:743-752`); the screen's own
-/// height rules only set that height (INL-004, INL-017). A pushed screen is
-/// the root of its own tree and already gets the whole viewport.
-pub(super) fn is_inline_app_screen(tree: &WidgetTree, node: NodeId) -> bool {
-    crate::css::app_runtime_inline()
-        && is_screen_node(tree, node)
+/// stands for the App). Python lays every screen out on the whole region it
+/// is given, the terminal or, inline, the inline frame (`screen.py:1316-1320`,
+/// `_compositor.py:743-752`), whatever its own size and margin rules say;
+/// inline, its height rules only set the frame's height (INL-004, INL-017,
+/// SCR-003). A pushed screen is the root of its own tree and already gets
+/// the whole viewport.
+pub(super) fn is_app_screen(tree: &WidgetTree, node: NodeId) -> bool {
+    is_screen_node(tree, node)
         && tree
             .parent(node)
             .is_some_and(|parent| tree.root() == Some(parent) && !is_screen_node(tree, parent))

@@ -2153,6 +2153,41 @@ mod tests {
     }
 
     #[test]
+    fn app_screen_fills_the_viewport_whatever_its_size_rules() {
+        // SCR-003: Python places every screen on the whole region it is
+        // given (`_compositor.py:743-752`); its own size and margin rules do
+        // not size or move it. A Screen-typed widget deeper in the tree is not
+        // the app's screen and keeps its rules.
+        let rules = || {
+            let mut s = Style::new();
+            s.width = Some(Scalar::Cells(20));
+            s.height = Some(Scalar::Cells(10));
+            s.max_width = Some(Scalar::Cells(30));
+            s.max_height = Some(Scalar::Cells(12));
+            s.margin = Some(Spacing::all(2));
+            s
+        };
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(LayoutTestWidget::boxed("App"));
+        let screen = tree.mount(root, LayoutTestWidget::boxed_with_style("Screen", rules()));
+        let nested = tree.mount(
+            screen,
+            LayoutTestWidget::boxed_with_style("Screen", rules()),
+        );
+
+        let _guard = crate::css::set_style_context(crate::css::StyleSheet::parse(""));
+        resolve_layout(&mut tree, root, Region::new(0, 0, 80, 24), (80, 24));
+
+        assert_layout_rect(&tree, screen, 0, 0, 80, 24);
+        let inner = tree.get(nested).expect("nested").layout_rect;
+        assert_eq!(
+            (inner.x1 - inner.x0, inner.y1 - inner.y0),
+            (20, 10),
+            "a Screen-typed descendant keeps its size rules"
+        );
+    }
+
+    #[test]
     fn runtime_visibility_outlasts_the_css_sync_and_flows_down() {
         // Python's `visible` setter writes the inline `visibility` rule: it
         // beats the stylesheet, descendants with no rule inherit it, and a

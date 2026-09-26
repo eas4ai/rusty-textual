@@ -1,8 +1,0 @@
-/target/
-.DS_Store
-._Cargo.lock
-._*
-.idea/
-docs/devel/
-.screenshot_cache/
-tmp/
