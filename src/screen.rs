@@ -13,10 +13,11 @@
 
 use crate::css::StyleSheet;
 use crate::event::EventCtx;
-use crate::message::{ButtonPressed, MessageEvent};
+use crate::message::{ButtonPressed, MessageEvent, ScrollbarScrollTo};
 use crate::node_id::NodeId;
+use crate::num::Cast;
 use crate::widget_tree::WidgetTree;
-use crate::widgets::{BindingDecl, Widget};
+use crate::widgets::{BindingDecl, ScrollHost, Widget};
 use rich_rs::{Console, ConsoleOptions, Segments};
 use std::fs;
 use std::sync::{Arc, Mutex};
@@ -308,6 +309,11 @@ type SharedScreen = Arc<Mutex<Box<dyn Screen>>>;
 /// `on_event()`, and `on_message()` delegate to the owning [`Screen`] impl, so
 /// the existing focused→root tree dispatch (capture/bubble + binding match)
 /// drives screen handlers with no separate dispatch path.
+///
+/// It scrolls its content like the app's own screen: Python `Screen` and
+/// `ModalScreen` set `overflow-y: auto`, so the mouse wheel and the scrollbar
+/// scroll them (`widget.py:4777-4795`). A screen binds no scroll keys
+/// (`screen.py:269-273`), so scroll actions are not handled here.
 struct ScreenHost {
     modal: bool,
     /// Concrete screen type short name (e.g. `GotoScreen`), captured from
@@ -317,6 +323,7 @@ struct ScreenHost {
     child: Option<Box<dyn Widget>>,
     screen: SharedScreen,
     dismiss_slot: DismissSlot,
+    scroll: ScrollHost,
 }
 
 impl ScreenHost {
@@ -333,6 +340,7 @@ impl ScreenHost {
             child: Some(child),
             screen,
             dismiss_slot,
+            scroll: ScrollHost::new(),
         }
     }
 }
@@ -377,9 +385,61 @@ impl Widget for ScreenHost {
     }
 
     fn on_message(&mut self, message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
+        if let Some(ScrollbarScrollTo { axis, offset, .. }) = message.downcast_ref()
+            && self.scroll.is_active()
+        {
+            if self.scroll.scroll_to(*axis, *offset) {
+                ctx.request_layout_invalidation();
+            }
+            ctx.set_handled();
+            return;
+        }
         if let Ok(mut screen) = self.screen.lock() {
             let mut screen_ctx = ScreenMessageCtx::new(ctx.event_ctx_mut(), &self.dismiss_slot);
             screen.on_message(message, &mut screen_ctx);
+        }
+    }
+
+    fn on_layout(&mut self, width: u16, height: u16) {
+        // The viewport left after the scrollbar gutter, as for `Container`.
+        let meta = crate::css::selector_meta_generic(self);
+        let resolved = crate::css::resolve_style(self, &meta);
+        self.scroll.layout(width, height, &resolved);
+    }
+
+    fn set_virtual_content_size(&mut self, width: usize, height: usize) {
+        self.scroll.set_content_size(width, height);
+    }
+
+    fn on_mouse_scroll(&mut self, delta_x: i32, delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
+        if self.scroll.is_active() && self.scroll.scroll_by(delta_x, delta_y) {
+            ctx.request_layout_invalidation();
+            ctx.set_handled();
+        }
+    }
+
+    fn scroll_offset(&self) -> (usize, usize) {
+        let (x, y) = self.scroll_offset_f32();
+        (x.round().to_usize_sat(), y.round().to_usize_sat())
+    }
+
+    fn scroll_offset_f32(&self) -> (f32, f32) {
+        if self.scroll.is_active() {
+            self.scroll.offset()
+        } else {
+            (0.0, 0.0)
+        }
+    }
+
+    fn scroll_viewport_size(&self) -> Option<(usize, usize)> {
+        self.scroll.is_active().then(|| self.scroll.viewport())
+    }
+
+    fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {
+        if self.scroll.is_active() {
+            self.scroll.content_size()
+        } else {
+            None
         }
     }
 }
