@@ -305,7 +305,7 @@ impl App {
         let diff = prepend_clear_if_needed(
             diff_body_for_draw(
                 &next,
-                &self.shown,
+                &mut self.shown,
                 clear_before_draw,
                 None,
                 self.theme.base.to_rich(),
@@ -351,7 +351,6 @@ impl App {
         self.print_segments(&diff)?;
         self.resized_since_last_render = false;
         self.clear_on_next_render = false;
-        self.shown.clone_from(&next);
         self.frame = next;
         Ok(())
     }
@@ -678,7 +677,7 @@ impl App {
         let clear_before_draw = self.clear_on_next_render;
         let diff_body = diff_body_for_draw(
             &next,
-            &self.shown,
+            &mut self.shown,
             clear_before_draw,
             dirty_regions,
             self.theme.base.to_rich(),
@@ -728,12 +727,6 @@ impl App {
         self.hit_test = next_hit_test;
         if layout_invalidation || geometry_changed || layout_affected_style_change {
             Self::apply_layout_info(widget, &self.hit_test);
-        }
-        // Keep what this frame wrote: outside its regions the terminal still
-        // shows what earlier frames wrote, even where `next` differs.
-        match dirty_regions {
-            Some(regions) if !clear_before_draw => self.shown.copy_regions_from(&next, regions),
-            _ => self.shown.clone_from(&next),
         }
         self.frame = next;
         Ok(())
@@ -870,28 +863,31 @@ pub(crate) fn prepend_clear_if_needed(diff: Segments, clear_before_draw: bool) -
     out
 }
 
-/// Compute the diff segment stream for a frame about to be drawn.
+/// Compute the diff segment stream for a frame about to be drawn, and
+/// update `shown`, the cells the terminal shows, to what the stream leaves
+/// on screen.
 ///
 /// When `clear_before_draw` is set, a `Clear` control is prepended (see
 /// [`prepend_clear_if_needed`]) which blanks the whole terminal. In that case
 /// the diff MUST be taken against a BLANK frame of the same size — not the
 /// previous frame — otherwise unchanged cells are not re-emitted and the clear
-/// wipes them off-screen (a stale-frame diff). When not clearing, the previous
-/// frame is used, optionally region-masked.
+/// wipes them off-screen (a stale-frame diff), and the terminal then shows
+/// all of `next`. When not clearing, the diff starts from `shown`, optionally
+/// region-masked, and `shown` takes every cell the stream writes.
 pub(crate) fn diff_body_for_draw(
     next: &FrameBuffer,
-    previous: &FrameBuffer,
+    shown: &mut FrameBuffer,
     clear_before_draw: bool,
     dirty_regions: Option<&[DirtyRegion]>,
     base_style: Option<rich_rs::Style>,
 ) -> Segments {
     if clear_before_draw {
         let blank = FrameBuffer::new(next.width, next.height, base_style);
-        next.diff_to_segments(&blank)
-    } else if let Some(regions) = dirty_regions {
-        next.diff_to_segments_in_regions(previous, regions)
+        let body = next.diff_to_segments(&blank);
+        shown.clone_from(next);
+        body
     } else {
-        next.diff_to_segments(previous)
+        next.diff_into_shown(shown, dirty_regions)
     }
 }
 
@@ -4336,7 +4332,7 @@ mod tests {
         let previous = FrameBuffer::from_lines(&lines, w, h, None);
 
         // No clear, identical frames: nothing to redraw.
-        let no_clear = diff_body_for_draw(&next, &previous, false, None, None);
+        let no_clear = diff_body_for_draw(&next, &mut previous.clone(), false, None, None);
         assert!(
             !diff_text(&no_clear).contains("HELLO"),
             "identical frames without clear must not re-emit content"
@@ -4344,7 +4340,7 @@ mod tests {
 
         // Clear set: must re-emit all visible content despite an identical
         // previous frame (diff against blank, not the stale frame).
-        let with_clear = diff_body_for_draw(&next, &previous, true, None, None);
+        let with_clear = diff_body_for_draw(&next, &mut previous.clone(), true, None, None);
         assert!(
             diff_text(&with_clear).contains("HELLO"),
             "clear must re-emit visible content (diff against blank, not stale frame)"

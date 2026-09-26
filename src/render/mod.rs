@@ -456,6 +456,16 @@ impl FrameBuffer {
     /// cell storage.
     #[must_use]
     pub fn diff_to_segments(&self, previous: &FrameBuffer) -> Segments {
+        self.diff_to_segments_recording(previous, &mut |_, _, _| {})
+    }
+
+    /// [`FrameBuffer::diff_to_segments`], calling `wrote(y, x0, x1)` for each
+    /// run of cells `x0..x1` on row `y` that the segments write from `self`.
+    fn diff_to_segments_recording(
+        &self,
+        previous: &FrameBuffer,
+        wrote: &mut dyn FnMut(usize, usize, usize),
+    ) -> Segments {
         assert_eq!(self.width, previous.width, "buffer widths differ");
         assert_eq!(self.height, previous.height, "buffer heights differ");
 
@@ -527,6 +537,7 @@ impl FrameBuffer {
                     out.push(seg);
                     run_x += w;
                 }
+                wrote(y, x, end_x);
 
                 x = end_x;
             }
@@ -558,40 +569,62 @@ impl FrameBuffer {
         if dirty_regions.is_empty() {
             return Segments::new();
         }
-
-        let dirty_mask = self.region_mask(dirty_regions);
-        let mut masked_previous = previous.clone();
-        for (idx, dirty) in dirty_mask.iter().enumerate() {
-            if !*dirty {
-                masked_previous.cells[idx] = self.cells[idx].clone();
-            }
-        }
-        self.diff_to_segments(&masked_previous)
+        self.diff_to_segments(&self.masked_previous(previous, dirty_regions))
     }
 
-    /// Copy the cells inside `dirty_regions` from `source`. After a frame
-    /// that wrote only those regions, this keeps `self` equal to what the
-    /// terminal shows. Region bounds are clamped as in
-    /// [`FrameBuffer::diff_to_segments_in_regions`].
+    /// Diff `self` against `shown`, the cells the terminal shows, limited to
+    /// `dirty_regions` when given, and copy into `shown` every cell the
+    /// returned segments write. A write can run past a region to finish a
+    /// wide glyph, so this follows the writes, not the regions: afterwards
+    /// `shown` is again what the terminal shows.
     ///
     /// # Panics
     ///
-    /// Panics when `self` and `source` have different widths or different
+    /// Panics when `self` and `shown` have different widths or different
     /// heights.
-    pub(crate) fn copy_regions_from(
-        &mut self,
-        source: &FrameBuffer,
-        dirty_regions: &[DirtyRegion],
-    ) {
-        assert_eq!(self.width, source.width, "buffer widths differ");
-        assert_eq!(self.height, source.height, "buffer heights differ");
-        let dirty_mask = self.region_mask(dirty_regions);
-        for (idx, dirty) in dirty_mask.iter().enumerate() {
-            if *dirty {
-                self.cells[idx] = source.cells[idx].clone();
-                self.owner_ids[idx] = source.owner_ids[idx];
+    pub(crate) fn diff_into_shown(
+        &self,
+        shown: &mut FrameBuffer,
+        dirty_regions: Option<&[DirtyRegion]>,
+    ) -> Segments {
+        let mut written = Vec::new();
+        let segments = match dirty_regions {
+            Some([]) => return Segments::new(),
+            Some(regions) => {
+                let previous = self.masked_previous(shown, regions);
+                self.diff_to_segments_recording(&previous, &mut |y, x0, x1| {
+                    written.push((y, x0, x1));
+                })
+            }
+            None => self.diff_to_segments_recording(shown, &mut |y, x0, x1| {
+                written.push((y, x0, x1));
+            }),
+        };
+        for (y, x0, x1) in written {
+            for x in x0..x1 {
+                let idx = self.idx(x, y);
+                shown.cells[idx] = self.cells[idx].clone();
+                shown.owner_ids[idx] = self.owner_ids[idx];
             }
         }
+        segments
+    }
+
+    /// `previous` with every cell outside `dirty_regions` replaced by this
+    /// frame's cell, so a diff against it sees no change there.
+    fn masked_previous(
+        &self,
+        previous: &FrameBuffer,
+        dirty_regions: &[DirtyRegion],
+    ) -> FrameBuffer {
+        let dirty_mask = self.region_mask(dirty_regions);
+        let mut masked = previous.clone();
+        for (idx, dirty) in dirty_mask.iter().enumerate() {
+            if !*dirty {
+                masked.cells[idx] = self.cells[idx].clone();
+            }
+        }
+        masked
     }
 
     /// One flag per cell: whether the cell lies in one of `dirty_regions`,
@@ -784,8 +817,19 @@ mod tests {
         assert!(saw_move_to, "expected at least one MoveTo in diff stream");
     }
 
+    /// The text the segments write, controls left out.
+    fn segments_text(segments: &Segments) -> String {
+        let mut out = String::new();
+        for segment in segments.iter() {
+            if segment.control.is_none() {
+                out.push_str(&segment.text);
+            }
+        }
+        out
+    }
+
     #[test]
-    fn copy_regions_from_copies_only_the_clamped_regions() {
+    fn diff_into_shown_keeps_the_cells_it_did_not_write() {
         let mut shown = FrameBuffer::from_lines(
             &[vec![Segment::new("abcd")], vec![Segment::new("wxyz")]],
             4,
@@ -799,16 +843,43 @@ mod tests {
             None,
         );
         // The region reaches past the buffer; it is clamped to x 2-3, row 1.
-        shown.copy_regions_from(
-            &next,
-            &[DirtyRegion {
-                x0: 2,
-                y0: 1,
-                x1: 9,
-                y1: 9,
-            }],
-        );
+        let region = DirtyRegion {
+            x0: 2,
+            y0: 1,
+            x1: 9,
+            y1: 9,
+        };
+        let _ = next.diff_into_shown(&mut shown, Some(&[region]));
         assert_eq!(shown.as_plain_lines(), vec!["abcd", "wxYZ"]);
+    }
+
+    #[test]
+    fn diff_into_shown_follows_a_write_past_the_region_edge() {
+        // UPD-002: a wide glyph on the region's last column makes the diff
+        // write the next cell too, outside the region. shown must record it,
+        // or a later change in that cell is never written.
+        let mut shown = FrameBuffer::from_lines(&[vec![Segment::new("xx中")]], 4, 1, None);
+        let next = FrameBuffer::from_lines(&[vec![Segment::new("xxaP")]], 4, 1, None);
+        let region = DirtyRegion {
+            x0: 0,
+            y0: 0,
+            x1: 2,
+            y1: 0,
+        };
+        let first = next.diff_into_shown(&mut shown, Some(&[region]));
+        assert!(
+            segments_text(&first).contains("aP"),
+            "the run writes a and P"
+        );
+        assert_eq!(shown, next, "shown records the P written past the region");
+
+        let later = FrameBuffer::from_lines(&[vec![Segment::new("xxaQ")]], 4, 1, None);
+        let whole_row = DirtyRegion { x1: 3, ..region };
+        let second = later.diff_into_shown(&mut shown, Some(&[whole_row]));
+        assert!(
+            segments_text(&second).contains('Q'),
+            "a later change there is written"
+        );
     }
 
     #[test]
