@@ -96,14 +96,24 @@ until the API stabilizes.
   not move. In inline mode the scrolled content stays inside the
   `Screen:inline` border.
 - A widget changed through `App::with_widget_mut`, `with_widget_mut_as`,
-  `with_query_one_mut` or `with_query_one_mut_as` is now redrawn in the
-  next frame, as Python's `Static.update` refreshes it, even when its size
-  stays the same. Before, the change showed only once something else
-  redrew that part of the screen, and in full-screen mode it could be lost
-  for good when an input (a hover, say) repainted another widget in the
-  same frame. Every such call now repaints the widget, reads included; to
-  read without a repaint, use `Handle::read` through `App::query_one_typed`
-  or `App::typed_handle`.
+  `with_query_one_mut`, `with_query_one_mut_as` or `with_widget_taken_as`,
+  or through `App::query_mut(...)` then `DomQueryMut::update`, is now
+  redrawn in the next frame, as Python's `Static.update` refreshes it, even
+  when its size stays the same, and laid out again when its size changes.
+  Before, the change showed only once something else redrew that part of
+  the screen, and in full-screen mode it could be lost for good when an
+  input (a hover, say) repainted another widget in the same frame. Every
+  such call now repaints the widget, reads included; to read without a
+  repaint, use `Handle::read` through `App::query_one_typed` or
+  `App::typed_handle`. `DomQueryMut::update` now acts on the tree its query
+  matched, the pushed screen's when one is pushed.
+- In full-screen mode, a repaint now writes what the app draws even where
+  an earlier frame drew a change without writing it, such as a widget whose
+  content changed without asking for a repaint while another widget was
+  repainted. Before, those cells kept their old text on screen, through
+  later repaints too, until they changed again. Each frame is now compared
+  with what the terminal shows, as Python writes each repainted region from
+  the current render.
 
 ## [1.1.0] - 2026-07-16
 
