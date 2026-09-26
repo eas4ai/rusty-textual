@@ -586,12 +586,9 @@ impl<'a> DomQueryMut<'a> {
                 }
             }
         }
-        // A hidden node keeps its space, so a repaint is enough. An empty
-        // request would clear the whole screen, so skip it.
-        if !changed_nodes.is_empty() {
-            self.app.request_query_refresh(&changed_nodes);
-        }
-        self
+        // Python's `visibility` rule also refreshes with `layout=True` when
+        // the value changes.
+        self.absorb_class_change(&changed_nodes)
     }
 
     pub fn set(
@@ -7824,6 +7821,7 @@ mod tests {
         let _ = app.take_pending_query_refresh_nodes();
 
         app.query_mut("#base").expect("query").set_visible(false);
+        assert!(app.take_pending_force_relayout(), "visibility relayouts");
         assert!(
             app.take_pending_query_refresh_nodes().contains(&button),
             "visibility repaints"
