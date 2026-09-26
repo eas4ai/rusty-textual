@@ -7736,46 +7736,47 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn query_changes_act_on_the_pushed_screens_nodes() {
-        // SCR-002: App::query_mut matches in the active screen's tree, so
-        // every DomQueryMut change must act there and leave the app's own
-        // tree alone; changes that show must also ask for a redraw.
+    /// One node of a tree as the pushed-screen query tests compare it:
+    /// displayed, visibility, sorted classes, state and inline styles.
+    type SeenNode = (
+        bool,
+        Visibility,
+        Vec<String>,
+        crate::widgets::NodeState,
+        Option<WidgetStyles>,
+    );
+
+    fn seen_nodes(tree: &WidgetTree) -> Vec<SeenNode> {
+        let root = tree.root().expect("root");
+        tree.walk_depth_first(root)
+            .into_iter()
+            .map(|id| {
+                let node = tree.get(id).expect("node");
+                let mut classes: Vec<String> = node.classes.iter().cloned().collect();
+                classes.sort();
+                (
+                    tree.is_displayed(id),
+                    tree.visibility(id),
+                    classes,
+                    node.state,
+                    tree.styles(id).cloned(),
+                )
+            })
+            .collect()
+    }
+
+    /// SCR-002: `App::query_mut` matches in the active screen's tree, so every
+    /// `DomQueryMut` change must act there and leave the app's own tree alone.
+    /// Returns an app with a `#base` button in its own tree and a pushed
+    /// screen with a `#pushed` button, that button, and the app's own tree
+    /// as seen before any change.
+    fn app_with_a_pushed_button() -> (App, NodeId, Vec<SeenNode>) {
         struct QueryScreen;
         impl crate::screen::Screen for QueryScreen {
             fn compose(&self) -> Box<dyn Widget> {
                 Box::new(AppRoot::new().with_child(Button::new("Pushed").id("pushed")))
             }
         }
-        type Seen = (
-            bool,
-            Visibility,
-            Vec<String>,
-            crate::widgets::NodeState,
-            Option<WidgetStyles>,
-        );
-        fn seen(tree: &WidgetTree) -> Vec<Seen> {
-            let root = tree.root().expect("root");
-            tree.walk_depth_first(root)
-                .into_iter()
-                .map(|id| {
-                    let node = tree.get(id).expect("node");
-                    let mut classes: Vec<String> = node.classes.iter().cloned().collect();
-                    classes.sort();
-                    (
-                        tree.is_displayed(id),
-                        tree.visibility(id),
-                        classes,
-                        node.state,
-                        tree.styles(id).cloned(),
-                    )
-                })
-                .collect()
-        }
-        fn active(app: &App) -> &WidgetTree {
-            app.active_widget_tree().expect("active tree")
-        }
-
         let mut tree = WidgetTree::new();
         let root = tree.set_root(Box::new(AppRoot::new()));
         tree.mount(root, Box::new(Button::new("Base").id("base")));
@@ -7783,60 +7784,78 @@ mod tests {
         app.widget_tree = Some(tree);
         app.push_screen(Box::new(QueryScreen))
             .expect("push succeeds");
-        let base_before = seen(app.widget_tree.as_ref().expect("base tree"));
+        let base_before = seen_nodes(app.widget_tree.as_ref().expect("base tree"));
         let pushed = app.query_one("#pushed").expect("pushed button");
         let _ = app.take_pending_force_relayout();
         let _ = app.take_pending_query_refresh_nodes();
+        (app, pushed, base_before)
+    }
+
+    fn active_tree(app: &App) -> &WidgetTree {
+        app.active_widget_tree().expect("active tree")
+    }
+
+    #[test]
+    fn query_class_and_style_changes_act_on_the_pushed_screens_nodes() {
+        let (mut app, pushed, base_before) = app_with_a_pushed_button();
 
         app.query_mut("#pushed").expect("query").add_class("picked");
-        assert!(active(&app).has_class(pushed, "picked"), "add_class");
+        assert!(active_tree(&app).has_class(pushed, "picked"), "add_class");
         app.query_mut("#pushed")
             .expect("query")
             .toggle_classes(&["flipped"]);
-        assert!(active(&app).has_class(pushed, "flipped"), "toggle_classes");
+        assert!(
+            active_tree(&app).has_class(pushed, "flipped"),
+            "toggle_classes"
+        );
         app.query_mut("#pushed")
             .expect("query")
             .set_classes(&["picked", "listed"]);
         assert!(
-            active(&app).has_class(pushed, "listed") && !active(&app).has_class(pushed, "flipped"),
+            active_tree(&app).has_class(pushed, "listed")
+                && !active_tree(&app).has_class(pushed, "flipped"),
             "set_classes"
         );
         app.query_mut("#pushed")
             .expect("query")
             .set_styles(|s| s.style.bold = Some(true));
         assert_eq!(
-            active(&app).styles(pushed).and_then(|s| s.style.bold),
+            active_tree(&app).styles(pushed).and_then(|s| s.style.bold),
             Some(true),
             "set_styles"
         );
+
+        assert_eq!(
+            seen_nodes(app.widget_tree.as_ref().expect("base tree")),
+            base_before,
+            "the app's own tree must not change"
+        );
+    }
+
+    #[test]
+    fn query_state_display_and_removal_act_on_the_pushed_screens_nodes() {
+        let (mut app, pushed, base_before) = app_with_a_pushed_button();
+        let state = |app: &App| active_tree(app).get(pushed).expect("node").state;
+
         app.query_mut("#pushed")
             .expect("query")
             .set(None, None, Some(true), None);
-        assert!(
-            active(&app).get(pushed).expect("node").state.disabled,
-            "set disabled"
-        );
+        assert!(state(&app).disabled, "set disabled");
         // Focus first: a hidden node cannot be the focused one.
         app.query_mut("#pushed").expect("query").set_focus(true);
-        assert!(
-            active(&app).get(pushed).expect("node").state.focused,
-            "set_focus"
-        );
+        assert!(state(&app).focused, "set_focus");
         app.query_mut("#pushed").expect("query").blur();
-        assert!(
-            !active(&app).get(pushed).expect("node").state.focused,
-            "blur"
-        );
+        assert!(!state(&app).focused, "blur");
         app.query_mut("#pushed").expect("query").set_visible(false);
         assert_eq!(
-            active(&app).visibility(pushed),
+            active_tree(&app).visibility(pushed),
             Visibility::Hidden,
             "set_visible"
         );
         let _ = app.take_pending_force_relayout();
         let _ = app.take_pending_query_refresh_nodes();
         app.query_mut("#pushed").expect("query").set_display(false);
-        assert!(!active(&app).is_displayed(pushed), "set_display");
+        assert!(!active_tree(&app).is_displayed(pushed), "set_display");
         assert!(app.take_pending_force_relayout(), "set_display relayouts");
         assert!(
             app.take_pending_query_refresh_nodes().contains(&pushed),
@@ -7845,16 +7864,13 @@ mod tests {
         app.query_mut("#pushed")
             .expect("query")
             .set(None, None, None, Some(true));
-        assert!(
-            active(&app).get(pushed).expect("node").state.loading,
-            "set loading"
-        );
+        assert!(state(&app).loading, "set loading");
         let _ = app.query_mut("#pushed").expect("query").remove();
-        assert!(!active(&app).contains(pushed), "remove");
+        assert!(!active_tree(&app).contains(pushed), "remove");
         assert!(app.take_pending_force_relayout(), "remove relayouts");
 
         assert_eq!(
-            seen(app.widget_tree.as_ref().expect("base tree")),
+            seen_nodes(app.widget_tree.as_ref().expect("base tree")),
             base_before,
             "the app's own tree must not change"
         );
