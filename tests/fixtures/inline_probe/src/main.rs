@@ -9,6 +9,8 @@
 //!   (for example `10`), so the inline height is below the content height.
 //! - `PROBE_SCREEN_OVERFLOW`: when set, the `overflow-y` of a `Screen` rule
 //!   (for example `hidden`), for every screen, pushed or not.
+//! - `PROBE_SCREEN_RULES`: when set, declarations for a `Screen` rule (for
+//!   example `width: 20; border: tall red`), for every screen, pushed or not.
 //! - `PROBE_BUTTON`: when set, a `Press` button follows the body.
 //! - `PROBE_HOVER`: when set, a `hover here` line comes before the body, away
 //!   from the status line. Moving the pointer over it posts a message, and
@@ -145,6 +147,7 @@ struct Probe {
     padding: usize,
     screen_height: Option<String>,
     screen_overflow: Option<String>,
+    screen_rules: Option<String>,
     extras: Extras,
     hover_path: String,
     exit_message: Option<String>,
@@ -171,6 +174,7 @@ impl Probe {
             padding: number("PROBE_PADDING", 1),
             screen_height: std::env::var("PROBE_SCREEN_HEIGHT").ok(),
             screen_overflow: std::env::var("PROBE_SCREEN_OVERFLOW").ok(),
+            screen_rules: std::env::var("PROBE_SCREEN_RULES").ok(),
             extras: Extras {
                 button: std::env::var_os("PROBE_BUTTON").is_some(),
                 hover: std::env::var_os("PROBE_HOVER").is_some(),
@@ -255,6 +259,9 @@ impl TextualApp for Probe {
         }
         if let Some(overflow) = &self.screen_overflow {
             let _ = writeln!(css, "Screen {{ overflow-y: {overflow}; }}");
+        }
+        if let Some(rules) = &self.screen_rules {
+            let _ = writeln!(css, "Screen {{ {rules} }}");
         }
         app.load_stylesheet(&css);
         if self.exit_in_configure {
