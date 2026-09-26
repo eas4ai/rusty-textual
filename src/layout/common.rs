@@ -464,7 +464,19 @@ pub(super) fn is_app_screen(tree: &WidgetTree, node: NodeId) -> bool {
     is_screen_node(tree, node)
         && tree
             .parent(node)
-            .is_some_and(|parent| tree.root() == Some(parent) && !is_screen_node(tree, parent))
+            .is_some_and(|parent| is_app_node(tree, parent))
+}
+
+/// Whether `node` stands for the App: the root of the app tree, not itself
+/// a Screen, with the app's Screen among its children. Python never lays
+/// the App out, so its own layout rule does not place the Screen (SCR-003).
+pub(super) fn is_app_node(tree: &WidgetTree, node: NodeId) -> bool {
+    tree.root() == Some(node)
+        && !is_screen_node(tree, node)
+        && tree
+            .children(node)
+            .iter()
+            .any(|&child| is_screen_node(tree, child))
 }
 
 /// Resolve a scalar to cells against an axis size.
