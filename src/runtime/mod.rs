@@ -518,7 +518,7 @@ impl<'a> DomQueryMut<'a> {
         for &id in &self.nodes {
             let eligible = self
                 .app
-                .with_widget_mut(id, |widget| widget.focusable())
+                .widget_mut_quiet(id, |widget| widget.focusable())
                 .unwrap_or(false);
             if eligible {
                 let _ = self.app.set_focus_node(id);
@@ -2482,7 +2482,7 @@ impl App {
 
     pub(super) fn selected_text(&mut self) -> Option<String> {
         if let Some(owner) = self.active_selection_owner {
-            let selected = self.with_widget_mut(owner, |widget| widget.get_selection())?;
+            let selected = self.widget_mut_quiet(owner, |widget| widget.get_selection())?;
             let selected = selected?;
             if !selected.trim().is_empty() {
                 return Some(selected);
@@ -2491,7 +2491,7 @@ impl App {
 
         let focused = self.active_widget_tree().and_then(focused_node_id_tree)?;
         let selected = self
-            .with_widget_mut(focused, |widget| widget.get_selection())
+            .widget_mut_quiet(focused, |widget| widget.get_selection())
             .flatten()?;
         if selected.trim().is_empty() {
             None
@@ -2507,12 +2507,12 @@ impl App {
         let Some(owner) = self.active_selection_owner.take() else {
             return false;
         };
-        self.with_widget_mut(owner, crate::widgets::Widget::clear_selection)
+        self.widget_mut_quiet(owner, crate::widgets::Widget::clear_selection)
             .unwrap_or(false)
     }
 
     pub(super) fn begin_selection_drag(&mut self, target: NodeId, x: u16, y: u16) -> Option<bool> {
-        let anchor = self.with_widget_mut(target, |widget| {
+        let anchor = self.widget_mut_quiet(target, |widget| {
             if !widget.allow_select() {
                 return None;
             }
@@ -2525,7 +2525,7 @@ impl App {
         self.selection_anchor_start = Some(anchor);
         self.selection_anchor_end = Some(anchor);
 
-        self.with_widget_mut(target, |widget| {
+        self.widget_mut_quiet(target, |widget| {
             let changed = widget.update_selection(anchor, anchor);
             if changed {
                 let mut selection_ctx = EventCtx::default();
@@ -2546,10 +2546,10 @@ impl App {
         }
         let from = self.selection_anchor_start?;
         let anchor = self
-            .with_widget_mut(target, |widget| widget.selection_at(x, y))
+            .widget_mut_quiet(target, |widget| widget.selection_at(x, y))
             .flatten()?;
         self.selection_anchor_end = Some(anchor);
-        self.with_widget_mut(target, |widget| {
+        self.widget_mut_quiet(target, |widget| {
             let changed = widget.update_selection(from, anchor);
             if changed {
                 let mut selection_ctx = EventCtx::default();
@@ -2623,13 +2623,13 @@ impl App {
 
     pub(super) fn select_word_at(&mut self, target: NodeId, x: u16, y: u16) -> Option<bool> {
         let (from, to) =
-            self.with_widget_mut(target, |widget| widget.selection_word_range_at(x, y))??;
+            self.widget_mut_quiet(target, |widget| widget.selection_word_range_at(x, y))??;
         let _ = self.clear_active_selection();
         self.active_selection_owner = Some(target);
         self.selection_anchor_start = Some(from);
         self.selection_anchor_end = Some(to);
         self.selection_drag_active = false;
-        self.with_widget_mut(target, |widget| {
+        self.widget_mut_quiet(target, |widget| {
             let changed = widget.update_selection(from, to);
             if changed {
                 let mut selection_ctx = EventCtx::default();
@@ -2644,13 +2644,13 @@ impl App {
     }
 
     pub(super) fn select_all_at_target(&mut self, target: NodeId) -> Option<bool> {
-        let (from, to) = self.with_widget_mut(target, |widget| widget.selection_all_range())??;
+        let (from, to) = self.widget_mut_quiet(target, |widget| widget.selection_all_range())??;
         let _ = self.clear_active_selection();
         self.active_selection_owner = Some(target);
         self.selection_anchor_start = Some(from);
         self.selection_anchor_end = Some(to);
         self.selection_drag_active = false;
-        self.with_widget_mut(target, |widget| {
+        self.widget_mut_quiet(target, |widget| {
             let changed = widget.update_selection(from, to);
             if changed {
                 let mut selection_ctx = EventCtx::default();
@@ -2987,7 +2987,7 @@ impl App {
             };
             for node_id in node_ids {
                 let changed = self
-                    .with_widget_mut(node_id, |widget| (binding.apply)(widget, value.as_ref()))
+                    .widget_mut_quiet(node_id, |widget| (binding.apply)(widget, value.as_ref()))
                     .unwrap_or(false);
                 if changed {
                     refresh_nodes.insert(node_id);
@@ -3331,7 +3331,26 @@ impl App {
     /// inline-style writes, composed-widget self-recompose) that need a ctx go
     /// through `Handle::update` (`ctx.set_class` / `ctx.update_styles` /
     /// `ctx.request_recompose`) instead — `with_widget_mut` runs no drain hook.
+    ///
+    /// The widget is repainted in the next frame, as `Handle::update` does:
+    /// Python refreshes a widget whose content is updated (`Static.update`,
+    /// `_static.py:85-95`), and the closure has no ctx to ask for it.
     pub fn with_widget_mut<R>(
+        &mut self,
+        node_id: NodeId,
+        f: impl FnOnce(&mut dyn Widget) -> R,
+    ) -> Option<R> {
+        let result = self.widget_mut_quiet(node_id, f);
+        if result.is_some() {
+            self.request_query_refresh(&[node_id]);
+        }
+        result
+    }
+
+    /// [`Self::with_widget_mut`] without the repaint request: the runtime's own
+    /// reads and updates (focus, selection, tooltips, data bindings) use it and
+    /// repaint through their own paths.
+    pub(crate) fn widget_mut_quiet<R>(
         &mut self,
         node_id: NodeId,
         f: impl FnOnce(&mut dyn Widget) -> R,
@@ -3376,13 +3395,29 @@ impl App {
         result
     }
 
-    /// Borrow a widget mutably by node id and downcast to `T`.
+    /// Borrow a widget mutably by node id and downcast to `T`. The widget is
+    /// repainted in the next frame when it is a `T`, as for
+    /// [`Self::with_widget_mut`].
     pub fn with_widget_mut_as<T: Widget + 'static, R>(
         &mut self,
         node_id: NodeId,
         f: impl FnOnce(&mut T) -> R,
     ) -> Option<R> {
-        self.with_widget_mut(node_id, |widget| {
+        let result = self.widget_mut_as_quiet(node_id, f);
+        if result.is_some() {
+            self.request_query_refresh(&[node_id]);
+        }
+        result
+    }
+
+    /// [`Self::with_widget_mut_as`] without the repaint request (see
+    /// [`Self::widget_mut_quiet`]).
+    pub(crate) fn widget_mut_as_quiet<T: Widget + 'static, R>(
+        &mut self,
+        node_id: NodeId,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> Option<R> {
+        self.widget_mut_quiet(node_id, |widget| {
             let any_widget = widget as &mut dyn Any;
             any_widget.downcast_mut::<T>().map(f)
         })
@@ -3525,7 +3560,7 @@ impl App {
         // `HorizontalScroll` wraps `ScrollableContainer` which wraps `ScrollView`;
         // all three delegate `scroll_viewport_size()` so any may be the ancestor.
         let mut scrolled = false;
-        let _ = self.with_widget_mut(anc_id, |widget| {
+        let _ = self.widget_mut_quiet(anc_id, |widget| {
             use crate::widgets::{
                 HorizontalScroll, ScrollView, ScrollableContainer, VerticalScroll,
             };
@@ -5156,7 +5191,7 @@ impl App {
         screen_y: u16,
     ) -> Option<(u16, u16)> {
         if let Some((anchor_local_x, anchor_local_y)) = self
-            .with_widget_mut(owner, |widget| widget.tooltip_anchor())
+            .widget_mut_quiet(owner, |widget| widget.tooltip_anchor())
             .flatten()
         {
             let (cursor_local_x, cursor_local_y) =
@@ -5193,7 +5228,7 @@ impl App {
         let mut next: Option<(NodeId, String)> = None;
         for owner in owners {
             let text = self
-                .with_widget_mut(owner, |widget| widget.tooltip())
+                .widget_mut_quiet(owner, |widget| widget.tooltip())
                 .flatten()
                 .map(|text| text.trim().to_string())
                 .filter(|text| !text.is_empty());
@@ -5210,12 +5245,12 @@ impl App {
             // a new owner); re-anchor when the owner changes or the bubble
             // was hidden.
             let reanchor = self
-                .with_widget_mut_as::<Tooltip, _>(tooltip_id, |tooltip| {
+                .widget_mut_as_quiet::<Tooltip, _>(tooltip_id, |tooltip| {
                     !(tooltip.is_visible() && tooltip.system_owner() == Some(owner))
                 })
                 .unwrap_or(true);
             changed |= self
-                .with_widget_mut_as::<Tooltip, _>(tooltip_id, |tooltip| {
+                .widget_mut_as_quiet::<Tooltip, _>(tooltip_id, |tooltip| {
                     tooltip.apply_system_state(owner, text)
                 })
                 .unwrap_or(false);
@@ -5238,7 +5273,7 @@ impl App {
             changed |= self.set_runtime_display_for_node(tooltip_id, true);
         } else {
             changed |= self
-                .with_widget_mut_as::<Tooltip, _>(tooltip_id, Tooltip::hide_system)
+                .widget_mut_as_quiet::<Tooltip, _>(tooltip_id, Tooltip::hide_system)
                 .unwrap_or(false);
             if let Some(tree) = self.active_widget_tree_mut() {
                 changed |= tree.set_absolute_offset(tooltip_id, None);
@@ -5255,7 +5290,7 @@ impl App {
         };
         let mut changed = false;
         changed |= self
-            .with_widget_mut_as::<Tooltip, _>(tooltip_id, Tooltip::hide_system)
+            .widget_mut_as_quiet::<Tooltip, _>(tooltip_id, Tooltip::hide_system)
             .unwrap_or(false);
         if let Some(tree) = self.active_widget_tree_mut() {
             changed |= tree.set_absolute_offset(tooltip_id, None);
@@ -6303,6 +6338,54 @@ mod tests {
             })
             .expect("typed selector mutation should succeed");
         assert_eq!(value, "updated");
+    }
+
+    #[test]
+    fn widget_access_requests_a_repaint_even_when_the_size_stays() {
+        type Call = fn(&mut App, NodeId);
+        // Python refreshes a widget whose content is updated (`Static.update`,
+        // `_static.py:85-95`), whether or not its size changes. The runtime's
+        // quiet variant leaves the repaint to the runtime's own paths.
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(AppRoot::new()));
+        let status = tree.mount(root, Box::new(StatusProbe::new()));
+
+        let mut app = App::new().expect("app should initialize");
+        app.widget_tree = Some(tree);
+        let _ = app.take_pending_query_refresh_nodes();
+
+        app.widget_mut_quiet(status, |_| ());
+        assert!(
+            app.take_pending_query_refresh_nodes().is_empty(),
+            "the quiet variant requests no repaint"
+        );
+        let calls: [(&str, Call); 4] = [
+            ("with_widget_mut", |app, id| {
+                app.with_widget_mut(id, |_| ());
+            }),
+            ("with_widget_mut_as", |app, id| {
+                app.with_widget_mut_as::<StatusProbe, _>(id, |status| status.text.push('!'));
+            }),
+            ("with_query_one_mut", |app, _| {
+                app.with_query_one_mut("StatusLine", |_| ()).expect("match");
+            }),
+            ("with_query_one_mut_as", |app, _| {
+                app.with_query_one_mut_as::<StatusProbe, _>("StatusLine", |status| {
+                    status.text.push('!');
+                })
+                .expect("match");
+            }),
+        ];
+        for (name, call) in calls {
+            call(&mut app, status);
+            assert!(
+                app.take_pending_query_refresh_nodes().contains(&status),
+                "{name} must request a repaint of the widget it changed"
+            );
+        }
+        // A type mismatch runs nothing, so it asks for nothing.
+        app.with_widget_mut_as::<Button, _>(status, |_| ());
+        assert!(app.take_pending_query_refresh_nodes().is_empty());
     }
 
     #[test]
