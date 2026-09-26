@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: widget-update-skips-repaint
+Current: frame-keeps-unwritten-cells
 
 ## inline-render-mode
 
@@ -56,6 +56,23 @@ redrawn in the next frame even when its size stays the same, as Python
 redraws a widget whose content is updated, in full-screen and in inline
 mode. Inline frames still use relative cursor moves (INL-005), and
 full-screen output does not change (TRM-003).
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, and the full test gate, strict clippy, and
+rustfmt pass.
+
+## frame-keeps-unwritten-cells
+
+Requirements: UPD-001, UPD-002, INL-005, TRM-002, TRM-003
+
+Delivers: every way an app changes a widget from its own code, including
+`App::with_widget_taken_as` and a query's `DomQueryMut::update`, redraws
+the widget in the next frame (UPD-001), and a frame that repaints part of
+the screen leaves the terminal showing that part as the app draws it, even
+where an earlier frame drew a change without writing it (UPD-002). Inline
+frames still use relative cursor moves (INL-005), and full-screen output
+does not change: the terminal goldens (TRM-002) and the Python goldens
+(TRM-003) still match.
 
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and
