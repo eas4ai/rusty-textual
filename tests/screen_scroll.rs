@@ -58,6 +58,38 @@ fn scrollbar_rows(screen: &vt100::Screen) -> Vec<u16> {
         .collect()
 }
 
+/// How the last column's cell on `row` is drawn: the scrollbar's thumb and
+/// track differ in color or reverse video.
+fn look(screen: &vt100::Screen, row: u16) -> Option<(vt100::Color, vt100::Color, bool)> {
+    let (_, cols) = screen.size();
+    screen
+        .cell(row, cols - 1)
+        .map(|cell| (cell.fgcolor(), cell.bgcolor(), cell.inverse()))
+}
+
+/// Whether the pushed screen's first line, `pushed 1`, is on screen.
+fn shows_first_line(screen: &vt100::Screen) -> bool {
+    lines(screen).iter().any(|line| {
+        line.strip_prefix("pushed 1")
+            .is_some_and(|rest| !rest.starts_with(|c: char| c.is_ascii_digit()))
+    })
+}
+
+/// Press the left button at column `col`, row `from`, move it to row `to`
+/// one row at a time, and release it there (0-based rows).
+fn drag(term: &Term, col: u16, from: u16, to: u16) {
+    term.send(format!("\x1b[<0;{col};{}M", from + 1).as_bytes());
+    let path: Vec<u16> = if to >= from {
+        (from + 1..=to).collect()
+    } else {
+        (to..from).rev().collect()
+    };
+    for row in path {
+        term.send(format!("\x1b[<32;{col};{}M", row + 1).as_bytes());
+    }
+    term.send(format!("\x1b[<0;{col};{}m", to + 1).as_bytes());
+}
+
 #[test]
 fn scr_001_the_mouse_wheel_scrolls_a_pushed_screen_to_its_last_line() {
     for (mode, kind) in CASES {
@@ -79,30 +111,72 @@ fn scr_001_dragging_the_scrollbar_scrolls_a_pushed_screen_to_its_last_line() {
     for (mode, kind) in CASES {
         let (term, screen) = pushed(mode, kind);
         let (rows, cols) = screen.size();
-        let look = |row: u16| {
-            screen
-                .cell(row, cols - 1)
-                .map(|cell| (cell.fgcolor(), cell.bgcolor(), cell.inverse()))
-        };
         // Before scrolling the thumb is at the top of the track, so the
         // track's last row looks like the track and the thumb differs.
         let track = scrollbar_rows(&screen);
-        let track_look = look(track[track.len() - 1]);
-        let Some(&thumb) = track.iter().find(|&&row| look(row) != track_look) else {
+        let track_look = look(&screen, track[track.len() - 1]);
+        let Some(&thumb) = track.iter().find(|&&row| look(&screen, row) != track_look) else {
             panic!(
                 "{mode} {kind}: no scrollbar thumb in the last column:\n{}",
                 dump(&screen)
             );
         };
-        // Press on the thumb, drag it to the terminal's last row, release.
+        // Hold the thumb a quarter of the track down: the content follows
+        // the pointer, so it has left its first line but not reached its last.
+        let quarter = thumb + u16::try_from(track.len() / 4).expect("track length");
         term.send(format!("\x1b[<0;{cols};{}M", thumb + 1).as_bytes());
-        for y in thumb + 2..=rows {
+        for y in thumb + 2..=quarter + 1 {
+            term.send(format!("\x1b[<32;{cols};{y}M").as_bytes());
+        }
+        let screen = term.settle();
+        assert!(
+            !shows_first_line(&screen) && !has_text(LAST_LINE)(&screen),
+            "{mode} {kind}: a quarter of the way down the track, the content is not in between:\n{}",
+            dump(&screen)
+        );
+        // Drag on to the terminal's last row and release.
+        for y in quarter + 2..=rows {
             term.send(format!("\x1b[<32;{cols};{y}M").as_bytes());
         }
         term.send(format!("\x1b[<0;{cols};{rows}m").as_bytes());
         term.wait_for(
             &format!("{mode} {kind}: the last line after dragging the scrollbar"),
             has_text(LAST_LINE),
+        );
+    }
+}
+
+#[test]
+fn scr_001_the_scrollbar_drags_a_scrolled_pushed_screen_back_to_its_top() {
+    for (mode, kind) in CASES {
+        let (term, screen) = pushed(mode, kind);
+        let (_, cols) = screen.size();
+        // Before scrolling the thumb starts on the track's first row.
+        let thumb_look = look(&screen, scrollbar_rows(&screen)[0]);
+        let rows = painted_rows(&screen);
+        let y = rows[0].midpoint(rows[rows.len() - 1]) + 1;
+        for _ in 0..80 {
+            term.send(format!("\x1b[<65;10;{y}M").as_bytes()); // wheel down
+        }
+        term.wait_for(
+            &format!("{mode} {kind}: the last line after turning the wheel"),
+            has_text(LAST_LINE),
+        );
+        let screen = term.settle();
+        let thumb: Vec<u16> = scrollbar_rows(&screen)
+            .into_iter()
+            .filter(|&row| look(&screen, row) == thumb_look)
+            .collect();
+        assert!(
+            !thumb.is_empty(),
+            "{mode} {kind}: no scrollbar thumb after scrolling:\n{}",
+            dump(&screen)
+        );
+        // Grab the thumb at the bottom of the track and drag it to the top.
+        drag(&term, cols, thumb[thumb.len() / 2], 0);
+        term.wait_for(
+            &format!("{mode} {kind}: the first line after dragging the thumb back up"),
+            shows_first_line,
         );
     }
 }

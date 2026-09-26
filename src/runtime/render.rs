@@ -28,6 +28,7 @@ use std::sync::OnceLock;
 
 use super::App;
 use super::dispatch_ctx::set_dispatch_recipient;
+use super::helpers::node_is_dedicated_scrollbar;
 use super::types::{HitTestMap, SYNC_END, SYNC_START, SegmentStreamStats, resize_trace_enabled};
 
 /// Console options sized to a `(width, height)` render area.
@@ -2254,35 +2255,6 @@ fn child_uses_parent_scroll(tree: &WidgetTree, child_id: NodeId) -> bool {
 
 fn node_is_docked(tree: &WidgetTree, node_id: NodeId) -> bool {
     super::helpers::resolve_style_in_tree(tree, node_id).is_some_and(|style| style.dock.is_some())
-}
-
-fn node_is_dedicated_scrollbar(tree: &WidgetTree, node_id: NodeId) -> bool {
-    let Some(node) = tree.get(node_id) else {
-        return false;
-    };
-    // Read css_id from node record (canonical source of truth after RA-2 step 6).
-    let css_id = node.css_id.as_deref();
-    matches!(
-        css_id,
-        Some(
-            APP_ROOT_VSCROLLBAR_ID
-                | APP_ROOT_HSCROLLBAR_ID
-                | APP_ROOT_SCROLLBAR_CORNER_ID
-                | SCROLL_VIEW_VSCROLLBAR_ID
-                | SCROLL_VIEW_HSCROLLBAR_ID
-                | SCROLL_VIEW_SCROLLBAR_CORNER_ID
-                | CONTAINER_VSCROLLBAR_ID
-                | CONTAINER_HSCROLLBAR_ID
-                | CONTAINER_SCROLLBAR_CORNER_ID
-                | LOG_VSCROLLBAR_ID
-                | LOG_HSCROLLBAR_ID
-                | LOG_SCROLLBAR_CORNER_ID
-                | RICH_LOG_VSCROLLBAR_ID
-                | OPTION_LIST_VSCROLLBAR_ID
-                | KEY_PANEL_VSCROLLBAR_ID
-                | DATA_TABLE_HSCROLLBAR_ID
-        )
-    )
 }
 
 #[derive(Clone, Copy)]
