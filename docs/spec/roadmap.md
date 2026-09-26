@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: full-screen-screen-honors-size-rules
+Current: interactive-parity-waits-on-timing
 
 ## inline-render-mode
 
@@ -105,6 +105,22 @@ follows the screen's height rules (INL-004) and inline content still
 scrolls inside the screen's border (INL-017). Pushed screens still scroll
 and take query changes (SCR-001, SCR-002), and full-screen apps still
 match the Python goldens (TRM-003).
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, and the full test gate, strict clippy, and
+rustfmt pass.
+
+## interactive-parity-waits-on-timing
+
+Requirements: TRM-001, TRM-003, TRM-004, INL-007
+
+Delivers: on Unix, keys that reach the terminal while an app starts reach
+the app, as in Python, in full-screen and in inline mode, whether or not
+the terminal answers the startup queries (TRM-004). The interactive parity
+harness sends its keys only once the app has drawn, so button_focus no
+longer fails when the machine is busy (TRM-003). The driver still starts
+and exits the terminal as before (TRM-001), and a cursor position report
+still never reaches the app as a key (INL-007).
 
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and
