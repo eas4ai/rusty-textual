@@ -559,6 +559,44 @@ impl FrameBuffer {
             return Segments::new();
         }
 
+        let dirty_mask = self.region_mask(dirty_regions);
+        let mut masked_previous = previous.clone();
+        for (idx, dirty) in dirty_mask.iter().enumerate() {
+            if !*dirty {
+                masked_previous.cells[idx] = self.cells[idx].clone();
+            }
+        }
+        self.diff_to_segments(&masked_previous)
+    }
+
+    /// Copy the cells inside `dirty_regions` from `source`. After a frame
+    /// that wrote only those regions, this keeps `self` equal to what the
+    /// terminal shows. Region bounds are clamped as in
+    /// [`FrameBuffer::diff_to_segments_in_regions`].
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` and `source` have different widths or different
+    /// heights.
+    pub(crate) fn copy_regions_from(
+        &mut self,
+        source: &FrameBuffer,
+        dirty_regions: &[DirtyRegion],
+    ) {
+        assert_eq!(self.width, source.width, "buffer widths differ");
+        assert_eq!(self.height, source.height, "buffer heights differ");
+        let dirty_mask = self.region_mask(dirty_regions);
+        for (idx, dirty) in dirty_mask.iter().enumerate() {
+            if *dirty {
+                self.cells[idx] = source.cells[idx].clone();
+                self.owner_ids[idx] = source.owner_ids[idx];
+            }
+        }
+    }
+
+    /// One flag per cell: whether the cell lies in one of `dirty_regions`,
+    /// with each region clamped to the buffer.
+    fn region_mask(&self, dirty_regions: &[DirtyRegion]) -> Vec<bool> {
         let mut dirty_mask = vec![false; self.width * self.height];
         for region in dirty_regions {
             if self.width == 0 || self.height == 0 {
@@ -577,14 +615,7 @@ impl FrameBuffer {
                 }
             }
         }
-
-        let mut masked_previous = previous.clone();
-        for (idx, dirty) in dirty_mask.iter().enumerate() {
-            if !*dirty {
-                masked_previous.cells[idx] = self.cells[idx].clone();
-            }
-        }
-        self.diff_to_segments(&masked_previous)
+        dirty_mask
     }
 }
 
@@ -751,6 +782,33 @@ mod tests {
         }
 
         assert!(saw_move_to, "expected at least one MoveTo in diff stream");
+    }
+
+    #[test]
+    fn copy_regions_from_copies_only_the_clamped_regions() {
+        let mut shown = FrameBuffer::from_lines(
+            &[vec![Segment::new("abcd")], vec![Segment::new("wxyz")]],
+            4,
+            2,
+            None,
+        );
+        let next = FrameBuffer::from_lines(
+            &[vec![Segment::new("ABCD")], vec![Segment::new("WXYZ")]],
+            4,
+            2,
+            None,
+        );
+        // The region reaches past the buffer; it is clamped to x 2-3, row 1.
+        shown.copy_regions_from(
+            &next,
+            &[DirtyRegion {
+                x0: 2,
+                y0: 1,
+                x1: 9,
+                y1: 9,
+            }],
+        );
+        assert_eq!(shown.as_plain_lines(), vec!["abcd", "wxYZ"]);
     }
 
     #[test]

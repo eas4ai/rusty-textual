@@ -381,10 +381,9 @@ impl PendingInvalidation {
             self.content_regions.invalidate_rect(rect);
             return;
         }
-        // If the hit-test map has no bounds for the target, region-scoped diff
-        // would produce an empty update while still advancing the internal
-        // framebuffer, causing visible flicker on subsequent diffs. Fall back to
-        // full-content invalidation to keep terminal/frame state synchronized.
+        // If the hit-test map has no bounds for the target, a region-scoped
+        // frame could not write it. Fall back to full-content invalidation so
+        // the next frame writes it.
         self.content_regions.invalidate_all();
     }
 
