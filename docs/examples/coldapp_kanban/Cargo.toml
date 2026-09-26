@@ -1,0 +1,16 @@
+[package]
+name = "coldapp-kanban"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "coldapp_kanban"
+path = "src/main.rs"
+
+[dependencies]
+textual = { package = "rusty-textual", path = "../../.." }
+rich-rs = "1.1.1"
+
+[lints]
+workspace = true
