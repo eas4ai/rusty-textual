@@ -393,7 +393,12 @@ fn layout_flow(
     inner: Region,
     viewport: (u16, u16),
 ) {
-    let strategy = style.layout.unwrap_or(Layout::Vertical);
+    // The App's own layout rule never places its Screen (SCR-003).
+    let strategy = if common::is_app_node(tree, node) {
+        Layout::Vertical
+    } else {
+        style.layout.unwrap_or(Layout::Vertical)
+    };
     let (allow_h_overflow, allow_v_overflow) = flow_overflow_axes(tree, node, style);
     let effective_align = effective_flow_align(tree, node, style);
     // Python parity (`_arrange.py::arrange` + `_build_layers`): flow
@@ -2185,6 +2190,44 @@ mod tests {
             (20, 10),
             "a Screen-typed descendant keeps its size rules"
         );
+    }
+
+    #[test]
+    fn app_screen_fills_the_viewport_whatever_the_apps_layout() {
+        // SCR-003: Python never lays the App out, so an `App { layout: ... }`
+        // rule cannot route its Screen through another layout that honors
+        // the Screen's size rules.
+        for layout in [Layout::Horizontal, Layout::Grid] {
+            let mut tree = WidgetTree::new();
+            let root = tree.set_root(LayoutTestWidget::boxed_with_style("App", {
+                let mut s = Style::new();
+                s.layout = Some(layout);
+                s
+            }));
+            let screen = tree.mount(
+                root,
+                LayoutTestWidget::boxed_with_style("Screen", {
+                    let mut s = Style::new();
+                    s.width = Some(Scalar::Cells(20));
+                    s.height = Some(Scalar::Cells(10));
+                    s
+                }),
+            );
+
+            let _guard = crate::css::set_style_context(crate::css::StyleSheet::parse(""));
+            resolve_layout(&mut tree, root, Region::new(0, 0, 80, 24), (80, 24));
+
+            assert_eq!(
+                tree.get(screen).expect("screen").layout_rect,
+                Rect {
+                    x0: 0,
+                    y0: 0,
+                    x1: 80,
+                    y1: 24
+                },
+                "{layout:?}"
+            );
+        }
     }
 
     #[test]
