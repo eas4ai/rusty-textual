@@ -2,7 +2,8 @@
 `sudus: <REQ>: pass|fail` line per requirement.
 
 Test names carry their requirement: `scr_001_...` checks SCR-001. The PTY
-tests live in tests/screen_scroll.rs. A requirement passes only when at
+tests live in tests/screen_scroll.rs (SCR-001) and tests/screen_queries.rs
+(SCR-002). A requirement passes only when at
 least one of its tests ran and none failed, so a missing test or a build
 failure fails it. Cargo runs in the environment from mechanism_env; the PTY
 tests also start each app with a cleared environment.
@@ -17,8 +18,17 @@ sys.dont_write_bytecode = True
 
 from mechanism_env import clean_env  # noqa: E402
 
-REQUIREMENTS = ["SCR-001"]
-COMMAND = ["cargo", "test", "--test", "screen_scroll", "--", "--test-threads=1"]
+REQUIREMENTS = ["SCR-001", "SCR-002"]
+COMMAND = [
+    "cargo",
+    "test",
+    "--test",
+    "screen_scroll",
+    "--test",
+    "screen_queries",
+    "--",
+    "--test-threads=1",
+]
 RESULT = re.compile(r"^test (\S+) \.\.\. (ok|FAILED|ignored)", re.MULTILINE)
 NAME = re.compile(r"(?:^|::)scr_(\d{3})_")
 
