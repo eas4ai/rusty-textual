@@ -61,15 +61,14 @@ fn area_rows(screen: &vt100::Screen, mode: &str, rules: &str, rows: u16) -> (u16
     }
     let top = row_of(screen, "shell-2").map_or(0, |shell| shell + 2);
     let top = u16::try_from(top).expect("row fits");
-    let bottom = match inline_frame_rows(rules, rows) {
-        Some(height) => top + height - 1,
-        None => {
-            let last = lines(screen)
-                .iter()
-                .rposition(|line| !line.is_empty())
-                .expect("the app draws something");
-            u16::try_from(last).expect("row fits")
-        }
+    let bottom = if let Some(height) = inline_frame_rows(rules, rows) {
+        top + height - 1
+    } else {
+        let last = lines(screen)
+            .iter()
+            .rposition(|line| !line.is_empty())
+            .expect("the app draws something");
+        u16::try_from(last).expect("row fits")
     };
     (top, bottom)
 }
