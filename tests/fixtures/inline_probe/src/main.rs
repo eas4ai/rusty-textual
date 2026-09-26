@@ -27,10 +27,12 @@
 //!   app stops before it starts.
 //! - `PROBE_PUSH`: `screen` or `modal`; `p` then pushes a `Screen` or a
 //!   `ModalScreen` of 60 lines, `pushed 1` to `pushed 60`, then `pushed-end`
-//!   (Python `App.push_screen`).
+//!   (Python `App.push_screen`), and `h` hides them through
+//!   `App::query_mut("#pushed-body")` then `set_display(false)`.
 //!
 //! Keys: `s` shrinks the body to one line, `z` tries `App::suspend`, `x`
-//! runs the suspend-process action, `p` pushes the `PROBE_PUSH` screen, `c`
+//! runs the suspend-process action, `p` pushes the `PROBE_PUSH` screen, `h`
+//! hides its text, `c`
 //! and `r` change and repaint the `PROBE_SHARED` line, `q` quits. The status
 //! line counts every other key that arrives (`keys:N`) and shows the last
 //! suspend result, `clicked` once the button has been pressed, and `hovered`
@@ -120,7 +122,7 @@ struct Pushed {
 impl Screen for Pushed {
     fn compose(&self) -> Box<dyn Widget> {
         let lines: Vec<String> = (1..=PUSHED_LINES).map(|n| format!("pushed {n}")).collect();
-        Box::new(Static::new(format!("{}\npushed-end", lines.join("\n"))))
+        Box::new(Static::new(format!("{}\npushed-end", lines.join("\n"))).id("pushed-body"))
     }
 
     fn is_modal(&self) -> bool {
@@ -307,6 +309,13 @@ impl TextualApp for Probe {
                 let modal = self.push.as_deref() == Some("modal");
                 app.push_screen(Box::new(Pushed { modal }))
                     .expect("push the PROBE_PUSH screen");
+                ctx.set_handled();
+                return;
+            }
+            "h" if self.push.is_some() => {
+                let _ = app
+                    .query_mut("#pushed-body")
+                    .map(|query| query.set_display(false));
                 ctx.set_handled();
                 return;
             }
