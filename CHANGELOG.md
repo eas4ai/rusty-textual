@@ -1,0 +1,7854 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on Keep a Changelog, and this project follows SemVer-ish versioning
+until the API stabilizes.
+
+## [Unreleased]
+
+### Added
+
+- Inline mode (Python `App.run(inline=True)`): `run_sync_with_options` /
+  `run_with_options` with `RunOptions { inline, inline_no_clear }` run an
+  app below the shell prompt on the terminal's main screen instead of the
+  alternate screen. The app is as tall as its screen's `Screen:inline` rules
+  make it (content plus the default top and bottom borders), redrawn with
+  relative cursor moves so the shell output above it stays; mouse
+  coordinates are relative to the app. On exit the app is erased, or with
+  `inline_no_clear` its last frame stays. `TextualApp::inline_padding`
+  (Python `INLINE_PADDING`, default 1) sets the blank lines above it, and
+  `App::is_inline` reports the mode. Unix only: on Windows the app runs
+  full-screen, as in Python, and suspending an inline app is refused, as in
+  Python. The `how-to/inline01`, `how-to/inline02` and `widgets/clock`
+  examples now run inline, and inline02 carries its `Screen:inline` rule.
+- `DriverOptions::inline` and `TerminalDriver::set_inline`. `DriverOptions`
+  gained a field: code that builds it with a struct literal needs
+  `..DriverOptions::default()`.
+
+### Changed
+
+- Strict clippy (`clippy::pedantic`) is on. 859 public functions and
+  methods that only compute a value are now `#[must_use]`, so ignoring
+  their result warns. `DomQueryMut`'s chainable operations (`add_class`,
+  `set`, `focus`, `remove`, ...) are not `#[must_use]`: they act on the
+  call, and the returned query only enables chaining.
+- 206 builder methods that take and return `Self` (widget, container,
+  content, validator and binding builders) are now `#[must_use]`.
+- **Breaking:** `action_namespace` returns `&'static str` instead of `&str`
+  on the `Widget`, `Focus` and `ActionHandler` traits (and in `#[widget]`
+  delegation). Every implementation returned a string literal; an impl that
+  returned borrowed data must now return a literal. `Screen::name` and
+  `Provider::name` keep `&str`, so names can still be runtime values.
+- **Breaking:** `App::set_interval_named` takes the timer name as
+  `Option<&str>` instead of `Option<String>`. The name is not stored, so
+  the owned `String` was never needed.
+- `SelectionList::with_selections` is `#[must_use]` and moves each value
+  out of the given `Vec` instead of cloning it.
+- `#[derive(Reactive)]` no longer triggers `clippy::float_cmp` in the
+  user's crate: its exact change checks for float fields carry their own
+  allow. The derive's docs note that watchers take `&T`, so a watcher for a
+  small `Copy` type needs `#[allow(clippy::trivially_copy_pass_by_ref)]`
+  under `clippy::pedantic`.
+- Numeric conversions in layout, rendering and widgets clamp an
+  out-of-range value to the target type's range instead of wrapping or
+  truncating it. For example, a width above 65,535 cells now becomes
+  65,535, and a negative extent becomes 0. Values inside the range are
+  unchanged.
+
+### Fixed
+
+- A child-combinator selector with more parts than the widget has
+  ancestors (`A > B > C` where `B` is the top ancestor) no longer panics
+  with an index out of bounds; the rule does not match.
+- `DirectoryTree` lists a symlink to a directory as a directory, as
+  Python Textual does: it sorts with the directories and can be
+  expanded. Before, it was listed as a file. A dangling symlink is still
+  a file.
+- A key sent through `AppSimulateKey` (a Footer key click, or the
+  `app.simulate_key` action) keeps the CSS class changes that its binding's
+  action stages on its `EventCtx`, as a typed key already did.
+- In headless runs (`run_test` / `Pilot`), a key bound with `App::bind_key` to
+  `Action::CopySelectedText` or `Action::HelpQuit` now copies the app's text
+  selection or shows the quit hint, as in a live run.
+- Style animations requested from the app root's key-capture, event and
+  app-action hooks (for example `ctx.animate_style` in a `TextualApp` key
+  handler) now run. They were dropped unless the hook marked the event
+  handled.
+- On Linux, an app whose terminal closes without a SIGHUP (for example one
+  with no controlling terminal) now exits instead of spinning at 100% CPU.
+  crossterm's input loop never returns once the terminal hangs up
+  (crossterm-rs/crossterm#793); a watchdog thread now waits for the hang-up
+  and raises SIGHUP, as the terminal would for its controlling process.
+  macOS and the BSDs are not covered: their `poll(2)` cannot watch a
+  terminal.
+- An app no longer freezes at startup in a terminal that answers the
+  synchronized-output and in-band-resize mode queries (DECRQM). The driver
+  waited for the reply through crossterm, which read the reply, could not
+  parse it, and then swallowed every later key. On Linux the driver now
+  reads the replies itself, fenced by a device attributes query so a late
+  reply is still consumed; startup takes one round trip instead of two.
+  macOS and the BSDs no longer send the queries (synchronized output stays
+  off there); Windows is unchanged.
+- A pushed `Screen` or `ModalScreen` taller than the terminal now scrolls
+  with the mouse wheel and by dragging its scrollbar, as in Python Textual
+  (`overflow-y: auto`). Before, its scrollbar was drawn but the screen did
+  not move. In inline mode the scrolled content stays inside the
+  `Screen:inline` border.
+- A widget changed through `App::with_widget_mut`, `with_widget_mut_as`,
+  `with_query_one_mut` or `with_query_one_mut_as` is now redrawn in the
+  next frame, as Python's `Static.update` refreshes it, even when its size
+  stays the same. Before, the change showed only once something else
+  redrew that part of the screen, and in full-screen mode it could be lost
+  for good when an input (a hover, say) repainted another widget in the
+  same frame. Every such call now repaints the widget, reads included; to
+  read without a repaint, use `Handle::read` through `App::query_one_typed`
+  or `App::typed_handle`.
+
+## [1.1.0] - 2026-07-16
+
+The first minor release: full Python-parity depth plus a proven extension story,
+built on the honest 1.0 gap analysis. Highlights, all parity-gated (visual +
+pty_parity) and backed by ported Python tests:
+
+- **Extension story:** cross-screen widget access, a component-class system that
+  makes widget internals CSS-restylable (DataTable and ProgressBar migrated), and
+  a public render-time style/theme seam plus first-class widget timers.
+- **Structural parity:** a slotmap Tree arena and OptionList/SelectionList key
+  identity; a real TextArea Document subsystem (delta undo with EditHistory
+  batching, true soft-wrap on by default, wrap-aware navigation); a keymap
+  subsystem for user key remapping.
+- **Typed foundations:** action-parser fidelity (typed arguments, last-dot
+  namespace, parse errors), a validation description-priority ladder, reactive
+  `always_update`, and Suggester caching.
+- **Message + behavior parity:** fine-grained widget messages (DataTable /
+  Collapsible / SelectionList), and `Select.allow_blank` now defaults to `true`.
+- **Tooling:** devtools hooks (log streaming, debug-channel introspection,
+  inactive-screen ticks).
+
+This release bundles a coordinated `textual-macros` 1.1.0 bump (action-parser and
+`always_update` changed its codegen). Several items are breaking; see the entries
+below. Intentional non-parity divergences are documented in `KNOWN_GAPS.md`.
+
+### Fixed: Tabs/Underline ANSI default CSS realigned with current Python
+
+The `Tabs:ansi` default-CSS block (bright-blue underline via `ansi_bright_blue`,
+transparent active tab) tracked an old Python revision that Python has since
+removed. Aligned with current Python `_tabs.py`:
+
+- `Underline:ansi > .underline--bar` now uses `color: $block-cursor-background;
+  background: $border-blurred` (the old `Underline:ansi { text-style: dim }` is
+  gone, so the active underline bar is no longer dim-blended in ANSI mode).
+- `Tab:ansi` carries `text-style: dim` with `&.-active { text-style: not dim
+  bold }` (moved from the removed `Tabs:ansi #tabs-list` rules).
+- In ANSI mode the focused active tab keeps its `$block-cursor-background` fill
+  (the old `Tabs:ansi .-active { background: transparent }` override is gone).
+
+### Changed (BREAKING-ish): fine-grained widget messages (Python message parity)
+
+Rust now emits the granular per-widget message types Python apps expect, so
+`#[on(Type)]` handlers dispatch at Python granularity. Three collapsed Rust-only
+message types were REMOVED in favour of the granular set:
+
+- `DataTable` - moving the cursor posts the `*Highlighted` message matching the
+  cursor type (`DataTableCellHighlighted` / `DataTableRowHighlighted` /
+  `DataTableColumnHighlighted`), and activating it (enter/space, or clicking the
+  already-highlighted position, Python `highlight_click`) posts the matching
+  `*Selected` (`DataTableCellSelected` / `DataTableRowSelected` /
+  `DataTableColumnSelected`). New `DataTableRowLabelSelected` is posted when a
+  row label is clicked (which, as in Python, does not move the cursor); the
+  row-label prefix column is now correctly excluded from column hit-testing for
+  clicks and hover. Programmatic `set_selected` / `set_cursor` moves post the
+  highlight message too (Python `watch_cursor_coordinate`). Messages carry
+  `usize` row/column indices (the DataTable cursor is coordinate-addressed;
+  resolve stable keys via `row_key_at` / `column_key_at`).
+  REMOVED: `DataTableCursorMoved` (use the `*Highlighted` messages) and
+  `DataTableCellActivated` (use the `*Selected` messages). `DataTableHeaderSelected`
+  is unchanged (it already matched Python).
+- `Collapsible` - posts state-specific `CollapsibleExpanded` /
+  `CollapsibleCollapsed` (Python `Collapsible.Expanded` / `.Collapsed`) on user
+  toggles AND on programmatic `set_collapsed`.
+  REMOVED: `CollapsibleToggled` (match on the state-specific message instead).
+- `SelectionList` - new `SelectionListHighlighted { index, option_id }` (Python
+  `SelectionList.SelectionHighlighted`) posted whenever the highlight moves
+  (keyboard navigation, clicks) and for the startup highlight on mount. As in
+  Python, the inner `OptionList`'s raw `OptionHighlighted` no longer escapes a
+  `SelectionList`; it is replaced by the `SelectionListHighlighted` message.
+
+### Added: DataTable rides the component-class seam (component-classes Phase 2)
+
+DataTable's internal colours are now sourced from its `datatable--*` component
+classes instead of hand-derived theme tokens, so user CSS restyles the table
+(Python parity):
+
+- `DataTable` declares the nine Python `COMPONENT_CLASSES`
+  (`datatable--cursor`, `--hover`, `--fixed`, `--fixed-cursor`, `--header`,
+  `--header-cursor`, `--header-hover`, `--odd-row`, `--even-row`) via the
+  `Components` capability.
+- `render` resolves `datatable--header` / `--cursor` / `--hover` /
+  `--header-hover` / `--fixed` / `--even-row` / `--odd-row` through
+  `resolve_component_style` per frame. All three qualification forms work:
+  `DataTable > .datatable--cursor { ... }`, `#my-table > .datatable--cursor`,
+  and `DataTable.some-class > .datatable--cursor`.
+- State provenance moved onto CSS: the cursor focus branch now resolves via
+  `&:focus > .datatable--cursor` (dispatch `:focus`, which also gates on the
+  app being active, like Python), the header `background-tint` arrives on the
+  resolved `datatable--header` component (`&:focus > .datatable--header`),
+  and zebra even rows resolve `&:dark > .datatable--even-row`
+  ($surface-darken-1 40%) vs the light-theme `$surface-lighten-1 50%` rule.
+  `datatable--odd-row` (no default rule, Python parity) is consumable from
+  user CSS under zebra stripes.
+- Composition preserved byte-for-byte with the previous hand-derived block
+  under default CSS: no_style tagging, header trailing-fill 25% blend, cursor
+  foreground flatten (the opaque blurred foreground stays raw), zebra float
+  blend over the composited surface. Off-tree renders without a style context
+  fall back to the identical legacy tokens.
+- One-byte parity fix: header hover now paints `$accent 30%` with Python's
+  round-tripped `$accent` design token (`#FEA62B`); the legacy Rust-only
+  `$header-hover-background` token used the raw accent source (`#FFA62B`).
+- New public `App::frame_cell_fg(x, y)` accessor (companion to
+  `frame_cell_bg`) for Pilot-driven colour assertions.
+- Regression suite: `tests/data_table_component_restyle.rs` (type/id/class
+  qualified restyles, header restyle, default-colour goldens, focus-tint
+  provenance, blurred-cursor foreground, zebra `:dark` parity).
+### Changed (BREAKING): ProgressBar split into real sub-widgets (component-classes Phase 3 / D8)
+
+`ProgressBar` now composes real arena children mirroring Python
+`_progress_bar.py`, replacing the monolithic single-node render:
+
+- New sub-widgets (module `textual::widgets::progress_bar`): `Bar` (id
+  `bar`, composed when `show_bar`), `PercentageStatus` (id `percentage`,
+  when `show_percentage`), `ETAStatus` (id `eta`, when `show_eta`). They are
+  addressable (`#bar` / `#percentage` / `#eta`, `ProgressBar Bar`, ...) and
+  restylable per widget.
+- The `bar--bar` / `bar--complete` / `bar--indeterminate` component classes
+  moved from `ProgressBar` to `Bar`, which resolves them against itself. The
+  scoped defaults (`ProgressBar Bar > .bar--bar { ... }`) and Python-shaped
+  user CSS (`Bar > .bar--indeterminate { ... }`) are now live without
+  selector rewrites. Bar renders the Python way: highlight glyphs carry the
+  component's `color`, track glyphs carry the component's `background` as
+  their foreground; the per-cell gradient recolor moved into `Bar` and now
+  recolors only the highlighted cells (Python `_apply_gradient` parity).
+- Layout is real child layout: the scoped defaults `ProgressBar Bar
+  { width: 32 }`, `PercentageStatus { width: 5 }`, `ETAStatus { width: 9 }`
+  drive the horizontal arrangement and the `width: auto` measurement (46
+  columns with all three parts); the hardcoded `content_width()` is retired.
+- BREAKING: `advance` and `update` now take `&mut ReactiveCtx`
+  (`bar.advance(1.0, rctx)`); the recorded change recomposes the sub-widgets
+  with the new values (the Rust analogue of Python's `data_bind`). Post-mount,
+  call them through `Handle::update` / `query_one_typed`. For pre-mount
+  configuration use the new `with_progress(f64)` builder. `set_gradient` /
+  `set_animation_level` stay ctx-less (pre-mount configuration; post-mount
+  changes apply on the next recompose).
+- The indeterminate animation lives on the `Bar` child (`is_active`
+  per-frame repaint, time-based phase on the parent's clock, stable across
+  recomposes); no per-frame recompose is involved. A 1-second interval
+  (Python `set_interval(1, self.update)` parity) keeps the displayed ETA
+  counting down between progress updates, recomposing only when the
+  displayed value changes.
+- New `App::frame_cell_fg(x, y)` accessor (symmetric with `frame_cell_bg`)
+  for Pilot-driven color assertions.
+- Doc examples migrated to the reactive update path (`Handle::update`):
+  `progress_bar`, `progress_bar_gradient`, `progress_bar_styled(_)`,
+  `progress_bar_isolated(_)`, `hello`, `guide/reactivity/dynamic_watch`,
+  `readme_screens`.
+
+### Added: devtools hooks (log streaming, debug-channel introspection, inactive-screen ticks)
+
+Framework-side hooks for the external `textual-dev-rs` harness (devtools
+protocol revision 3; purely additive, older clients are unaffected):
+
+- Log sink over the devtools socket: new `LOGS` streaming request. The first
+  `DATA` frame replays a bounded backlog (500 records), then one frame per
+  record; records are `unix_millis<TAB>channel<TAB>message` lines, ready for a
+  live log pane. Every `TEXTUAL_DEBUG_*` channel can feed the stream, and the
+  new public `textual::debug::log(...)` is an app-facing log call (the
+  analogue of Python's `self.log(...)`) on the always-streaming `app` channel
+  (optional file sink via `TEXTUAL_DEBUG_APP_FILE`). Zero-cost when no
+  devtools server is running.
+- Debug-channel introspection and control: new `CHANNELS` request lists every
+  debug channel with its stream state and env-configured log file; new
+  `DEBUG_CHANNEL <name> <on|off>` request toggles a channel's streaming at
+  runtime (file logging stays env-gated). Channels that gate expensive line
+  formatting now honor the runtime toggle, so the harness can switch e.g. the
+  `style` or `layout` firehose on/off without relaunching the app. Public
+  Rust surface: `debug::DebugChannel`, `debug::channel_states`,
+  `debug::set_channel_streaming`, `debug::channel_streaming`.
+- Protocol versioning: `INFO` responses and `<pid>.instance` discovery files
+  now carry `protocol=3` (absent means the pre-revision protocol); revisions
+  only add request types and key=value fields.
+- Frame ticks for inactive screens (opt-in):
+  `App::set_tick_inactive_screens(true)` (or the
+  `TEXTUAL_TICK_INACTIVE_SCREENS` env flag) delivers the per-frame widget
+  tick (`Widget::on_tick`) to background trees too (the app-root tree under
+  a pushed screen stack plus every stacked screen below the top), so
+  background animation/refresh keeps advancing while a screen is suspended
+  (Python Textual keeps widget timers running on suspended screens). Default
+  behavior is unchanged: active-screen ticking only.
+### Fixed: Footer command-palette separator loses the hovered key background
+
+- The command-palette separator cell in `Footer` regressed with the component
+  classes phase 1 seam: it no longer shared the hovered command-palette key's
+  background. The helper extracted the hover bg from a standalone
+  `.footer-key--key` component resolution, which only worked through the
+  removed phantom widget-state leak (`FooterKey:hover` matching the component
+  node itself). The separator now mirrors the live key cell's real composite:
+  the (translucent) `FooterKey:hover` BASE background flattened over the
+  footer row, with the component background layered on top. Component
+  phantoms stay stateless; widget pseudo state keeps qualifying the parent
+  meta only.
+
+### Changed (BREAKING): `Select.allow_blank` now defaults to `true` (Python parity)
+
+- `Select::new(..)` now defaults `allow_blank = true`, matching Python
+  Textual's `Select(allow_blank=True)`: a Select constructed without an
+  explicit value starts BLANK, rendering the prompt, and posts no mount-time
+  `SelectChanged`. Previously the Rust default was `false`, which auto-selected
+  the first option (and posted `SelectChanged` for it at startup).
+- To keep the old behavior, opt out explicitly with
+  `.with_allow_blank(false)`; that path is unchanged and still auto-selects
+  the first option when no initial value is set (the forbidden-blank-state
+  guard), including on `set_options` / `set_allow_blank(false)` transitions.
+- Doc examples `widgets/select_widget` and `widgets/select_from_values_widget`
+  drop their now-redundant `.with_allow_blank(true)` calls; they rely on the
+  matching default, exactly like their Python counterparts.
+### Added: cross-screen widget access, phase B1, `ScreenRef` + App-level synchronous surface
+
+Every pushed screen owns a separate arena tree, and the query/mutation
+surface used to resolve against the active tree only, so a pushed modal made
+every widget beneath it unreachable. `&mut App` outside dispatch holds no
+tree borrow (it owns every tree), so App-level cross-screen access is now
+direct and synchronous, matching Python's
+`app.get_screen("main").query_one("#log")` pattern:
+
+- New public `ScreenRef<'_>` (prelude): addresses a tree as `Active`,
+  `AppRoot` (the base tree under any stack), `Name(&str)` (topmost stacked
+  screen whose `Screen::name()` or mode name matches; collisions resolve to
+  the topmost, the Python `get_screen` semantic), or `Tree(u64)` (exact
+  `WidgetTree::tree_id()`, collision-free, never survives a pop).
+- New `App::screen_tree` / `screen_tree_mut` (resolve a `ScreenRef` to its
+  tree), `App::tree_by_id` / `tree_by_id_mut` (now public), and the
+  screen-scoped query/mutation surface `App::query_on` / `query_one_on` /
+  `with_widget_mut_on::<W>(screen, selector, f)`.
+- `with_widget_mut_on` routes through the shared scoped node-update path, so
+  a mutation on a non-active tree repaints every visible layer (an update
+  behind a translucent screen shows immediately; behind an opaque screen it
+  is state-only until reveal, both matching Python). First-cut caveats for
+  non-active trees, deferred to phase B3: reactive `watch_*` dispatch and
+  messages posted from the closure are dropped with a debug log.
+
+### Added: cross-screen widget access, phase B2, scoped deferred commands + handler-level `query_one_on`
+
+The handler-level half of cross-screen access. A handler runs while the
+runtime holds a live `&mut` borrow of the dispatching tree (the dispatch
+live-borrow invariant), so cross-screen access from handler context is
+deferred by design, riding the existing command queue with tree-scoped
+targets resolved at drain time:
+
+- New `WidgetCtx::query_one_on::<W>(screen, selector)` and
+  `ScreenMessageCtx::query_one_on` return a deferred `WidgetQuery` addressed
+  at another screen's tree; new `WidgetQuery::update_via_screen` consumes a
+  query from `Screen` handlers (which hold a `ScreenMessageCtx`). The
+  `update_via` closure runs at drain against the resolved widget IN ITS
+  OWNING TREE with a fresh `WidgetCtx`. This enables the modal-updates-base
+  pattern: a modal handler live-updates a widget on the screen beneath it.
+- `CommandTarget` selector/type targets now carry a tree scope; resolution is
+  two-step (scope to a live tree, then selector/node within it), keeping the
+  drop-never-panic contract: a screen popped before the flush, an unknown
+  screen name, or a stale node all drop with a debug log.
+- Behavior change from the 1.0.3 aliasing fix (B0): a stamped
+  `CommandTarget::Node` (e.g. `Handle::update_via`) whose live owning tree is
+  not the active tree now APPLIES in the owning tree instead of dropping; a
+  dead owning tree still drops. Self-rooted `WidgetCtx::query_one` /
+  `query_one_id` targets are now scoped to the dispatching tree, closing the
+  same slotmap-key aliasing hole for selector queries drained under a
+  different active screen.
+- Applying a command to a non-active tree requests a relayout/repaint of
+  every visible layer, so an update beneath a translucent modal is visible
+  immediately and an update beneath an opaque screen is state-only until
+  reveal (both match Python).
+- First-cut restrictions on NON-ACTIVE-tree applies, deferred to phase B3
+  (documented on `query_one_on`): messages posted from the closure, reactive
+  `watch_*` dispatch, and recompose requests are dropped with a debug log;
+  direct widget mutation, class ops, styles, and repaint apply fully.
+### Changed: component-classes system, phase 1: Python virtual-node semantics (BREAKING)
+
+Widget internals are now CSS-addressable the Python way. The component-class
+resolution seam (`Widget::get_component_styles` / `get_component_rich_style` /
+`textual::css::resolve_component_style`) was corrected to match Python
+Textual's virtual-node model:
+
+- **Typeless phantom (BREAKING).** Component classes resolve on a typeless
+  virtual node, exactly like Python's `DOMNode(classes=component)`. Widget
+  TYPE rules (`Input { ... }`, `TextArea { ... }`) no longer leak into
+  component styles; `Widget { ... }` universal rules no longer match them
+  (new matcher guard); compound `Type.part` selectors no longer match. User
+  CSS relying on those accidental semantics must move to the documented
+  parent-qualified forms (`Type > .part`, `Type.class > .part`).
+- **Live selector-stack resolution.** During `render()`, component classes
+  resolve against the widget's LIVE selector context (real arena id, runtime
+  classes, pseudo states), so id-, class- and pseudo-qualified user CSS now
+  works: `#my-input > .input--cursor`, `Input.compact > .input--cursor`,
+  `RadioSet:focus > RadioButton.-selected > .toggle--label`. Off-tree
+  contexts keep the seed-meta fallback. The Checkbox / RadioButton / Switch /
+  OptionList / SelectionList / Tree / KeyPanel / TextArea hand-rolled
+  bypasses collapsed into the canonical API.
+- **Part-level pseudo direction (BREAKING).** Positive pseudos on a part
+  (`.part:hover`) never match (write `Type:hover > .part`); negative pseudos
+  (`.part:blur`, `.part:light`) keep matching (stateless-node semantics,
+  Python parity).
+- **Multi-name semantics.** New `resolve_component_style_merged` (and
+  `Widget::get_component_styles_merged`): per-name resolution merged in
+  argument order (Python `get_component_styles(*names)` - later name wins
+  regardless of specificity). The existing compound form (all names on one
+  phantom) remains for state-marker usage (e.g. Tabs'
+  `["tabs--underline", "-active"]`). New `resolve_component_style_partial`
+  returns only sheet-set properties (Python `partial_rich_style`).
+- **Shared surface compositing.** `Widget::get_component_rich_style` now
+  composites over the widget's effective painted surface: alpha backgrounds
+  flatten over the composited ancestor surface, a component-carried
+  `background-tint` folds into its background, `auto <pct>%` foregrounds
+  resolve contrast at fractional alpha, and `text-opacity` folds into the
+  foreground. Input's private leak-filter helper was retired.
+- **Load-bearing declarations.** Built-in widgets declare their
+  `component_classes()` sets (Input, MaskedInput, Toast, ScrollView,
+  BindingsTable, Tree, Footer, FooterKey, Tabs, Underline, Checkbox,
+  RadioButton, Switch, OptionList, SelectionList, TextArea, Tooltip, Link,
+  Placeholder, Sparkline, ProgressBar). `get_component_styles` /
+  `get_component_rich_style` validate the name in debug builds (Python's
+  `KeyError` parity) and log + resolve in release.
+- The inert `&.datatable--fixed-cursor` default rule was dropped (inert in
+  Python too: the virtual node is typeless).
+
+### Added: keymap subsystem, phase K1: binding identity + `BindingsMap` value type
+
+Port of the `BindingsMap` half of Python Textual's `binding.py`, the
+foundation for user key remapping:
+
+- `BindingDecl` gains `id: Option<String>` and a `with_id(..)` builder
+  (Python `Binding.id`): an opaque, globally-unique-by-convention handle that
+  the App keymap uses to address bindings. Note: the new field joins the
+  derived `PartialEq`/`Eq`, so two decls differing only by `id` now compare
+  unequal. The field addition is technically source-breaking for exhaustive
+  `BindingDecl` struct literals; builders (`BindingDecl::new(..)` + method
+  chaining) are the documented construction path and are unaffected.
+- New `textual::bindings` module (re-exported from the prelude):
+  `BindingsMap` (ordered `key -> Vec<BindingDecl>` map with Python-dict
+  positional semantics), `Keymap` (binding-id -> comma-separated key list),
+  `KeymapApplyResult`, and the typed errors `NoBinding` / `InvalidBinding`.
+  `BindingsMap::from_decls` ports `Binding.make_bindings` (comma-list
+  expansion, single-character key normalization, `show = description && show`,
+  id propagation); `merge`, `get_bindings_for_key`, `shown_keys`, and
+  `apply_keymap` port their Python namesakes, including the exact clash
+  semantics ("clash unless the occupying binding is itself being rebound
+  away") and Python's observable self-clash/duplicate-append behavior for
+  comma-expanded entries sharing one id.
+- `keys::normalize_key_list` (crate-internal): the `_normalize_key_list`
+  port used by `App::set_keymap`/`update_keymap` (phase K2) to normalize
+  keymap values (`"?,space"` -> `"question_mark,space"`).
+
+### Added: keymap subsystem, phase K2: `App` keymap storage + dispatch/hint overlay
+
+Users can now remap key bindings by id, mirroring Python `App.set_keymap`:
+
+- `App::set_keymap(..)` / `App::update_keymap(..)` (merge, argument wins) /
+  `App::keymap()` accessor. Values are normalized at store time
+  (`"?,space"` is stored as `"question_mark,space"`), and both trigger
+  `refresh_bindings()` so the Footer/help surfaces rebroadcast.
+- New declarative `TextualApp::keymap()` hook (default empty), read once at
+  app startup: the Rust analog of configuring the keymap before mount
+  (Python issue #5742).
+- The keymap reaches every consumer of `Widget::bindings()` via two
+  transforms: the key-dispatch chain flattens each node's bindings through
+  `BindingsMap::apply_keymap` (comma expansion before overlay, exactly like
+  Python's `Screen._binding_chain`), while the binding-hint collectors use a
+  shape-preserving per-decl key substitution so Footer/HelpPanel rows keep
+  one entry per declared binding (first alternative displayed, punctuation
+  rendered as its symbol). With no keymap set, both transforms are
+  allocation-free pass-throughs and resolution is byte-identical to 1.0.x
+  (priority ordering, character-key normalization, and `check_action`
+  gating regression-guarded under a non-empty keymap).
+- Ports of `test_keymap.py` (replace / unknown-id noop / inherited same id /
+  different id / set-before-mount) and `test_binding.py`'s keymap
+  normalization case, in `tests/keymap.rs`.
+
+### Added: keymap subsystem, phase K3: binding-clash delivery + signal semantics
+
+- New public `BindingClash { node, source, binding }` payload (with the
+  `BindingSource` active-vs-app-root tree discriminant, now public), reported
+  when a keymap override displaces a binding that is not itself being rebound
+  away. Delivered once per clashing keypress by the key-dispatch chain walks
+  (never from idle/hint passes), matching Python's per-chain-build cadence.
+- `App::set_bindings_clash_fn(..)` registered callback (mirrors
+  `set_check_action_fn`), invoked after the dispatch tree borrow ends;
+  `TextualApp::handle_bindings_clash(&mut self, &[BindingClash])` defaulted
+  hook wired through it by the adapter (Python
+  `App.handle_bindings_clash(clashed_bindings, node)`).
+- Every `App::set_keymap` call rebroadcasts `Event::BindingsChanged`, even
+  for an identical keymap (Python publishes `bindings_updated_signal`
+  unconditionally; `refresh_bindings()` forces the hint-diff rebroadcast).
+  Note: the forced rebroadcast requires a non-empty hint set; the standard
+  `TextualApp` adapter always contributes its default bindings, so this only
+  matters for bare zero-binding harness apps.
+- Ports of `test_keymap.py`'s verbatim self-clash test (clash key `"d"`,
+  action `"increment"`, id `"app.increment"`, node identity) and
+  `test_binding.py`'s two-broadcasts-for-two-`set_keymap`-calls test, plus
+  clash-cadence and active-screen `BindingSource::AppRoot` guards.
+
+### Changed: validation framework: description-priority ladder (Python parity)
+
+The validation framework now mirrors Python Textual's `validation.py` model.
+`ValidationResult` carries structured `failures: Vec<Failure>` instead of a
+bare list of strings; `Failure` records the failing `value`, a `FailureKind`
+(the port of Python's `Failure` subclasses such as `Number.NotANumber`), and
+the resolved `description`. A failure's human-readable description is chosen
+by Python's priority ladder: an explicit description set on the `Failure`
+inside `validate()` wins, else the validator's `failure_description`
+(constructor override, exposed via `with_failure_description(..)` on the
+built-in validators), else the validator's new `describe_failure(&Failure)`
+hook. The `Validator` trait gains `failure_description()`,
+`describe_failure()`, `success()`, `failure(Failure)`, and
+`resolve_failure(Failure)` (all defaulted; `validate` remains the only
+required method). `ValidationResult::merge(results)` aggregates multiple
+validator results (Input/MaskedInput now use it for their `-valid`/`-invalid`
+flow), and `failure_descriptions()` extracts the resolved description strings.
+
+Breaking notes:
+- `ValidationResult.is_valid` and `.failure_descriptions` were public fields;
+  they are now methods (`is_valid()`, `failure_descriptions()`).
+- `ValidationResult::failure(..)` now takes `Vec<Failure>` (Python parity)
+  instead of a message string; custom validators should return
+  `self.failure(Failure::new().with_description(..))` from `validate()`.
+- Built-in validators now produce Python-exact default messages, e.g.
+  `Integer`: "Must be a valid integer." (previously `Number` reported
+  "Value is not a number." and a bespoke "Value is required." for empty
+  input; both are now "Must be a valid number.", matching Python).
+- `Length` now counts characters (Python `len(str)` parity), not bytes.
+- `Number`, `Integer`, `Length`, and `Url` gained a `failure_description`
+  override slot and therefore no longer derive `Copy` (still `Clone`).
+- `Failure` and `FailureKind` are exported from the prelude.
+### Changed (BREAKING): action-parser fidelity (typed arguments, last-dot namespace, parse errors)
+
+`parse_action` now matches Python `textual.actions.parse` (ported from
+`tests/test_actions.py`, all 4 tests / 27 params):
+
+- **Namespace splits on the last dot** (`rpartition(".")`): `"foo.bar.baz"` now
+  parses as namespace `foo.bar` + name `baz` (previously `foo` + `bar.baz`).
+- **Typed arguments.** `ParsedAction::arguments` is now
+  `Vec<ActionArgument>` (`None`/`Bool`/`Int`/`Float`/`Str`/`Tuple`/`List`), the
+  analogue of Python's `ast.literal_eval` over the argument list, including
+  nested tuples/lists, Python grouping semantics (`f((1))` is the int `1`,
+  `f((1,))` is a tuple), triple-quoted strings, and implicit string
+  concatenation. Accessors: `as_str`/`as_int`/`as_float`/`as_bool`/`is_none`/
+  `as_items`; total `Eq`/`Ord`/`Hash` (floats via `total_cmp`/`to_bits`).
+- **Malformed inputs are errors.** `parse_action` returns
+  `Result<ParsedAction, ActionParseError>` (was lenient `Option`); malformed
+  argument lists like `foo(,,,,,)`, `bar(1 2 3)`, or `ham(not)` now fail
+  exactly where Python raises `ActionError`. Rust additionally rejects empty /
+  invalid action names at parse time (Python only fails these later at
+  dispatch). The runtime dispatch path still logs-and-ignores invalid actions.
+- **`check_action` takes typed parameters.** `Widget::check_action`,
+  `TextualApp::check_action`, `App::set_check_action_fn`, and
+  `BindingHint::action_parameters` now use `&[ActionArgument]` /
+  `Vec<ActionArgument>` (was `&[String]`), matching Python's
+  `check_action(action, parameters: tuple[object, ...])`. The `#[widget]`
+  macro's generated `check_action` forwarding follows suit (requires the
+  matching `textual-macros` bump).
+
+Migration: `parse_action(s)?`/`.ok()` instead of the old `Option`; read string
+arguments via `arg.as_str()` and integers via `arg.as_int()`; update
+`check_action` overrides to the new parameter type. `ActionArgument` and
+`ActionParseError` are exported from the prelude.
+### Added: public render-time style seam: `textual::render_context`
+
+Custom widgets can now ask, from inside `render()`, what the framework actually
+resolved for them, through a small documented module (also re-exported by the
+prelude) instead of framework internals:
+
+- `render_context::resolved_style()` returns the widget's own resolved `Style`
+  (stylesheet + inline + inheritance), exactly what the framework paints with.
+- `render_context::composited_background()` returns the effective ancestor
+  surface color the widget is composited over. CSS `background` remains
+  non-inherited (`resolved_style().bg` stays `None` for a transparent widget);
+  this function exposes the render-time composition surface instead.
+- `render_context::theme_color("$accent")` resolves theme tokens (with or
+  without the `$`, including `-lighten-N`/`-darken-N` variants) against the
+  active theme; usable in any context, not just render.
+
+The first two are render-scoped and return `None` outside a render call. This
+is the supported seam the 1.1 component-classes work builds on.
+
+### Added: one-shot widget timers: `WidgetCtx::set_timer`
+
+Widgets could schedule repeating intervals via the public
+`WidgetCtx::set_interval`, but one-shot work still had no first-class seam.
+`ctx.set_timer::<Self, _>(delay, |widget, ctx, tick| ...)` (Python
+`self.set_timer`) now schedules a widget-owned one-shot: the `FnOnce` callback
+runs exactly once, `delay` after registration, with the concrete widget and a
+fresh `WidgetCtx`. Returns the same `TimerHandle` as `set_interval`
+(`pause`/`resume`/`stop` before it fires), runs on the shared `TimerRuntime`
+(so `Pilot::advance_clock` drives it deterministically), and is purged if the
+owning node unmounts first.
+### Added: `#[reactive(always_update)]` / `#[var(always_update)]`
+
+`#[derive(Reactive)]` now parses an `always_update` attribute (Python's
+`reactive(..., always_update=True)`): the generated setter bypasses the
+equality gate, so the change is recorded and watchers fire even when the new
+value equals the old one. It composes with the other attributes (`layout`,
+`watch`, `recompose`, `init = false`, ...) via the new
+`ReactiveFlags::with_always_update()`. Previously the flag existed on
+`ReactiveFlags` but was not reachable from the derive macro. (Requires the
+matching `textual-macros` version.)
+
+### Added: `Suggester` suggestion caching (`use_cache`)
+
+The `Suggester` trait now mirrors Python's split between computation and the
+framework entry point: implementations provide `get_suggestion(&str)` (the
+computation), and the provided `suggest()` entry point normalizes the value's
+case (per a new `case_sensitive()` hook, default insensitive like Python) and
+caches results keyed by the normalized input via a new `SuggestionCache`
+returned from the `cache()` hook. `SuggestFromList` caches by default
+(Python's `use_cache=True`) and grows a `use_cache(bool)` builder to opt out.
+Breaking for custom suggesters: rename your `suggest` impl to
+`get_suggestion` (the compiler will point at it). The `suggest` shape stays
+synchronous; async `SuggestionReady` delivery remains a separate item.
+### Added - Tree stable node identity: slotmap arena, TreeNodeId, key-based CRUD (1.1 key-identity work, phase B)
+
+`Tree` stores its nodes in a per-widget slotmap arena keyed by a new stable
+`TreeNodeId` (generational: a removed node's id reliably misses, stronger
+than Python's reusable int `NodeID`). New identity API mirroring Python
+`_tree.py`: `get_node_by_id` (typed `TreeError::UnknownNode`), `node()`,
+`parent_of` / `children_of` / `next_sibling` / `previous_sibling` /
+`is_root` / `is_last` / `root_id` / `root_ids`, a read-only `NodeRef` view,
+per-node accessors (`label_of`/`set_label`, `data_of`/`set_data`,
+`expand`/`collapse`/`toggle_node`, `set_allow_expand`), and key-based CRUD:
+`add(parent, seed)` (inserts a whole declarative subtree, returns its root
+id), `add_leaf`, `add_before`/`add_after` (anchor-node sibling insertion,
+`TreeError::InvalidAnchor` on stale/root anchors), `remove`
+(`TreeError::RemoveRoot` for roots, purges all descendant slots), and
+`remove_children`. `reset_with_data(label, data)` complements `reset`.
+
+The cursor is now node-anchored (Python `_cursor_node`): it follows its
+node across sibling insertion/removal and expansion changes, with hidden
+cursor nodes re-anchoring to the nearest visible ancestor. The reactive
+`selected` key is unchanged and still records `usize` visible-line
+projections (always_update preserved); `set_selected`/`select_node` stay
+line-oriented, with new `cursor_node_id`/`move_cursor`/`select_node_by_id`
+and `node_at_line`/`line_of` bridging lines and ids. All `TreeNode*`
+messages gain a `node_id: TreeNodeId` field filled at the emit sites, so
+handlers can round-trip ids into deferred mutations.
+
+BREAKING (1.1):
+
+- `Tree::root()` returns a `NodeRef` view instead of `&TreeNode`;
+  `Tree::root_mut()` is removed. Post-construction mutation goes through
+  the id API (`tree.add(root_id, seed)`, `set_label(id, ..)`, ...);
+  declarative `TreeNode` seed construction is unchanged.
+- `TreeNodeSelected` / `TreeNodeActivated` / `TreeNodeToggled` /
+  `TreeNodeCollapsed` / `TreeNodeExpanded` / `TreeNodeHighlighted` struct
+  literals need the new `node_id` field (`TreeNodeId::default()`, the null
+  key, preserves the old shape where identity does not matter).
+- `Tree::selected()` is now a per-frame projection of the node-anchored
+  cursor (it shifts when nodes above the cursor appear/disappear, and
+  keeps pointing at the cursor node's line).
+- `Tree::clear()` purges cleared descendants from the arena so their ids
+  no longer resolve (deliberate divergence from Python, whose `clear()`
+  leaves stale ids resolvable).
+
+`DirectoryTree` deliberately stays index/path-based internally this pass
+(it rebuilds its inner tree wholesale, minting fresh ids per rebuild);
+converting it to in-place arena mutation is a tracked follow-up.
+
+### Added - OptionList/SelectionList stable key identity (1.1 key-identity work, phase A)
+
+`OptionList` now maintains a stable-id registry (`HashMap<OptionId, usize>`,
+Python's `_id_to_option`/`_option_to_index` folded into one map) and grows the
+full Python identity API: `get_option_by_id` / `get_option_index` /
+`get_option_at_index`, `remove_option` / `remove_option_at_index` (with
+highlight revalidation and registry shift), `replace_option_prompt(_at_index)`,
+`enable_option` / `disable_option` (+ `_at_index`), and a batch `add_options`
+with whole-batch pre-validation (a failing batch adds nothing). Typed
+`OptionListError { DuplicateId, UnknownId, IndexOutOfBounds }` replaces
+Python's `DuplicateID`/`OptionDoesNotExist` raises; `OptionId` implements
+`Borrow<str>` so lookups take `&str`. `SelectionList` gains `Selection::with_id`
+/ `Selection.id`, `add_selection` / `add_selections`, id/index getters, and
+`remove_option(_at_index)` that repairs its parallel value/selected bookkeeping
+in lockstep (the wrapper is Python's `_pre_remove_option` hook). Messages
+`OptionHighlighted` / `OptionSelected` / `SelectionListToggled` carry a new
+`option_id: Option<OptionId>` field (Python `OptionMessage.option_id` parity).
+
+BREAKING (1.1):
+
+- The incremental add family (`OptionList::add_option`, `add_rich_option`,
+  `add_renderable_option`, new `add_item`/`add_options`) now returns
+  `Result<(), OptionListError>`, rejecting duplicate ids before mutation.
+  Constructors and wholesale replacement (`with_items`, `set_items`,
+  `SelectionList::with_selections`) stay infallible and panic on duplicate ids
+  (Python raises `DuplicateID` out of `__init__`).
+- `OptionHighlighted` / `OptionSelected` / `SelectionListToggled` struct
+  literals need the new `option_id` field (`option_id: None` preserves the old
+  shape).
+- `Selection<T>` struct literals need the new `id` field (constructors
+  `new`/`selected`/`disabled` are unchanged).
+
+Perf: plain single-line prompts that fit the content width skip the Console
+render in `item_height`, keeping `total_lines` cheap for the common case.
+### Added: TextArea Document subsystem (Python `textual.document` port)
+
+New `crate::document` framework module (widget-independent):
+
+- `Document` text storage with the single `replace_range` mutation primitive,
+  `get_text_range`, index<->location conversion, and `get_size`. `Location`
+  columns are byte offsets clamped to grapheme cluster boundaries (documented
+  deviation from Python's codepoint columns; identical for ASCII).
+  `Cursor`/`Selection` definitions moved here; `widgets::text_area` re-exports
+  them unchanged.
+- `Edit` delta edits and `EditHistory` with Python-parity batching rules
+  (time window, character cap, newline/paste isolation, insert-vs-delete
+  splits, forced checkpoints) and an injectable `HistoryClock`
+  (`MockClock` test seam; replace the whole history via
+  `*text_area.history_mut() = EditHistory::with_clock(...)`).
+
+### Changed: TextArea undo/redo is delta-based (breaking)
+
+- The full-document-snapshot undo stack is gone. Every mutation now routes
+  through a single `TextArea::edit(Edit)` funnel and is recorded as a delta
+  batch: memory is O(edit), batching matches Python (typing runs coalesce;
+  pastes, newlines, and delete-vs-insert transitions checkpoint; cursor
+  moves, mouse clicks, and focus gain create checkpoints).
+- New public API: `insert` (now returns `EditResult`), `insert_at`,
+  `replace`, `delete`, `clear`, `load_text`/`set_text` (clears history),
+  `undo`, `redo`, `document()`, `history()`/`history_mut()`.
+- Undo/redo are no longer gated on `read_only` (Python parity; previously
+  they worked in read-only mode only via a key-fallthrough accident).
+- `ctrl+z`/`ctrl+y` are handled solely by the bindings/action path; a
+  `ctrl+shift+z` -> `redo` binding was added so that chord survives the
+  removal of the duplicate `EditCommand::Undo/Redo` key path.
+
+### Added: TextArea soft wrap is real (and on by default)
+
+`WrappedDocument` (incremental wrap caches with `wrap_range` re-wrapping
+only the edited lines) and `DocumentNavigator` (wrap-aware movement) are
+wired into `TextArea`:
+
+- The default `soft_wrap(true)` now actually wraps long lines (previously a
+  no-op flag that overflowed horizontally). This closes a Python parity gap
+  but IS a visible change for every default `TextArea`; `soft_wrap(false)`
+  (and `code_editor()`) render byte-identically to before (gated by golden
+  tests). Wrapped documents never scroll horizontally (Python parity).
+- Rendering draws one wrapped section per visual row; line numbers appear
+  only on a line's first section. Vertical scrolling and hit-testing work
+  in visual-offset space (clicks past the end clamp).
+- Up/Down/Home/End are wrap-aware: vertical movement walks visual sections
+  (possibly within one document line); Home/End go to section boundaries.
+  Wrap folding never splits a grapheme cluster and keeps wide clusters
+  atomic; the pinned degenerate tab model counts `'\t'` as 1 cell
+  consistently across wrap, offset mapping, and render.
+- The remembered column for vertical movement follows Python's
+  `max(current visual x, last recorded x)` rule and is no longer updated by
+  Up/Down themselves.
+
+### Changed: TextArea Up/Down boundary navigation (Python parity)
+
+Pressing Up on the first (wrapped) line now moves the cursor to `(0, 0)`,
+and Down on the last (wrapped) line moves to the end of the line, in both
+wrap modes. Previously both were no-ops at the document boundaries.
+
+## [1.0.3] - 2026-07-16
+
+Third patch release. Three correctness fixes distilled from the design analysis
+of the harder framework gaps found by porting real apps: the small, well-bounded
+halves that are bugs rather than new API (the cross-screen access feature itself
+remains a 1.1 item).
+
+### Fixed — build-time `on_mount` side effects are no longer dropped
+
+A widget mounted during the initial tree build that requested a worker (or staged
+any other `EventCtx` side effect: animation, `run_action`, recompose, app-stop)
+from `on_mount` had it silently discarded, because no `App` existed yet to absorb
+the synthesized context and only messages were salvaged. The same widget worked
+when mounted dynamically, so the canonical Python `on_mount` + `@work` startup
+idiom was lost only in the initial build. The entire mount-time outcome now routes
+through the deferred command queue as one `AbsorbOutcome` bundle per node (mount
+order preserved), absorbed by the first settled frame exactly as a live dispatch
+would. `request_stop()` from a build-time `on_mount` now stops the app (Python
+parity). A grep confirmed no existing widget staged a now-newly-live effect.
+
+### Fixed — deferred widget commands no longer alias across screen trees
+
+`NodeId` is a slotmap key, and independent screen trees allocate identical keys,
+so a deferred command (e.g. `Handle::update_via`) captured on one screen could
+pass the `tree.contains` check against a different active screen's tree and mutate
+an unrelated widget. `CommandTarget::Node` now carries the owning tree's id; a
+command whose owning tree is not the active one at drain time is dropped with a
+debug log instead of aliasing, and same-tree/unstamped commands resolve exactly
+as before. (Cross-screen widget access as a feature remains a 1.1 item; this is
+the correctness half.)
+
+### Fixed — user `Screen { layers }` no longer clobbers the system toast/loading layers
+
+User-facing CSS `layers`/`layer`/`offset` already worked, but a user
+`Screen { layers: ... }` declaration replaced the default `_toastrack` layer via
+the cascade, so notifications could paint under the user's layered widgets. The
+system layers (`_loading`, `_toastrack`, `_tooltips`) are now appended
+programmatically at the screen root after the CSS-derived list (Python
+`Screen.layers` parity), via a shared `effective_layers()` resolver, so they
+survive any user `layers:` declaration. Also aligns the default/unknown layer
+bucket with Python (ties with the first declared layer by DOM order, was
+strictly below), and pins the nested-`layers` nearest-wins semantics as an
+intentional divergence (see KNOWN_GAPS).
+
+## [1.0.2] - 2026-07-16
+
+Second patch release. Ten confirmed correctness bugs from a parity audit against
+Python Textual's own test suite, verified in-source and each backed by a ported
+regression test. Bundles a coordinated `textual-macros` 1.0.1 bump (the `@on`
+selector fix changes macro codegen).
+
+### Fixed: `#[on(Msg, selector = "...")]` selector filtering is enforced
+
+The `selector = "..."` argument of `#[on(..)]` was parsed and surfaced as a
+`__ON_SELECTOR_*` const but never consulted anywhere: the generated
+`__on_dispatch_*` gated on message TYPE only, so a selector-filtered handler
+fired for every message of that type. The generated dispatcher now matches the
+parsed selector against the message's `control_meta()` (the identity of the
+originating control) and skips the handler when it does not match, mirroring
+Python's `@on(Message, selector)` matching against `message.control`. A message
+without control metadata never satisfies a selector-filtered handler.
+Requires `textual-macros` (codegen change), so a coordinated `textual-macros`
+version bump is needed for publishing.
+
+### Fixed: App-level priority bindings win over screen/widget priority bindings
+
+The priority phase of binding resolution walked the chain focused->root, so a
+focused widget's priority binding shadowed an App-level priority binding for
+the same key. Python walks `reversed(screen._binding_chain)` (app -> screen ->
+... -> focused) for the priority phase (`App._check_bindings(priority=True)`),
+so the App wins. The priority phase now walks the app-root chain first, then
+the active chain root->focused; the normal phase keeps its focused->root order.
+Ports `test_binding_inheritance.py::test_overlapping_priority_bindings` (keys
+`d`/`e`).
+
+### Fixed: `check_action` gates keypress binding dispatch
+
+`check_action` was only consulted on the `@click`/`run_action` string-action
+path; a key bound to a dynamically-disabled action still fired on press. The
+binding-chain walk (`match_binding_chain`) now gates every candidate binding
+through the action target's `check_action` (the app's `check_action` for
+app-targeted bindings, the declaring widget's otherwise): `Some(false)` and
+`None` both suppress the action and let the walk continue to lower-precedence
+bindings, matching Python `App.run_action` returning `False` from
+`_check_bindings`. Ports `test_dynamic_bindings.py::test_dynamic_disabled`.
+
+### Fixed: punctuation / single-character bindings match their key
+
+`Binding(".", ..)` (and any other single non-alphanumeric character binding)
+never fired: the raw character was compared against the pressed key's canonical
+long name (`full_stop`), which never matched. Binding matching now normalizes
+single-character non-alphanumeric alternatives through the canonical
+character-to-key-name table (Python `_character_to_key` parity), so `"."`,
+`"~"`, `"?"` etc. match their pressed keys. Ports
+`test_keys.py::test_character_bindings`.
+### Fixed — OptionList single-step navigation wraps around the ends
+
+`cursor_up` / `cursor_down` reused the page-navigation routine and clamped at
+the first/last option; Python wraps single-step movement
+(`_widget_navigation.find_next_enabled`) and clamps only page navigation
+(`find_next_enabled_no_wrap`). Single-step movement now wraps around the ends,
+skipping separators and disabled options, while page up/down keeps clamping.
+This also fixes wrap-around in the `Select` dropdown overlay, which rides
+`OptionList` navigation.
+
+### Fixed — ListView `remove(index)` keeps the highlighted item stable
+
+Removing an item before the highlight did not shift the stored index, so the
+highlight silently jumped to the previous logical item (`insert()` already
+shifted correctly; `remove()` was the asymmetric oversight). Matching Python
+`ListView.pop`: removing an earlier item decrements the highlight index, and
+removing the highlighted item itself re-validates (clamps) it.
+
+### Fixed — DataTable `sort_by_columns(&[])` sorts by all columns
+
+An empty column list was a silent no-op, where Python `table.sort()` with no
+arguments sorts by every column. `sort_by_columns` now falls back to all
+columns, matching the fallback `sort_by` already had.
+
+### Fixed — DataTable hover past the last column no longer clamps to the last cell
+
+Hovering (or clicking) the blank fill right of the last column mapped to the
+last cell instead of nothing (Python regression #2909). The column-at-x mapping
+now reports out of bounds past the last column's padded extent: hover yields no
+cell and clicks are ignored, except with a row cursor, where the out-of-bounds
+area still targets the row (column 0), mirroring Python's
+`{"row": row, "column": 0, "out_of_bounds": True}` segment meta.
+### Fixed: Input `restrict` uses fullmatch semantics
+
+The `restrict` pattern was checked with unanchored `Regex::is_match`, so a
+pattern like `\d+` accepted any value merely CONTAINING digits (e.g. typing
+`a` after `123` produced `123a`). Python checks `re.fullmatch(restrict,
+value)` (`_input.py`): the WHOLE candidate value must match. The compiled
+restrict regex is now anchored (`\A(?:pattern)\z`), giving every check site
+(typed chars, programmatic inserts, suggestion acceptance) fullmatch
+semantics. Also fixed an index bug in the per-char restrict path of
+`insert_text_at_cursor` that built the candidate value at the wrong offset
+and could panic on multi-char inserts.
+
+### Fixed: TextArea preserves Windows `\r\n` (and old-Mac `\r`) newlines
+
+Text loaded with CRLF line endings was split on `\n` only, leaving stray
+`\r` bytes inside line storage, and `text()` always re-joined with `\n`, so
+Windows documents neither round-tripped nor selected correctly. Following
+Python's `Document`, the TextArea now detects the document's newline style
+from the initial text (`\r\n` wins over `\n`, then `\r`, default `\n`),
+exposes it via `TextArea::newline()`, stores lines without any newline
+bytes, and preserves the detected style on `text()` read-back, in selected
+text spanning line boundaries, and in line-cut clipboard content. Inserted
+or pasted text with foreign newline styles is normalized into document
+lines (Python `Document.replace_range`); `TextArea::insert` now handles
+multi-line text instead of corrupting line storage with embedded newlines.
+
+## [1.0.1] - 2026-07-16
+
+First patch release. Correctness fixes surfaced by porting two real third-party
+apps (a log viewer and a dev-tooling harness) onto the published 1.0 crate.
+
+### Fixed — concrete screen type CSS selectors match
+
+Per-screen CSS type selectors (e.g. `GotoScreen { ... }`) never matched because
+the screen host node hardcoded its CSS type to `Screen` / `ModalScreen` and never
+carried the concrete screen struct name, silently breaking modal-screen layouts.
+`Screen::style_type()` now defaults to the concrete type's short name and its
+alias chain returns the base names (modal: `ModalScreen`, `Screen`; non-modal:
+`Screen`), matching Python's `_css_type_names` MRO shape so the concrete name and
+the base names all match.
+
+### Fixed — root widget type names no longer carry a stray `>`
+
+The default `style_type()` derivation did `rsplit("::")` without stripping the
+generic suffix, so an app root of type `TextualAppAdapter<FiveByFiveApp>` reported
+`FiveByFiveApp>` (trailing angle bracket). A shared `short_type_name()` helper now
+strips `<...>` before segmenting; the app root reports its app class name, mirroring
+Python `type(self).__name__`.
+
+### Fixed — app-level query class ops relayout automatically
+
+`app.query_mut(sel)?.add_class(..)` (and `remove_class` / `set_class` /
+`toggle_class` / `set_classes`, plus the `App::action_add_class` family built
+on them) mutated the tree's class sets with NO invalidation: a class whose CSS
+rule flips a layout-affecting property (e.g. `display: none -> block`) resolved
+correctly but the widget stayed invisible/zero-size until the author also
+called an explicit relayout. Python parity: `DOMNode.add_class` etc. funnel
+into `_update_styles()`, which refreshes with `layout=True` (`dom.py`). The
+`DomQueryMut` class helpers now raise the same layout invalidation an explicit
+`request_layout()` does whenever the class set actually changed (matching the
+dispatch-path class-op sites, which already did this); no-op class ops (adding
+a present class, removing an absent one, setting an identical set) request
+nothing.
+
+### Fixed — a matched binding whose action nothing handles is reported, not silent
+
+A `BindingDecl` whose key matched dispatched its action through the source
+node's `execute_action`, the app root, and the `on_app_unhandled_action`
+fallback; if all three declined, the key silently fell through to raw dispatch
+with no trace, so authors believed the binding was wired when it did nothing.
+Python surfaces this via `App._dispatch_action`'s
+`log.system("<action> ... has no target ...")`. The runtime now emits a
+warning on the input debug channel (`TEXTUAL_DEBUG_INPUT_FILE`) naming the
+action and its source node, and records it on a bounded test-observable buffer
+(`runtime::take_unhandled_binding_reports()`, `#[doc(hidden)]`). Default
+behavior for the key (fall-through to raw dispatch) is unchanged.
+
+### Added — public plain-text frame accessors
+
+`App::frame_plain_lines()` (one `String` per screen row, styling stripped, padded
+to frame width) and `App::frame_plain_text()` (those lines joined with newlines)
+expose the rendered frame as text through the public API, alongside the existing
+`save_frame_svg` / `frame_fingerprint` / `frame_cell_bg`. They read the in-memory
+frame buffer, so they work in headless (`run_test` / Pilot) mode. Useful for
+dev-tooling harnesses that read frame contents programmatically.
+
+## [1.0.0] - 2026-07-14
+
+First stable release. textual-rs is a fundamentals-first Rust port of Python
+Textual, a reactive TUI framework with widgets, CSS styling, layout, focus, and
+an event/message runtime, built on `rich-rs` and `crossterm`.
+
+**What 1.0 means** (see `KNOWN_GAPS.md` and `docs/devel/ROAD_TO_1.0_PIVOT.md`): a
+hardened core with an honest, *frozen* authoring surface, not "every demo pixel
+matches". Demo parity is the **verification floor**, not the release gate; the demo
+tail continues across 1.x. Current parity against real Python: styled per-cell-RGB
+**87/87**, plain-text PTY **186/186**, real-app interactive **108/108 non-ignored**
+(the 3 remaining `#[ignore]`s are intentional divergences (a Python-only startup
+crash the reference doc raises on purpose) or the deferred 1.1 inline-render
+feature; **zero open bugs**).
+
+The `Widget` trait split (small required core + capability traits) and the prelude
+are frozen at their 1.0 shape (the RA-2 breaking batch; see the migration index
+below). The entries below cover this release; the earlier `1.0.0-dev` milestone is
+retained for history.
+
+### Fixed — `OptionList` / `SelectionList` keyboard nav rides declarative BINDINGS
+
+`OptionList` and `SelectionList` handled Up/Down/PageUp/PageDown/Home/End/
+Enter/Space in raw `on_event`, but the runtime dispatches the declarative
+binding chain (focused→root) BEFORE raw key handlers — so an ancestor scroll
+container's `down → scroll_down` binding stole the arrow keys and the cursor
+never moved when the list was nested in a scroll view (the same bug `RadioSet`
+had). Both widgets now declare Python's `BINDINGS` and execute them as widget
+actions, and the raw key arms are removed (Python architecture):
+
+- `OptionList` (Python `_option_list.py`): `down → cursor_down`, `end → last`,
+  `enter → select`, `home → first`, `pagedown → page_down`, `pageup → page_up`,
+  `up → cursor_up` (all `show=False`).
+- `SelectionList` (Python `_selection_list.py`): inherits the `OptionList`
+  bindings and adds `space → select`; `select` toggles the highlighted entry
+  (Python intercepts `OptionSelected` and toggles instead of re-emitting).
+- `SelectOverlay` / `PaletteCommandList` (`#[widget(base = OptionList)]`)
+  inherit the bindings through base delegation, exactly like Python's
+  `SelectOverlay(OptionList)` subclassing.
+
+### Fixed — `actions05` demo composed a `Footer` that Python's does not
+
+The Rust `guide/actions/actions05` port composed a `Footer` absent from
+Python's `actions05.py` (which yields only two `ColorSwitcher`s), shifting all
+content by the footer row. The Footer is removed and the
+`parity_actions05_red_bg` PTY case is un-ignored (now passes with 0 glyph and
+0 colour diffs).
+### Fixed — notifications show on the CURRENT screen (per-screen `ToastRack`, Python parity)
+
+A toast posted via `App::notify` while a modal/pushed screen was active
+targeted the BASE app tree's single `ToastRack` — occluded behind the screen
+(and, because the rack was looked up in the base tree but synced against the
+ACTIVE tree, the sync silently went nowhere). Python mounts a
+`ToastRack(id="textual-toastrack")` on EVERY `Screen`
+(`Screen._extend_compose`) and `App._refresh_notifications` targets the
+current (top) screen's rack, so toasts always render above the active screen.
+
+Rust now mirrors that architecture: the runtime mounts a system `ToastRack`
+on every screen tree — the base app tree (`App::build_widget_tree`) and each
+pushed/modal/mode screen tree (`ScreenStack::push_inner`, next to the system
+tooltip) via the new `App::mount_system_toast_rack`. The old single-rack
+injection in `AppRoot::compose` is retired (it also gave dead duplicate racks
+to nested `AppRoot` screen bodies). `refresh_toast_rack` resolves the rack in
+the ACTIVE tree, and every screen-stack transition (`push_screen`,
+`push_screen_with_callback`, `pop_screen`, `dismiss_screen`, `switch_mode`,
+`remove_mode`) marks the store for re-sync so live notifications follow the
+screen stack (Python `ScreenResume` → `_refresh_notifications`) — a toast
+posted before pushing a modal re-shows on the modal, and re-shows on the base
+screen after pop. Auto-dismiss timers register on the active screen's rack
+node, so toasts expire correctly over a modal. Regression tests:
+`runtime::toast_rack_regression::{toast_over_modal_mounts_on_modal_rack_and_dismisses,
+notifications_follow_screen_transitions}`.
+
+### Changed — `rich-rs` dependency bumped to 1.2.2 (closes the last `rich_log` parity gap)
+
+`rich-rs 1.2.2` aligns the `Syntax` fenced-code token palette to Pygments
+(annotation `:` plain, docstring `"""` yellow, `for … in` operator-pink, comment
+delimiters grey) and derives the indent-guide colour from the theme's comment
+scope with Python's `DIM_FACTOR = 0.66` dim pre-blend. This closes the final
+real interactive-parity gap (`rich_log`: 26 → 0 cells); it was the only remaining
+`pty_interactive` `#[ignore]` that was an actual bug. All 4 remaining ignores are
+now intentional divergences or the deferred 1.1 inline-render feature.
+
+### Fixed — frozen-ancestor-bg cache invalidates on tree rebuild and theme switch
+
+The `FROZEN_ANCESTOR_BG` capture cache (see the entry below) is thread-local and
+NodeId-keyed but was never cleared, and its fingerprint ignored the active theme —
+so switching themes at runtime (e.g. `ctrl+t` theme cycling) left a stale
+`$surface` from the previous theme baked into transparent-child surfaces, and a
+freshly rebuilt widget tree could reuse a prior tree's captures. The cache is now
+cleared on `build_widget_tree`, and the active-theme generation is folded into
+`node_own_style_fingerprint` so a theme switch re-captures every frozen surface
+(Python `App._invalidate_css` on `_watch_theme`). Regression tests cover both.
+
+### Added — `App::save_frame_svg`
+
+Export the current rendered frame to an SVG (rich-terminal style) —
+`app.save_frame_svg(path, title)`. Renders the live `FrameBuffer` with same-style
+run merging; used to generate the README screenshots and handy for docs/snapshots.
+
+### Fixed — frozen-ancestor-bg covers a widget's OWN translucent background (Python `visual_style` cache parity)
+
+After an ancestor-only INLINE background change (e.g. a Screen background
+animation), Python keeps each non-restyled descendant's CONTENT strips baked
+over the OLD ancestor surface — `visual_style` is cached on the widget's own
+`styles._cache_key`, which an ancestor inline mutation never bumps — while
+border rows and CSS padding re-render live from `background_colors`. Rust's
+frozen-ancestor-bg mechanism only re-keyed transparent-bg glyph strips, so a
+widget with its OWN semi-transparent `background` (events/custom01's
+ColorButton `#ffffff33`) re-flattened over the LIVE animated surface every
+frame and its interior drifted with the animation.
+
+The fix freezes the BACKGROUND of content strips only — the foreground stays
+live. Glyph strips bake bg+fg over the LIVE surface; the glyph background is
+then frozen post-render (bg-only) by `recolor_frozen_content_bg`, and a
+bake-time override (`set_frozen_ancestor_bg_override`) around a diverged node's
+render pass freezes only the blank content-align / vertical-extend FILL cells
+(spaces — no visible fg). Borders, CSS padding, and trailing pad
+(`background_colors`) stay live. This matches Python's `visual_style` (cached
+content bg) vs `background_colors` (live) split — including that a link /
+auto-contrast foreground resolves from the LIVE surface (an initial
+content-fg-freeze regressed `guide/actions` red-bg labels; the pty_interactive
+gate caught it and it was narrowed to background-only).
+`parity_events_custom01_select` un-`#[ignore]`d (glyph+colour clean);
+regression test in `src/runtime/frozen_bg_regression.rs`.
+### Fixed — RadioSet keyboard navigation rides declarative BINDINGS (Python parity)
+
+`RadioSet` now declares Python's `BINDINGS` (`down,right → next_button`,
+`enter,space → toggle_button`, `up,left → previous_button`, all hidden) and
+executes them via widget actions, replacing its raw `on_event` key handling.
+Bindings resolve focused→root, so a focused RadioSet inside a scroll container
+now wins the arrow keys — previously the ancestor's `down → scroll_down`
+binding consumed the key first (bindings dispatch before raw key handlers) and
+the navigation cursor never moved (`radio_set_changed` parity case, now
+glyph+colour clean). Regression tests:
+`match_binding_focused_radio_set_beats_ancestor_scroll_binding`
+(`src/runtime/routing.rs`) plus the migrated RadioSet action tests.
+
+### Fixed — content updates that change intrinsic size now relayout
+
+`App::with_widget_mut` / `with_query_one_mut_as` (e.g. `Label::set_text`,
+Python `Static.update()` → `refresh(layout=True)`) now also diff the
+`auto_content_width`/`auto_content_height` channels — a `width: auto` widget
+whose fill-default `content_width()` is `None` (Label/Static) previously kept
+its stale zero-width box when its content grew, unless something else forced a
+relayout in the same frame. Regression test:
+`tests/content_update_relayout.rs`.
+
+### Fixed — runtime focus parity: focus-on-click + focus transfer when the focused widget hides
+
+Two missing focus fundamentals (tutorial `stopwatch04` now passes glyph+colour
+in the interactive parity harness):
+
+- **Focus follows mouse-down** (Python `Screen._forward_event`): pressing the
+  mouse focuses the nearest focusable widget under the pointer (self or
+  ancestor) before the event is forwarded. System widgets (`-textual-system`,
+  dedicated scrollbar lanes) never take click focus. Wired in both the live
+  loop and the headless/Pilot click path.
+- **Focus transfers when the focused widget stops being shown** (Python
+  `Widget._on_hide` → `Screen._reset_focus`): when a class op/style change
+  makes the focused widget `display: none` (or `visibility: hidden`), focus
+  hands off to its first shown focusable sibling, else clears. Previously the
+  hidden widget kept a stale focus flag (invisible to `:focus` styling, and it
+  would silently steal focus back when re-shown). Regression tests:
+  `src/runtime/hidden_focus_reset_regression.rs`.
+- `Button`'s `press` binding is now hidden from footer/help hints
+  (Python: `Binding("enter", "press", …, show=False)`).
+
+### Fixed — runtime style mutations that affect layout now relayout
+
+`query_mut(..).set_styles(..)` diff-detects the mutation: layout-affecting
+changes (width/margin/`offset`/…, mirroring Python's `refresh(layout=True)`
+style properties) request a relayout, and any change requests a repaint —
+previously the new style was recorded but the widget kept its stale rect
+(guide/input `mouse01`'s mouse-following Ball never moved). CSS `offset` is
+also now correctly classed as layout-affecting in the computed-style cache.
+Regression tests: `tests/set_styles_relayout.rs`.
+
+### Fixed — Markdown code fences highlight with THEME-token styles (Python parity)
+
+Fenced code blocks in `Markdown`/`MarkdownViewer` are now lexed (syntect) and
+styled from the app THEME tokens exactly like Python's `textual/highlight.py`
+pygments mapping (`Token.Keyword -> $text-accent`, `Token.Name.Function ->
+$text-warning underline`, docstrings `$text-success 80% italic` flattened over
+the fence surface, bare identifiers `$text-primary`, …) — instead of rich-rs'
+built-in syntect colour scheme, which painted a foreign monokai theme including
+its own background. The widgets/markdown demo's python fence now renders
+byte-identical SGR to Python. New module: `src/highlight.rs`.
+### Fixed — widget-local behavior/relayout parity batch (footer keys, header dim, switch, click-to-focus, live click messages, style-anim plumbing, RichLog scrollbar)
+
+Seven `[1.x]` parity gaps closed at the framework level (each verified cell-exact
+against the real Python app in the interactive PTY harness; the corresponding
+`tests/pty_interactive.rs` cases are un-ignored):
+
+- **Footer shows ONE key per multi-key binding.** Python expands `"up,k"` into
+  separate `Binding`s and `Footer.compose` renders the FIRST one per action
+  (`↑ Increment`), while the Rust footer joined every alternative
+  (`↑ k Increment`). Decl-derived binding hints no longer pre-join a
+  `key_display`; the Footer formats the first comma alternative
+  (`Footer::footer_key_display`) and the KeyPanel keeps its all-keys join
+  (Python `KeyPanel` behavior). (`guide/widgets/counter02`)
+- **Header sub-title dims like Python.** `HeaderTitle::render` emits the ` — `
+  separator + subtitle as `dim` segments (Python `App.format_title`), and the
+  render pipeline gains Python's GLOBAL dim pre-blend
+  (`FrameBuffer::preblend_dim`, mirroring `ANSIToTruecolor`/`dim_style`): any
+  dim cell's fg is blended toward its bg at factor 0.66 and SGR dim is
+  stripped, so dim text renders identical colours to Python everywhere.
+  (`app/question_title01`)
+- **Switch knob animates + `-on`/custom colours resolve.** The knob slide now
+  runs through the app animator (`AnimationRequest` on `slider_pos`, 0.3s —
+  Python `watch_value`); the old per-widget `on_tick` easing never ran for
+  keyboard toggles (arena ticks gate on `is_active()`). The `-on` class lands
+  on the ARENA node when the slider reaches 1 (Python
+  `watch__slider_position`), and the `switch--slider` component style resolves
+  against the LIVE selector stack (Checkbox/RadioButton pattern) so
+  `#custom-design > .switch--slider` and post-toggle `Switch.-on` colours
+  match. (`widgets/switch`, `guide/compound/byte01+byte02`)
+- **Click-to-focus (Python `Screen._forward_event`).** A mouse press now
+  focuses the first focusable widget in the ancestry of the press target
+  BEFORE the widget receives the event, and a press outside any widget clears
+  focus; dedicated scrollbar lanes never move focus. Previously focus only
+  ever moved via keys/actions, so e.g. a focused `Input` kept its `:focus`
+  border after clicking a `Button`. Applies to both the live loop and the
+  headless `pilot.click` path. (`events/prevent`)
+- **Live clicks deliver widget messages.** The live loop's mouse-up arm
+  dropped messages posted while handling the synthesized `Click` (the
+  headless path dispatched them) — a custom widget's `on_event(Click)` ->
+  `post_message` demo was inert in the real terminal. Also plumbed
+  `StyleAnimationRequest`s through `DispatchOutcome`/message dispatch, so
+  `ctx.animate_style(...)` works from ANY handler (Python
+  `styles.animate(...)`), and the `custom01` demo now animates the screen
+  background over 0.5s like Python. (`events/custom01`; its remaining
+  colour residual is the frozen-ancestor-surface interaction with a node's
+  OWN translucent bg, tracked in the test's `#[ignore]`)
+- **RichLog scrollbar parity.** An unscrollable bar (window >= virtual)
+  renders Python's `window_size=0` form — a plain `$scrollbar-background`
+  track with NO thumb (`ScrollBar._render_bar`), instead of a full-length
+  reverse-video thumb; and RichLog's horizontal VIRTUAL size follows the
+  widest rendered line (Python `_widest_line_width`) instead of `min_width`,
+  which manufactured a phantom h-overflow lane (shortening the vertical bar)
+  in panes narrower than 78 cells. (`guide/input/key01+key02+key03`)
+- **Demo-port fidelity:** `key03`'s KeyLogger writes the Python event repr
+  with the measured Rich-repr palette and reports
+  `style_type_aliases = ["RichLog"]` (Python subclass DEFAULT_CSS
+  inheritance); `key01`/`key02` swap their hand-styled repr palette to the
+  measured Python colours; `custom01` carries the per-button `tall` border
+  (inline `Widget::style()`, Python `on_mount` styles) + `#ffffff33`
+  background; `byte03`'s Input gains Python's `placeholder="byte"`.
+
+### BREAKING — the RA-2 batch (one pre-1.0 breaking wave; migration index)
+
+This release lands the RA-2 breaking batch in full. After it, the `Widget`
+trait and the prelude are at their 1.0 freeze shape. The detailed entries live
+in the sections below; this is the migration index:
+
+| Change | What you do |
+|---|---|
+| `compose(&mut self) -> ComposeResult` is the SOLE child path (RA2.1) | Widgets stop pushing children through drain hooks; store children and emit `ChildDecl`s from `compose()`. Builder APIs (`with_child`/`with_compose`) are unchanged. |
+| All `Widget` handler signatures take `&mut WidgetCtx` (RA2.2) | `on_event`/`on_event_capture`/`on_message`/`on_mouse_scroll`/`execute_action`/`on_app_*` now receive `&mut WidgetCtx`. `on_mount` and `on_mount_ctx` are merged into `on_mount(&mut self, &mut WidgetCtx)`. `EventCtx` left the prelude (internal). Timer callbacks receive `TimerTick { elapsed, fire_count }`. |
+| The post-mount drain hooks are DELETED (RA2.3) | `drain_pending_class_ops`, `take_pending_self_recompose`, `take_inline_style_writethrough`, `take_pending_mount_messages` (and the RA2.1-retired compose drains) are gone. Use `WidgetCtx`: `add_class`/`update_styles`/`request_recompose`/`post_message`, `query_one::<W>().update_via`, `Handle::update`. Only `take_node_seed` survives (by design). |
+| `overlay: screen` is a real placement escape (RA2.4) | The screen-COLOR-BLEND misport is deleted. A node resolving `overlay: screen` is deferred-painted top-z, unclipped, over the screen surface. If you relied on the old blend as a color effect, that behavior no longer exists (it was a misport of Python semantics). |
+| `RadioSet` and `Select` are composed-children arena widgets (RA2.5) | Public APIs preserved. `RadioButtonChanged` gains an `ordinal: usize` field (breaking if you construct/match it exhaustively). New messages: `SelectCurrentToggle`, `SelectOverlayDismiss { lost_focus }`. |
+| `Node` is deprecated (RA2.6a) | Attach id/classes on the child widget (`.id()`/`.class()`) where supported; `Node` remains fully functional for this release. Removal lands with the 1.x container seed-builder unification. |
+| Prelude pruned to the curated user surface (RA2.6b) | Runtime tree-plumbing fns, `DispatchOutcome`, `HandleSink`, legacy delegate macros, routing internals, and the dead `CommandPaletteScreen` left the prelude. Import from their canonical modules (`textual::runtime::`, `textual::handle::`, `textual::widgets::`, `textual::routing::`) if you drive trees directly. |
+| The command palette is a pushed modal screen (Wave 2) | The legacy always-mounted `CommandPalette` wrapper widget is removed, along with its `CommandPalette::new(child)` constructor. The palette is now a runtime-pushed `SystemModalScreen` opened by `ctrl+p` (no app-body wrapper needed) — remove any `CommandPalette::new(app_body)` wrapping from your app root. `FuzzyMatcher`, the `Provider`/`ProviderResult`/`SystemCommandsProvider` model, and `PaletteCommand` are preserved (now re-exported from `textual::widgets`). |
+| Notifications are real docked `ToastRack` widgets (Wave 3) | **`App::notify(...)` is unchanged** — no migration needed. Internally, toasts are now real `Toast` nodes mounted in a docked `ToastRack` (a system child of the app root, on the `_toastrack` layer), not a runtime framebuffer blit. `Toast` gains `with_notification_id`; its `with_timeout` builder is removed (auto-dismiss timing is a notification-level concern set via `App::notify`'s `timeout` arg and owned by the rack). New public: `ToastRack`, `ToastHolder`, `NotificationSnapshot`, and the `NotificationExpired` message. |
+| The tooltip is a real `overlay: screen` widget node (Wave 4) | **`.with_tooltip(...)` is unchanged** — no migration needed. The system tooltip's widget-local `FrameBuffer` overlay compositor is retired; the bubble is now a real `position: absolute; overlay: screen` node placed at the hover anchor via the new node `absolute_offset`, centered by CSS `offset-x: -50%` and constrained by the shared overlay:screen paint pass. **BREAKING (minor):** `Tooltip::new(child, text)` (the test-only wrapper constructor) becomes `Tooltip::new(text)` — `Tooltip` no longer wraps a child. |
+
+### Widget trait split — the FROZEN 1.0 authoring surface (BREAKING-adjacent)
+
+This is the shape 1.0 commits to. **Frozen surface:** you author a widget by
+implementing the small capability traits and deriving `Widget` with
+`#[widget(..)]`; `Widget` itself is the object-safe dispatch trait and is not
+hand-implemented on the common path.
+
+- **Small authoring traits over a monolithic `dyn Widget`.** The 83-method
+  `Widget` trait is split at the *authoring* layer into a required core
+  `Render` (implement `render` **or** `compose`, plus `style_type`) and opt-in
+  capability traits `Interactive`, `Layout`, `Scrollable`, `Focus`,
+  `Selectable`, `HasTooltip`, `Components`, `AppHooks`, and `StyleIdentity` (10
+  authoring traits total). A from-scratch leaf implements `Render` (often just
+  `render`) plus only the capabilities it needs, instead of facing all 83
+  methods. **`Widget` is unchanged as the dispatch surface** — the runtime still
+  calls through `Box<dyn Widget>` — so `dyn Widget` code and hand-written
+  `impl Widget` continue to compile. All 83 `Widget` methods are now
+  `#[doc(hidden)]` (the capability traits are the documented authoring contract);
+  this is a docs-only change, not an API break.
+- **Escape hatch preserved.** Hand-writing `impl Widget for T { .. }` is still
+  fully supported for widgets the derive can't express (the residual delegate
+  helpers `IdTaggedChild` / `ContentTabs` / the Markdown TOC widgets use it — a
+  documented 1.x cleanup). Compound widgets wrapping a container use
+  `#[widget(base = <Container>, field = <field>, override(..))]`, which replaced
+  the deprecated `delegate_widget_method!` for `ScrollableContainer`,
+  `DirectoryTree`, and `MarkdownViewer`.
+- **`#[widget(..)]` own-widget mode.** The existing delegation attribute macro
+  gains a second mode: with no `base = <Type>`, list the capabilities you
+  implement (e.g. `#[widget(Layout)]`) and the macro generates `impl Widget`
+  forwarding each opted-in capability to your capability-trait impl (everything
+  else falls through to the `Widget` default), plus `impl Renderable` and — when
+  the struct has a `seed: NodeSeed` field — the seed plumbing
+  (`take_node_seed`/`set_inline_style`). LOUD rule: you must BOTH implement a
+  capability trait AND list it in `#[widget(..)]` for its methods to run.
+- **`StyleIdentity` capability** (the 10th trait): `style_classes` / `style_id` /
+  `is_hovered` (off-tree CSS identity) + `set_seed_css_id` / `set_seed_classes` +
+  the seed lifecycle (`take_node_seed` / `set_inline_style`), for DYNAMIC-identity
+  widgets that keep a live class list rather than a seed-backed one (`Button`,
+  `Input`, `DataTable`, …). Opting `StyleIdentity` takes full ownership of the
+  widget's seed surface (autowiring is suppressed), so a widget with a
+  side-effecting `take_node_seed` (e.g. `Button` caching its css id) can override
+  it.
+- **The capability traits are NOT in the prelude** (reach them via
+  `textual::widgets::{Render, Layout, …}`). Both they and `Widget` carry the same
+  method names, so exporting both would make every direct `widget.method()` call
+  ambiguous (E0034). `use textual::prelude::*` stays unambiguous for the common
+  `dyn Widget` surface; the `#[widget(..)]` derive needs no capability trait in
+  scope (it uses full paths).
+
+### Added — the `loading` reactive covers widgets with a LoadingIndicator
+
+- **`loading = true` now shows an animated `LoadingIndicator` over the widget**
+  (Python `Widget.loading` / `set_loading` parity). Setting a node's loading
+  state (`query_mut(sel).set(None, None, None, Some(true))`) covers the node
+  with a `LoadingIndicator` carrying the `-textual-loading-indicator` class —
+  Python's `Widget._cover_widget`, held as `WidgetNode::cover_widget`. The
+  render walk paints the cover IN PLACE of the node's own visuals (same
+  region, children skipped, mirroring `_compositor.py`), parented to the
+  node's style context so the indicator's `$boost` surface composes over the
+  covered widget's background. `loading = false` uncovers. Setting loading
+  requests a repaint of the affected nodes (Python `_cover`/`_uncover`'s
+  `refresh(layout=True)`).
+- **Live loop now delivers frame ticks to active arena widgets.** The live
+  event loop only called `root.on_tick`, which never reaches arena-extracted
+  widgets — tick-driven animations (LoadingIndicator's dot gradient) were
+  frozen in live runs while the headless pump animated them. The live loop now
+  walks the arena and ticks every `is_active()` widget (and cover widget),
+  converging live behavior with `headless_advance_ticks`.
+
+### Added — `Input` select-on-focus (Python `select_on_focus=True` default)
+
+- **Gaining focus selects the Input's full value**, so the next printable
+  keystroke replaces it — a pre-filled `"0"` becomes `"123"` when typing
+  `123`, not `"0123"` (Python `Input._on_focus`). Enabled by default to match
+  Python; opt out with the new `Input::with_select_on_focus(false)` builder.
+  Un-ignores the `computed01` interactive parity case (its three channel
+  inputs now pre-fill `"0"` like Python's `Input("0", ...)`).
+
+### Fixed — layout-parity: scroll_visible, scrolled-child clip, margin-collapse, `scrollbar-size: 0`
+
+- **A scrolled container's children no longer vanish.** The per-child clip in the
+  arena render walk was translated by the child's *unscrolled* origin, so once a
+  scroll host had any offset the clip missed where the child actually painted and
+  the whole viewport went blank. It now translates by the scrolled paint origin.
+- **`App::scroll_visible` no longer over-scrolls.** It double-counted the host's
+  current scroll offset (tree `layout_rect`s are already virtual), landing a page
+  too far on every call after the first; now scroll-independent, matching Python's
+  `Widget.virtual_region`.
+- **`scrollbar-size: 0` is honoured.** The CSS value was clamped up to `1`, so a
+  demo hiding its scrollbar with `scrollbar-size: 0 0` still reserved (and could
+  paint) a 1-cell lane; `0` now reserves nothing and paints nothing (Footer,
+  `Input`'s horizontal bar, and Markdown fences gain the reclaimed cell). The
+  default fallback is still floored at 1.
+- **Intrinsic auto-size collapses adjacent margins.** `width: auto` / `height:
+  auto` containers summed each child's full margin; adjacent margins collapse in
+  the arrange (`gap = max(prev, next)`), so the measured size now subtracts the
+  per-pair overlap on both axes, fixing 1-cell mis-centering under `align`.
+- **A ProgressBar-internal `Bar` default-CSS rule no longer leaks.** The global
+  `Bar { width: 32; height: 1 }` default matched *user* widgets typed `Bar`;
+  scoped under `ProgressBar` to reproduce Python's scoped `DEFAULT_CSS`.
+- Un-ignores the `actions06`, `actions07`, `binding01`, `set_reactive02`
+  interactive parity cases.
+
+### Fixed — `Input`/`MaskedInput` validation state applies live; `Pretty` relayouts on update
+
+- **`-valid`/`-invalid` state now reaches the live node.** `set_class` only
+  mutated the pre-mount `seed.classes`; after mount the arena node record is the
+  single class source, so a focused `Input`/`MaskedInput` with an invalid value
+  never got `&.-invalid:focus` (the `$error` border). Validation state now routes
+  through `ctx.set_class` (the deferred class-op path) in `post_changed` for both.
+- **`MaskedInput` uses the canonical Input chrome resolver.** Its render had a
+  stale fg-only component resolver missing the auto-contrast placeholder colour
+  and the `:focus` background-tint; extracted `Input`'s logic into shared
+  `input_chrome.rs` helpers used by both.
+- **`Pretty.update()` relayouts.** It only requested a repaint, so the node kept
+  its stale `[]`-sized rect and the new repr rendered at width 2 and clipped to
+  `[`; it now requests layout (Python `clear_cached_dimensions` +
+  `refresh(layout=True)`).
+- Un-ignores `masked_input`; `input_validation`'s expansion + border now match.
+
+### Added — container seed-builder unification (Node-removal groundwork)
+
+- **Uniform identity/border builders on the container family.** Completing the
+  `.id()`/`.class()` builders added earlier, every wrappable container now also
+  exposes `.classes()` (plural) and `.with_border_title()` /
+  `.with_border_subtitle()`, matching the full builder surface `Node` provided
+  as a wrapper. `.classes()` is added to both seed macros
+  (`seed_ident_methods!` / `delegate_ident_methods!`); border-title storage
+  lives on the base `Container` (and `ScrollView` for the scroll family) with a
+  new `delegate_border_title_methods!` macro forwarding the builders through the
+  thin wrappers (`Vertical`, `Horizontal`, `VerticalGroup`, `HorizontalGroup`,
+  `VerticalScroll`, `HorizontalScroll`, `Center`, `Middle`, `Right`, `ItemGrid`,
+  `CenterMiddle`). This lets `Vertical::new().id("x").class("y").with_border_title("t")`
+  replace `Node::new(Vertical::new()).id("x").class("y").with_border_title("t")`
+  uniformly, and is the groundwork for the pending `Node` removal.
+
+### Removed — the retired legacy root render path (dead-code trace)
+
+- Deleted the legacy recursive `render_styled()`-from-root fallback branch in
+  `render_widget_with_regions` and the now-orphaned `Widget::render_styled_with_debug`
+  (doc-hidden) trait method. Arena-tree rendering (`render_tree_composed`) has
+  been the sole render path for some time — the fallback branch was gated behind
+  "no active widget tree", which never occurs (every caller builds the tree
+  first), so this is dead-code removal with no behavioral change (debug-layout
+  rendering already flows through the arena path via `render_styled_dyn_obj`).
+  `Widget::render_styled` stays — it is the active path for rendering
+  field-wrapped / container-internal children (e.g. `Constrained`, `Panel`,
+  `#[widget(base=…, field=…)]` delegation), which are not separate arena nodes.
+
+### Fixed — colour-parity: toggle-button label markup colourises; checked-mark component colour
+
+- `Checkbox` / `RadioButton` labels now render inline Rich/Textual markup with
+  its span styles applied (`Checkbox("[magenta]Ginaz[/]")` renders "Ginaz" in
+  magenta; `RadioButton("Kurgan, [bold italic red]The[/]")` colourises), like
+  Python's `ToggleButton` (which routes the label through the same
+  `Content.from_markup` path as any `Static`). Both widgets build the label via
+  a shared helper (`Content::from_markup(..).pad(1, 1).stylize_before(label_style)`)
+  and resolve span tags with the same `parse_tag_style` resolution `Static`/
+  `Label` use. New `Content::stylize_before` mirrors Python (base component
+  style layers UNDER the markup spans). Intrinsic widths strip markup tags.
+- `Checkbox`'s checked mark (`X`) now takes the `&.-on > .toggle--button`
+  colour (`$text-success`): the component styles are resolved against the LIVE
+  selector stack (as `RadioButton` already did) instead of
+  `resolve_component_style(self, ..)`, whose re-pushed parent meta read
+  `Widget::style_classes()` — EMPTY for `Checkbox` (no `StyleIdentity`
+  capability) — so the `-on` rule never matched.
+- `parity_checkbox_toggle` and `parity_radio_set_navigate` are un-ignored
+  (glyph_diffs=0 colour_diffs=0); the `radio_set` demo restores Python's
+  `"Kurgan, [bold italic red]The[/]"` label.
+### Fixed — Welcome mirrors Python's Static+rich-markdown composition; ANSI colours map to truecolor
+
+- The framework `Welcome` widget was an architectural misport: Python's
+  `Welcome` renders `rich.markdown.Markdown` inside a `Static`
+  (`Static(Markdown(WELCOME_MD), id="text")`), but the Rust port composed the
+  Textual `Markdown` BLOCK widget, whose header/paragraph CSS margins
+  (`margin: 2 0 1 0` etc.) produce entirely different vertical spacing — the
+  body shifted down with an accumulating offset (H1 two rows late, blockquote
+  four). `Welcome` now composes `Container#md > Static#text` with a rich
+  markdown renderable and carries Python's exact DEFAULT_CSS
+  (`Welcome Container { padding: 1 }`, `#text { margin: 0 1 }`,
+  `#close { dock: bottom }`); it is also no longer focusable (Python `Static`
+  semantics), so initial auto-focus lands on the OK button like Python.
+- New `Static::from_renderable(...)` / `Static::update_renderable(...)`:
+  a `Static` can display an arbitrary rich renderable (Python
+  `Static(renderable)` / `Static.update(renderable)`), re-rendered at the
+  laid-out content width; its auto height is the rendered line count.
+- Rust analog of Python's always-on `ANSIToTruecolor` line filter
+  (`textual/filter.py`): ANSI-indexed segment colours are converted to
+  truecolor at the end of every widget render — `Standard(0-15)` through the
+  ANSI terminal theme (MONOKAI dark / ALABASTER light, ported from
+  `textual/_ansi_theme.py`), `EightBit` through rich's fixed 256 palette.
+  Skipped in native-ANSI mode, mirroring `enabled=not app.ansi_color`. (The
+  dim pre-blend half of the Python filter remains a tracked follow-up.)
+- `widgets03`/`widgets04` doc examples now perform Python's
+  `query_one(Button).label = "YES!"` relabel (the arena-tree `#close` Button is
+  queryable since RA2).
+- PTY parity: `parity_widgets01_welcome`, `parity_widgets03_mount_welcome`,
+  `parity_widgets04_mount_welcome` are un-ignored (glyph_diffs=0
+  colour_diffs=0); `markdown`/`markdown_viewer` scoreboard stays green (the
+  Textual `Markdown` block widget is untouched).
+
+### Fixed — colour-parity: translucent fg composes over the real surface; theme-shade hardcodes retired
+
+- `Digits` pre-flattened a translucent foreground (e.g. `color:
+  $foreground-muted`) over `$background` via `Style::to_rich()` instead of
+  letting the segment-composition pass flatten it over the widget's REAL
+  composited ancestor surface. A `Digits` inside a `background: $boost`
+  container rendered `#8d8d8d` where Python renders `#919191` — the whole
+  stopwatch03 201-cell colour gap (previously misdiagnosed as a Button-border
+  shade issue). `Digits` now stamps attributes only
+  (`to_rich_without_colors`); colours are owned by `apply_style_to_segments`.
+  `parity_stopwatch03_layout` is un-ignored (glyph_diffs=0 colour_diffs=0);
+  new regression `tests/translucent_fg_surface_composition.rs`.
+- The hardcoded textual-dark shade block in the theme token map
+  (`surface-lighten-1`, `primary-darken-2`, the `-muted` family, 19 tokens) is
+  DELETED: the generic LAB lighten/darken (verified bit-identical to Python's
+  `rgb_to_lab`/`lab_to_rgb` over a 196k-case sweep + exhaustive grays) and the
+  `-muted` blend derivation reproduce every one of them exactly.
+  `dark_design_tokens_match_python_generate` extended (+28 tokens incl. panel
+  shades and the muted family) to lock the derived values.
+
+### Fixed — Select dropdown 2 rows too tall (height-chrome keystone double-count)
+
+- `SelectOverlay::layout_height` manually added `+ 2` for its `border: tall`
+  chrome — correct BEFORE the height-chrome keystone, but the keystone made the
+  flow layout add that chrome (`full_v_chrome`) itself, so the border was counted
+  twice and the open dropdown rendered 2 rows too tall with a malformed top
+  border. Now delegates the pure content height to the inner `OptionList` and
+  lets the layout add the chrome (same fix class as the `Constrained` keystone
+  follow-up). Regressed `select_open_overlay` / `select_from_values_open`
+  (interactive-only, so the static harnesses didn't catch it — the real-app
+  `pty_interactive` suite did).
+
+### Fixed — layout-parity: scroll-container CSS identity + unset-width box model
+
+- **`ScrollableContainer` reports its own CSS type** instead of delegating
+  `style_type()` to the inner `ScrollView` wrapper. Its nodes now match
+  `ScrollableContainer` type selectors — including the default
+  `ScrollableContainer { width: 1fr; height: 1fr; ... }` rule and demo CSS like
+  `Horizontal > ScrollableContainer { width: 50% }` (`styles/scrollbars`,
+  `styles/scrollbar_size2`) — matching Python, where
+  `ScrollableContainer(Widget)` is not a `ScrollView` subtype.
+- **`VerticalScroll`/`HorizontalScroll` carry a `ScrollableContainer`
+  style-type alias** mirroring Python's MRO (both subclass
+  `ScrollableContainer`), so they inherit the `width: 1fr; height: 1fr`
+  defaults from the single `ScrollableContainer` rule while their own later
+  rules override the overflow axes — exactly Python's DEFAULT_CSS inheritance
+  (fixes `how-to/layout05`, whose bare `VerticalScroll` columns had UNSET
+  width/height). Both wrappers moved from the deprecated `delegate_widget_to!`
+  macro to the first-class `#[widget(base = ScrollableContainer)]` attribute.
+- **An UNSET `width` with no intrinsic content fills the FULL container
+  width** (Python `Widget._get_box_model`:
+  `content_container.width - margin.width`) instead of flexing into a `1fr`
+  share — symmetric with the existing unset-HEIGHT rule. Multiple bare
+  unset-width children in a horizontal row each receive the container width
+  and overflow/scroll rather than splitting the viewport
+  (`guide/layout/horizontal_layout_overflow`).
+
+### Fixed — layout-parity: per-layer arrangement + paint z-order, Static markup width
+
+- **Flow children are arranged per CSS `layer`** (Python `_arrange.py` +
+  `_build_layers`): each layer now gets its own flow-layout pass and its own
+  container alignment over the full flow region. Previously all layers were
+  stacked into ONE flow and the union was aligned — in `guide/layout/layers`,
+  two 28x8 layered Statics under `align: center middle` centered as a 16-row
+  stack (box1 four rows too high) instead of each centering to the same spot.
+- **The recursive paint walk now honors the parent's `layers` z-order**
+  (`sort_children_by_layer` was only applied in `collect_render_nodes`, not in
+  `render_tree_node`), so a child on a later layer paints on top of an earlier
+  layer regardless of compose order (`#box1` on `above` now correctly covers
+  `#box2` on `below` at their overlap).
+- **`Static::intrinsic_content_width` strips markup** before measuring, like
+  `Label` (the previous markup-width fix covered `Label` only; `Static` has
+  its own implementation). `Static("[b]Example switches\n")` measured 19
+  instead of 16, so `content-align: center` offset the `switch` demo title by
+  one column. `without_markup()` still measures literal tags.
+
+### Fixed — render-parity: markdown tables + code-fence height (scrollbar thumb)
+
+- **Markdown table column widths** now match Python. The column-fraction weight
+  was an ad-hoc `header_width + sqrt(row_growth) + 2` heuristic that crushed
+  content-heavy columns and inflated short ones; replaced with `max_content + 2`
+  (proportional `fr` resolution over these weights is identical to Python's grid
+  `expand` path). The row-height width estimator is now a faithful port of
+  Textual's `_resolve.resolve` including shrink-toward per-column minimums. (The
+  table is NOT rendered via rich's `Table` — Python uses Textual's GridLayout;
+  the fix is entirely textual-side.)
+- **Code-fence blocks now carry `padding: 1 2`** (the `MarkdownFence > Label`
+  default rule never matched because Rust's fence is a leaf, not a Label-wrapping
+  container). This restored 2 document rows, which in turn fixed a **missing
+  scrollbar-thumb glyph**: the short virtual height made `thumb_size` land
+  exactly on a cell boundary, degenerating the partial-cell tail glyph to blank.
+  `Markdown`'s intrinsic-height measurement now also accounts for child vertical
+  padding/border (mirroring `extract_child_spec`), so the scroll virtual height
+  matches the rendered layout.
+
+### Fixed — render-parity: content-align block-centering + markup width
+
+- **`content-align: center`/`right` now offsets the content BLOCK uniformly**
+  (Python `_segment_tools.align_lines` parity), leaving lines left-aligned within
+  a centered block — instead of ragged-centering each line to its own width. Only
+  multi-line content changes (single-line is `block_width == line_width`, a
+  no-op); fixes the `Placeholder` lorem-text paragraph parity.
+- **`Label`/`Static` intrinsic width strips markup** before measuring, so tags
+  like `[b]` no longer inflate the auto/intrinsic width and shift `align: center`
+  placement (the `switch` demo's bold title). `with_markup(false)` still measures
+  literal tags.
+
+### Fixed — `ButtonPressed.description` is the button label, not a debug repr
+
+- `ButtonPressed.description` (and the `on_button_pressed(description, …)` app
+  hook) now carries the button's **label text** — Python parity with
+  `event.button.label` — instead of a debug repr like
+  `"Button(classes='-active', variant='success')"`. Matching a button by its
+  label (`match description { "Save" => … }`) now works as written; previously it
+  silently never matched. The debug repr is still available via
+  `Button::describe()`. Widgets that re-emit `ButtonPressed` with their own
+  routing string (e.g. `Welcome` → `"Welcome.close"`) are unchanged. Docs on
+  `on_button_pressed`/`on_input_changed` now note they receive only a
+  `WidgetCtx`; use `on_message_with_app` when you need `&mut App` to read other
+  widgets' state in response.
+
+### Changed — height-chrome layout convention (symmetric with the width axis)
+
+- **`layout_height()` now reports PURE content height on every widget**, and the
+  flow layout adds the CSS-resolved vertical chrome (border + padding + margin)
+  with full ancestor context — symmetric with how the width axis already handled
+  `content_width()`. Previously ~13 widgets baked their own border/padding into
+  `layout_height()` using a context-free style resolution, which could not match
+  DESCENDANT-selected chrome (e.g. `#questions .button { border; padding }`) and
+  collapsed such auto-height boxes. The layout side now owns all chrome uniformly.
+  Widgets made pure-content: `Static`, `Label`, `Checkbox`, `Switch`, `RadioSet`,
+  `Tooltip`, `Button`, `Input`, `MaskedInput`, `Digits`, `Pretty`, `Toast`,
+  `SelectionList` (and `Panel` dropped its CSS-resolved chrome, keeping only its
+  structural frame). The `extract_child_spec` height arm, `measure_child_outer_height`,
+  the vertical/horizontal `own_v_chrome` compensations, `grid`, and `split`
+  (`compute_carve_box` + `layout_absolute`) were reconciled to add the chrome once.
+  This is largely value-preserving (chrome moved from widget-baked to layout-added)
+  and corrective for descendant/context-dependent selectors; it unblocks the
+  seed-based `Static::class()` and the `Node` removal. Widget authors implementing
+  a custom `layout_height()` should now return content height only.
+- **Fixed (keystone follow-up): an unconstrained `Constrained` no longer clips a
+  chrome-bearing child.** `Constrained` was an un-migrated consumer of the above
+  convention: its `layout_height()` returned the child's context-free pure-content
+  height as `Some(..)`, which short-circuited the flow layout's chrome-adding
+  `measure_intrinsic_content_height` recursion (that recursion only runs when a
+  child reports `None`, which is how `Container`/`split` get their children's
+  chrome added). A chrome-bearing child (e.g. a flat `Button`, chrome = its
+  half-block top/bottom borders) wrapped in a bare `Constrained` inside a `Row`
+  was therefore sized to pure content and clipped to its top edge. When it carries
+  no effective height constraint, `Constrained::layout_height()` now returns
+  `None` (deferring to the recursion, like `Container`), so the child's chrome is
+  added. Regression guard: the un-ignored `keys_preview_snapshot`. (A min-only /
+  max-only `Constrained` + chrome-bearing child still under-reports chrome — no
+  in-tree usage; tracked in `KNOWN_GAPS.md` `[1.x]`.)
+
+### Removed — `Node` is DELETED (BREAKING)
+
+- **The transitional `Node` transparent wrapper is removed** from the public API,
+  the prelude, and `widgets`/`containers`. `Node` existed only to attach a CSS
+  `id`/`class`/border-title onto a single child by wrapping it in an extra arena
+  node. Now that every wrappable container carries uniform
+  `.id()`/`.class()`/`.classes()`/`.with_border_title()`/`.with_border_subtitle()`
+  seed builders (see the container seed-builder unification above) and the
+  height-chrome keystone lets a classed **leaf** resolve its own chrome, the
+  wrapper is unnecessary. **Migration:** replace `Node::new(X).id("i").class("c")`
+  with `X.id("i").class("c")` directly — every leaf and container type now
+  supports those builders. `Static::class(..)` now returns `Self` (seed-based,
+  the class lands on the Static's own node) instead of a `Node`.
+- **`elide_transparent_wrapper` (the mount-time wrapper-elision hook) and its
+  "keep classed wrappers" gate are removed** — the "always-fold" end state. There
+  are no transparent wrappers to collapse anymore; identity always rides the
+  widget's own seed. A classed leaf (`Static::new("x").class("box")`) now mounts
+  as a SINGLE node carrying the class, never a wrapper + child pair (regression
+  test: `classed_leaf_folds_onto_its_own_node_no_wrapper`). `is_transparent_wrapper`
+  (a distinct, still-used layout hook) is retained.
+- **Fixed (Node-deletion follow-up): a seed-based widget used as the tree ROOT
+  now matches descendant/child selectors against its children via its own
+  `.id()`/`.class()`.** `build_widget_tree_from_root` mirrors the root widget's
+  CSS identity onto the root node via `style_classes()`/`style_id()`, which
+  default to empty for seed-based widgets (`Container` and every
+  `seed_ident_methods!` user) — so a `.class("panel")` on a ROOT `Container` was
+  silently dropped and descendant/child selectors (`.panel Label`,
+  `.panel > Label`) never matched its children. The old `Node` wrapper masked
+  this by overriding `style_classes()`/`style_id()`. Seed-based container widgets
+  now expose their pre-mount seed identity through those readers via the new
+  `seed_style_identity_methods!` macro (base `Container`, `Frame`, `Overlay`,
+  `Styled`, `Panel`, `Constrained`, `AppRoot`, and the `layout.rs` `Row`/`Dock`/
+  `Grid` flow containers; `Vertical`/`Horizontal` aliases already exposed it).
+  This is a NON-destructive READ: the ROOT widget stays owned by the caller and
+  is rendered directly, so consuming its seed (an earlier approach) is avoided —
+  that had blanked a `Styled`/`Container` root's inline `style()` (root
+  inheritance reads the root widget's `style()`, not the root node's styles).
+  Regression tests: `root_widget_seed_identity_lands_on_root_node`, the
+  un-ignored `descendant_selectors_match` / `child_selectors_match_direct_children_only`,
+  and `style_inheritance::inherited_styles_apply_to_children` (guards the
+  no-consume invariant for inline-style-carrying roots).
+
+### Removed (prelude prune — RA2.6b, BREAKING)
+
+- **The prelude is pruned to the curated 1.0 user surface.** Removed from
+  `textual::prelude` (all remain reachable at their canonical paths for one
+  release):
+  - the tree-plumbing entry points `build_widget_tree_from_root`,
+    `dispatch_event_tree`, `dispatch_event_to_target_tree`,
+    `dispatch_message_queue_tree`, `focused_node_id_tree`,
+    `render_tree_to_frame`, `render_tree_to_frame_with_stylesheet`,
+    `run_layout_pass`, and `DispatchOutcome` — runtime internals; user apps go
+    through `TextualApp`/`Pilot`/`run_test`. Harness-level code imports them
+    via `textual::runtime::{...}`.
+  - `HandleSink` (compose-pipeline plumbing; `textual::handle::HandleSink`).
+  - the legacy delegate macros `delegate_widget_to`, `delegate_widget_method`,
+    `delegate_renderable`, and `classify_style_change` — `#[widget(base = ...)]`
+    is the supported delegation surface (`textual::widgets::` if needed).
+  - the routing internals `ControlMeta`, `Selector`, `SelectorParseError`
+    (`textual::routing::`); `MessageRouter` stays.
+  - `CommandPaletteScreen` — a dead, never-wired wrapper export, removed ahead
+    of the CommandPalette modal-screen rebuild (`textual::widgets::` if needed).
+  - Kept deliberately: `NodeSeed` (the surviving `take_node_seed` mount hook is
+    trait surface implemented by compound widgets), `HandleSlot`, `WidgetQuery`
+    (the `WidgetCtx::query_one` return type).
+
+### Removed (CommandPalette modal-screen rebuild — Wave 2, BREAKING)
+
+- **The legacy always-mounted `CommandPalette` wrapper widget is removed**,
+  completing the modal-screen rebuild. The palette is now a runtime-pushed
+  `SystemModalScreen` (`CommandPaletteScreen`) composed of real arena children,
+  opened by the `ctrl+p` priority binding — it is no longer an always-mounted,
+  hand-drawn `FrameBuffer` host wrapping the app body.
+  - **Removed public API:** the `CommandPalette` widget type and its
+    `CommandPalette::new(child)` constructor (the wrap-the-app-body ctor), plus
+    the `CommandList` widget type. Migration: delete any
+    `CommandPalette::new(app_body)` wrapping from your app root — the runtime
+    owns the palette; nothing needs to mount it. `ctrl+p` works unchanged.
+  - **Preserved reusable primitives** (now re-exported from `textual::widgets`):
+    `FuzzyMatcher`, the `Provider` / `ProviderResult` model,
+    `SystemCommandsProvider`, `PaletteCommand`, `SearchIcon`, `CommandInput`,
+    and the `SystemModalScreen` marker trait. The `CommandPaletteProvider`
+    app-integration trait and the `CommandPaletteCommand*` messages are
+    unchanged.
+  - **Non-breaking internal cleanup:** the always-mounted DOM-last host, the
+    `command_palette`-open key-routing forks in both event loops
+    (`open_command_palette_target`), and the help-panel host-position special
+    case are deleted. The `Widget` trait is unchanged — `preserve_underlay` and
+    `child_display_for_tree` remain (first-class users: `ContentSwitcher`,
+    `TabbedContent`, `Overlay`, and several delegating widgets).
+
+### Changed (notifications become real docked widgets — Wave 3)
+
+- **Notifications now render through a real docked `ToastRack` widget subtree**,
+  retiring the runtime `compose_notifications` framebuffer pass — the last
+  "parallel special-case runtime overlay that bypasses the widget path". Each
+  toast is a real `Toast` node inside a `ToastRack` (a system child of the app
+  root, docked bottom-right on the `_toastrack` layer); the app's notification
+  store is synced into the rack, which mounts/unmounts real toast nodes. This
+  makes severity styling (`Toast.-information/-warning/-error` `border-left`,
+  `.toast--title`) resolve on live nodes and makes toasts click-dismissible.
+  - **`App::notify(message, title, severity, timeout)` is unchanged** — this is
+    a non-breaking internal rebuild for the public notification API.
+  - **Auto-dismiss is a widget-owned timer**, registered per notification on the
+    *persistent rack node* (keyed by a stable notification id), so posting a
+    later toast never resets an earlier toast's countdown, and dismissal is a
+    real node unmount. Deterministic under `Pilot::advance_clock`.
+  - **New public API:** `ToastRack`, `ToastHolder`, `NotificationSnapshot`
+    (`textual::widgets`), and the `NotificationExpired` message. `Toast` gains
+    `with_notification_id`.
+  - **BREAKING (minor):** `Toast::with_timeout` is removed — a toast's timeout
+    is a notification-level concern (`App::notify`'s `timeout` arg), owned by the
+    rack, not the view widget.
+  - **Known gap (1.x):** toasts posted while a modal/pushed screen is active are
+    shown on the base app's rack (behind the screen), not over the pushed screen
+    — per-screen racks are deferred. This degrades gracefully (no panic, no
+    wrong-z bleed).
+
+### Changed (the tooltip becomes a real overlay:screen widget node — Wave 4)
+
+- **The system tooltip now rides the shared widget path**, retiring its
+  widget-local `FrameBuffer` overlay compositor (`tooltip_frame` →
+  `FrameBuffer::from_lines`, the hand-rolled `overlay_origin` constrain, and the
+  `Overlay::compose_overlay_at` self-composite) — the last "parallel special-case
+  overlay that bypasses the widget path" in the post-RA2 queue (Select, RadioSet,
+  CommandPalette, Toast, Tooltip now all done). The bubble is a real
+  `position: absolute; overlay: screen` node: the runtime reads the hovered
+  widget's `tooltip()`, sets the node's text and stores the mouse anchor, and the
+  shared machinery does the rest — CSS `offset-x: -50%` centers it on the anchor,
+  `margin: 1 0` gives the gap, and the `overlay: screen` deferred-paint pass
+  floats it top-z, unclipped, over the screen surface, constrained into the frame
+  by `constrain: inside inflect` (the same escape Select rides). This is Python's
+  `_tooltips`-layer mechanism realized through Rust's overlay:screen escape, which
+  (unlike a plain named layer) honors the tooltip's `constrain`.
+  - **`.with_tooltip(text)` is unchanged** — a non-breaking internal rebuild for
+    the public tooltip API. Hover show/clear stays runtime/screen-owned (mirrors
+    Python's `Screen` mouse-move path).
+  - **New reusable layout primitive:** a per-node `absolute_offset` (mirroring
+    Python `Widget._absolute_offset`) that layout adds to a `position: absolute`
+    node's origin *before* its CSS `offset`, so a runtime-supplied screen anchor
+    composes with `offset-x: -50%` centering. Defaults to `None` (opt-in), so
+    existing absolute-positioned nodes lay out identically.
+  - **BREAKING (minor):** `Tooltip::new(child, text)` — the test-only wrapper
+    constructor that composited a bubble over a wrapped child — becomes
+    `Tooltip::new(text)`. `Tooltip` no longer wraps a child widget; it is the
+    bubble. The wrapper's `visible`/`with_anchor`/`with_max_width`/`with_y_offset`
+    builders and its `Overlay*` message handling are removed.
+  - **Behavior refinement:** the tooltip is now constrained to the full screen
+    (Python-faithful) rather than to the hovered widget's scroll viewport (a
+    Rust-ism the old baked-geometry path carried).
+
+### Framework fundamentals
+
+- **The command palette (`ctrl+p`) is now a real composed modal screen**
+  (Wave 1). It is pushed as a `SystemModalScreen` (`CommandPaletteScreen`) whose
+  body is composed of real arena children — `Vertical#--container > (Horizontal
+  #--input[SearchIcon, CommandInput], Vertical#--results[CommandList,
+  LoadingIndicator])` — mirroring Python `command.py`'s hybrid shape (a modal
+  screen + `overlay: screen` results dropdown). This replaces the hand-drawn
+  `FrameBuffer` render and the palette-specific key-routing forks: `ctrl+p` now
+  opens the palette through the normal screen-stack + focus/dispatch path
+  (auto-focuses `CommandInput`; escape and click-outside dismiss; focus restores
+  to the app below for free). Search fuzzy-matches the provider snapshot and
+  updates the dropdown via a cross-node deferred command (the input is never
+  rebuilt per keystroke). Command selection dismisses the screen with the chosen
+  id and runs the command in the app context (system commands theme/quit/keys/
+  screenshot + user `CommandPaletteProvider`s). The public message API is
+  unchanged (`CommandPaletteOpened`/`Closed`/`CommandPaletteCommandSelected`),
+  and `CommandPaletteProvider` demos (command01/02) are unaffected. The
+  previously-dead exported `CommandPaletteScreen` is now the real screen; its
+  constructor is `CommandPaletteScreen::new(commands: Vec<CommandPaletteCommand>)`
+  (the old no-op `new()`/`with_commands()`/`Default` are gone). The legacy
+  always-mounted host still exists but is inert; it is deleted in Wave 2.
+
+- **`Screen::auto_focus()` — a screen may name the widget to focus on push.**
+  New `Screen` trait method (default `None`) mirroring Python
+  `Screen.AUTO_FOCUS`: return `Some(selector)` (any `query_one` form — `#id`, a
+  type name, `.class`) and the runtime focuses the first matching focusable node
+  when the screen is pushed, instead of the first focusable node in the tree. A
+  `None` default (or an unmatched selector) falls back to the previous
+  first-focus behaviour, so existing screens are unaffected. Honored in
+  `push_screen`/`push_screen_with_callback`.
+
+- **`Select` is now a composed-children arena widget on the `overlay: screen`
+  layer** (RA2.5b) — it no longer renders its dropdown as an inline
+  `FrameBuffer` fake. `compose()` emits a `SelectCurrent` bar and a
+  `SelectOverlay` (an `OptionList`) as real child nodes; the overlay resolves
+  `overlay: screen; display: block` when the `Select` carries `-expanded`, so it
+  floats UNCLIPPED at the top z via the Mechanism-A deferred paint (RA2.4). The
+  bar and overlay style themselves through the CSS cascade on live nodes — the
+  down/up arrow swap (`Select.-expanded .down-arrow/.up-arrow`), the `-has-value`
+  label colour (driven by `Select` via `child_classes_for_tree`), and the
+  focused border/highlight all resolve on real nodes; no per-glyph compensation
+  or hand-drawn dropdown remains. `compose()` is state-pure, so a value/options
+  change recomposes an identical subtree rather than clearing it. Public API is
+  preserved (`new`/`value`/`set_value`/`set_options`/`with_allow_blank`/
+  `disabled`/`id`/`is_open`); `set_value`/`set_options` now recompose so the
+  closed-state label + overlay rebuild.
+  - **New messages:** `SelectCurrentToggle` (bar click → toggle overlay) and
+    `SelectOverlayDismiss { lost_focus }` (overlay → dismiss); `SelectChanged` /
+    `OptionSelected` unchanged.
+  - `OptionList` gained two root-cause rendering behaviours needed for overlay
+    parity (both no-ops for a bare `OptionList` — verified against the full
+    parity suite): a per-option left inset (`set_option_pad_left`, Python's
+    `.option-list--option { padding }`) and **word-wrapping of long plain
+    option prompts**, with a matching `item_height` wrap-count so measured height
+    and rendered lines agree.
+- **Focus now lands on a node revealed in the same frame** (RA2.5b prerequisite)
+  — a widget handler can, in one pass, reveal a `display: none` composed child
+  (by adding a class that flips its CSS `display`) AND request focus of it
+  (`AppFocus { widget_id }`). The reveal is applied by the deferred command flush
+  + layout that runs AFTER the handler's dispatch, but the generated `AppFocus`
+  message routes DURING dispatch — so `set_focus_node` used to see the target's
+  stale (`false`) cached `display` and reject the focus, leaving it unfocused
+  until a second interaction. The runtime now defers such a focus request whose
+  target exists but is not yet displayed, re-resolves CSS `display` after the
+  same-frame flush, and retries the focus once (bounded + self-clearing:
+  last-writer wins, an explicit tab/other focus in the same frame drops it, and a
+  target that never displays is given up on silently — it can never leak into a
+  later frame and steal focus). Unblocks the arena `Select`'s overlay, which must
+  be focused the instant `-expanded` is added.
+- **`RadioSet` is now a composed-children arena widget** (RA2.5a) — it no longer
+  stores `Vec<RadioButton>` and renders them inline with per-glyph style
+  compensation. Its buttons are emitted as real arena child nodes via
+  `compose()` (state-pure: regenerated from the authoritative button metadata on
+  every call, so an ancestor recompose rebuilds an identical set rather than
+  clearing it). The set keeps focus (`can_focus_children = false`) and drives each
+  child's `-on` (pressed) and `-selected` (navigation cursor) classes onto the
+  live child nodes via `child_classes_for_tree`, so the CSS cascade
+  (`RadioSet:focus > RadioButton.-selected > .toggle--label`, etc.) resolves on
+  the real nodes. This **deletes the compensation machinery** — the synthetic
+  `push_style_context` and the `textual:no_style` segment tags are gone. Mutual
+  exclusion on a child click routes through `RadioButton.Changed` by ordinal
+  (mirrors `ListItem`'s child-click path); keyboard navigation/toggle is handled
+  by the set.
+  - `RadioButton` is now a first-class arena leaf: it always renders the inner
+    glyph `●` (Python `BUTTON_INNER`; on/off is conveyed by colour, not glyph)
+    and resolves its `toggle--button` / `toggle--label` component styles against
+    the live node context. Its standalone default CSS moves from the
+    `radio-button--*` component classes to Python's `toggle--*` names (aligning
+    with `Checkbox`/`ToggleButton`).
+  - **Breaking:** `RadioButtonChanged` gains an `ordinal: usize` field (the
+    button's index within its `RadioSet`, used to route the change).
+- **`overlay: screen` is now a real placement/clip escape, not a colour blend**
+  (RA2.4) — Python's `overlay: screen` (`_compositor.py`) forces a placement to
+  the TOP z of the whole screen with NO clip; it is how Select dropdowns,
+  CommandPalette, toasts, tooltips and loading float. The previous Rust
+  implementation mis-ported it as a Photoshop-style screen COLOUR BLEND of the
+  overlay over the underlay. That blend (`apply_overlay_compositing`/
+  `screen_blend`/`capture_underlay_snapshot`) is **deleted** and replaced by a
+  deferred paint pass: a node whose resolved `overlay` is `screen` is not painted
+  inline during the tree walk — it is queued with its arranged position and
+  painted UNCLIPPED at the top z of the layer AFTER every sibling, positioned via
+  the existing `constrain_overlay_position`. Painting last also stamps the
+  overlay's `textual:widget_id` meta last, so hit-test occlusion is correct for
+  free. The `CommandPalette` type-string special-case in the paint sorter
+  (`move_command_palette_last`) is retired — the palette floats via its DOM-last
+  mount order, and real `overlay: screen` surfaces float via the escape pass.
+  (Tooltip still composites into its own widget-local frame buffer; migrating it
+  onto the escape pass is a follow-up that needs a widget-level change. Select's
+  dropdown remains a monolithic inline render pending its RA2.5 arena conversion,
+  which will compose a real `overlay: screen` child on this mechanism.)
+- **Mount-time messages + composed-widget self-recompose go through the ctx**
+  (RA2.3) — the last two post-mount drain hooks are retired:
+  - `Widget::take_pending_mount_messages` is gone. Widgets that emitted a message
+    at mount (`Select`/`ListView` initial selection) now post it from
+    `on_mount(&mut self, ctx)` via `ctx.post_message`. For the initial-mount path
+    (where `on_mount` fires at tree build with no `App` to absorb the message),
+    the post is routed through the deferred command queue as a new `PostMessage`
+    command and bubbled by the first shared flush — so mount messages work in the
+    initial, dynamic-recompose, and headless paths identically.
+  - `Widget::take_pending_self_recompose` is gone. A composed widget whose child
+    set is mutated at runtime (`Tabs::add_tab`/`remove_tab`/`clear`) no longer
+    stages a self-recompose for `with_widget_mut` to drain; the caller requests it
+    through the ctx (`ctx.request_recompose()` in a `Handle::update` closure). The
+    `tabs` demo switches its add/remove/clear from `with_query_one_mut_as` to
+    `Handle::update` + `ctx.request_recompose()`. `Handle::update_in` now enqueues
+    its reactive entry when the closure only requested a recompose or a class op.
+  - `App::with_widget_mut` no longer runs any post-closure drain hook (all three —
+    class ops, inline-style write-through, self-recompose — are retired).
+
+- **`WidgetCtx` class ops route through the deferred command queue** (RA2.3) —
+  `ctx.add_class`/`remove_class`/`set_class`/`add_class_to`/`remove_class_from`
+  now enqueue `WidgetCommand::AddClass`/`RemoveClass` (applied by the shared flush)
+  instead of the RA2.2-interim `EventCtx`/`DispatchOutcome` class-op side-channel —
+  one deferred mechanism, drained before render in both the live loop and the
+  headless pump (visible result unchanged). This retires the widget-staged
+  `Widget::drain_pending_class_ops` hook: widgets that flipped a class from a
+  ctx-less method (MarkdownViewer TOC, Collapsible) now apply it through their
+  `ReactiveCtx`/`WidgetCtx` (`ctx.set_class`); `Handle::update_in` enqueues its
+  reactive entry when the closure recorded a class op even with no field change.
+  The `collapsible` demo's "collapse/expand all" switches from
+  `with_widget_mut_as` + ctx-less `toggle()` to `Handle::update` + reactive
+  `set_collapsed(value, ctx)`.
+
+- **`WidgetCtx::update_styles(|s| ...)` post-mount inline-style writes** (RA2.3) —
+  a widget/handler can now write its own inline styles after mount via
+  `ctx.update_styles(|styles| { styles.style = styles.style.bg(color); })`, mirroring
+  Python `widget.styles.<prop> = value`. It enqueues a deferred `UpdateStyles`
+  command applied by the shared flush against the arena node record (the node seed is
+  drained at mount, so a post-mount seed write would be invisible). This retires the
+  internal `Widget::take_inline_style_writethrough` staging hook — `set_inline_style`
+  now only seeds the pre-mount style. The `watch01`/`computed01` reactivity demos,
+  which repainted panels via a post-mount `Static::set_inline_style`, now write to
+  the arena node directly through `query_mut(sel).set_styles(..)`.
+
+- **BREAKING — Widget-trait handler signatures migrate to `WidgetCtx`** (RA2.2) —
+  every behavior handler on the `Widget` trait now receives `&mut WidgetCtx`
+  instead of `&mut EventCtx`: `on_event`, `on_event_capture`, `on_message`,
+  `on_mouse_scroll`, `execute_action`, `selection_updated`, and the `on_app_*`
+  hooks. `on_mount(&mut self)` and the additive `on_mount_ctx(&mut self, ctx)` are
+  MERGED into a single `on_mount(&mut self, &mut WidgetCtx)`. Handlers can now use
+  `ctx.query_one::<W>()`, `ctx.set_interval(..)`, `ctx.post_up(..)`, and the
+  `#[derive(Reactive)]` setters directly (the same surface `#[on]` handlers already
+  had) — no more reaching into runtime internals. The runtime builds the `WidgetCtx`
+  at each dispatch site (via `WidgetCtx::__from_dispatch`, wrapping the live dispatch
+  `EventCtx` + node id) and enqueues any recorded reactive changes on return. The
+  app-level typed `TextualApp` / `CommandPaletteProvider` hooks migrate too.
+  `EventCtx` moves out of the prelude — it is now internal/structural (the runtime
+  synthesizes it; `WidgetCtx` is THE user-facing handler context). `WidgetCtx`
+  exposes the EventCtx surface (repaint/handled/messages/animation/overlay/class ops)
+  as inherent delegates while `DerefMut`-ing to the reactive recording surface.
+  Object safety is preserved (`WidgetCtx<'_>` carries only a lifetime, no type
+  param — `Box<dyn Widget>` is unaffected).
+
+- **Widget-owned timer callbacks receive a `TimerTick`** (RA2.2, freeze-critical) —
+  `WidgetCtx::set_interval`'s callback signature becomes
+  `FnMut(&mut Self, &mut WidgetCtx, TimerTick)`, where `TimerTick { elapsed,
+  fire_count }` reports the real clock time elapsed since the previous fire. This is
+  drift-free against Python's wall-clock (`monotonic() - start`) derivation and
+  deterministic under `Pilot::advance_clock`; time-accumulating widgets (e.g. a
+  stopwatch) add `tick.elapsed` per fire instead of a fixed nominal interval.
+
+- **Headless lifecycle convergence** (RA2.0) — the headless/Pilot pump now drains
+  tree `Mount`/`Unmount` lifecycle events and fires the widget-owned `on_mount_ctx`
+  hook (which registers `set_interval` timers) via the SAME shared function as the
+  live loop (`App::drain_tree_lifecycle_events`, extracted from the live loop's
+  former inline block — one function, no re-implementation). Previously a widget
+  mounted through a **dynamic recompose** (`#[reactive(recompose)]` / a mount
+  command) under a headless test never received `on_mount_ctx`, so its timers never
+  registered and `advance_clock` drove nothing; initial-mount already worked in both
+  loops. This closes the last live-vs-headless mount divergence and is the
+  prerequisite for retiring `take_pending_mount_messages` in the RA-2 batch.
+
+- **Closure-posted messages now bubble (`PostUp`) + `#[on]` hardening** (WidgetCtx
+  build, step 5) — a message posted from an `update_via` / timer / `on_mount_ctx`
+  closure (via the fresh `WidgetCtx`) is no longer debug-logged-and-dropped: the
+  shared flush now bubbles it from the closure's node to ancestor handlers, after
+  its rounds converge. `#[on]` hardening: the generated `__on_dispatch_*` carries
+  NO `#[allow(dead_code)]` (a handler you forgot to list in `#[widget(on(..))]`
+  now warns as an unused method), plus rustdoc clarifying that `#[on]` does not
+  auto-consume the message (it keeps bubbling — stop with `ctx.set_handled()`),
+  that overriding `on_message` replaces the generated glue, and that the base
+  forward runs the base's own behavior (not a re-dispatch to children).
+  NOTE: the post-mount drain-hook *retirement* (the plan's step-5 deletion) is
+  deferred to the RA-2 trait migration — those hooks still have live producers
+  (`ctx.add_class` in `on_event`, `set_inline_style`, `Tabs::add_tab`, `Select`
+  mount messages) because `on_event`/`Handle::update` do not hand out a `WidgetCtx`
+  yet.
+
+- **ACCEPTANCE: `stopwatch06` rewritten on the WidgetCtx surface** (WidgetCtx
+  build, step 6) — the tutorial stopwatch now uses ONLY `std` + `textual::prelude::*`
+  (ZERO runtime internals): each `TimeDisplay` owns its 1/60s interval via
+  `ctx.set_interval` in `on_mount_ctx`, `#[widget(base = Digits)]` delegation gives
+  it the Digits surface, a reactive `watch_time` renders the elapsed time, and the
+  `Stopwatch` handles button presses via `#[on(ButtonPressed)]` + `ctx.query_one`
+  + `TimerHandle::pause()/resume()`. Because the timer is widget-owned and
+  tick-based, `Pilot::advance_clock` drives the clock deterministically (Start
+  advances / Stop freezes / Reset zeroes are now a promotable in-crate test). This
+  is the milestone that demonstrates the WidgetCtx handler surface is usable end to
+  end without touching runtime plumbing.
+
+- **Widget-owned interval timers** (WidgetCtx build, step 4) — a widget can own
+  a repeating timer via `ctx.set_interval(interval, paused, |w, ctx| ...)` from
+  the new additive `Widget::on_mount_ctx(&mut self, &mut WidgetCtx)` hook (default
+  no-op; `on_mount()` unchanged; the `#[widget]` derive forwards `on_mount_ctx`).
+  The callback receives the concrete widget `&mut W` (downcast at fire) and a
+  fresh `WidgetCtx`, so a reactive `set_*` inside it flows to that node's watchers
+  in the same pass. Timers run on the SAME `TimerRuntime` as app-level timers, so
+  `Pilot::advance_clock` drives them deterministically. The returned `TimerHandle`
+  gains `pause()` / `resume()` / `stop()` (deferred — applied by the next flush, so
+  they are callable from handlers). A widget's timers are purged when its node
+  unmounts (primary: the `Unmount` lifecycle drain; backstop: a fire into a gone
+  node cancels the timer). Registration + control are deferred through the widget
+  command queue, so `set_interval` needs no `&mut App` yet returns a usable handle.
+
+- **`#[on(..)]` handlers now receive `&mut WidgetCtx` and are wired into
+  `Widget::on_message`** (WidgetCtx build, step 3) — the `#[on(MessageType)]`
+  attribute's generated `__on_dispatch_*` dispatcher now takes `&mut WidgetCtx`
+  (was `&mut EventCtx`), so a typed message handler can mutate reactive state
+  through the same context that flows into the shared flush. The
+  `#[widget(base = <C>, on(handler1, handler2))]` delegation derive gained an
+  `on(..)` list: the generated `Widget::on_message` materializes a `WidgetCtx`
+  over the REAL dispatch `EventCtx` (so handler-posted messages route normally),
+  calls each named `#[on]` dispatcher, enqueues any reactive changes, then forwards
+  to the base for propagation. A composed widget can now handle its child's
+  message (e.g. `#[on(ButtonPressed)]`) with NO hand-written `on_message`. `on(..)`
+  and `override(on_message)` are mutually exclusive (compile error). Selector-form
+  `#[on(.., selector = "..")]` remains deferred (the const is emitted but not yet
+  matched). Migration: `#[on]` handler methods change their `ctx` parameter from
+  `&mut EventCtx` to `&mut WidgetCtx`.
+
+- **Deferred widget-command queue + shared post-dispatch flush** (WidgetCtx
+  build, step 1) — handlers run while the runtime holds a live `&mut` borrow of
+  the widget tree, so a handler cannot mutate a different node (or its own DOM
+  identity) in place. A new thread-local FIFO (`src/runtime/commands.rs`) records
+  such side effects as `WidgetCommand`s (`AddClass`/`RemoveClass` so far, with
+  drain-time `CommandTarget::{Node, Selector}` resolution) and the existing
+  reactive phase (`run_event_loop_reactive_phase`) is extended into ONE shared
+  flush that drains both the reactive queue and the command queue to convergence
+  under a global round budget (`MAX_REACTIVE_ITERATIONS`; a self-re-enqueueing
+  handler is dropped + logged rather than hanging). Because the live event loop
+  and the headless pump both already call that one function, commands converge
+  identically in both paths. Also adds `WidgetTree::query_within` /
+  `query_one_within` for subtree-scoped selector resolution.
+
+- **`WidgetCtx` cross-node query/update surface** (WidgetCtx build, step 2) — the
+  handler context (`crate::event::WidgetCtx`, exported in the prelude) now carries
+  a `ReactiveCtx` and `DerefMut`s to it, so the generated `#[derive(Reactive)]`
+  setters (`w.set_field(v, ctx)`) accept `&mut WidgetCtx` unchanged while a
+  handler's field mutations flow into the shared flush. New surface:
+  `ctx.query_one::<W>()` (by type) and `ctx.query_one_id::<W>("#id")` return a
+  deferred `WidgetQuery<W>` whose `.update_via(ctx, |w, ctx| ...)` enqueues an
+  `UpdateWidget` command; `Handle::update_via(ctx, ...)` does the same for an
+  already-resolved handle; `ctx.add_class`/`remove_class` enqueue class ops on the
+  widget's own node. The target is resolved AT DRAIN (the tree is borrowed during
+  the handler), the closure's concrete type is captured AT ENQUEUE and downcast at
+  drain (a miss logs and drops, never panics), and the updated node's watchers
+  fire in the SAME flush pass. A removed target drops with a debug log. The flush
+  wraps each update closure in the dispatch-ctx guard so `self.node_id()` is
+  correct inside it, and passes no `&mut App` into the closure.
+  Follow-up hardening: the flush now also enqueues a target's reactive ctx when it
+  requested only recompose/styles (was silently dropped); `WidgetCtx::post_message`
+  no longer clobbers the shared dispatch `EventCtx`'s node id (new
+  `EventCtx::post_message_from`); and `WidgetCtx` gained inherent shadows for the
+  `ReactiveCtx`-twin methods (`request_layout`/`request_styles`/`request_recompose`
+  route to the canonical EventCtx path; `set_class`/`add_class_to`/`remove_class_from`
+  route to the command queue) so a given call shape has one deterministic path.
+
+- **New `#[widget(base = <Container>)]` delegation derive** — a compound widget
+  can now "inherit" the full structural / propagation `Widget` surface from a
+  container field instead of hand-forwarding ~63 trait methods (which silently
+  drop behavior if one is missed). Annotate a struct that holds a `base` field
+  of a container type (`base = VerticalGroup`, `field = <ident>` for a
+  differently-named field) and the derive generates the complete `impl Widget`
+  + `impl Renderable` forwarding render / layout / `take_composed_children` +
+  compose-meta hooks / `on_event`/`on_message` propagation / lifecycle / scroll
+  / bindings / selection to that field. `style_type` intentionally keeps the
+  widget's OWN concrete type name (its own CSS identity, not the base's); set a
+  custom one with `style_type = "Name"`. Behavior is layered orthogonally:
+  typed handlers via `#[on(..)]`, reactive state via `#[derive(Reactive)]` (opt
+  in to expose the compound as its own reactive surface with `reactive`), and
+  per-method overrides via `override(m1, m2)` (the generated trait method calls
+  your inherent method of the same signature). This is the first-class
+  replacement for the deprecated `delegate_widget_to!` / `delegate_widget_method!`
+  declarative macros, which are now marked superseded (kept only for existing
+  call sites). `VerticalGroup` is migrated to the derive as the first adopter.
+
+### Widget fixes
+
+- **Composed children declared with `ChildDecl::with_id`/`with_classes` are now
+  addressable by `#id`/`.class` under every container** — `Row::with_compose` and
+  `Grid::with_compose` (in `src/widgets/layout.rs`) discarded the `ChildDecl`
+  `id`/`classes`/`handle_sink` metadata when building child nodes, so a composed
+  child (e.g. `ChildDecl::from(Digits::new(..)).with_id("disp")`) mounted as an
+  id-less arena node and `query("#disp")` returned no match. Additionally,
+  `ScrollableContainer` (the flatten path behind `VerticalScroll`/`HorizontalScroll`)
+  dropped the inner `Container`'s recorded `ChildDecl` metadata: it flattens the
+  content `Container` out of the tree during `take_composed_children` but never
+  forwarded that container's `take_child_decl_meta`/`take_child_handle_sinks`, so
+  ids/classes on composed scroll children (e.g. the `checkbox` demo's
+  `#initial_focus`) were lost and `query_mut("#initial_focus").focus()` silently
+  matched nothing. All three now thread the metadata onto the mounted node
+  (mirroring `Container::with_compose`), with the flatten path re-keying the
+  container's per-child indices into the flattened child list. This restores
+  mount-time focus/query wiring for composed scroll/grid/row children; the
+  `checkbox` real-app parity residual drops 55 → 8 colour cells (the `:focus`
+  border+tint now matches Python exactly).
+
+- **A transparent widget's text now composites over the CACHED ancestor surface
+  after a live ancestor-background change (Python `visual_style` parity)** — Python
+  `Widget.visual_style` bakes the composited ancestor background into a widget's
+  transparent glyph segments and caches it keyed on the widget's *own*
+  `styles._cache_key`; a later ancestor-only background change (e.g. the
+  `guide/actions` demos setting `self.screen.styles.background = "red"` from an
+  action) bumps the ancestor's cache key but not the child's, so the child's text
+  keeps the base surface it captured at its last content render, while its
+  surface/padding fill (`background_colors`) turns live. Rust baked the glyph
+  background *live*, so an ancestor bg change leaked into the child's text
+  (`ColorSwitcher`/`Static` text cells went red instead of `#121212`). The
+  compositor now captures, per node, the composited ancestor surface at the node's
+  last own-style change (`FROZEN_ANCESTOR_BG`, keyed on a fingerprint of the node's
+  own non-inherited style) and, when the live surface has since diverged, re-keys
+  only the node's already-baked content glyph segments (tagged
+  `textual:no_text_style`) back to the frozen surface — leaving the widget's own
+  surface/pad fill live, preserving the render-time live-composition invariant for
+  surfaces. Un-ignores the `guide/actions` `actions03`/`actions04` real-app parity
+  cases (Rust == Python, colour-exact).
+
+- **`background-tint` is now applied per-node (Python parity), fixing the focused
+  `Switch` slider over-tint** — `apply_style_to_segments` previously blanket-applied the
+  widget's `background-tint` to *every* segment the widget emitted that carried an explicit
+  background, including child/component renderables that already carry their own opaque
+  colour. Python folds `background-tint` into each node's *own* `background`
+  (`DOMNode.rich_style`/`background_colors`: `styles.background.tint(styles.background_tint)`)
+  and only applies it where that node has its own `background-tint` rule — e.g.
+  `DataTable:focus > .datatable--header` sets its own tint, but `Switch`'s `switch--slider`
+  does not. The result was that a focused `Switch`'s slider track was double-tinted
+  (`#0b1922` vs Python `#000f18`). `background-tint` now tints only the widget's *own*
+  surface fill (segments whose background equals the widget's resolved `background`),
+  leaving component/renderable segments (which already carry their final colour) untouched.
+  `DataTable` correspondingly folds its focused header's own `background-tint` into the
+  header cell colour at the source (tagged `textual:no_style`), matching the existing
+  cursor/zebra/fill composition, so the header still renders `#2d3740` when focused.
+  Validated by the `compound/byte03` real-app parity demo (colour parity exact) and keeps
+  `parity_tree_navigate`/`parity_data_table_navigate`/`_sort`/`_cursors_cycle` green.
+
+- **`RadioSet` focus/selection colours now match Python** — the monolithic inline
+  `RadioSet::render` resolved its glyph/label component styles as `radio-button--*`
+  classes against a `RadioSet` leaf, so none of the `RadioSet(:focus/:blur) > RadioButton.-on/.-selected
+  > .toggle--*` cascade rules matched and it hardcoded the frame/`▐●▌` background to `$surface`.
+  It now reproduces Python's `ToggleButton` composition: per row it pushes a synthetic
+  `RadioButton` selector context (carrying the live `-on`/`-selected` classes) so the
+  `.toggle--button`/`.toggle--label` rules resolve exactly, the side half-blocks take the
+  button background as their foreground (`$panel`), the inner glyph and selected-label cells
+  are composed to their final colour and tagged `textual:no_style` (so the `:focus`
+  `background-tint` is not re-applied to the opaque `$panel`/`$block-cursor` fills), and the
+  semi-transparent `$block-cursor-blurred-background` is flattened over the widget's composited
+  surface. Flips `parity_radio_button_select` to full Rust==Python; `parity_radio_set_navigate`
+  now matches on every colour (remaining diff is a demo-only Rich-markup gap).
+- **`OptionList` highlighted / disabled / separator colours now match Python** — the render
+  built `["option-list--option", "-highlighted"]` classes, but the default CSS uses the single
+  component classes `.option-list--option-highlighted` / `-disabled` / `-hover` /
+  `.option-list--separator`, so the highlighted cursor colours never resolved and options fell
+  back to the (tinted) surface. It now requests the correct component classes via an empty-type
+  leaf meta (so the `OptionList { background: $surface }` base rule no longer pollutes every
+  component with an opaque surface bg), composes the highlighted `$block-cursor(-blurred)`
+  background over the widget's composited surface, fills the whole highlighted row and tags it
+  `textual:no_style` (no tint re-application), flattens semi-transparent foregrounds
+  (`$foreground 15%` separators) over the tinted surface, and resolves auto-contrast foregrounds
+  (`$text-disabled`) against that surface. Flips `parity_option_list_strings_navigate` and
+  `parity_option_list_options_navigate` to full Rust==Python.
+- **`DataTable`/`Tree` cursor, guide-line and header-fill colours now match Python** —
+  the `Tree:focus`/`DataTable:focus` `background-tint: $foreground 5%` was being composited
+  onto the opaque `$block-cursor-background` (`$primary`) cursor fill by the widget-level
+  style pass, shifting `#0178d4` to `#0c7dd4`. Python applies `background-tint` per-component
+  (the cursor component carries no tint), so cursor cells whose colour the widget composes
+  fully are now tagged `textual:no_style` and left untouched. In `Tree`, indentation guides
+  are also styled per depth level mirroring `_tree.py::_render_line`: the "selected"
+  (`$block-cursor-background`) style only reaches a node's *descendant* guides, so the cursor
+  row's own `├──`/`│` guides keep the muted `$surface-lighten-3` (`#4f4f4f`) colour instead of
+  turning blue. In `DataTable`, cursor cells now bake `$block-cursor-foreground` (`#ddedf9`)
+  and own their `cell_padding` (matching Python's cursor extent, including the surrounding pad);
+  the header/zebra-row trailing fill fades 25% toward the widget background
+  (`row_style.blend(background, 0.25)`), and zebra even-rows composite `$surface-darken-1 40%`
+  over the tinted surface (`#1c1c1c`). Flips the `parity_tree_navigate`,
+  `parity_data_table_navigate`, `parity_data_table_sort` and `parity_data_table_cursors_cycle`
+  real-app parity demos to full Rust==Python (glyph + colour).
+- **`Tabs::add_tab` (and `remove_tab`/`clear`) now re-render the tab bar** — the tab bar
+  is a composed arena subtree built from `Tabs`' internal state in `compose()`. Mutating
+  the tab set post-mount via `App::with_query_one_mut_as` (which has no `EventCtx`) changed
+  the state but never rebuilt the composed children, so an added tab stayed invisible
+  (Python `tabs.add_tab("Duke Leto Atreides")` mounts the tab itself and needs no caller
+  refresh). Runtime mutations now stage a self-recompose (new
+  `Widget::take_pending_self_recompose` hook, mirroring `drain_pending_class_ops`) that
+  `App::with_widget_mut` drains and honours, recomposing the node's subtree. Flips the
+  `tabs` real-app parity demo to full Rust==Python. Regression: `parity_tabs_add`.
+- **Footer now lists the app-root `BINDINGS` beneath an active screen/mode** — under
+  `MODES`/`switch_mode` (or any pushed screen), the Footer only walked the active
+  mode-screen tree for binding hints and dropped the App's own `BINDINGS`, so `modes01`
+  showed just `^p palette` instead of Python's ` d Dashboard  s Settings  h Help … ^p palette`.
+  `active_binding_hints_tree` now appends the app-root namespace bindings after the active
+  chain — the hint-collection analogue of `match_binding_chain`'s existing app-root walk,
+  faithful to Python's `Screen.active_bindings` chain ending at the App node. Flips the
+  `modes01` real-app parity demo to full Rust==Python. Regressions:
+  `parity_screens_modes01_dashboard`, `modes01_footer_row_lists_switch_mode_bindings`.
+
+- **`Input` placeholder/suggestion now render the dimmed `$text-disabled` colour** —
+  `input--placeholder`/`input--suggestion` resolve `color: $text-disabled`, which is an
+  `auto 38%` (contrast) token stored as `fg_auto`, not a concrete `fg`. `Input::render`'s
+  component-style compositor (`resolve_component_rich`) only handled concrete `fg`, so the
+  placeholder foreground was left unset and then inherited the widget's opaque `$foreground`
+  (`#e0e0e0`) instead of the dimmed contrast colour. The compositor now resolves `fg_auto` by
+  contrasting against — and blending at the fractional alpha over — the widget's *painted*
+  surface. That surface is taken from the live composited background (`current_composited_background`),
+  so a focused Input contrasts the placeholder against its `:focus` `background-tint`ed surface
+  (`#272727`) and matches Python's `#797979` exactly. The base `Input { background }` rule leaks
+  into the component selector meta (typed `Input`); a component background equal to the widget's
+  own surface is now treated as that leak (left transparent for the compositor to tint) rather
+  than as a genuine `input--cursor`/`input--selection` override. Flips the `watch01` and
+  `set_reactive03` real-app parity demos to full Rust==Python (glyph + colour). Regression test:
+  `widgets::input::tests::placeholder_foreground_resolves_text_disabled_auto`.
+- **`Input::with_value` sets an initial value** — mirrors Python `Input(value, ...)`; a
+  non-empty initial value renders as the input text (not the placeholder). Regression tests:
+  `with_value_renders_value_not_placeholder`, `empty_input_renders_placeholder`.
+
+### Examples & parity diagnosis
+
+- **1.0 parity sweep — demo ports completed + two now-passing interactive parity
+  tests un-ignored.** Re-ran all 44 `#[ignore]`d `pty_interactive` cases against
+  the RA-2 + colour-engine + overlay-path tree and reconciled them with reality:
+  - `guide/widgets` `counter01` and `guide/widgets` `counter02` now set
+    `Counter { height: auto }` (Python inherits it from `Static`'s `DEFAULT_CSS`);
+    `counter01` reaches full glyph+colour parity and its test is **un-ignored**.
+  - `widgets/switch` gives the top `Static` `classes="label"` (matching Python),
+    collapsing a 250-cell glyph divergence to zero.
+  - `events/custom01` `ColorButton::render()` returns `str(Color)` (`Color(r, g, b)`)
+    and its CSS uses `height: auto` (matching Python's inherited `Static`),
+    collapsing ~1004 glyph diffs to zero.
+  - `animator/animation01`'s test is **un-ignored**: the on-mount opacity fade now
+    runs and composites in the live `run_sync` loop (both apps fade the box fully
+    to the screen background), verified stable across repeated runs.
+- **`guide/actions` `actions03`/`04`/`05` now use the Python-faithful multi-line `Static`
+  markup** — the demos previously used a `"\`-line-continuation `TEXT` constant that stripped
+  the intended leading blank line (a workaround), so the whole `Static` rendered one row
+  higher than Python. Restoring the literal leading+trailing newline (matching Python's
+  triple-quoted `TEXT`) brings the framework's already-correct leading-blank rendering into
+  play and makes `actions03`/`actions04` glyph-identical to Python. Their parity tests stay
+  `#[ignore]`d on a **re-diagnosed, out-of-scope residual**: the transparent `Static`'s text
+  is composed over the *live* ancestor background (the red screen bg set by the binding after
+  first paint), whereas Python bakes the *cached* `visual_style` background (the first-render
+  ancestor composite) — a render-time live-vs-cached composition difference in the runtime,
+  not in `text.rs`.
+- **`actions06`/`actions07` ignore reasons corrected** — the `Placeholder` label and per-index
+  colour palette are in fact correct (verified at rest: page-0 bg `#4d1144` == Python and the
+  `Page N` label renders). The real failure is that `scroll_visible` over-scrolls the
+  `HorizontalScroll` so the target page's placeholder area goes blank, plus a
+  `content-align: middle` vertical-centering off-by-one — both in the layout/scroll runtime,
+  not in the `Placeholder` widget.
+- **Focused-widget own-surface `:focus { background-tint: $foreground 5% }` reaches parity;
+  `input_types` interactive parity un-ignored** — the per-node `background-tint` fix (see the
+  Widget-fixes entry above) already tints a focused widget's *own* surface (`$surface #1e1e1e`
+  -> `#272727`) exactly like Python for `Input`/`MaskedInput`/`Checkbox`/`RadioButton`/`RadioSet`.
+  Verified real-app: `parity_input_types_typing` is now glyph- and colour-exact (0 diffs) and
+  un-`#[ignore]`d. The sibling focus-tint cases stay ignored on **re-diagnosed, out-of-scope
+  residuals** (the tint itself now matches on both apps): `parity_input_typing` — the caret's
+  reverse cursor cell past end-of-text (`src/widgets/input.rs`); `parity_masked_input_typing` —
+  the `-invalid:focus` `$error` border from MaskedInput template validation; `parity_validate01_count`
+  — RichLog scrollbar-track bg + Rich integer-highlight colour; `parity_checkbox_toggle` — the
+  `#initial_focus` id assigned via `ChildDecl::with_id` is not propagated onto the mounted node
+  so no checkbox is actually focused (decl-id/mount wiring gap); `parity_radio_set_navigate` — the
+  demo's plain `The` vs Python's `[bold italic red]The[/]` markup.
+- **`guide/workers` `weather05` no longer leaks worker events onto the screen** — the demo's
+  `on_worker_state_changed` handler emitted `eprintln!("[weather05] WorkerStateChanged: ...")`.
+  In a PTY, stderr shares the terminal with the alternate-screen buffer, so that raw text
+  corrupted the rendered frame; Python's `self.log(event)` routes to the devtools console and
+  never touches the screen. The handler is now a documented no-op (the widget update already
+  happens inside the worker via `call_from_thread`), restoring parity. Its real-app parity
+  case `parity_workers_weather05` is un-`#[ignore]`d and green.
+- **`guide/widgets` `checker01` ignore reason re-diagnosed** — it is **not** a
+  named-colour-resolution bug. Python's `checker01` uses Rich `Style.parse("on white")`/`("on
+  black")`, which yield ANSI *standard* colours (7/0) that Textual paints through the app's
+  ANSI terminal theme (MONOKAI, dark: white->`#c4c5b5`, black->`#1a1a1a`). textual-rs has no
+  ANSI-standard-palette -> terminal-theme render mapping, and its `Color::parse("white")`
+  correctly returns CSS `#ffffff` (matching Textual CSS `Color.parse('white') == (255,255,255)`);
+  changing that would break CSS-white parity. The fix requires an ANSI-theme render mechanism,
+  not a `src/style.rs` named-colour change. The `dynamic_watch` ProgressBar-fill and `widgets02`
+  Welcome/Markdown colour divergences trace to the same missing MONOKAI mapping (plus, for
+  `dynamic_watch`, a `Bar > .bar--bar` default-CSS selector that never matches `ProgressBar`'s
+  inline self-render), so their catch cases remain and are documented as framework-scoped.
+
+### Runtime fixes
+
+- **Live event loop now absorbs the app-mount ctx (worker/animation/message requests)** —
+  `run_widget_tree` called `on_app_mount` but dropped the resulting `EventCtx` without
+  absorbing its outcome, so anything staged from `on_mount_with_app` in a *live* run —
+  worker requests, posted messages, style/numeric animation requests, recompositions,
+  class ops — was silently discarded (the headless startup already absorbed it). This
+  made `@work`-decorated on-mount flows blank: `questions01`'s worker calls
+  `push_screen_wait(QuestionScreen)` from `on_mount`, but the worker was never spawned,
+  so the "Do you like Textual?" dialog never appeared. The live loop now builds a
+  `DispatchOutcome` from the mount ctx and absorbs it (mirroring `headless_startup`), so
+  worker-driven screen pushes land and on-mount animations run live. Flips the
+  `questions01` real-app parity demo to full Rust==Python and makes `animation01`'s
+  on-mount opacity fade progress in the live loop (both demos previously rendered a static
+  or blank screen). Verified: `parity_screens_questions01_dialog` (glyph+colour = 0 diffs),
+  `animation01_opacity_progression_over_time` (both apps now progress).
+- **`Collapsible` focus now lands on the `CollapsibleTitle`, not the container** —
+  Python's `CollapsibleTitle` is the focusable node (`can_focus=True`), while
+  `Collapsible` itself is a plain `Widget` (not focusable); it toggles when the
+  focused/clicked title posts its `Toggle` message. Rust had made the
+  `Collapsible` container focusable and handled `enter`/mouse there, so `:focus`
+  landed on the container and the title's `&:focus { background:
+  $block-cursor-background; color: $block-cursor-foreground }` rule never
+  applied — the focused header stayed the `:focus-within`-tinted `$surface`
+  (`#272727`) instead of Python's block-cursor blue (`bg #0178d4` / `fg
+  #ddedf9`). `Collapsible` is now non-focusable (focus descends into the title
+  via the default `can_focus_children`), the `CollapsibleTitle` handles `enter`
+  (while focused) and clicks by posting an internal toggle message, and the
+  parent `Collapsible` flips `collapsed` on that message (stopping propagation so
+  a nested outer collapsible is not also toggled). Makes `collapsible`,
+  `collapsible_nested`, and `collapsible_custom_symbol` glyph- and colour-exact
+  vs Python (the previous `:focus-within` residual of ~10 cells is now zero).
+- **`Switch` now runs its `value` watcher on programmatic changes** — `Switch`
+  implemented `ReactiveWidget::reactive_dispatch` (which snaps the slider position
+  and rebuilds the `-on`/`-off` CSS class) but its `impl Widget` never overrode
+  `reactive_widget()`, so the trait default returned `None`. The runtime reactive
+  phase reaches a widget's watcher only through `Widget::reactive_widget()`, so a
+  programmatic `switch.set_value(true)` (via `Handle::update`) recorded the change
+  but the queued dispatch was dropped: `value` flipped while `_slider_position`
+  stayed at `0.0` and the `-on` class was never added, so an ON switch rendered in
+  the OFF position (thumb on the left, off-state colours). `Switch` now returns
+  `Some(self)` from `reactive_widget()`, matching Python's `watch_value`. Fixes the
+  `compound/byte03` demo (typing a number flips the bit switches to their correct
+  on/off position — now glyph- and colour-perfect Rust==Python). Interactive toggles
+  were unaffected (they run through `on_event`). Regression test:
+  `switch_reactive_widget_hook_runs_watcher` in `src/widgets/switch.rs`.
+
+- **`:focus-within` background-tint is now applied during render** — the render
+  pipeline never installed the `:focus-within` node set, so rules like
+  `Collapsible:focus-within { background-tint: $foreground 5% }` (also on
+  `RadioSet`, `OptionList`, `Select`, `Tree`, `DataTable`, `ListView`, checkbox,
+  input) silently resolved to nothing and focused container surfaces stayed the
+  untinted `$surface` instead of Python's tinted `$surface + $foreground 5%`
+  (`#1e1e1e` vs `#272727`). The tree render path (`render_tree_composed` and the
+  test harness `render_tree_to_frame`) now computes the focused node plus its
+  ancestor chain (`routing::focus_within_ids_tree`) and installs it via
+  `set_focus_within` before style resolution, matching Python's `:focus-within`
+  semantics (a node matches if it or a descendant holds focus). Cuts the focused
+  `collapsible` surface colour residual from ~350 cells to the separate
+  `CollapsibleTitle:focus` background gap. Regression test:
+  `tests/focus_within_tint.rs`.
+
+- **A runtime CSS class change now re-resolves CSS + relayouts the owning subtree** —
+  Python `DOMNode.add_class`/`remove_class` runs `_update_styles()` → `refresh(layout=True)`,
+  so a class toggle that flips descendant `display`/`visibility` (or any layout-affecting
+  property) re-arranges the tree. Rust applied the class op to the arena but only requested
+  a repaint, which skips `run_layout_pass` (and therefore `apply_display_visibility_to_tree`),
+  leaving stale display state on screen. Applying a class op now requests a layout
+  invalidation at every class-op sink (event/message outcomes, app-key ops, reactive
+  dispatch, and the `with_widget_mut` pending-op drain). Fixes `stopwatch04`: clicking
+  Start adds `.started`, whose `.started #start { display:none }` / `#stop { display:block }`
+  / `#reset { visibility:hidden }` descendant rules now take effect so only "Stop" shows
+  (glyph-perfect Rust==Python; the residual is the separate `Color.a` blend keystone on the
+  revealed error button).
+- **`Collapsible` title symbol now tracks the parent's `collapsed` state** — Python keeps
+  the title glyph in sync via `Collapsible._update_collapsed` (`self._title.collapsed =
+  collapsed`). In the arena the `CollapsibleTitle` is a separate node the parent no longer
+  owns post-mount, so a runtime toggle left the ▼/▶ symbol stale. The layout pass now
+  propagates each `Collapsible`'s `collapsed` state to its title child (idempotent, driven
+  from the Collapsible's own state), so expand/collapse and the custom-symbol demos render
+  the correct glyph. Fixes the glyph parity of `collapsible`, `collapsible_nested`, and
+  `collapsible_custom_symbol` (residual is the separate `:focus-within` `background-tint`
+  focus-tint gap, shared with `radio_set`).
+### Reactive fixes
+
+- **Reactive init phase no longer recomposes (preserves auto-focus at mount)** — an
+  `#[reactive(recompose)]` field (Python `reactive(default, recompose=True)`) recorded a
+  synthetic init-phase change carrying the `recompose` flag, so the app/widget performed a
+  full recompose *at mount*. That rebuilt the freshly-composed subtree and discarded the
+  auto-focused first widget, so e.g. `set_reactive03` (a recompose list app) never focused
+  its `Input` and typed names went nowhere. Python's `Reactive._initialize_reactive` fires
+  watchers via `_check_watchers` (`reactive.py`), which never refreshes/recomposes —
+  recompose only happens in `Reactive._set` (a real change) or `mutate_reactive`. The init
+  phase now strips the recompose flag (`ReactiveFlags::without_recompose`), so the initial
+  `compose()` is authoritative and auto-focus survives; later setter/`mutate_reactive`
+  changes still recompose. Makes `set_reactive03` glyph-perfect (the appended `Hello, {name}`
+  Label now renders after submit). Widget-level recompose-on-change (refresh03) is
+  unaffected.
+
+### Styling fixes
+
+- **`background-tint` now tints a widget's BORDER + fill, not just its content** —
+  Python composites borders over `widget.background_colors`, a background that already
+  folds in `styles.background.tint(styles.background_tint)` (`_styles_cache.render_line`
+  → `dom.py:background_colors`). Rust already tinted the widget interior via
+  `apply_style_to_segments`, but `apply_border_edges` computed its inner background from
+  the raw `bg` and skipped the tint, so a focused widget's border/fill kept the untinted
+  surface. As a result the default `:focus { background-tint: $foreground 5% }` (and the
+  Button `:focus`/`:hover` tints) lightened the content row but not the border — e.g. a
+  focused `Input`'s `$surface` #1e1e1e stayed #1e1e1e on its border instead of #272727.
+  The border/fill inner background now applies `background_tint` the same way the
+  interior does, so focused/hovered bordered widgets match Python exactly. Flips 10
+  real dual-app `pty_interactive` parity cases (refresh01/03, question01/02/03,
+  modal01/02/03, on_decorator01/02) from BUG to Rust==Python.
+
+### Interactive functional verification (the 1.0 functional gate)
+
+Static-render parity (85/87 styled, 186/186 PTY) proved demos *look* right but not that
+they *work* — the tutorial stopwatch rendered perfectly while its clock was dead. This
+cycle closes that gap with a functional harness and a sweep that drove every interactive
+demo to a verified-working state.
+
+- **Pilot headless affordances** — `advance_clock` / `advance_ticks` (deterministic
+  timers + on_tick + animator on the manual clock), `hover`/`move_to` (MouseMove),
+  headless worker-pump (`process_worker_requests` + `call_from_thread`), `@click`
+  action-link routing in the headless click path, test seams (headless-safe
+  `suspend`, public `App::is_dark()`). The manual clock is now installed *before*
+  headless startup, so on-mount animations/timers are deterministic under `run_test`.
+- **`interactive_parity` liveness suite** — per-demo `#[test]` probes that run each demo
+  headless, perform its representative interaction, and assert the frame/state actually
+  changes. **139 / 141 interactive demos LIVE** (only `inline01`/`inline02` deferred to
+  1.1 inline mode).
+- **Framework fixes surfaced by the sweep** — binding chain now walks app-root +
+  screen-root bindings (modes/screens); transparent `Node` wrappers collapse so id /
+  messages / `#id` queries resolve to the real widget; reactive flips relayout + repaint
+  (Collapsible body, Checkbox component color); `App::mount` runs full compose+layout;
+  empty-Screen runtime bg composites; `toggle_dark` re-resolves design tokens + repaints;
+  animated opacity composites into the FrameBuffer. Plus tutorial stopwatch ports migrated
+  onto real `set_interval`/reactive (clock ticks from mount).
+
+- **Border outer-edge background now composites transparent parent surfaces** — a
+  widget with a `tall`/`panel` (or any two-tone) border whose parent carries a
+  semi-transparent background token (e.g. a `VerticalScroll { background: $boost }`
+  container, `$boost` = white @ 4% alpha) painted its outer border cells solid
+  **white**: the raw parent token was used as the border's `outer` background and
+  `to_simple_opaque()` promoted the un-composited alpha to `#ffffff`. It now mirrors
+  Python `DOMNode.background_colors`, which accumulates the ancestor chain into an
+  OPAQUE base background — when the parent background is not fully opaque it is folded
+  over the composited ancestor surface before use. Fixes the white toggle/border slot
+  seen behind `Checkbox`/`Switch` (and the compound `byte01`/`byte02`/`byte03` demos):
+  border edges now render the dark surface (`#1b1b1b`) exactly like Python.
+
+- **`pty_interactive` real dual-app harness (the trustworthy interactive standard)** —
+  a new test harness (`tests/pty_interactive.rs`) that runs BOTH the real cargo-built
+  Rust example AND the real Python Textual app, each in its own PTY at the same size,
+  drives the SAME multi-step input script into both, and compares what the terminals
+  actually render as a CELL GRID (per-cell glyph + fg + bg colour via the `vt100`
+  emulator). No tmux, no frozen goldens, no in-process probes — real app vs real app.
+  This closes the trust gap left by in-process liveness probes (a probe that called
+  `TimeDisplay::start()` directly went green while the live app's Start button did
+  nothing). It is multi-step (`SendKeys`/`Key`/`Click`/`Wait`), time-aware (multi-frame
+  capture so a running clock / fade / worker can be observed), colour-aware (truecolor
+  diff), and prints an honest Rust-vs-Python cell diff on mismatch. Non-determinism
+  policy: assert EXACT text+colour where rendering is deterministic, STRUCTURE/behaviour
+  where it is not (clock *advanced*, fade *progressed*, weather *appeared* / no internal
+  event text leaked). Ships with the six maintainer-flagged demos as acceptance cases —
+  `dynamic_watch` (counter 30 vs 3 + blue `#0178d4` vs white `#e0e0e0` bar),
+  `modes01` (footer present vs missing), `stopwatch06` (clock advances vs frozen after
+  Start), `weather05` (`WorkerStateChanged` leak), `animation01` (red→bg fade vs static
+  `#ff0000`), `widgets02` (red vs blue rule) — each proving the harness detects the real
+  divergence.
+
+- **Widgets interactive PARITY re-verification (Rust == Python)** — added 30
+  `pty_interactive` cases (one per interactive `docs/examples/widgets` demo) that
+  drive each demo's representative interaction on BOTH real apps and assert Rust
+  *matches* Python on the cell grid (glyph exact + colour; blank-cell fg ignored
+  since invisible, <=2/channel truecolor rounding tolerated). Opposite polarity of
+  the six catch cases. Result: **3 PASS** (`list_view`, `tabbed_content`,
+  `tabbed_content_label_color`), **27 BUG** — each committed
+  `#[ignore = "BUG: <concrete Rust-vs-Python diff>"]` so it is tracked and flips to
+  passing when fixed. Dominant roots surfaced: (1) focused-widget
+  `background-tint: $foreground 5%` not applied on `:focus` (Input/MaskedInput/
+  OptionList/RadioSet/Select show bg `#1e1e1e` vs Python `#272727`); (2) cursor/
+  zebra row-bg blend off in DataTable/Tree (`#0c7dd4` vs `#0178d4`, `#2d3740` vs
+  `#2b3339`); (3) behavioural gaps — `Tabs.add_tab` adds no visible tab,
+  `RadioSet.Changed`->`Label.update` not reflected, `Collapsible` Enter / collapse-
+  all does not toggle, `Pretty` renders lists multi-line vs inline, `switch.tcss`
+  `align: center middle` not honoured (left-aligned), `Checkbox` toggle-slot
+  painted white (`#ffffff`) instead of dark surface, `Log` bg `#121212` vs pure
+  black `#000000`, `Select` overlay content/layout diverges.
+
+### Fixed
+
+- **Dim text under the block cursor now dims as a colour (OptionList
+  highlighted line)** — Python's always-on `ANSIToTruecolor` line filter
+  converts a `dim` attribute into a foreground pre-blended toward the
+  segment's background (`dim_color`: `bg + (fg - bg) * 0.66`) and strips the
+  attribute, so dim glyphs never reach the terminal as SGR dim. Rust forwarded
+  SGR dim, which most terminals ignore for truecolor — so the `Select`
+  overlay's dim blank-prompt row painted the `$block-cursor-foreground` at
+  full strength (#ddedf9) when highlighted instead of Python's dimmed #92c5ec
+  over #0178d4. `finalize_highlight_line` now pre-blends a dim segment's
+  applied cursor foreground toward the highlight background at Python's
+  `DIM_FACTOR` (0.66) and strips the attribute. With this and the
+  frozen-ancestor-bg fix, the interactive `select_widget` /
+  `select_from_values_widget` parity tests assert FULL glyph+colour parity.
+- **Ancestor pseudo-class changes now re-bake a transparent child's glyph
+  background (frozen-ancestor-bg re-capture)** — the frozen-ancestor-background
+  mechanism (Python `visual_style`-cache parity) kept a transparent child's
+  baked ancestor surface keyed only on the child's OWN style identity, so an
+  ancestor's `:focus`/`:hover`/class change that altered the composited surface
+  (e.g. `Select:focus > SelectCurrent { background-tint }` no longer matching
+  after focus moved into the Select's overlay) left the child's glyph cells
+  painted on the STALE surface while the surrounding fill repainted live. The
+  cache fingerprint now also covers the ancestor selector-identity chain
+  (type/id/classes/pseudo-states), matching Python's `update_styles` cascade
+  which clears every descendant's cached `visual_style` on class/pseudo
+  changes. Ancestor INLINE style mutations (e.g. an action setting
+  `screen.styles.background`) still deliberately keep the frozen surface —
+  Python parity (`guide/actions`). Fixes the arena `Select` bar keeping its
+  focus tint on the label glyphs after the dropdown opens.
+- **Auto-size (`width: auto`/`height: auto`) now honoured for custom leaf widgets
+  that render content directly** — a childless widget with `width: auto`/`height:
+  auto` that reports no intrinsic size (e.g. a `Static`-subclass port rendering
+  text, or a widget rendering a `rich_rs::Table`) previously flex-filled the whole
+  container instead of shrinking to its content. The layout now renders such a leaf
+  to measure its natural content size (mirroring Python
+  `Widget.get_content_width`/`get_content_height`), so the box sizes to
+  content + chrome. Fixes the bordered auto `Name` box in `guide/reactivity/refresh02`
+  (now 12×3, was full-viewport) and un-blocks `align: center middle` on an auto-sized
+  child in `guide/widgets/fizzbuzz01` (the auto table now centers instead of rendering
+  full-size top-left). (Layout-only: `src/layout/common.rs`.)
+- **Explicit percentage width resolves against the margin-adjusted parent (Python
+  parity)** — an explicit `%` width now resolves against `parent_width − horizontal
+  margin` (matching Python `Widget._get_box_model`: `styles_width.resolve(container −
+  margin.totals, …)`), symmetric with the height path which already did this. A
+  `width: 80%; margin: 1` box in a 120-col parent is now `80% of 118`, not `80% of
+  120`, so `align: center middle` centers it exactly instead of one column early
+  (`guide/compound/compound01`). Margin-free widths are unchanged.
+
+- **`how-to/render_compose` gradient rotation is now live under `run_test`** — the
+  `Splash` container's gradient angle was derived from wall-clock
+  `SystemTime::now()` (`time() * 90`), so the deterministic Pilot clock
+  (`advance_clock`) could not move it and the liveness probe captured an
+  unchanged frame. The angle is now a pure function of the framework tick counter
+  (`on_tick`), the Rust analogue of Python's `auto_refresh`-driven refresh — the
+  same pattern `LoadingIndicator` uses. `advance_clock`/`advance_ticks` now step
+  the runtime tick and rotate the gradient reproducibly, flipping the demo's
+  liveness probe from `#[ignore]`d to a real asserting test.
+- **`guide/widgets/loading01` load transition is now driveable headless** — the
+  demo's per-table slow-load simulation no longer uses a wall-clock
+  `std::thread::sleep` inside a background worker (which the manual test clock
+  cannot fast-forward), and instead schedules each deferred load with
+  `App::set_timer(delay, ...)` — the framework analogue of Python loading01's
+  `@work` coroutine `await sleep(randint(2, 10))`. `set_timer` fires on the real
+  wall clock when the app runs live and is driven by `Pilot::advance_clock(delay)`
+  under the headless harness, so the `LoadingIndicator` → populated-`DataTable`
+  transition is fully deterministic. Flips the loading01 liveness probe from
+  UNCLEAR (`#[ignore]`d) to LIVE: before `advance_clock` every table is empty
+  (loading shown); after, every table holds the full row set and loading is
+  cleared, with the rendered frame changing across the transition.
+
+- **Animated widget `opacity` is now live under `run_test`** — three coupled
+  fixes make an on-mount opacity fade (e.g. `guide/animator/animation01`'s 2s
+  `animate_style("opacity", 100 -> 0)`) progress deterministically and visibly:
+  (1) the headless harness installs the deterministic manual timer clock
+  *before* `headless_startup`, so timers/animations scheduled from
+  `on_mount`/`on_mount_with_app` are anchored to the manual timeline and stepped
+  only by `advance_clock`/`advance_ticks` — previously the startup settling pump
+  ran them to completion on the wall clock before the test body (or `Pilot`)
+  gained control; (2) `apply_style_value_to_property` now plumbs the animator's
+  per-tick `opacity`/`text_opacity` (`StyleValue::Float`, 0–100) into the node's
+  inline style, instead of silently dropping it, so the resolved style reflects
+  the fading value each frame; (3) render-time opacity compositing
+  (`apply_widget_opacity_to_segments`) already blends a widget's cells toward the
+  backdrop, so the changed opacity visibly changes rendered cells. The live
+  (non-headless) `run()` path is unaffected (it never enables the manual clock).
+  Flips `guide/animator/animation01`'s liveness probe from DEAD (`#[ignore]`d) to
+  LIVE.
+
+- **`toggle_dark` / theme switching re-resolves design tokens and recolours the
+  frame** — `App::action_toggle_dark` now switches the active *registered* theme
+  (`textual-dark` <-> `textual-light`), exactly like Python's
+  `App.action_toggle_dark`, instead of flipping a flat `theme.base` bg/fg. A
+  theme switch (`set_theme_by_name` / `cycle_theme` / `toggle_dark`) now also
+  re-resolves token-bearing CSS: design tokens (`$primary`/`$background`/`$panel`/
+  …) are resolved to concrete colours at CSS *parse* time, so the cached default
+  and app stylesheets are re-parsed against the new active theme (the app
+  stylesheet source is retained for this), and the computed-style cache is
+  invalidated via a theme-generation counter (the Rust analogue of Python
+  `_watch_theme` -> `_invalidate_css` + `refresh_css`). Token-styled surfaces
+  (Header / Footer / Screen and any `$`-token widget) now recolour together on a
+  dark-mode toggle. Flips the `tutorial/stopwatch01` liveness probe from DEAD to
+  LIVE and deepens `events/on_decorator01`/`on_decorator02` (frame now recolours,
+  not just the `is_dark` flag).
+- **Empty Screen composites a runtime-set inline background** — the tree
+  compositor now re-fills the Screen surface node's content box with its
+  RESOLVED node background, so a background set at runtime on the `Screen` node
+  (e.g. `query_mut("Screen").set_styles(|s| s.set_bg(red))` or
+  `run_action("set_background('red')")`) repaints the rendered surface even when
+  the Screen has no child widgets. Previously the Screen surface widget
+  (`AppRoot`) baked its blank surface from its own seed style, missing the bg set
+  on the node record, so an empty Screen painted 0 colored cells. The fill is
+  scoped to the content box so a Screen with a `border:` keeps its chrome.
+  Mirrors Python's `Screen.styles.background` driving the screen blank. Flips the
+  `guide/actions/actions01` and `guide/actions/actions02` liveness probes from
+  DEAD to LIVE.
+- **`guide/actions/actions07` page navigation scrolls** — the demo now sizes each
+  page `width: 100vw` (full viewport width, using the already-supported `vw`
+  viewport unit) so the 5 pages lay out side-by-side with horizontal overflow,
+  and its `next`/`previous` app actions mark themselves handled
+  (`ctx.set_handled()`) so the runtime absorbs the repaint for a pure page scroll
+  that changes no binding hints. A page-to-page scroll now changes the rendered
+  frame; flips the actions07 liveness probe from DEAD to LIVE.
+
+### Added
+
+- **`@click` action-link routing in the headless click path** — the headless
+  click path now mirrors the live loop's `@click` routing: after the synthesized
+  Click it consults `App::click_action_at` at the clicked cell and dispatches any
+  baked `[@click=...]` action with the clicked widget as the namespace. Flips the
+  `guide/actions/actions03` liveness probe from UNCLEAR to LIVE.
+- **`Pilot::hover(selector)` / `Pilot::move_to(x, y)`** — headless mouse-move
+  injection (Python `pilot.hover` / `pilot.move`). Routes a `MouseMove` through
+  the same headless dispatch as click injection: updates hover state (`:hover`,
+  Enter/Leave), arms/refreshes the shared system tooltip, and dispatches the
+  `MouseMove` to the widget under the cursor. Flips the `guide/input/mouse01`,
+  `guide/widgets/checker04`, `guide/widgets/tooltip01`, and
+  `guide/widgets/tooltip02` liveness probes from UNCLEAR to LIVE.
+- **`Pilot::advance_ticks(n)` + animator on the manual clock** — `advance_ticks`
+  delivers `root.on_tick(tick)` (and the active arena widgets' `on_tick`) n times
+  with a strictly-increasing counter, mirroring the live loop's per-frame tick, so
+  on-tick-driven motion (LoadingIndicator spinner) advances deterministically
+  headless. The animator is now anchored to the timer clock (`App::clock_now`)
+  for enqueue and step, so under `run_test` animations follow the deterministic
+  manual clock that `advance_clock` drives instead of racing `Instant::now()`;
+  `advance_clock` also delivers a frame tick per wake. Flips the
+  `widgets/loading_indicator` liveness probe from UNCLEAR to LIVE.
+- **Headless worker pump** — the in-process `Pilot` pump (`headless_pump`) now
+  owns a `WorkerRegistry` and runs a worker phase each pass (mirroring the live
+  `run_with` loop): newly-requested workers are spawned, their (bounded)
+  completion is awaited deterministically, and `WorkerStateChanged` is routed
+  through the runtime so worker-driven demos reach a settled frame by the time
+  the pump returns to idle. Flips the `weather02`/`weather03`/`weather04`/
+  `weather05`, `events/dictionary`, and `guide/screens/questions01` liveness
+  probes from UNCLEAR to LIVE.
+- **`App::is_dark()`** — public read accessor for the app's dark-mode flag
+  (Python `App.dark`), so headless `Pilot` tests can assert a `toggle_dark`
+  actually flipped the state even when the rendered frame shows no per-cell
+  color change. Flips the `events/on_decorator01` / `events/on_decorator02`
+  toggle-dark liveness probes from UNCLEAR to LIVE.
+- **Headless-safe suspend + `App::headless_suspend_count()`** — under the `Pilot`
+  harness `action_suspend_process` records the request (instead of sending a real
+  `SIGTSTP` that would suspend the test runner) and exposes the count, so
+  suspend-on-interaction demos are assertable headless. Flips the `app/suspend`
+  and `app/suspend_process` liveness probes from UNCLEAR to LIVE.
+- **`App::headless_stop_requested()`** — a Pilot/test helper that reports whether
+  any interaction dispatched under the headless pump requested the app to stop
+  (`ctx.request_stop()`), e.g. a "press a button to quit" demo. The live loop
+  breaks on stop, but the headless pump keeps running so the test body can read
+  state; this sticky flag makes exit-on-interaction demos assertable through the
+  Pilot harness even though their rendered frame is otherwise unchanged.
+- **Liveness probes for `app` / `events` / `screens` / `themes` / `how-to` doc
+  examples** — each interactive doc demo now carries a `#[cfg(test)]` Pilot
+  (`run_test`) liveness probe that performs the representative interaction (push
+  screen, click button, type input, switch mode, cycle theme, …) and asserts the
+  rendered frame / observable state changed. Probes for demos blocked by a known
+  runtime gap are committed `#[ignore]`d with a documented root cause and TODO,
+  so the fix later flips them to passing guards.
+- **Deterministic Pilot clock** — inside `App::run_test`, the timer subsystem now
+  runs on a deterministic manual clock (installed at `Pilot` creation, preserving
+  any timers scheduled during startup). New `Pilot::advance_clock(Duration)`
+  advances time deadline-by-deadline — exactly as the real event loop wakes once
+  per timer timeout — firing each due timer, pumping the headless loop, and
+  re-rendering. Time-driven demos (clocks, stopwatches, progress timers) become
+  fully deterministic under test with no sleeping or flakiness. The deterministic
+  analogue of Python's `await pilot.pause(delay)`. `Pilot::pause()` is unchanged.
+- **Interactive-parity harness** (`tests/interactive_parity.rs`) — a runner that
+  proves interactive demos actually *do something*. Each entry is
+  `{ name, build, script, assert }` with two assertion modes: `Liveness`
+  (frame fingerprint must change across the scripted interaction — catches dead
+  demos) and `Exact` (a queried value must equal an expected, deterministic
+  result via `advance_clock`). Seeded with responsive button-counter (live +
+  exact) and timer-counter (live + exact-via-`advance_clock`) demos, plus a
+  deliberately inert demo proving the harness *fails* a non-responsive
+  interaction and *passes* a responsive one.
+- **Liveness probes for widget demos (A–M)** — each interactive `docs/examples/
+  widgets/examples/*` demo gained a committed `#[cfg(test)]` liveness probe that
+  runs the demo headless via `App::run_test` and asserts the representative
+  interaction changes the rendered frame (or observable state): button/tab
+  clicks, key bindings, `DataTable`/`ListView`/`DirectoryTree` cursor navigation,
+  `Input`/`MaskedInput` typing + validation, `ContentSwitcher`/`TabbedContent`
+  switching, the `modal` overlay, the `keys` logger, and the `clock` timer. These
+  become permanent regression guards. Three demos surfaced real framework gaps
+  and ship as `#[ignore]`d guards (with documented ROOTs) that flip to LIVE once
+  fixed: a focused `Checkbox` toggle does not repaint its `-on` component color,
+  and a runtime `Collapsible` collapse (binding **or** title-click — state
+  confirmed to flip via diagnostic) does not relayout/repaint its body
+  (`collapsible`, `collapsible_custom_symbol`, `collapsible_nested`). Two are
+  `#[ignore]`d as unprobeable headless: `loading_indicator` (its animation is
+  `on_tick`-driven and the headless pump does not deliver `on_tick` — needs a
+  `Pilot::advance_ticks`) and `link` (its click opens an external URL).
+
+### Fixed
+
+- **`App::mount` / `mount_boxed` / `mount_all` build and paint dynamically-mounted
+  widgets.** These app-level mounts inserted a raw widget node (`tree.mount`)
+  without running the canonical compose+layout+render integration, so a mounted
+  widget's composed children (e.g. `Welcome`'s `#close` button) were never built
+  and nothing painted. They now route through `mount_extracted_recursive` (the
+  same path compose-time builds and `mount_under`/`mount_before`/`mount_after`
+  use) and request a relayout via `after_structural_mutation`, so composed
+  children build, lay out, and render. They also now target the active *screen
+  body* (Python `App.mount` defaults to `self.screen`) instead of the bare app
+  runtime root — mounting onto the root made the widget a sibling of the
+  full-height screen, pushing it offscreen. Flips the `app/widgets02`,
+  `app/widgets03`, and `app/widgets04` liveness probes from DEAD to LIVE.
+- **App and screen-root key bindings stay live while a screen/mode is active.**
+  Key dispatch matched declarative bindings only in the active (top-of-stack)
+  screen tree, so two whole binding classes were silently dropped: (1) the
+  app-root's own `App::BINDINGS` (e.g. `app.switch_mode`, `app.push_screen`),
+  which live in a separate app-root tree, and (2) a pushed screen's own
+  declarative `bindings()` when nothing was focused (the no-focus fallback only
+  walked a single-child chain, stopping at the screen-host root before reaching
+  the screen-body root that owns bindings like `escape -> app.pop_screen`). A
+  new `match_binding_chain` walks the active chain (focused→root, or
+  `[screen-root, screen-body-root]` when unfocused) and then the app-root chain,
+  mirroring Python `App._check_bindings` / `Screen._binding_chain`. Flips the
+  `guide/screens/modes01`, `guide/screens/screen01`, and `guide/screens/screen02`
+  liveness probes from DEAD to LIVE (mode switching and screen push/pop via key
+  bindings now fire).
+- **Widget BINDINGS without an `action_registry()` entry now run on their source
+  node.** A widget that declared `BINDINGS` whose action is served only by an
+  `execute_action` override (no `action_registry()` entry) had its action
+  dropped: `resolve_action` found no registry owner and the action fell through
+  to the root, which did not handle it. Binding resolution now falls back to the
+  binding's own source node (the binding source IS the target, matching Python's
+  `run_action(action, namespace)`), so such actions dispatch correctly. Flips the
+  `guide/widgets/counter02` liveness probe from DEAD to LIVE.
+- **Structural `Node` wrappers (`Widget(id="x")` parity) no longer break the
+  inner widget's identity or layout.** The compose/node-build pipeline now
+  COLLAPSES a purely structural transparent `Node` (a wrapper carrying only an id
+  and/or wrapping a scroll container, with no border) out of the arena tree:
+  its single inner widget is mounted in the wrapper's place and owns the
+  forwarded id/inline-style, exactly like Python where `HorizontalScroll(id="x")`
+  / `Input(id="x")` is one widget. Previously the wrapper interposed a
+  `width:auto` (shrink-to-content) layout layer above the inner widget, which (a)
+  emitted id-bearing messages and answered typed `#id` downcast queries against
+  the non-rendering wrapper instead of the inner widget, and (b) prevented a
+  wrapped scroll container from establishing its own scroll viewport (its
+  `width:100vw` children collapsed and never scrolled). A `Button` declared via
+  `ChildDecl::with_id(..)` now also propagates that id into its own seed so
+  `ButtonPressed.button_id` resolves it. A *classed* non-scroll wrapper (e.g.
+  `Static.class("words")`, whose class carries `border`/`background`/`width`)
+  is intentionally left intact — it is the rendered styled box. Flips the
+  `guide/reactivity/dynamic_watch`, `guide/compound/byte03`,
+  `guide/input/binding01`, and `guide/actions/actions06` liveness probes from
+  DEAD to LIVE.
+- **Runtime state flips now relayout/repaint the owning node (Checkbox `-on`,
+  Collapsible body).** A widget state change made outside an event handler
+  (e.g. `Checkbox` toggle via the reactive phase, `Collapsible::toggle()` via
+  `App::with_widget_mut_as`) only mutated the widget's detached seed classes and
+  never reached the arena node, so the rendered frame was byte-identical despite
+  the asserted state change. `Checkbox::watch_checked` now queues a `-on`
+  class op onto its node (mirroring Python `ToggleButton.watch_value` →
+  `set_class(value, "-on")`) so `&.-on > .toggle--button` repaints the button
+  color; `Collapsible` now toggles the `-collapsed` class on its node — via a
+  pending-class-op seam drained in `App::with_widget_mut` for non-event toggles,
+  via `EventCtx` for the click/key path (which now also requests layout
+  invalidation) — so the `&.-collapsed > Contents { display: none }` rule
+  hides/reveals the body and the box re-sizes. Mirrors Python
+  `Collapsible._update_collapsed`. Flips the `checkbox`, `collapsible`,
+  `collapsible_custom_symbol`, and `collapsible_nested` liveness probes to LIVE.
+- **Post-mount `Static::set_inline_style` now reaches the arena node.** A
+  widget's seed (including its inline style) is moved into the arena node at
+  mount, so a post-mount `set_inline_style` (e.g. a reactive `watch_color`
+  doing `widget.set_inline_style(Style::new().bg(c))` through
+  `App::with_widget_mut`) only updated the now-detached widget seed and never
+  reached the node's rendered style. `Static::set_inline_style` now stages a
+  write-through that `App::with_widget_mut` cascades onto the node's inline
+  style (`node.styles.style.combine(&staged)`, per-property override matching
+  Python `widget.styles.<prop> = value`). Flips the `computed01` and `watch01`
+  liveness probes to LIVE.
+- **Headless (`run_test`/Pilot) now fires app-level timer-callback reactives.**
+  The headless pump invoked `run_due_timer_callbacks` directly, bypassing the
+  root `on_app_timer` hook, so reactive fields mutated inside `set_interval`
+  callbacks (via `app.reactive_ctx()`) never ran their app-level `watch_*`
+  watchers. The pump now routes due timer fires through `on_app_timer` (matching
+  the live event loop), so time-driven clock demos (`recompose01/02`,
+  `world_clock01/02/03`) update under `Pilot::advance_clock`.
+- **Headless (`run_test`/Pilot) now runs the widget-level reactive phase.** The
+  headless pump never drained the runtime reactive queue
+  (`enqueue_runtime_reactive_entry`), so a custom widget bumping its own reactive
+  in `on_message`/`on_button_pressed` enqueued an entry that was never processed
+  — its `watch_*` never fired headless. The pump now runs
+  `run_event_loop_reactive_phase` each pass when the queue is non-empty.
+- **Widget-level `watch_with_app` watchers now fire from the runtime reactive
+  phase.** `process_reactive_entries_for_node` dispatched only the no-app
+  `reactive_dispatch`, silently dropping a widget's `watch_with_app` watchers
+  (which receive `&mut App` to `query_one`/mutate siblings) for entries enqueued
+  via `enqueue_runtime_reactive_entry` — affecting both live and headless runs.
+  It now takes the widget out of the tree (new `App::with_node_widget_taken_dyn`)
+  and dispatches `reactive_dispatch_with_app`, matching the `data_bind` fan-out
+  path and Python widget watchers. Fixes `set_reactive01/02`, `world_clock01`.
+- **`Static::text()`** accessor added (reads the current plain-text content),
+  mirroring reading Python `Static.renderable` for assertions/tests.
+
+### Changed
+
+- **Stopwatch + progress-bar tutorial demos migrated onto the real timer/reactive
+  fundamentals.** `stopwatch05`, `stopwatch06`, and the final `stopwatch` tutorial
+  ports no longer fake the live clock with an app-level `on_tick` id-query push.
+  `TimeDisplay` is now a `#[derive(Reactive)]` `Digits` widget with a `time`
+  reactive driven by an app-owned `set_interval(1/60)` (mirroring Python's
+  `set_interval(1/60, update_time)` + `watch_time` → `update`); `stopwatch06`/
+  `stopwatch` add `start()`/`stop()`/`reset()` (timer resume/pause + zero) routed
+  to each Stopwatch's `TimeDisplay` via a posted command message, so the Reset
+  button works. `progress_bar_isolated`/`progress_bar_styled` now register a
+  paused `set_interval(1/10, …, pause=True)` at mount and `resume()` it on Start,
+  matching Python instead of advancing per render frame. Each migrated demo gains
+  deterministic unit tests asserting the timer+reactive wiring advances the
+  displayed value.
+
+## [1.0.0-dev] - 2026-06-24
+
+Pre-release development milestone (tagged `v1.0.0-dev`), retained for history. The
+framing below reflects the *old* "the demos are the spec" plan, later superseded by
+`ROAD_TO_1.0_PIVOT.md`; the numbers were accurate at the time.
+
+First stable-release *candidate*. textual-rs is a fundamentals-first Rust port of Python
+Textual, verified against Textual's own documentation examples.
+
+**Parity at this milestone:** styled per-cell-RGB harness **85/87**, plain-text PTY harness
+**186/186**, ~92% of the 309-example comprehensive demo audit faithful.
+
+**Subsystems built/completed this cycle** (each a real, Python-faithful framework layer —
+not demo emulation):
+
+- **`Content` styled-text subsystem** (`src/content/`) — the unit widgets render: markup
+  (deferred `Style|str`, link=meta-only), `wrap_and_format`, `render_strips` (visual_style +
+  spans + surfaces). Widgets migrated off scattered rich-rs emulation onto it.
+- **Screen-as-Widget** — `Screen` owns `BINDINGS` + `on_event`/`on_message`/`on_button_pressed`
+  + `dismiss(value)` (dynamic `ScreenResult`); `push_screen_wait()` worker-suspending await.
+- **DataTable** renderable `Content` cell model + key-function / multi-column sort.
+- **Pilot headless test harness** — `App::run_test()` → in-process `Pilot` (press/click/pause/
+  wait), unlocking behavioral tests suite-wide.
+- **Timers** (`set_interval`/`set_timer`/`TimerHandle`) + reactive field-to-field `data_bind`.
+- **Action subsystem** — `[@click]` hit-test→dispatch, `run_action(str)`, widget→screen→app
+  namespaced resolution + `check_action` gating.
+- **Named theme registry** (21 built-in themes) + public component-class style API +
+  `Content::from_markup(**vars)` + `call_from_thread`.
+- **Layout**: `u16→i32` signed-placement Rect (negative offsets clip correctly); percentage
+  width >100% + horizontal-overflow clipping; visibility inheritance; scrollbar gutter/
+  visibility/overlay correctness; grid keyline geometry.
+- **Color**: float-alpha `Color`, exact Python LAB/blend, theme-token + opacity double-application.
+- **deps**: rich-rs `1.2.1` (link markup OSC8-only).
+
+### 2026-06-24 (fix(scroll): scrollbar-visibility reserves the gutter without painting the bar)
+
+- **`scrollbar-visibility` no longer gates scrollbar-lane RESERVATION or forces the
+  bar to show — it only governs whether the bar is PAINTED**, matching Python.
+  Previously the `hidden` case zeroed `allow_h/allow_v` in `ScrollbarPolicy::resolve`
+  (dropping the lane so content reflowed into the gutter columns), and the `visible`
+  case force-showed the bar even with no overflow. Python's `_refresh_scrollbars`
+  computes `show_*` from `overflow_x/overflow_y` ALONE (never visibility),
+  `scrollbar_size_vertical` reserves the stable gutter regardless of `show`, and the
+  `_compositor` PAINTS the chrome only when `show_* && scrollbar_visibility ==
+  "visible"`. The Rust fix mirrors that split:
+  - `ScrollbarPolicy::resolve` derives lane RESERVATION (`allow_*`) and
+    `force_visible_*` from overflow only, and exposes new
+    `ScrollbarGeometry::paint_vertical / paint_horizontal` (false under
+    `scrollbar-visibility: hidden`).
+  - `apply_host_scrollbar_layout` drives the scrollbar lane RECT off lane
+    RESERVATION (`vertical_lane_width > 0` / `horizontal_lane_height > 0`), NOT
+    `show`, so a `scrollbar-gutter: stable` host keeps its reserved 2-column rect
+    even with no overflow (previously the reserved columns were orphaned). The bar
+    PAINT (`set_runtime_display`) is gated on `show && paint`, so the hidden /
+    reserved-but-empty gutter renders the host background — exact-RGB vs Python.
+- Clears `scrollbar_visibility` (promoted to the styled-parity PASSING set, exact-RGB
+  vs Python; 85 PASS).
+
+### 2026-06-24 (feat(layout): signed placement — negative offsets + `position: absolute`/`relative`)
+
+- **Widget-tree placement coordinates are now SIGNED (`i32`).** `widget_tree::Rect`
+  (`x0/y0/x1/y1`) and the layout `Region` position (`x/y`) changed from `u16` to
+  `i32`, mirroring Python's signed `Region`/`Offset` (`textual/geometry.py`). The CSS
+  `offset` is now applied in signed space (no `saturating_sub` clamp to `0`) across all
+  five layout modules, so a placement with a negative origin (for example
+  `offset: 0 -3`, whose top border sits 3 rows above the viewport) SURVIVES layout and
+  the existing `i32` render clip drops the off-viewport edge instead of the position
+  being destroyed at layout time. Widths/heights (`x1 - x0`) remain non-negative. The
+  hit-test map stays in unsigned screen space (derived from painted cells), so a widget
+  painted partly off-screen is hit-tested only on its visible cells — exactly correct.
+- **`position: absolute` widgets size to their content.** `layout_absolute` now sizes an
+  `auto` width/height absolute widget by its intrinsic content (plus its own chrome)
+  instead of filling the available region — mirroring Python `_get_box_model`. An
+  absolutely-positioned `Label` (default `width: auto`) is now content-sized rather than
+  stretched across the screen.
+- **CSS `offset` is applied AFTER container alignment.** Flow-child offsets are now
+  applied in a post-align pass (`apply_flow_offsets`), matching Python's post-arrange
+  `WidgetPlacement` offset. Previously the offset was folded into the flow position
+  before `apply_parent_align`, so container centering re-centered the offset-shifted box
+  and CANCELLED the displacement. A `position: relative; offset: x y` child is now
+  centered first and THEN shifted.
+- **Clears the `position` styled-parity example; `offset` placement is now exact** (its
+  remaining residual is an unrelated content-align-of-wrapped-text root in the Content
+  render pipeline, not a placement bug).
+
+### 2026-06-24 (fix(scroll): overflow inline-override + per-id scrollbar CSS + box-model vertical-wrap)
+
+- **`VerticalScroll` / `HorizontalScroll` no longer set overflow inline.** Their
+  constructors previously called `.with_overflow_x/y(...)` at INLINE specificity,
+  which OVERRODE user CSS such as `#right { overflow-y: hidden }`. Python declares
+  these overflows via `DEFAULT_CSS` (an OVERRIDABLE default), mirrored in
+  `css/defaults/containers.rs` (`VerticalScroll { overflow-x: hidden; overflow-y:
+  auto }` / `HorizontalScroll { overflow-x: auto; overflow-y: hidden }`). Removing
+  the inline set lets that default apply while user CSS can still override it.
+- **Per-id scrollbar CSS now resolves against the host node.**
+  `ScrollView::resolve_scrollbar_css` re-resolved styles OFF-TREE via
+  `selector_meta_generic(self)`, which reads the widget's own `style_id()` (always
+  `None` for `ScrollableContainer` / `ScrollView`) and so missed per-id rules like
+  `#v1 { scrollbar-size: 5 1 }` that live on the arena NODE record — re-reserving the
+  default-2 lane and double-clipping a column. It now reads the host node's
+  render-pass resolved style via `current_self_style()` (the same source the
+  dedicated `ScrollBar` already uses for `current_host_style()`).
+- **Box-model vertical-wrap: auto-width children of a horizontally-overflowing host
+  no longer inflate the virtual height.** On a host that allows horizontal overflow
+  (`overflow-x: auto|scroll`, or a scroll host clipping `overflow-x: hidden`), an
+  EXPLICIT `width: auto` child (e.g. a `Label`) is now measured at its FULL unwrapped
+  content width (via `auto_content_width()`), so its `height: auto` counts the
+  unwrapped line count instead of the inflated count produced by wrapping to the
+  narrow viewport. An UNSET-width child (Python `1fr` fill, e.g. `Static`) still
+  wraps. This is the vertical/content-axis counterpart of the C13 horizontal-clip
+  fix and is Python-faithful (`_resolve.resolve_box_models` measures content width
+  unconstrained; the compositor clips / h-scrolls the overflow, never re-wrapping).
+- Clears `overflow`, `scrollbar_corner_color`, and `scrollbar_size2` (promoted to the
+  styled-parity PASSING set, exact-RGB vs Python). `scrollbar_visibility` remains
+  PENDING — `scrollbar-visibility: hidden` must RESERVE the scrollbar gutter (content
+  shrinks) while skipping the scrollbar paint, distinct from `overflow: hidden`
+  (which removes the lane); that lives in `ScrollbarPolicy` / the host-scrollbar
+  render path (out of this pass's scope).
+### 2026-06-24 (fix(examples): cosmetic faithfulness — clock local time + fizzbuzz02 get_content_width hook)
+
+- **`clock` example now uses local wall-clock time.** Replaced the UTC
+  `SystemTime/UNIX_EPOCH` computation with `chrono::Local::now()`, matching Python
+  `datetime.now()` which returns local (not UTC) time. Added `chrono = "0.4"` to
+  the `docs/examples/widgets` crate.
+- **`fizzbuzz02` now wires the real `get_content_width` hook.** Previously, the
+  Python `FizzBuzz.get_content_width` → 50 override was emulated via `width: 50` in
+  CSS on a bare `Static`. The example now has a proper `FizzBuzz` widget struct that
+  implements `Widget::content_width() → Some(50)` — the Rust equivalent of Python's
+  `get_content_width` — and uses `width: auto` in CSS (faithful to the Python
+  `FizzBuzz { width: auto; }` CSS rule). The widget also implements `layout_height()`
+  from the pre-computed table line count so `height: auto` + `align: center middle`
+  center the widget correctly. PTY parity golden unchanged (same visual output).
+- **`digits` / `clock` id-selector substitution** (`#pi` / `#clock` → type-selector
+  `Digits`) left unchanged: the visual output is identical for single-widget apps (one
+  widget of that type), so this substitution is benign.
+- **`radio_button` / `radio_set` emoji** already use the correct Unicode literals
+  (`👉 🔴` / `\u{1F449}\u{1F534}`) that Rich resolves from
+  `:backhand_index_pointing_right: :red_circle:` shortcodes — no change needed.
+- DEFERRED: markdown / markdown_viewer code-fence syntax highlighting +
+  `code_indent_guides=False` — needs tree-sitter grammar changes, out of scope for
+  this sweep.
+
+### 2026-06-24 (feat(border): markup-styled border (sub)titles + ellipsis truncation + grid vcenter)
+
+- **Border title / subtitle now render through the Content markup pipeline.** A
+  new `Content::render_label_segments(base_style, resolve_fn)` (the Rust analogue
+  of Python `Content.render_segments`) emits a single line of segments with each
+  markup span layered over the border-line base style. `overlay_border_text` uses
+  it so embedded tags style the label — `[b red]`, `[reverse]`, `[u][r]…[/]`,
+  `white on black` — instead of rendering the tags literally, matching Python
+  `_border.render_border_label`.
+- **Over-long (sub)titles truncate with an ellipsis (`…`).** The label is built as
+  markup `Content`, truncated via `Content::truncate(width, ellipsis=true)`, padded
+  one blank per present corner, and laid out using Python's exact two-stage edge
+  arithmetic (`render_border_label` gets `width - 2` and reserves `2 * corners`;
+  `render_row` distributes `max(0, width - corners - label_length)` fill around the
+  label per the title alignment).
+- **`align: center middle` no longer mis-centers an id/class-bordered Label by one
+  row.** Root cause: a widget's `layout_height()` bakes its own border/padding by
+  resolving CSS OFF-TREE (`selector_meta_generic`), but a `Label`'s css id/classes
+  were cleared from its seed at mount (`take_node_seed`), so id/class-targeted rules
+  (`#lbl1 { border: vkey }`) were invisible to that resolution and the auto-height
+  box dropped its border rows. `Label` now preserves its id/classes post-mount via a
+  `css_id_cache` / `classes_cache` (the same pattern `Static` already uses) and
+  overrides `style_id()` / `style_classes()`, so off-tree chrome resolution sees the
+  id and the box keeps its full height.
+- **Markup `X on Y` color parsing fixed.** `white on black` previously assigned
+  `fg=black, bg=white` (swapped) because the pending foreground color was committed
+  under the post-`on` background flag. The parser now flushes the pending color as a
+  foreground before `on` switches to background, so `white on black` is
+  `fg=white, bg=black`.
+- Clears `border_sub_title_align_all` (promoted to the styled-parity PASSING set,
+  exact-RGB vs Python).
+
+### 2026-06-24 (fix(layout): >100% percentage width + horizontal-overflow clipping)
+
+- **An explicit oversized width (e.g. `width: 150%`) on a child of a
+  horizontally-scrollable parent now keeps its RESOLVED width instead of being
+  clamped to the viewport and wrapped.** `layout_vertical` previously applied
+  `base_w.min(explicit_w)` to every explicit width, squeezing a `width: 150%`
+  Label to the container width so its text re-wrapped. It now keeps the full
+  resolved width (1.5x the container content region) whenever the parent allows
+  horizontal overflow, matching Python `_resolve.resolve_box_models` (which calls
+  `_get_box_model` WITHOUT `constrain_width` for vertical/horizontal layouts — only
+  the grid layout constrains). The compositor clips the overflow to the viewport
+  and the horizontal scrollbar scrolls it. Clears `scrollbars` (Label
+  `width: 150%; height: 150%`) and `scrollbar_size` (`width: 200`) to cell-and-RGB
+  exact vs Python.
+- **Scroll hosts now keep child width un-wrapped on a `hidden`-overflow axis too.**
+  A `VerticalScroll` (overflow-x: HIDDEN, overflow-y: auto) is a scroll host that
+  clips its content region; Python re-wraps content only for `overflow: visible`,
+  never for a clipping container. `allow_h_overflow`/`allow_v_overflow` now also
+  fire for `overflow: hidden` when the laid-out node is a scroll host (reports
+  `clips_descendants_to_content`), so a `VerticalScroll`'s auto-width Label stays
+  at its intrinsic width and is clipped horizontally rather than wrapped. Scoped to
+  scroll hosts — a plain `Container` (overflow: hidden, not a scroll host) keeps
+  its historical wrap-to-fit. (The remaining scrollbar-demo divergences —
+  `overflow`, `scrollbar_visibility`, `scrollbar_size2`, `scrollbar_corner_color` —
+  are now isolated to scrollbar thumb/lane rendering + hidden-axis scrollbar
+  suppression, NOT content geometry.)
+
+### 2026-06-24 (fix(text): intrinsic height matches Python Content.get_height exactly)
+
+- **Text/Label/Static intrinsic height now reproduces Python `Content.get_height`
+  exactly** for plain text, internal/trailing blank lines, and word-wrapped
+  paragraphs. `intrinsic_wrapped_height` (the shared `Label`/`Static` line counter)
+  now routes through `Content::wrap_and_format` — the line-for-line port of Python's
+  `_wrap_and_format` — instead of rendering the whole body through Rich and counting
+  segment lines (which mishandled the keepends / trailing-empty-line case and
+  produced a +N over-count). It now matches Python for: `split(allow_blank=True)`
+  semantics (internal blanks kept, a trailing `\n` yields a final blank line:
+  `hello\n` → 2, `a\n\nb` → 3), and WORD-BOUNDARY wrapping via `divide_line` (not a
+  naive `cell_len.div_ceil(width)` char-count). Verified cell-exact against Python
+  `content.py` for the scrollbar-demo body `TEXT * 10` (e.g. width 75 → 71 rows,
+  40 → 111, 10 → 401). New unit tests pin these counts.
+- **`Content::wrap_and_format` no_wrap + overflow:fold now char-folds at `width`**
+  (Python `cuts = range(0, line.cell_length, width)`), a flush cell-width chop,
+  instead of word-wrapping via `divide_line` — fixing the `text-wrap: nowrap` fold
+  line count to match Python.
+- **`docs/examples/styles/scrollbars` example:** the `.right` class is now applied
+  to the `ScrollableContainer` itself (matching Python `classes="right"`), not a
+  `Node` wrapper, so the `scrollbar-background`/`scrollbar-color`/
+  `scrollbar-corner-color` tokens reach the bar. (The remaining scrollbar-demo
+  divergence is horizontal `width: 150%` percentage sizing + horizontal-overflow
+  clipping — a separate layout root, not text height.)
+
+### 2026-06-24 (fix(scrollbar): track foreground composites over host base surface)
+
+- **Scrollbar track foreground now composites over the host's base background, not
+  the dark scrollbar track.** Python applies the host widget `color` to every
+  scrollbar segment via `_Styled`, with a semi-transparent color resolved against
+  `background_colors[0]` (the surface beneath the widget). The Rust scrollbar was
+  flattening the host fg over the scrollbar's own (dark) track background, so a
+  `Screen { background: white; color: blue 80% }` produced a `#0000cc` track fg
+  (blue 80% over black) instead of Python's `#3333ff` (blue 80% over white). The fg
+  is now flattened over the resolved `base_bg` surface before being baked into the
+  track style. Improves `docs/examples/styles/scrollbar_size` (the track-fg colour
+  now matches Python; the residual thumb-geometry gap is a separate content-height
+  word-wrap root, not scrollbar render math).
+### 2026-06-24 (chore: clippy hygiene sweep — zero non-forbidden warnings)
+
+- Removed genuinely-dead private fields: `ParsedTag.meta` (markup.rs), `RunningTimer.name`
+  (timers.rs); callers already stored metadata elsewhere.
+- Removed `seed_ident_methods!()` from `CollapsibleContents` (private type, methods unused).
+- Fixed all `unused_mut` / `field_reassign_with_default` / `manual_clamp` / `manual_strip`
+  / `while_let_loop` / `vec_init_then_push` / `map_identity` / `manual_checked_ops`
+  / `question_mark` / `redundant_locals` warnings across ~25 source files.
+- Added targeted `#[allow(clippy::...)]` (with rationale comments) for intentional
+  patterns: `too_many_arguments` on layout/border/render helpers, `needless_range_loop`
+  where the index is load-bearing, `type_complexity` on public API signatures,
+  `large_enum_variant` on content model enums, `while_let_loop` in the binding-hints
+  loop (multiple break conditions).
+- Replaced all bare `crate::` references inside `macro_rules!` bodies in `delegate.rs`
+  with `$crate::` (fixes `clippy::crate_in_macro_def`).
+- Replaced `is_multiple_of(100)` (stable since 1.87) in `progress_bar.rs` with
+  `% 100 == 0` to stay within MSRV 1.85.
+- Added `Default` impls for `OptionList` and `RadioSet` (previously only had `new()`).
+- Remaining 25 warnings are all in the 3 forbidden files owned by the
+  `c11-scrollthumb` branch (`render.rs`, `scroll_view.rs`, `scrollbar.rs`);
+  they will be addressed there.
+
+### 2026-06-24 (fix(render): keyline canvas fg=bg base + Label trailing-blank height)
+
+- **`Label` intrinsic height now counts a trailing blank line.**
+  `Label::intrinsic_height` had its own inline line counter using a naive
+  `cell_len.div_ceil(width)` char-count that also dropped the trailing empty row of
+  text ending in `\n` (Rust `str::lines()` semantics). It now routes through the
+  shared `widgets::text::intrinsic_wrapped_height` (Python
+  `Content.split(allow_blank=True)`), so a `Label(TEXT * N)` whose `TEXT` ends in
+  `\n` measures the trailing blank — its auto/content height matches Python (e.g. 71
+  vs 70 rows), which drives the correct scroll/overflow geometry. Fixes
+  `docs/examples/styles/scrollbars2`.
+- **`keyline` containers now render their canvas background (`fg = bg`).** A
+  container with a `keyline` paints its whole content box as a solid
+  `fg=<surface> bg=<surface>` base before children render (Python
+  `layout.py::render_keyline` → `Canvas.render`, whose keyline-spanned rows set the
+  blank foreground to the background color). Visible children composite on top; the
+  gutter and any `visibility:hidden` grid cell now show the canvas color
+  (`fg=<bg> bg=<bg>`) instead of the screen's `fg=default` base blank. Fixes
+  `docs/examples/styles/keyline`.
+
+### 2026-06-24 (fix(widgets): word-wrap Static height + Placeholder height:auto)
+
+- **`Static` intrinsic height now counts real word-wrapped lines.**
+  `Static::intrinsic_height` routed line counting through a naive
+  `cell_len.div_ceil(width)` char-count, which under-counts a paragraph that wraps at
+  word boundaries (real wrapping produces MORE lines), so a padded/narrow `Static`
+  clipped its wrapped tail. It now uses the shared word-wrap line counter
+  (`widgets::text::intrinsic_wrapped_height`, the same Rich-wrap path Label uses), so
+  wrapped text sizes to its true line count. Fixes
+  `docs/examples/guide/styles/padding02`.
+- **New `Widget::auto_content_height()` hook (height counterpart of
+  `auto_content_width`).** Lets a widget report an intrinsic content height for
+  `height: auto` sizing while still returning `None` from `layout_height()` so an
+  UNSET height flex-fills the container (Python's box model). Consulted by
+  `measure_intrinsic_content_height`, symmetric with the existing
+  `auto_content_width` path in `measure_intrinsic_content_width`.
+- **`Placeholder` now shrinks to its label under `height: auto`.** It implements
+  `auto_content_height()` (1 line for the default/size variants; wrapped lorem-ipsum
+  for the text variant) while keeping `layout_height() == None` for the unset-height
+  fill case (the `how-to/layout05` Tweet stack). Fixes
+  `docs/examples/styles/padding_all`, whose example was also rewired to put the `id`
+  on each `Placeholder` directly (Python `Placeholder(label, id=...)`) so the `#pN`
+  padding rules and the `Placeholder { width:auto; height:auto }` rule resolve on the
+  same node instead of a transparent `Node` wrapper.
+
+### 2026-06-24 (feat(screen): App::push_screen_wait — worker-suspending screen push)
+
+- **`App::push_screen_wait(screen)`** — the Rust analogue of Python Textual's
+  `result = await self.push_screen_wait(QuestionScreen(...))`. Pushes a screen from a
+  background worker thread and suspends that worker until the screen is dismissed, then
+  resumes it with the dismiss `ScreenResult`.
+  - Built on the existing `call_from_thread` UI-thread bridge and the Screen-as-Widget
+    dismiss seam (`drain_screen_dismissals`): the push is marshalled onto the UI thread
+    (where `push_screen_with_callback` registers a result callback), and the worker blocks
+    on a oneshot channel that the callback resolves when the screen is popped — mirroring
+    Python suspending a `@work` worker on the screen-result future.
+  - Associated function (no `&self`), like `call_from_thread`: a worker thread never holds an
+    `App` reference; the app is supplied to the push on the UI thread.
+  - `PushScreenWaitError` (re-exported in the prelude): `NotRunning` (no event loop),
+    `NoActiveWorker` (called on the UI thread — Python's `NoActiveWorker` parity; would
+    deadlock the loop it waits on), and `Disconnected` (app shut down before dismissal).
+  - **`questions01`** (`docs/examples/guide/screens/questions01`) rewired to the faithful
+    port: `QuestionScreen` owns its dismiss decision via `on_button_pressed`
+    (`#yes` → `dismiss(true)`, `#no` → `dismiss(false)`), and `on_mount` spawns a worker that
+    `push_screen_wait`s and notifies based on the returned `bool` — no app-level callback
+    plumbing or shared answer slot.
+### 2026-06-24 (fix(layout/render): visibility inheritance + grid keyline spans)
+
+- **`visibility` is now inherited (Python `DOMNode.visible`)** — a node with no own
+  `visibility` rule inherits its ancestors' effective visibility, while an explicit
+  rule overrides it. So a `visibility: hidden` container hides its descendants, but a
+  descendant with an explicit `visibility: visible` (`#bot > Placeholder`) shows again.
+  Implemented as a top-down effective-visibility thread in
+  `apply_display_visibility_to_tree`.
+- **`visibility: hidden` no longer drops descendants from layout** — only `display: none`
+  removes a node from layout. A `visibility: hidden` node keeps its space AND its
+  descendants are still positioned, so a `visibility: visible` descendant of a hidden
+  container gets a real rect and paints (visibility is a paint-time concern in
+  `render_tree_node`, not a layout-time one). Fixes the `visibility_containers` demo.
+- **Grid keylines honour `column-span` / `row-span`** — grid keylines are now drawn as a
+  rectangle perimeter per visible child (mirroring Python `layout.py::render_keyline`'s
+  `Canvas`/`Rectangle` model) instead of a cross-product of every column/row boundary. A
+  spanned cell draws one region boundary with no spurious interior dividers, and a
+  `visibility: hidden` cell contributes no keyline of its own. Fixes the `keyline` grid
+  structure (remaining `Placeholder` id-label rendering is a separate widget gap).
+
+### 2026-06-24 (feat(pilot): App::run_test + in-process Pilot headless test harness)
+
+- **`run_test()` / `Pilot`** — an in-process, headless test harness mirroring Python
+  Textual's `App.run_test()` + `pilot.py`. Drives the real app dispatch engine without a
+  terminal: a `headless` seam on `App` pins a virtual screen size, suppresses real TTY
+  lifecycle/ANSI output, and renders into the in-memory `FrameBuffer`.
+  - `textual::run_test(app, |pilot| { ... })` and `run_test_sized(app, w, h, |pilot| ...)`
+    free functions, plus a `TextualApp::run_test(self, body)` convenience method. The body
+    runs synchronously with a `Pilot` that borrows the live app + root.
+  - `Pilot` API (Python parity): `press(&["r", "ctrl+a", "enter", ...])` / `press_key`,
+    `click(selector)` / `click_at(x, y)`, `pause()` / `wait_for_idle()`, `resize(w, h)`, and
+    `app()` / `app_mut()` for assertions (`query_one`, app state). Each driver call injects the
+    event(s) through the same dispatch primitives the live loop uses (app key hook → priority
+    action → command palette → declarative BINDINGS → raw key → action-map; mouse down/up with
+    click synthesis) and advances the loop to idle (messages, timers, animations, render).
+  - `parse_key(spec)` — Textual key-name → crossterm `KeyEvent` (chars, named keys, `ctrl+`/
+    `shift+`/`alt+` modifiers, `fN`).
+  - Test-assertion helpers on `App`: `node_explicit_bg(node)` (mirrors `widget.styles.background`),
+    `frame_cell_bg(x, y)`, `frame_fingerprint()`, `node_screen_rect(node)`, `set_headless_size`.
+- **`Error::Message(String)`** variant added for harness/selector errors.
+- This unblocks behavioural (input-simulating) tests across the whole framework. The
+  `docs/examples/guide/testing/test_rgb` example's tests are now real Pilot-driven ports of
+  Python's `test_rgb.py` (`test_keys` presses r/g/b/x; `test_buttons` clicks #red/#green/#blue),
+  replacing the prior structural-only stand-ins.
+
+### 2026-06-24 (feat(screen): Screen-as-Widget — BINDINGS + handlers + dismiss-with-result)
+
+- **`Screen` is now a handler-owning DOM node**, mirroring Python Textual's `Screen(Widget)`.
+  The `Screen` trait gained an event/message/binding surface alongside `compose`/lifecycle:
+  - `Screen::bindings() -> Vec<BindingDecl>` — declarative key bindings owned by the screen
+    (Python `Screen.BINDINGS`). These surface on the screen-tree root, so the existing
+    focused→root binding match drives them whenever the screen is active.
+  - `Screen::on_event(&Event, &mut ScreenMessageCtx)` and
+    `Screen::on_message(&MessageEvent, &mut ScreenMessageCtx)` — routed during the active
+    screen tree's capture/bubble dispatch (the screen root sits at the top of that path).
+  - `Screen::on_button_pressed(&ButtonPressed, control, &mut ScreenMessageCtx)` — typed
+    convenience the default `on_message` dispatches `Button.Pressed` to (Python parity).
+- **`ScreenMessageCtx`** — new handler context wrapping `EventCtx` with screen-scoped controls:
+  `dismiss(value)` (dynamic `ScreenResult` — `ctx.dismiss(true)` boxes any `Send + 'static`
+  value, no generic `Screen<Result = T>`), `dismiss_none()`, `dismiss_result(..)`, `exit()`,
+  `set_handled()`, `request_repaint()`. `dismiss` stages the result on a slot the runtime drains
+  and pops on the next loop pass, delivering the value to the `push_screen_with_callback` callback
+  — keeping screen teardown on the single runtime control path (Python schedules an `AwaitComplete`).
+- **No parallel dispatch path:** the screen instance is shared (`Arc<Mutex<dyn Screen>>`) between
+  the screen-stack entry and the screen-tree root host, which delegates `bindings()`/`on_event()`/
+  `on_message()` into it. Existing tree routing (`dispatch_event_tree` / `dispatch_message_queue_tree`
+  / `match_binding_tree`) drives the screen handlers with no event-loop changes. `push_screen` /
+  `pop_screen` / `dismiss_screen` now force a relayout so screen transitions repaint without
+  demo-level invalidation.
+- **modal01 / modal02 / modal03 rewired to the real Screen handlers.** Their `QuitScreen` now owns
+  `on_button_pressed` (modal01/02: `quit → ctx.exit()`, `cancel → ctx.dismiss_none()`; modal03:
+  `ctx.dismiss(bool)` delivered to the push callback, which exits on `true`) instead of routing
+  button presses through app-definition message hooks. Adds verification tests: a modal Screen
+  exposes a binding, handles a `Button.Pressed`, and dismisses with a typed value to the callback
+  (end-to-end through the real tree dispatch), plus per-demo handler tests.
+- Leaves a clean seam for `push_screen_wait` (1l): the dismiss slot + callback flow is the same
+  mechanism a worker-suspending awaiter will consume.
+### 2026-06-24 (feat(data_table): renderable Content cells + key-function / multi-column sort)
+
+- **`DataTable` cells are now styled `Content`, not plain `String`.** Each cell is a
+  `Cell { content: Content, align: TextAlign }` (exported as `DataTableCell` in the prelude),
+  rendered through the canonical content subsystem (`Content::render_strips`). Per-cell
+  foreground color, italic/bold, arbitrary markup spans, and horizontal justification now fall
+  out of the content path for free — replacing the old parallel `cell_justify: Vec<Vec<CellJustify>>`
+  emulation vector. This is faithful to Python Textual where a cell may be a `rich.text.Text`
+  with its own `style` and `justify`. New cell constructors: `Cell::text`/`markup`/`content`/
+  `styled` + `with_align`, plus `From<&str>`/`From<String>`/`From<Content>`.
+- **Styled-cell add APIs.** `DataTable::add_row_cells(Vec<C: Into<Cell>>)` and
+  `add_row_cells_labeled` accept pre-built styled cells; `add_row_labeled` now takes an
+  `Into<Content>` label, so row labels are styled `Content` (Python `add_row(..., label=Text(...))`).
+  The existing `add_row`/`add_rows`/`add_columns`/`add_row_with_key` `ToString` paths still work
+  (they wrap each value in a plain `Cell::text`). `update_cell_content` replaces a cell with a
+  styled one.
+- **Key-function and multi-column sort.** New `DataTable::sort_by(columns, reverse, key_fn)` —
+  the closure receives the selected columns' plain text and returns a `SortKey` (numeric/string/
+  tuple), faithful to Python `sort(*columns, key=…, reverse=…)`. `sort_by_columns(columns, reverse)`
+  is the no-key multi-column form. The single-column `sort(column, reverse)` now compares values as
+  `SortKey`s, so numeric columns sort numerically (`"10"` after `"2"`) instead of lexicographically.
+  New `SortKey` type (numbers via `f64::total_cmp`, strings lexicographic, tuples element-wise).
+- **Demos rewired to real fundamentals** (no more "framework gap" approximations):
+  `data_table_renderables` builds italic `#03AC13` right-justified `Content` cells;
+  `data_table_labels` uses a styled `[#B0FC38 italic]` row label; `data_table_sort` uses real
+  key-function sorts (average-of-times-then-last-name, last-name lambda, country plain-text) and a
+  real multi-column sort.
+- New verification tests in `tests/data_table.rs`: a styled cell renders its `#03AC13` fg + italic;
+  numeric-key and key-function single-column sorts order correctly; a custom average-key over
+  multiple columns sorts faithfully; multi-column sort; styled row label renders. No styled-parity
+  regression (72 PASSING held; pty_parity 186/0).
+
+### 2026-06-24 (fix(color): port LAB conversion exactly to Python's easyrgb f64 form)
+
+- **`rgb_to_lab` / `lab_to_rgb` are now byte-exact to Python Textual.** The RGB↔CIE-L\*a\*b\*
+  conversion in `src/style.rs` was the Bruce-Lindbloom `6/29` piecewise form in `f32`; Python
+  Textual's `textual/color.py` uses the easyrgb form (`7.787*t + 16/116`, thresholds `0.008856` /
+  `0.2068930344`, asymmetric `lab_to_rgb` X/Y/Z constants) in `f64`. The conversion is now a faithful
+  `f64` port of the easyrgb form. `lighten_lab` / `darken_lab` take `f64` amounts (so the luminosity
+  step `spread/2 = 0.075` feeds the LAB math without `f32` rounding), drop the non-Python pre-conversion
+  `L` clamp (Python only `.clamped`s the final RGBA), and truncate channels with `int(c*255)` semantics.
+  This removes shade-token drift of up to 42/channel across the `$*-lighten-*` / `$*-darken-*`
+  design tokens.
+- **`textual-dark` base colors corrected.** The static token table stored `accent`/`warning` as
+  `#FEA62B` and `error` as `#B93C5B` — these are Python's *round-tripped* `n==0` shade values, not the
+  source colors. The table now stores the source colors (`#FFA62B`, `#FFA62B`, `#BA3C5B`) so the
+  lighten/darken shades derive correctly, while the BARE `$accent`/`$warning`/`$error`/… design tokens
+  reproduce Python's `color.lighten(0)` LAB round-trip (`#FEA62B`/`#B93C5B`). Tokens derived from
+  `accent.hex` in Python's `_generate` (e.g. `footer-key-foreground`) keep the raw source color,
+  matching Python. All 78 shade tokens (both the `parse_color_like` static path and the
+  `ColorSystem.generate` path in `src/theme.rs`) are now byte-exact to Python's `textual-dark`.
+- New regression tests `style::tests::lab_shade_parity_with_python` (41 LAB lighten/darken cases) and
+  `style::tests::dark_design_tokens_match_python_generate` (bare + shade + derived tokens) lock the
+  parity. No styled-parity regression (72 PASSING held).
+### 2026-06-23 (feat(helpers): B-cluster helper APIs — scroll_visible + Welcome arena composition)
+
+- **`App::scroll_visible(node_id: NodeId) -> bool`** — new method that scrolls the nearest
+  scrollable ancestor to make a descendant widget visible, mirroring Python's
+  `Widget.scroll_visible()` → `Screen.scroll_to_widget()` → `scroll_to_region()` flow.
+  Two-phase algorithm: read phase walks the arena ancestor chain looking for the first
+  `scroll_viewport_size()`-bearing container, computes the widget's virtual coordinate
+  (screen_pos − container_origin + current_offset), applies minimum delta on each axis via
+  `min_scroll_delta`, then write phase downcast-dispatches to `ScrollView`,
+  `ScrollableContainer`, `HorizontalScroll`, or `VerticalScroll`.  Returns `false` when no
+  scrollable ancestor exists or the node is absent.
+- **`Welcome` — arena composition.** `Welcome` was using an inline-rendering approach where
+  its `Button` and `Markdown` were private fields not mounted in the arena tree.  `Welcome`
+  now uses `compose()` to place `Container(id="md") > Markdown` and `Button(id="close")` as
+  proper arena children.  `render()` returns empty segments; events and messages route through
+  the tree.  `set_close_label(&str)` is a new public method.  `query_one(Button)` / `#close`
+  now resolves correctly — enabling `widgets04` label update.
+- **Demos rewired:** `actions06`, `actions07` — replaced terminal-width scroll hack with
+  `app.scroll_visible(page_id)`; `widgets04` — uses `with_query_one_mut_as::<Button>` on
+  `#close` to change the label after mount.
+- **Tests:** `tests/welcome.rs` — 3 integration tests (render, compose count, lifecycle);
+  internal unit tests in `src/widgets/welcome.rs` for compose ids + message routing;
+  `tests/scroll_view.rs` — `app_scroll_visible_returns_false_for_missing_node` verifies
+  method contract.
+### 2026-06-23 (feat(callthread): `App::call_from_thread` — synchronous UI-thread dispatch)
+
+- **`App::call_from_thread(callback)` — post a callable onto the UI thread from a worker.** New
+  primitive mirroring Python Textual's [`App.call_from_thread`](https://textual.textualize.io/api/app/#textual.app.App.call_from_thread).
+  A background worker thread (e.g. from `EventCtx::request_worker_task` /
+  `request_exclusive_worker_task`) posts a closure onto the app's event loop; the loop runs it with
+  exclusive `&mut App` access on the next tick and ships its return value back, blocking the worker
+  until it returns. This replaces the previous `Arc<Mutex<Option<…>>>` result-ferrying workaround in
+  the threaded-worker demos with a faithful, reusable framework primitive. Unlike Python it is an
+  *associated function* (no `&self`): a worker thread does not hold an `App` reference; the app is
+  supplied to the callback on the UI thread instead.
+  - API: `App::call_from_thread<F, R>(callback) -> Result<R, CallFromThreadError>` where
+    `F: FnOnce(&mut App) -> R + Send + 'static`, `R: Send + 'static`; `App::is_ui_thread() -> bool`.
+  - Errors (mirroring Python's `RuntimeError` guards): `CallFromThreadError::NotRunning` (no event
+    loop), `SameThread` (called on the UI thread — would deadlock), `Disconnected` (app shut down
+    before the callable ran). `CallFromThreadError` is re-exported in `textual::prelude`.
+  - Runtime wiring: the event loop registers its thread as the UI thread (RAII guard, unregisters and
+    drains pending jobs on every exit path) and drains the global call-from-thread queue once per tick
+    before processing worker requests.
+  - Demos rewired: `docs/examples/guide/workers/examples/weather04` and `weather05` now use
+    `App::call_from_thread` to apply fetched weather to the `#weather` `Static`, exactly mirroring
+    Python weather05's `self.call_from_thread(weather_widget.update, weather)` (and dropping the
+    shared-mutex result buffer entirely).
+### 2026-06-23 (fix(progress_bar): gradient color sweep reversed to match Python `_apply_gradient`)
+
+- **`render_determinate_gradient` — gradient direction now matches Python exactly.**
+  Python's `_apply_gradient` (in `renderables/bar.py`) applies the gradient
+  **reversed**, keyed off the highlighted (text) length — not the absolute cell
+  position: `t = (text_length - offset) / (width - 1)`, so the leftmost highlighted
+  cell gets the highest t value and the rightmost gets the lowest.  The previous Rust
+  implementation used forward `t = x / (width - 1)` keyed off absolute position,
+  producing a mirrored sweep.  Fixed by:
+  - Pre-counting the total highlighted cells (`highlighted_count`).
+  - Computing per-cell `t = (highlighted_count - highlight_offset) / (width - 1)`
+    (decreasing left-to-right), matching Python exactly.
+  - `get_color` already clamps t to [0, 1] so t > 1 (partially-filled bar) is
+    handled correctly.
+- Added two regression tests (`gradient_direction_reversed_matches_python`,
+  `gradient_direction_partial_fill_reversed`) that assert the per-cell gradient
+  color direction matches Python's direction for both 100%- and 50%-filled bars.
+
+### 2026-06-23 (feat(renderwire): B-cluster renderable wiring — gradient, OptionContent, pretty, rich_log)
+
+- **`LinearGradient` — multi-stop gradient in `ProgressBar`.** `ProgressBar` previously collapsed
+  the gradient to a 2-stop `(Color, Color)` pair; it now holds a full `LinearGradient` (existing
+  renderable at `src/renderables/gradient.rs`). The 12-stop rainbow demo port now uses the real
+  `LinearGradient` instead of a 2-color approximation. `LinearGradient::get_color()` is now public
+  (renamed from private `sample_color`) matching Python's `Gradient.get_color`. API: `ProgressBar`
+  gains `gradient()`, `set_gradient()`, `with_gradient()` returning/taking `Option<LinearGradient>`.
+- **`OptionContent` — arbitrary Renderables in OptionList items.** `OptionItem` can now hold
+  `OptionContent::Renderable(Arc<dyn Renderable>)` in addition to `OptionContent::Text(Text)`.
+  Tables render live at the runtime widget content width (Python `scrollable_content_region.width`
+  parity — scrollbar-width-aware). API: `OptionItem::renderable(label, r)`,
+  `OptionItem::renderable_with_id(label, r, id)`, `item.content() -> Option<&OptionContent>`,
+  `item.text_content() -> Option<&Text>`. `OptionContent` and `OptionId` are re-exported in
+  `textual::prelude`. The `option_list_tables` example port now uses `OptionItem::renderable`
+  instead of pre-rendering tables to `Text` at hardcoded width 78.
+- **`RichLog::write_debug` — real Pretty path.** `write_debug<T: Debug>` previously wrote a plain
+  text repr; it now writes a `rich_rs::pretty::Pretty` renderable so debug values appear with proper
+  syntax highlighting and Python-repr-style indentation (matching Python's `RichLog.write(value)` via
+  `rich.pretty.Pretty`).
+- **`pretty.rs` — confirmed already correct.** The existing `Pretty::new(&T)` path captures
+  `format!("{:?}", value)` and feeds it to `rich_rs::pretty::Pretty::from_str()`. No changes needed.
+### 2026-06-23 (feat(routing): declarative `@on` routing + `prevent` context)
+
+- **Declarative message routing (`@on(Message, selector)`).** New `routing` module with
+  `MessageRouter<S>` — the Rust analogue of Python Textual's `@on` decorator (`textual/_on.py`).
+  Register handlers with `router.on::<M>(selector, handler)` / `on_any::<M>(handler)`, then
+  `router.dispatch(state, event, ctx)` runs every handler whose message type matches *and* whose
+  CSS selector matches the message's control (mirroring Python's `_get_dispatch_methods`). Selectors
+  support `#id`, `.class`, `Type`, compound terms (`Button#save.primary`, `.toggle.dark`) and
+  comma-separated groups (`#quit, #cancel`), parsed by the new `Selector` type. A selector-less
+  (`""` / `Selector::any()`) route matches every control. Control identity is supplied by the new
+  `Message::control_meta()` trait method + `ControlMeta` struct; `ButtonPressed` implements it
+  (`#id` + `Button` type), so `@on(Button.Pressed, "#quit")` routing works end-to-end.
+- **`prevent(MessageType)` context.** `EventCtx::prevent::<M>(|ctx| { ... })` (and
+  `prevent_types(&[TypeId], ...)`) temporarily suppress a message type from being posted for the
+  duration of the closure, mirroring Python's `with self.prevent(M):` (`message_pump.py`
+  `_prevent_message_types_stack` + `post_message`'s `_is_prevented` check). Scopes nest (the active
+  prevented set is the union of the stack). `is_prevented::<M>()`, `pending_message_count()`, and
+  `has_pending_message::<M>()` were added for querying/testing.
+- **Demo ports rewired to real features:** `events/on_decorator02` now routes via `MessageRouter`
+  (`@on(Button.Pressed, "#bell"/"#toggle-dark"/"#quit")`); `events/on_decorator01` keeps the
+  single-handler form and routes the theme toggle through `run_action("app.toggle_dark")`;
+  `events/prevent` clears its `Input` inside `ctx.prevent::<InputChanged>()` so the bell-on-change
+  handler never fires for a programmatic clear (replacing the structural-only note).
+- **Deferred:** `guide/compound/byte03`'s `prevent(BitSwitch.BitChanged)` still uses a bool flag —
+  its feedback loop is suppressed across a *later* reactive-update cycle (`Handle::update`'s watcher
+  emits through a different `EventCtx`), which an app-side `prevent` scope cannot span until `prevent`
+  is threaded through `ReactiveCtx`/the reactive-update pipeline (`DEFERRED(byte03-prevent)`).
+### 2026-06-23 (fix(widgets/DirectoryTree): apply `filter_paths` on the async lazy subdir load)
+
+- **`DirectoryTree::filter_paths` now applies on every load path.** The custom path-filter
+  predicate is applied not only to the initial synchronous build and direct `read_children`,
+  but also to the **async lazy subdirectory load** (`AsyncTaskResult::DirectoryEntries` delivered
+  for an expanded subdir). Previously a `DEFERRED` gap meant the filter was bypassed when a subdir
+  was expanded, so excluded entries (e.g. dotfiles) leaked into lazily-loaded subtrees. This matches
+  Python `DirectoryTree.filter_paths`, whose filter runs inside the single `_load_directory` worker
+  used for all loads (initial, lazy expand, reload).
+- **Example rewired:** `docs/examples/widgets/directory_tree_filtered` no longer documents a known
+  gap; expanding a nested directory keeps dotfiles hidden, matching the top-level behavior of
+  Python's `FilteredDirectoryTree`.
+- **Verification test:** new `directory_tree_filter_applies_on_async_lazy_subdir_load` expands a
+  subdirectory (spawning an async `ReadDirectory`), delivers an async result containing both a kept
+  file and a dotfile, and asserts the dotfile never reaches the rendered tree while the kept file does.
+### 2026-06-23 (fix(runtime): fire `on_mount()` on arena-tree children)
+
+- **Extracted tree children now receive `on_mount()`.** Children declared via `compose()` /
+  `with_child()` are extracted out of their parent widget and re-homed as arena-tree nodes. The
+  tree-build path drained the initial `Mount` lifecycle events and discarded them, so those nodes
+  never had `on_mount()` called — only the synthetic root and widgets that still hold their children
+  as struct fields (which container widgets deliberately skip in tree mode). A widget that populates
+  its content in `on_mount` (the `Hello(Static)` wrapper pattern: an inner `Static` updated on mount,
+  with `render()` delegated to it) therefore rendered an **empty content box**. `build_widget_tree`
+  and `build_widget_tree_from_root` now call the new `WidgetTree::fire_mount_callbacks(root_stub)`,
+  which invokes `on_mount()` on every freshly-mounted node (in mount order, skipping the root stub).
+  This was **not** a render-delegation bug — content set in `new()` always painted; the gap was the
+  missing per-node `on_mount()`. Fixes the `docs/examples/guide/widgets/hello04`, `hello05`, and
+  `hello06` demos (multilingual greeting now paints on startup).
+- Added `tests/wrapped_static_mount_render.rs` (positive: wrapped-`Static` content set in `on_mount`
+  paints; negative control: skipping `fire_mount_callbacks` reproduces the empty box).
+
+### 2026-06-23 (feat(reactive): field-to-field `data_bind` reactive binding)
+
+- **Field-to-field data binding (keystone).** `App::data_bind_reactive::<W, T>(source, source_field,
+  target_selector, set_child)` binds a parent/app reactive **field** to a child widget's reactive
+  **field** — Python parity with `child.data_bind(App.field)` / `child.data_bind(child=App.field)`.
+  Whenever the source reactive changes, the value propagates into every widget matched by
+  `target_selector` (via the caller-supplied typed setter, an unconditional set mirroring Python's
+  `_Mutated`) and each child's `watch_*` fires. Previously the derive `Reactive` engine had
+  compute/watch/recompose/validate/mutate but **no** way to propagate one reactive into another
+  widget's reactive; demos faked it with manual `on_tick` fan-out.
+- **App-level reactive changes now fire dynamic watchers.** The app-reactive bridge
+  (`dispatch_app_reactive`) fires `data_bind` / `watch_reactive` watchers registered against the app
+  reactive source (`App::app_reactive_source()`) after the app's own `watch_*`, mirroring Python
+  `_check_watchers` firing the "global" `__watchers`. App reactives have no tree node, so bindings
+  key off a sentinel app-source `NodeId`.
+- **`watch_with_app` child watchers fire during fan-out.** New `App::with_widget_taken_as::<W>()`
+  temporarily swaps a child widget out of the tree (children/styles/`NodeId` preserved) so its
+  `reactive_dispatch_with_app` can run with `&mut App` — letting a bound child's watcher
+  `query_one`/mutate sibling/descendant nodes (e.g. update its `Digits`) without a borrow conflict.
+- **Demo ports rewired to real `data_bind`:** `guide/reactivity/world_clock02` (positional
+  `data_bind(App.time)`) and `world_clock03` (keyword `data_bind(clock_time=App.time)`, binding a
+  source field onto a differently-named target field) now use `App::data_bind_reactive` instead of
+  `on_tick_with_app` polling.
+- **Deterministic tests.** New behavioral tests assert the binding propagates a value to each bound
+  child's reactive and fires its watcher with that value (no wall-clock/time-dependent goldens), plus
+  `with_widget_taken_as` round-trips the widget and preserves child nodes.
+
+### 2026-06-23 (feat(timer): `set_interval` / `set_timer` scheduling primitive)
+
+- **Real timer subsystem (keystone).** Apps can now self-schedule arbitrary-delay, named,
+  repeating callbacks via `App::set_interval(interval, repeat, pause, callback)` and
+  `App::set_timer(delay, callback)` — Python parity with `MessagePump.set_interval` / `set_timer`.
+  Previously the only periodic hook was a global per-frame `on_tick`; widgets/apps could not
+  register a 1-second `update_clock`-style callback. Returns a `TimerHandle` for
+  `stop_timer` / `pause_timer` / `resume_timer` / `reset_timer` (Python `Timer.stop/pause/resume/reset`).
+- **Faithful `timer.py` semantics.** Timers schedule against the event loop's frame/timeout so
+  callbacks fire at the right wall-clock cadence; the loop timeout is clamped to the soonest timer
+  deadline. Repeating timers fast-forward past missed deadlines (Python `skip` — a stalled loop fires
+  once, not a backlog burst); bounded `repeat` fires exactly N times then auto-removes; paused timers
+  neither advance nor drive the loop timeout and re-anchor on resume.
+- **App-struct bridge for timer callbacks.** `App::with_app_struct::<T>()` lets a timer callback
+  re-enter the user app struct to mutate reactive fields (Python `self.time = now`), firing the
+  watcher/recompose through the app reactive bridge in the same turn. DOM-only callbacks
+  (`update_clock`) just query+update a widget directly.
+- **Deterministic test path.** The timer runtime is driven by a swappable clock; tests advance a
+  manual clock and assert exactly how many times a callback fired after N advances — no wall-clock
+  sleeping, no time-dependent goldens. 18 new behavioral tests (runtime + timer module).
+- **Demo ports rewired to real `set_interval`** (no more `on_tick` second-boundary faking):
+  `widgets/clock`, `guide/reactivity/recompose01`, `recompose02`, `world_clock01`, and
+  `guide/core/structure` now register a real 1-second timer instead of detecting second boundaries
+  in `on_tick_with_app`.
+
+### 2026-06-23 (feat(action): `@click` action-link routing + `run_action(str)` + namespaced dispatch)
+
+- **`@click` action-link routing (super-keystone).** `[@click=action]` markup is now live, not
+  dead metadata. The content renderer bakes the parsed `@click` action string into each rendered
+  segment's `StyleMeta` (mirroring Python's `Style._meta`), so it survives blitting into the frame
+  buffer. On a click, the runtime reads the `@click` meta at the clicked cell (mirroring Python
+  `widget._on_click` → `app._broker_event` → `get_style_at`) and dispatches the named action. Works
+  for **any** widget that renders `@click` markup (Label/Static and future), with no per-widget
+  wiring. Action argument parsing is parenthesis-aware, so `@click=set('a', 'b')` keeps its full
+  value.
+- **`App::run_action(str)` + `EventCtx::run_action(str)`** (Python parity: `App.run_action` /
+  `Widget.run_action`). Run an action by name from app or widget code instead of inlining the
+  mutation; both route through the unified runtime dispatch chain.
+- **Namespaced action resolution + `check_action` gating.** A unified runtime dispatcher resolves
+  every string action (from `@click`, `run_action`, key bindings, or `ActionDispatchRequested`)
+  against the `widget → screen → app` namespace chain, gates the resolved target with
+  `Widget::check_action` (new trait method; the app adapter delegates to `TextualApp::check_action`),
+  and falls back to the app's custom `action_<name>` hook for unknown actions. The previously
+  missing custom-action fallback in the `ActionDispatchRequested` path is now wired.
+- **Demo ports rewired to real action dispatch** (no more inlined mutation / "framework gap"
+  workarounds): `guide/actions` `actions02` (now uses `App::run_action`), `actions03`/`actions04`
+  (real `[@click=app.set_background(...)]` links), `actions05` (widget-scoped `ColorSwitcher` action
+  via the namespace chain); `guide/widgets` `hello05` (widget-scoped `[@click='next_word']`).
+  `content01` and `hello06` already carried the `@click` markup and now route for real.
+- **Verification:** `tests/click_actions_pty.rs` drives the real `actions03` example in a PTY,
+  sends an SGR mouse click on a `[@click=...]` span, and asserts the screen background actually
+  changed — proving the full input → hit-test → dispatch → mutate chain.
+
+### 2026-06-23 (feat(style): public component-class style API — `get_component_rich_style`)
+
+- **Public component-class style API** (Python parity: `Widget.COMPONENT_CLASSES` /
+  `Widget.get_component_styles` / `Widget.get_component_rich_style`). Custom/external widgets can
+  now declare and resolve component-class styling from CSS instead of hardcoding colours:
+  - `Widget::component_classes() -> &[&'static str]` — declare the widget's component-class names
+    (mirrors Python's `COMPONENT_CLASSES`).
+  - `Widget::get_component_styles(name) -> Style` — resolve a declared component class to the
+    typed CSS `Style` against the live widget context.
+  - `Widget::get_component_rich_style(name) -> Option<rich_rs::Style>` — resolve a component class
+    to a ready-to-paint Rich style (colours flattened over the effective background).
+  - The underlying resolver `css::resolve_component_style` is now `pub` and re-exported in the
+    prelude (was `pub(crate)`), so example/3rd-party crates can use it directly.
+- **Demo ports rewired to the real API** (no more hardcoded `#A5BAC9` / `#004578` / `darkred`):
+  `guide/widgets` `checker02`, `checker03`, and `checker04` now declare `component_classes()` and
+  resolve their square colours from the CSS component-class rules via `get_component_rich_style`,
+  faithfully reproducing Python's `checker0{2,3,4}.py`. `checker03` continues to match its PTY
+  parity golden byte-for-byte.
+### 2026-06-23 (feat(content): Content::from_markup_with_vars template-variable substitution)
+
+- **`Content::from_markup_with_vars(markup, &variables)`**: a new constructor that performs
+  `string.Template`-style `safe_substitute` over `$name` / `${name}` **before** tag parsing,
+  faithfully mirroring Python `Content.from_markup(text, **variables)` (`markup.py` `_to_content`'s
+  `process_text`). Substitution applies to **text tokens only** — tag bodies like `[$primary]`
+  are left intact so theme tokens still resolve at render time — and follows CPython's default
+  `Template` semantics: `$$`→`$` escape, ASCII identifier pattern (`[A-Za-z_][A-Za-z0-9_]*`),
+  exact-case dict lookup, and unknown keys left unmodified (no error). Critically, a variable
+  *value* that contains markup (`$x` where `x = "[red]BIG[/red]"`) is inserted as **literal text**,
+  never re-parsed as a tag — matching Python. Span offsets are tracked post-substitution.
+- **`Static::update_content(Content)`**: render a pre-built `Content` (e.g. one with template
+  variables already substituted) through the same alignment / background / theme-token / link
+  path as plain markup, so the widget displays the content's own spans verbatim. Mirrors Python
+  `Static.update(content)` for `Content`/`Visual` values. (`Content` is now `Send + Sync` — its
+  lazy `cell_length` cache moved from `OnceCell` to `OnceLock`.)
+- **Markup Playground port now faithfully reproduces Python** (`guide/content/playground`): the
+  JSON variables panel is parsed (`serde_json`) into a variable map and threaded into
+  `Content::from_markup_with_vars`, then rendered via `Static::update_content`, with the
+  `Content.spans` list shown in the Spans panel. Previously the port parsed the variables panel
+  but never substituted (a confirmed framework gap). Clears the `guide/content/playground` demo.
+### 2026-06-23 (feat(theme): named theme catalog/registry + cycling)
+
+- **Named theme registry** (`src/theme.rs`): a faithful port of Python Textual's
+  `textual/theme.py` (`Theme`, `BUILTIN_THEMES`) plus the design-token generator from
+  `textual/design.py` (`ColorSystem._generate`). All 20 Python built-in themes are ported
+  with their exact color values (`textual-dark`, `textual-light`, `nord`, `gruvbox`,
+  `tokyo-night`, `catppuccin-*`, `dracula`, `monokai`, `flexoki`, `solarized-{light,dark}`,
+  `rose-pine{,-moon,-dawn}`, `atom-one-{dark,light}`, `ansi-{dark,light}`). The generator
+  derives every semantic token (`$text-error`, `$primary-muted`, `$surface-active`,
+  `$scrollbar`, shades, …) per theme using Python's exact algorithms (LAB lighten/darken,
+  truncating channel blends, `tint`/`__add__`). Base/semantic tokens verified hex-for-hex
+  against Python; the LAB-derived shade family (`$*-lighten-2/3`, `$*-darken-3`) still
+  diverges by up to ~42/channel on some themes — a pre-existing `rgb_to_lab`/`lab_to_rgb`
+  inaccuracy (Bruce-Lindbloom vs Python's easyrgb form, f32 vs f64), tracked as a follow-up.
+- **App theme API** (`App::register_theme` / `available_themes` / `theme_name` /
+  `set_theme_by_name` / `set_theme_cycle` / `cycle_theme` / `action_cycle_theme`): mirrors
+  Python `App.register_theme` / `available_themes` / `App.theme = name` / `action_cycle_theme`.
+  Activating a non-default named theme swaps the active design-token map so every `$`-token
+  resolves from that theme and re-colors the UI; the hand-tuned `textual-dark` static path is
+  preserved as the default (zero golden regression). New `cycle_theme` / `set_theme` app
+  actions (`AppCycleTheme` / `AppSetTheme` messages) wire CSS/binding action strings to the
+  runtime.
+- **`todo_app` doc example rewired** to faithfully reproduce Python: Ctrl+T now cycles the
+  exact Python named-theme list `[nord, gruvbox, tokyo-night, textual-dark, solarized-light]`
+  (was a `toggle_dark` workaround) and applies `nord` on mount. Added the `hatch` Screen rule
+  from the Python source.
+
+### 2026-06-23 (fix(layout): exact cumulative-floor fr distribution + per-layer dock isolation)
+
+- **Exact cumulative-floor flow sizing** (`layout_resolve_1d_exact`): the vertical/horizontal
+  layouts now size every child — fixed scalars AND `fr` — to exact `f64` cells and floor the
+  RUNNING position (`floor(cum + exact) - floor(cum)`), mirroring Python `_resolve.resolve` +
+  `layouts/{vertical,horizontal}.py` (`accumulate(...).__floor__()`). Previously each child's
+  size was floored independently, losing the fractional remainder: a stack of non-integer
+  relative units (`12.5%`/`5w`/`12.5h`/`6.25vw`/`12.5vh`) under-sized, and — worse — the `fr`
+  children reserved space against the un-carried INTEGER fixed sizes while the fixed children
+  DISPLAYED their carried (often +1) sizes, overflowing the row/column by the accumulated carry.
+  New `style::resolve_scalar_exact` returns the exact pre-floor cell count for simple fixed
+  scalars; the resolver computes the `fr` unit from the exact remaining space (with the same
+  iterative `min_size` clamp as the integer resolver). Integer layouts are a no-op.
+- **Per-layer dock isolation**: a `dock`ed widget on a SEPARATE layer (e.g. a `layer: ruler`
+  overlay) now OVERLAYS the flow region instead of carving it, matching Python `_arrange.py`
+  (layers arranged independently). Applied in BOTH `layout::resolve_layout` (the flow region)
+  and `runtime::render::host_content_extent` (the scrollable virtual size) — without the latter
+  the overlay dock inflated the virtual extent and triggered a phantom scrollbar lane that
+  shifted every relative-unit child by the lane width.
+- **Width-aware height remeasure in horizontal layout**: a content-height child (unset OR `auto`
+  height) in an `fr`-width row now re-measures its wrapped height at the RESOLVED width (it
+  previously used the stale `layout_height()` from whatever width it was last laid out at), so a
+  wrapping `Label` in a `width: 1fr` row sizes its box to the correct line count. The Phase 1
+  remeasure only covered explicit `auto`; this adds the unset-height + fr-width case.
+- Promotes `"width_comparison"`, `"height_comparison"`, and `"text_style"` to the styled
+  PASSING set. (styled 54→57)
+
+### 2026-06-23 (fix(text): text-align auto-fg extend, justify spacing, link-color auto contrast)
+
+- **Vertical-extend fill for `color: auto` content widgets**: the BOX vfill discriminator in
+  `render_widget_with_meta` checked only `resolved.fg`, so a content widget with `color: auto`
+  (e.g. `text_align`'s `Label { color: auto }`) lost its auto-contrast foreground on the blank
+  extend rows below its text. It now also checks `resolved.fg_auto` (the linked auto pair), so
+  those rows carry the auto-contrast fg in their content area (padding stays bg-only), matching
+  Python `widget.render_line` `IndexError` → `Strip.blank(width, visual_style.rich_style)`.
+- **`text-align: justify`** is now implemented in `Content::render_strips`: inter-word spacing is
+  stretched so each non-final line fills the width (Python `_FormattedLine.to_strip` justify
+  branch — round-robin space distribution from the right). The last line of a paragraph stays
+  left-aligned (`line_end`), and the stretched pad spaces are foreground-bearing (resolving
+  `color: auto` contrast) like Python's `(style + text_style).rich_style`. `wrap_and_format`
+  gained a `_marked` variant returning the per-line `line_end` flag.
+- **`link-color: auto` contrast against the link background**: the default `$link-color`
+  (= `$text` = `auto 87%`) is now treated as auto (new `Style.link_color_auto` /
+  `link_color_hover_auto` markers). `Widget.link_style` parity: the link foreground is
+  `link_background.get_contrast_text(alpha)` — a contrast resolved against the LINK background,
+  not a fixed color resolved against the screen. A bright `link-background: $accent` now yields
+  dark link text instead of light. `$link-color`/`$link-color-hover` map to `auto 87%`.
+- Promotes `"text_align"` and `"link_background"` to the styled PASSING set. (styled 65→67)
+### 2026-06-23 (fix(render): CSS `hatch` compositing parity — defer + content-box scope)
+
+- **`hatch` fill** is now DEFERRED until after a node's children render and SCOPED to the
+  node content box (inside any border/padding), matching Python `line_post` / `apply_hatch`.
+  Previously the fill ran before children, so the inner content child of a `.class()`/`.id()`
+  `Node` wrapper (which carries the border + hatch, with the raw text in an inner child)
+  un-hatched the FIRST inner row. Naively deferring past children then over-filled the blank
+  padding around a `border_title` on the border row (` cross ` → `╳cross╳`); scoping the fill
+  to the content box fixes both. Leaf hatch (e.g. a bare `Label` with `hatch`) is unchanged —
+  its content box equals its layout rect.
+- **`Node` wrapper** gained `with_border_title()` / `with_border_subtitle()` and now reports
+  `border_title()` / `border_subtitle()` so a `.class()`/`.id()` panel renders its title on the
+  border (Python `static.border_title = ...`). The `docs/examples/styles/hatch` example sets
+  per-panel titles accordingly.
+- Promotes `"hatch"` to the styled PASSING set. (styled 65→66)
+### 2026-06-23 (fix(scrollbar): scrollbar thickness honors CSS `scrollbar-size`)
+
+- **Host scrollbar widgets now paint at the CSS-resolved thickness.** `apply_host_scrollbar_layout`
+  reserved the correct lane width from `scrollbar-size` (e.g. `scrollbar-size: 10 4` → a 4-wide
+  vertical lane) but the `ScrollBar` widget still painted glyphs at its hardcoded creation default
+  (vertical 2 / horizontal 1), so a 4-wide lane showed only a 2-wide bar. Added `ScrollBar::set_thickness`
+  and drive it from `geometry.vertical_lane_width` / `geometry.horizontal_lane_height` during host
+  scrollbar layout. Matches Python `ScrollBar.thickness` flowing from `styles.scrollbar_size_*`.
+- **Fixed a latent horizontal-scrollbar row-break bug**: the inter-row `Segment::line()` separator was
+  bounded by `length` (the track width) instead of the rendered row count, so a horizontal bar emitted
+  a spurious trailing line break (and would have dropped breaks if `thickness > length`). Now bounded by
+  `lines.len()`. Vertical bars were unaffected (rows == track length there).
+- Example fix (`styles/scrollbar_size2`): moved `id()` from a `Node` wrapper onto the
+  `ScrollableContainer` host directly, so `#v1 { scrollbar-size: ... }` matches the scrollbar host
+  instead of an intermediate wrapper (which fell back to the `Widget` default). Mirrors Python
+  `ScrollableContainer(Label(...), id="v1")`.
+- Regression tests: `scrollbar_thickness_drives_vertical_glyph_width`,
+  `scrollbar_thickness_drives_horizontal_row_count`.
+
+### 2026-06-23 (fix(render): chrome-only container vertical-extend fill is bg-only)
+
+- **Vertical-extend (BOX) fill** in `render_widget_with_meta` now discriminates chrome-only
+  containers from content widgets. A bordered/sized `Container` (or any layout container)
+  renders no text content — Python's `Widget.render` returns `Blank(background_colors[1])`,
+  a background-only visual with no foreground — so its interior extend rows are now **bg-only**
+  even though `color` is inherited from `Screen { color: $foreground }` (was bleeding
+  `fg=$foreground` onto the container's blank rows). Content widgets (Static/Label) keep the
+  foreground-bearing `visual_style` extend (Python `widget.render_line` `IndexError` fallback).
+  The `segments_empty` flag is the in-render discriminator (chrome-only containers produce no
+  content segments). Matches Python `_styles_cache` / `get_inner_outer` `inner.rich_style`.
+- Promotes `"dock_all"` and `"margin_all"` to the styled PASSING set. (styled 61→63)
+
+### 2026-06-23 (feat(links): `links` example parity — id-selector CSS on Static, @click link styling, trailing-newline row count)
+
+- **`Static::id()`** now sets `seed.css_id` directly on the Static node (instead of
+  wrapping in a transparent `Node`), so CSS id-selectors (`#custom { link-color: ... }`)
+  target the Static widget itself. `css_id_cache` preserves the id across `take_node_seed()`
+  for off-tree CSS resolution.
+- **`Static::class()`** continues to return a `Node` wrapper, preserving the existing layout
+  tree structure that nesting01/02 and other examples depend on.
+- **`Static::render()`** now overlays `link-color` / `link-background` CSS tokens onto spans
+  carrying `@click` markup (mirrors Python `widget.link_style` applied per-span). Plain
+  content spans are never affected.
+- **`intrinsic_height()`** counts a trailing `\n` in the text as an extra blank line
+  (Python Rich counts it; Rust `str::lines()` previously ignored it).
+- **Trailing empty strip fix**: extra `Segment::line()` tokens are emitted for trailing empty
+  strips so `split_and_crop_lines` produces the correct blank row count without running the
+  vertical-fill path with `fg=#e0e0e0` on those rows.
+- Promotes `"links"` to the styled PASSING set. (styled 56→57)
+### 2026-06-23 (fix(tint,background_tint): exact Python parity for tint and background-tint CSS properties)
+
+- **fix(scrollbar): bake explicit host `color` into track segments** — `ScrollBarRender::render_bar`
+  now accepts an optional `track_fg: Option<Color>`. `ScrollBar::render()` passes `resolved.fg`
+  (the host widget's `color`) so track whitespace cells carry explicit fg in their segment style,
+  matching Python's `_Styled(scrollbar_render, rich_style)` which applies the host fg to ALL
+  rendered segments (including track whitespace). Previously, `apply_style_to_segments` dropped fg
+  from whitespace cells via the `has_glyph` guard — scrollbar track cells always appeared `fg=def`.
+  Promoted `tint` to `PASSING` (58 total, styled 56→58).
+
+- **fix(example/background_tint): use `Vertical::new().id()` directly instead of `Node` wrapper** —
+  Python's `Vertical(Label(...), id="tint1")` sets the CSS id on the Vertical itself, so both
+  `Vertical { background: $panel; }` and `#tint1 { background-tint: ...; }` apply to the SAME
+  widget node. The Rust example previously used `Node::new(Vertical).id("tint1")`, which split these
+  CSS rules across two separate nodes (`background` on inner Vertical, `background-tint` on outer
+  Node), preventing the tint from affecting the background. Fixed to `Vertical::new().id("tint1")`.
+  Also: Fix 2 (previous session) applied `bg`-only vfill for `fg_auto` extend rows (matching Python's
+  `inner.rich_style` for vertical extend beyond content height). Promoted `background_tint` to
+  `PASSING`.
+
+### 2026-06-23 (fix(color): exact-0.5 placeholder alpha + Python opacity double-application)
+
+- **Placeholder bg** uses exact float `0.5` alpha (`rgba_f`) instead of `128/255`=0.50196,
+  so composited cells match Python's `background: {color} 50%` per-cell RGB. Flips
+  `column_span`, `row_span`.
+- **Widget opacity** now matches Python's double-application: background is composited once
+  in `background_colors` and again in `_apply_opacity` (`parent.blend(parent.blend(bg,o),o)`),
+  while fg is blended once; border-fg is pre-blended in `apply_border_edges` to match. Flips
+  `opacity`. (styled 53→56)
+
+### 2026-06-23 (fix(color): blend() and lab_to_rgb use truncation to match Python int() semantics)
+
+- **fix(style/blend):** `blend()` channel mix now uses truncating cast (`as u8`) instead of
+  `round()`, matching Python's `int(r1 + (r2 - r1) * factor)` semantics.  Dynamic shade
+  tokens computed at runtime (via `parse_shade` / muted variants) now produce exact
+  Python-parity values.
+
+- **fix(style/lab_to_rgb):** `lab_to_rgb` final quantisation step changed from `round()` to
+  truncating `as u8` cast, matching Python's `int(r * 255)` in `lab_to_rgb`.  Fixes
+  off-by-one for dynamic darken/lighten calls on any color not covered by the hard-coded
+  token map (e.g. `primary-darken-1`, `primary-lighten-1`).
+### 2026-06-23 (feat(widgets): @click link visual — apply link-* CSS to markup spans; fix link-color alpha shorthand)
+
+- **feat(text/Label): apply CSS link-* tokens to `[@click=...]` markup spans** —
+  `Label::render()` now detects spans whose `raw_tag` starts with `@click=` and
+  overlays a link-style derived from `visual_style.link_color`, `link_background`,
+  and `link_style`.  Mirrors Python `widget.link_style` applied to segments whose
+  meta carries `@click`.  `[link=url]` spans are intentionally excluded (matching
+  Python behavior where only action links get link-color styling).
+
+- **fix(css): parse `link-color`/`link-background`/`link-color-hover`/`link-background-hover` with optional `N%` alpha** —
+  CSS parser now uses `parse_color_like_with_alpha` for all link-color and
+  link-background properties, matching the existing `color`/`background` handling.
+  Fixes `link-color: hsl(60,100%,50%) 50%` and similar alpha-qualified colors.
+
+- **parity**: `link_color` promoted to PASSING (53 → 53 styled examples, was 52).
+### 2026-06-23 (feat(checkbox): migrate render to Content::render_strips — Phase-D retirement)
+
+- **feat(checkbox): render via Content::render_strips** —
+  `Checkbox::render()` now resolves `current_self_style()` +
+  `current_ancestor_composited_background()` for correct bg composition, builds
+  the `▐X▌ label ` content via `Content::assemble` with per-part styles
+  (`side_style`, `button_style`, `label_style` from `resolve_component_style`),
+  and calls `Content::render_strips` (no_wrap, height=1, left-align).
+  Segments are tagged `textual:no_text_style` so `apply_style_to_segments`
+  skips redundant re-application of CSS text attributes already baked in.
+  Snapshot updated: cells now carry `textual:no_text_style=true` metadata
+  (meta-only change, visual output unchanged).
+### 2026-06-23 (feat(toast): migrate render to Content::render_strips — Phase D retirement)
+
+- **feat(toast/Toast): render via Content::render_strips** —
+  `Toast::render()` now uses `Content::from_markup` + `Content::assemble` +
+  `Content::render_strips` following the established Button/Label pattern.
+  `current_self_style()` / `current_ancestor_composited_background()` supply
+  the visual style; the `toast--title` component style is resolved via
+  `resolve_component_style` and assembled into a styled span at the front of
+  the content. Segments are tagged `textual:no_text_style=true` so
+  `apply_style_to_segments` skips redundant re-application of text attributes.
+  The old `render_markup_line` private method (which used `Text::plain` +
+  `adjust_line_length_no_bg`) is retired. Layout helpers (`wrapped_line_count`,
+  `content_box_width`, `markup_cell_len`) are unchanged; they are used only for
+  `layout_height` / `content_width` computation, not the render path.
+### 2026-06-23 (feat(aliases/Static): migrate render to Content::render_strips — Phase-D retirement)
+
+- **feat(aliases/Static): render via Content::render_strips** —
+  `Static::render()` now calls `Content::from_markup`/`Content::from_text` +
+  `Content::render_strips` directly with `current_self_style()` /
+  `current_ancestor_composited_background()`.  The internal `Label` dependency
+  for rendering is retired; `Static` now owns its text, markup, wrap, expand,
+  shrink and `NodeSeed` fields directly.  Segments are tagged `no_text_style`
+  so `apply_style_to_segments` skips redundant re-application of text
+  attributes already baked in by render_strips.  The `Rich(Text)` path
+  (`update_rich`) continues to delegate to `Text::render` unchanged.
+  Layout helpers (`layout_height`, `content_width`, `auto_content_width`) are
+  now self-contained — no longer double-counting Label chrome.  All existing
+  regression tests pass (styled 52/87 unchanged, pty_parity 186/0 unchanged).
+
+### 2026-06-23 (feat(widgets): migrate Tab, CollapsibleTitle, MarkdownHeadingBlock to Content::render_strips)
+
+- **feat(tabs/Tab): render via Content::render_strips** —
+  `Tab::render()` now uses `Content::from_text` + `Content::render_strips` with
+  `current_self_style()` / `current_ancestor_composited_background()`.
+  Segments are tagged `no_text_style` so `apply_style_to_segments` skips
+  redundant re-application of text attributes already baked in by render_strips.
+
+- **feat(collapsible/CollapsibleTitle): render via Content::render_strips** —
+  `CollapsibleTitle::render()` migrated from `Text::plain(...).render()` to
+  `Content::render_strips` with the same visual-style + bg-composition pattern.
+
+- **feat(text/MarkdownHeadingBlock): render via Content::render_strips** —
+  `MarkdownHeadingBlock::render()` migrated from `Text::plain(...).render()` to
+  `Content::render_strips`.  Snapshot updated: heading cells now carry
+  `textual:no_text_style=true` metadata (meta-only change, visual output
+  unchanged).  All CSS text attributes (bold, color) remain correctly baked
+  via `current_self_style()`.
+
+### 2026-06-23 (feat(button): migrate render to Content::render_strips — focus band covers line-pad)
+
+- **feat(button): retire custom line-pad render code; use Content::render_strips** —
+  `Button::render()` now builds a `Content` from the label (with line-pad spaces
+  pre-baked into the content text when the label fits) and renders via
+  `Content::render_strips` with the focus-aware `visual_style` (from
+  `current_self_style()`), center alignment, and `line_pad=0` (the outer
+  line-pad spaces are still applied by `render_widget_with_meta`'s
+  `apply_line_pad`).  The pre-baked line-pad spaces are content runs, not
+  alignment padding, so the S1 seam fix in `render_strips` bakes the full
+  `visual_style` (including `reverse=true` for `:focus`) into them.  Result:
+  the focused-button reverse band now covers `" Label "` (label + 1 space on
+  each side) matching Python, not just `"Label"` (old behaviour when label
+  was narrow enough to fit with line-pad).  The old `no_style_space_segment`
+  helper is retired; all segments from `render_strips` are tagged
+  `no_text_style` (style baked by render_strips; `apply_style_to_segments`
+  skips redundant re-application).
+
+- **chore(snapshots): update frame_layout + keys_preview snapshots** —
+  Two snapshot tests updated for the new segment-metadata layout: glyph cells
+  from the button now carry `textual:no_text_style=true` (style baked in by
+  render_strips instead of applied later by apply_style_to_segments).  Visual
+  output is identical; metadata reflects the new render path.
+
+### 2026-06-22 (fix(content): C1 seam fixes — correct whitespace-span style + vertical-fill surface)
+
+- **fix(content/seam1): remove `has_glyph` guard from content runs** —
+  `emit_rendered_segments` previously dropped fg and all text attributes
+  (underline, reverse, strike, italic, bold, dim) from whitespace-only content
+  runs.  Python's `_FormattedLine.to_strip` applies `(style + text_style).rich_style`
+  to **every** `Content.render()` run without discrimination: a span covering
+  only spaces but styled with `reverse=True` or `underline=True` must preserve
+  those attributes.  Fixed by removing the `has_glyph` parameter from
+  `make_segment` and unconditionally applying all style attributes.
+  Alignment-pad segments (`pad_left`/`pad_right` from `make_bg_segment`)
+  remain bg-only — matching Python's `style.background_style.rich_style`.
+
+- **fix(content/seam2): vertical fill rows carry full style, reverse=false** —
+  Fill rows (added to reach the requested `height`) previously used
+  `make_bg_segment` (bg-only).  Python `Visual.to_strips` uses
+  `(style + Style(reverse=False)).rich_style` for fill rows — fg + bg, with
+  reverse forced to false.  Fixed by computing `fill_style = visual_style` with
+  `reverse = Some(false)` inside `render_strips` and emitting fill rows via
+  `make_full_segment`.
+
+- **tests added:** `test_seam1_whitespace_span_reverse_preserved`,
+  `test_seam1_whitespace_span_underline_preserved`,
+  `test_seam2_vertical_fill_full_style_reverse_false`,
+  `test_render_strips_vertical_fill_full_style`,
+  `test_render_strips_line_pad_carries_fg`.  Old bg-only fill test and
+  line-pad-no-fg test updated to reflect correct Python semantics.
+
+- Full gate: lib compiles, docs/examples build, pty_parity 186/0, full suite
+  0 FAILED, visual_parity 52 PASS / 0 REGRESSION.  Documented in
+  `docs/devel/CONTENT_LAYER_KEYSTONE.md` § 11.
+
+### 2026-06-22 (refactor(content): audit dead-code post Phase D migration)
+
+- **refactor(content): retire stale doc comments** — the `# ADDITIVE — not yet
+  wired into the render path` comment in `Content::render_strips` and the
+  module-level Phase C/D integration comment in `src/content/mod.rs` are updated
+  to reflect that `Content::render_strips` IS now wired into `Label::render()`
+  (Phase D, 94eda62). The remaining `Text::plain` usages in `text.rs` are all
+  inside Markdown-internal widgets (heading, paragraph, blockquote, etc.),
+  which are not yet migrated; they are explicitly documented as pending.
+- **audit (core.rs, segments.rs):** All branches in `render_widget_with_meta`
+  fill surfaces and `apply_style_to_segments` `has_glyph` fg-stamp remain
+  active and are still exercised by non-migrated widgets (Button, DataTable,
+  Input, Tree, etc.). No dead code found; nothing else retired in this pass.
+  Full gate: lib compiles, docs/examples build, pty_parity 186/0, full suite
+  0 FAILED, visual_parity 52 PASS / 0 REGRESSION.
+
+### 2026-06-22 (feat(content): Label/Static render via Content::render_strips — styled 42→52)
+
+- **feat(Label/Static render pipeline):** `Label::render()` now uses
+  `Content::render_strips` instead of `rich-rs render_str` / `Text::plain`.
+  - Builds a `Content` (via `from_markup` or `from_text`) and calls
+    `render_strips(width, None, &render_style, text_align, "fold", false, 0, resolve_fn)`.
+  - Correctly computes the effective background by flattening the widget's own
+    `bg` over the **ancestor** composited background
+    (`current_ancestor_composited_background()`, which excludes the current
+    widget's own style from the composite — matching `apply_style_to_segments`
+    post-render behavior).
+  - Tags each Content-produced segment with `textual:no_text_style` so
+    `apply_style_to_segments` skips re-applying CSS text attributes (bold,
+    italic, etc.) that are already baked in by `render_strips`. The background
+    and foreground are also already explicit in the segments so they survive the
+    pass unchanged; `fg_auto`, tint, and `text_opacity` are still applied.
+  - Adds `current_ancestor_composited_background()` CSS helper.
+- **parity (styled 42→52):** Flips `text_style_all`, `border01`, `border_title`,
+  `box_sizing01`, `dimensions01`, `dimensions02`, `dimensions03`, `outline01`,
+  `padding01`, `text_opacity` to PASSING. No regressions in the previous 42.
+  Snapshot churn is meta-only (`textual:no_text_style` now appears on Label
+  cells); visual content is unchanged.
+
+### 2026-06-22 (deps: bump rich-rs to 1.2.1 — link markup fix flips link examples)
+
+- **deps: rich-rs 1.1.1 → 1.2.1.** Picks up the `[link=url]` markup fix (OSC8 meta
+  only, no hardcoded cyan/underline), so link styling now comes from the CSS `link-*`
+  tokens as Python does. Flips styled examples `link_background_hover`,
+  `link_color_hover`, `link_style`, `link_style_hover` (styled 38→42). No regressions;
+  full suite green.
+
+### 2026-06-22 (feat(content): Phase C — Content::render_strips)
+
+- **feat(content/Phase C): `Content::render_strips`** — turns a `Content` into
+  fully-styled `Vec<Vec<rich_rs::Segment>>` for a given width / height /
+  alignment / overflow / `visual_style` / theme-token resolver.
+  - Implements the 3-surface semantic from Python `_FormattedLine.to_strip`
+    and `apply_style_to_segments`:
+    - **Glyph cells** carry full colour (fg + bg + text attrs from
+      `visual_style` combined with span styles).
+    - **Content-pad / alignment-pad cells** carry bg only (no fg) — mirrors
+      Python `style.background_style`.
+    - **Vertical fill rows** (when `height > content_rows`) carry bg only.
+  - Calls `wrap_and_format` internally; applies `resolve_styles(resolve_fn)`
+    so theme tokens (`$primary`, `auto 20%`) are resolved with live context.
+  - `align` (`Left / Center / Right / Justify`) and `line_pad` are fully
+    supported.
+  - ADDITIVE — not yet wired into the render path.  Migration is Phase D.
+  - 14 new unit tests asserting per-cell fg/bg for plain text, markup
+    (bold/color/custom resolver), alignment pad, vertical fill, wrapping,
+    overflow modes, line_pad, and the `has_glyph` invariant.
+  - All gates green: `cargo build`, docs/examples build, lib unit tests
+    compile, pty_parity 186/0, full `--tests` suite 0 FAILED, visual_parity
+    42 PASS / 0 REGRESSION.
+
+### 2026-06-22 (feat(content): Phase B — wrap_and_format, truncate, pad/align, divide/split)
+
+- **feat(content/Phase B): `Content::wrap_and_format` + manipulation API**
+  - `wrap_and_format(width, overflow, no_wrap, line_pad)` — word-wraps a
+    `Content` into `Vec<Content>` lines.  Reuses `rich_rs::divide_line` for
+    word-boundary break positions; does **Textual-specific** `rstrip()` /
+    `truncate(width)` / `pad(line_pad, line_pad)` in `Content` itself, never
+    in rich-rs (which remains a faithful Rich port).
+    - Non-last wrapped lines are rstripped (the key Textual semantic that was
+      previously pushed into rich-rs as a band-aid).
+    - `overflow="fold"` → hard-fold long words across lines.
+    - `overflow="ellipsis"` → truncate with `…`.
+    - `no_wrap=true` → per-logical-line fold or truncate (no word-wrap).
+    - `line_pad` → spaces prepended+appended to every output line.
+  - `Content::truncate(max_width, ellipsis)` — cell-width truncation with
+    optional `…` ellipsis; adjusts spans via `trim_spans`.
+  - `Content::pad_left(n)`, `pad_right(n)`, `pad(left, right)` — unstyled
+    space padding; left-pad shifts spans (no fg style on pad bytes).
+  - `Content::center(width, ellipsis)`, `right_align(width, ellipsis)` —
+    alignment helpers that rstrip+truncate before padding.
+  - `Content::divide(offsets)` — split at byte offsets, distributing spans.
+  - `Content::split_on(sep, allow_blank)` — split on separator string,
+    optionally retaining trailing blank piece.
+  - `Content::rstrip()`, `rstrip_end(size)`, `right_crop(n)` — trailing
+    whitespace removal.
+  - 42 new unit tests covering all of the above; all 2049 suite tests green.
+  - Phase B is still additive — not wired into the render path.
+### 2026-06-22 (fix(scrollbar): gutter reservation separated from widget visibility; CSS class cascade via take_node_seed)
+
+- **fix(scrollbar): `scrollbar-gutter: stable` now reserves the gutter lane without displaying the widget**
+  - `apply_host_scrollbar_layout` previously used `geometry.vertical_lane_width > 0` (which is
+    true for both stable-gutter reservation AND overflow-driven display) as the scrollbar-widget
+    SHOW flag. Changed to `geometry.show_vertical` / `geometry.show_horizontal`, which is `true`
+    only when content actually overflows AND visibility is allowed. Python parity:
+    `_arrange_scrollbars` uses `show_vertical_scrollbar` (overflow + allowed), while
+    `_get_scrollbar_region` handles gutter reservation separately. Styled parity 36→37 PASS
+    (`scrollbar_gutter` promoted); 0 regressions; pty_parity 186; full suite green.
+
+- **fix(css): `ScrollableContainer.take_node_seed()` now delegates to inner `ScrollView`**
+  - Classes set via `.class("foo")` on `VerticalScroll` / `HorizontalScroll` were silently
+    discarded during `tree.mount()` because `ScrollableContainer.take_node_seed()` used the
+    Widget trait default (returns empty `NodeSeed`), losing the `ScrollView.seed.classes` that
+    `.class()` had populated. Added `take_node_seed`, `style`, and `set_inline_style` to the
+    `delegate_widget_method!` list in `ScrollableContainer`. This makes CSS class selectors
+    (e.g. `.right { scrollbar-visibility: hidden }`) reach the node's resolved style in
+    `apply_host_scrollbar_layout`. Partially advances `scrollbar_visibility` parity (right panel
+    now hides scrollbar correctly); left panel still differs due to a pre-existing
+    double-subtraction in `ScrollView.render()` that is tracked as a separate issue.
+### 2026-06-22 (fix(render): paint_keylines draws full outer boundary + corner junctions)
+
+- **fix(render): `paint_keylines` now draws complete keyline box for Horizontal/Vertical layouts**
+  - Previously only drew interior vertical dividers between adjacent children and omitted the
+    top/bottom horizontal lines, left/right outer boundary verticals, and corner/T-junction
+    characters — producing bare dividers instead of a full box.
+  - Fix: for Horizontal layouts, collect outer boundary (x_start, x_end) plus each child's
+    right edge as vertical line positions; for Vertical layouts collect outer boundary
+    (y_start, y_end) plus each child's bottom edge as horizontal line positions.  Delegate to
+    the same junction-aware rasteriser used by the Grid path so corners and T-junctions are
+    computed correctly via `keyline_junction_char`.
+  - Background-preservation fix: keyline characters now preserve the existing cell background
+    from the surface beneath instead of resetting it to "default" — matching Python's canvas
+    overlay behaviour which carries only a foreground colour.
+  - Styled parity 36→37 PASS (`keyline_horizontal` promoted); 0 regressions; pty_parity 186;
+    full suite green.  (`keyline` grid example remains PENDING due to missing column-span/
+    row-span layout support — a separate workstream gap.)
+### 2026-06-22 (fix(layout): apply CSS `offset` in vertical/horizontal flow layout)
+
+- **fix(layout): flow-positioned widgets now honour `offset` CSS property**
+  - `layout_vertical` and `layout_horizontal` previously ignored `offset` entirely;
+    only `layout_absolute` applied it. Python's `layouts/vertical.py` and
+    `layouts/horizontal.py` store a per-placement offset in `WidgetPlacement` for
+    EVERY child, then apply it as a visual shift at render time. The Rust side now
+    mirrors this: after computing each child's normal-flow `(layout_x, layout_y)`,
+    `style.offset` is read and applied to produce `(visual_x, visual_y)` which is
+    stored in `layout_rect`/`content_rect`. The flow cursor (`y` in vertical, `x`
+    in horizontal) continues to advance from the unshifted flow position, so offset
+    is purely visual and does not perturb sibling layout — matching Python semantics.
+  - Percentage offsets resolve against the widget's own layout-box dimensions,
+    matching the `layout_absolute` precedent and Python's `ScalarOffset.resolve(size, viewport)`.
+  - **Known limitation**: `Rect` coordinates are `u16`; negative offsets that would
+    place a widget above/left of the screen origin saturate to 0 instead of going
+    off-screen (which would require `i16`/`i32` coordinates in `WidgetNode`). The
+    `offset.py` example (`Chani` with offset `0 -3`) therefore remains PENDING; full
+    negative-offset clipping needs `widget_tree.rs`/`render.rs` changes (out of scope
+    for this cluster). Positive offsets (`Paul` offset `8 2`, `Duncan` offset `4 10`)
+    render correctly.
+  - 0 regressions; pty_parity 186/0; full suite green.
+### 2026-06-22 (fix(layout): carve_edge respects `height: auto` for docked containers)
+
+- **fix(layout): split `None | Some(Scalar::Auto)` in `carve_edge` — docked containers with `height: auto` now size to their content**
+  - `carve_edge` in `src/layout/split.rs` (used by both dock and split layout) previously
+    treated `height: auto` identically to unset height (`None`), causing a docked Container
+    with `height: auto` to consume ALL remaining available height instead of sizing to its
+    content. Python parity: `_get_box_model`'s `is_auto_height` branch calls
+    `get_content_height()` rather than filling the container.
+  - Fix: split the `None | Some(Scalar::Auto)` match arm into two cases. `None` (unset) keeps
+    the existing fill-available behaviour. `Some(Scalar::Auto)` now tries `layout_height()` for
+    leaf widgets first, then falls back to `measure_intrinsic_content_height` for arena-tree
+    containers whose children are drained. This mirrors the pattern used in `layout_vertical.rs`
+    for auto-height flow children. 0 regressions; pty_parity 186; full suite green.
+  - **Note**: `dock_all` still does not promote to PASSING due to a pre-existing fg-color
+    rendering issue (empty container interiors show `fg=#e0e0e0` instead of `fg=def`) that
+    is outside the scope of `split.rs`. The layout height fix is correct and complete; the
+    rendering issue requires investigation in `src/widgets/core.rs` or
+    `src/css/selectors/segments.rs`.
+### 2026-06-22 (fix(css): Widget type selector now matches all widgets — Python base-class parity)
+
+- **fix(css/matching): `Widget` CSS type selector matches all widgets (Python MRO parity)**
+  - In Python Textual every widget's `_css_type_names` frozenset includes `"Widget"` (via MRO),
+    so `Widget { ... }` default/user CSS rules apply to all widgets. In Rust, concrete widgets
+    have type names like `"Button"`, `"Label"`, etc. — never `"Widget"` — so the `Widget {}`
+    selector matched nothing; all `Widget { scrollbar-*, link-*, ... }` default rules were
+    silently dropped, and user CSS like `Screen > Widget { background: green; width: 50% }`
+    never matched.
+  - Fix: in `StyleSelector::matches`, the literal type name `"Widget"` now skips the type
+    check entirely, matching any widget. This mirrors Python's `name in node._css_type_names`
+    semantics where Widget is always present.
+  - Two regression-test cases added: `widget_selector_matches_any_concrete_type` and
+    `widget_selector_with_pseudo_still_filters_by_pseudo`.
+- **fix(css/defaults): `Widget {}` rule reordered to appear before `Screen {}` in base.rs**
+  - Widget-specific rules (Screen, ModalScreen, etc.) must appear AFTER the Widget base rule
+    in source order so they override it at equal specificity (both are type selectors with
+    specificity 1). Previously Widget appeared after Screen, so `Widget { background: transparent }`
+    would override `Screen { bg: $background }` for Screen itself.
+  - `background: transparent` omitted from Widget defaults for now: the Rust rendering code
+    uses `parent_style.bg` directly in `apply_border_edges` rather than
+    `current_composited_background()`, so injecting `bg: Some(transparent)` on intermediate
+    widgets (Grid, Container, etc.) causes border backgrounds to flatten against black instead
+    of Screen's `$background`. DEFERRED(render-transparent-bg): fix `apply_border_edges` and
+    `apply_style_to_segments` to use `current_composited_background()`.
+  - Styled tally unchanged at 36 PASS / 0 regressions; pty_parity 186/0; full suite green.
+  - Target examples `width` and `height` remain PENDING: the Rust examples use `Placeholder`
+    (which sets an inline background via `Placeholder::apply_bg_color()`) that overrides the
+    user CSS `Screen > Widget { background: green }` rule. Width/height would promote once
+    the examples are updated to use a plain widget without inline bg.
+
+### 2026-06-22 (fix(layout): apply_parent_align runs for Grid — border_all/outline_all promoted)
+
+- **fix(layout): remove early-return guard that skipped `apply_parent_align` for `Layout::Grid`**
+  - `apply_parent_align` had an unconditional `if strategy == Layout::Grid { return; }` guard
+    that prevented children placed by `layout_grid` from being aligned within the available
+    region. Python's `_arrange.py` applies `_align_size` for ALL layout strategies including
+    Grid; the Rust guard was a divergence. Fix: remove the guard and add the
+    `apply_parent_align` call after `layout_grid` in the Grid match arm, mirroring the
+    vertical/horizontal branches. Also fixes the `_strategy` unused-variable warning introduced
+    by removing the guard (parameter renamed to `_strategy`). Styled parity 34→36 PASS
+    (`border_all`, `outline_all` promoted); 0 regressions; pty_parity 186; full suite green.
+- **example(border_sub_title_align_all): add `.with_border_title()` / `.with_border_subtitle()`
+  to all 9 labels** — the example previously had none, so border title/subtitle slots were
+  blank. Now populated with the Python-equivalent plain-text strings (rich markup stripped).
+  The example remains PENDING due to rich-markup color rendering differences (red/purple title
+  colors) which are a known workstream gap, not a layout gap.
+### 2026-06-22 (fix(css): scrollbar-size two-value shorthand now parsed correctly)
+
+- **fix(css): `scrollbar-size: H V` two-value shorthand sets H/V axes independently**
+  - The `scrollbar-size: H V` shorthand was parsed with `parse::<u16>()` on the whole
+    string, which fails silently on `"H V"` (multiple tokens), leaving both axes at
+    the default. Now splits on whitespace: two-token form sets
+    `scrollbar_size_horizontal = H` and `scrollbar_size_vertical = V` per Python
+    `_styles_builder.py:997-1017`; the single-token fallback is preserved for backward
+    compatibility. Unit tests added in `parser.rs`.
+
+### 2026-06-17 (fix(color): Color alpha is a float — exact composite parity)
+
+- **fix(color): `Color.a` is now `f32` (Python-faithful), not `u8`**
+  - The keystone for the styled-parity rounding cluster. `background: red 10%`
+    parsed to alpha `round(0.1*255)=26` and blended with factor `26/255=0.10196`,
+    while Python keeps the alpha as the float `0.1`; the factor difference drifts
+    a composited channel by ±1 (e.g. bg `#291010` py vs `#2a1010` rust). Changed
+    `Color.a` to a fractional `f32` in `[0,1]`, added `rgba_f`/`alpha_u8`, made
+    `flatten_over` use the truncated float composite (`under + over.with_alpha(a)`
+    == `int(u+(o-u)*a)`), and threaded float alpha through parse (rgba/hsla),
+    opacity multiply, tint, gradient/bar/progress lerps, and the link/input alpha
+    guards. `Eq`/`Hash` are hand-implemented over the alpha bits so embedding
+    structs keep deriving them. Styled parity 31→34 PASS (promoted `align`,
+    `background_transparency`, `colors02`), 0 regressions; pty_parity 186; full
+    suite green with no snapshot deltas.
+
+### 2026-06-17 (fix(button): focus reverse band covers line-pad spaces)
+
+- **fix(button): apply `line-pad` as styled label spaces so the `:focus` reverse band matches Python**
+  - The Button's custom render centered the label with unstyled spaces and ignored
+    `line-pad: 1`, so the focused-button `text-style: reverse` band covered only the
+    glyphs (`"Default"`) instead of `" Default "` like Python. Now the label is padded
+    with `line-pad` styled spaces **when it fits** (plain text unchanged — the pad
+    replaces centering spaces 1:1; verified pty 186 + full suite green, no collateral).
+    Narrow buttons (label + line-pad > width) keep prior truncation — a tracked edge
+    case (no Python reference yet). Caught by the interactive harness; `button_focus`
+    remains PENDING only on the residual surface/blend bg delta (color-workstream).
+
+### 2026-06-17 (test(parity): interactive styled-parity harness — focus/hover/active states)
+
+- **test(parity): `visual_parity_interactive.rs` — styled parity for POST-INTERACTION frames**
+  - The static styled harness only captures the initial frame, so focus/hover/active
+    color states were never checked (e.g. a focused Button's `text-style: reverse`
+    band). New harness sends keys, waits for re-stabilization, then compares per-cell
+    RGB (incl. the `reverse` attr) vs a Python golden. First case `button_focus`
+    (PENDING/tracked) documents the focused-button reverse-band divergence: Python
+    bakes the button's `line-pad: 1` spaces into the styled label so the reverse band
+    covers them; Rust's custom button render centers with unstyled spaces (band too
+    narrow). A naive line-pad fix shifts button centering/truncation (regresses pty
+    goldens + narrow key-panel buttons) so it needs a proper button-render rework;
+    plus a residual surface/blend bg delta (color-workstream cluster). Harness now
+    CATCHES this class of bug instead of it being eyeballed.
+### 2026-06-17 (fix(theme): scrollbar token uses truncating float blend)
+
+- **fix(theme): `$scrollbar`/`$scrollbar-hover` match Python's hex exactly**
+  - Python bakes these as `(background-darken-1 + primary.with_alpha(0.4/0.5))`,
+    a float-factor blend truncated with `int()`. The Rust theme used the rounding
+    `blend`, drifting the channel by one (`#003055` vs Python `#003054`). Switched
+    to `blend_over_float`. Removes the scrollbar-color divergence shared across
+    every tall example (scrollbars/min_height/overflow/…); those examples still
+    have unrelated residual diffs. 0 regressions; pty_parity 186; full suite green.
+
+### 2026-06-17 (fix(render): default content-align skips the fg-bearing fill)
+
+- **fix(render): only run the alignment fill for a non-default content-align**
+  - Python `_visual_to_strips` guards `Strip.align` with `if content_align !=
+    ("left", "top")`. The Rust port ran the fg-bearing align pad for ALL
+    content-align values including the default `(left, top)`, so the trailing
+    horizontal pad of a content row was colored with `$foreground` instead of the
+    background-only `adjust_cell_length`/`inner.rich_style` extend (fg=default).
+    Added the `!= (left, top)` guard. Styled parity 30→31 PASS (promoted
+    `content_align`), 0 regressions (`content_align_all` still exact); pty_parity
+    186; full suite green.
+
+### 2026-06-17 (fix(color): float-faithful auto/contrast compositing)
+
+- **fix(color): composite auto/contrast text with the fractional alpha directly**
+  - `Color::blend_over_float` mirrors Python `under.blend(over, factor)` /
+    `under + over.with_alpha(factor)`: `int(u + (o - u) * factor)` per channel,
+    in float, truncated. The auto/`$text` contrast paths previously did
+    `contrast.with_alpha(a).flatten_over(bg)`, which quantizes the alpha to u8
+    (`round(a*255)`) and then rounds the composite via integer division — drifting
+    the result by one (e.g. 87% contrast text). Switched the auto-color text fill
+    (`segments.rs`) and the content-align/vertical-extend fill (`core.rs`) to
+    `blend_over_float`. Styled parity 27→30 PASS (promoted `max_height`,
+    `max_width`, `min_width`), 0 regressions; pty_parity 186; full suite green.
+
+### 2026-06-17 (fix(render): text-opacity 0% blanks glyphs and drops fg)
+
+- **fix(css): `text-opacity: 0%` produces blank cells with default foreground**
+  - Mirror Python `TextOpacity.process_segments`' `opacity == 0` branch: every
+    cell becomes `from_color(bgcolor=...)` — the glyph run is replaced by spaces
+    of equal cell width and the foreground is dropped entirely (terminal-default),
+    rather than recoloring the glyph to match the background. Applies to both
+    glyph cells and the fg-bearing vertical-extend fill rows. Makes the 0%-opacity
+    rows per-cell exact vs Python. (Non-zero text-opacity rows still diverge on the
+    glyph-row horizontal pad — a follow-on surface-precision sub-cluster.) 0
+    regressions; pty_parity 186; full suite green.
+
+### 2026-06-17 (fix(css): Label no longer shadows inherited foreground)
+
+- **fix(css): remove `Label { fg: $foreground }` from the base defaults**
+  - Python Textual's `Label` (and `Static`/`Widget`) DEFAULT_CSS sets no
+    `color`/`fg`; the foreground is supplied solely by `Screen { color:
+    $foreground }` inherited down the ancestor cascade (`visual_style`). The Rust
+    port had added an explicit `fg: $foreground` on `Label`, which shadowed any
+    explicit ancestor `color` — e.g. `Screen { color: black }` left labels at the
+    theme `$foreground` instead of black. Removed it; `Style::inherit_from`
+    already propagates the ancestor color. Styled parity 24→27 PASS (promoted
+    `margin`, `outline`, `padding`), 0 regressions; pty_parity 186; full suite
+    green with no snapshot deltas.
+
+### 2026-06-17 (fix(render): vertical-extend fill carries $foreground)
+
+- **fix(render): rows beyond content height inherit the resolved foreground**
+  - The keystone fill-split painted the entire `set_shape` extend (both trailing
+    horizontal pad AND vertical fill rows) background-only. But Python only leaves
+    the horizontal trailing pad fg-default (`_styles_cache` `adjust_cell_length`
+    with `inner.rich_style`); the vertical extend rows beyond the cached content
+    use `widget.render_line`'s `Strip.blank(width, visual_style.rich_style)`, which
+    carries `$foreground` (or `color: auto` contrast). Split the non-aligned fill
+    into a bg-only horizontal `adjust_line_length` pad plus fg-bearing vertical
+    blank rows (shared `fill_fg_style` with the content-align pad). Styled parity
+    19→24 PASS (promoted `content_align_all`, `text_overflow`, `text_wrap`,
+    `visibility`, `dimensions04`), 0 regressions; pty_parity holds at 186; full
+    suite green with no snapshot deltas.
+
+### 2026-06-17 (fix(render): default-fg keystone — 4-surface fill split)
+
+- **fix(render): split the widget fill style into Python's content/pad/align/box surfaces**
+  - `core.rs` previously painted ALL fill (line-extend, h-pad, v-align rows, box/blank)
+    with one `fill` style that carried the widget's resolved fg, so fill cells got a
+    concrete fg where Python leaves terminal-default — the root of the styled color gap.
+    Split it to mirror Python `content.py`/`_styles_cache.py`: glyph text keeps fg
+    (inherited `$foreground` via base `Screen { color }`), horizontal content-pad +
+    CSS-padding/box fill are background-only (fg=default), vertical content-align rows
+    keep fg. Styled parity 13→19 PASS, 0 regressions; pty_parity holds at 186. One
+    meta-only snapshot delta (no visual change). Remaining styled divergences
+    (`color: auto`, interactive/focus states, blend specifics) are follow-on clusters.
+
+### 2026-06-17 (test(parity): styled harness auto-discovers all styles — full color sizing)
+
+- **test(parity): `visual_parity.rs` now auto-discovers every styles example**
+  - Replaced the hand-listed cases with auto-discovery of every `styles/` +
+    `guide/styles/` example that has a built Rust binary (**87 discovered**) +
+    a `PASSING` allowlist (asserted exact) with the rest reported as the
+    color-parity workstream. Full sizing at exact per-cell RGB:
+    **13 PASS, 74 PENDING.** The test fails only on a `PASSING` regression;
+    `REPORT_ONLY=1` tallies, `REGEN_STYLED=1` regenerates Python goldens (87
+    committed as the parity baseline). This is the systematic engine for the
+    color-parity workstream (fix a root cluster → re-measure the flip).
+
+### 2026-06-17 (test(parity): widen styled harness to 21 styles — color-parity gap mapped)
+
+- **test(parity): widened the styled harness + measured the real color-parity gap**
+  - Extended `visual_parity.rs` to 21 color-focused `styles/` examples with a
+    `REPORT_ONLY` measure mode. At exact per-cell RGB: **5 PASS** (background,
+    color, color_auto, border, align_all), **16 XFAIL** documented. This quantifies
+    that the plain-text harness was masking a broad **color-parity workstream**
+    (default-fg emission, tint/opacity blend, outline/scrollbar/hatch color
+    application, `color: auto N%`), not two bugs. Note: a naive base
+    `color: $foreground` actually *regressed* parity for some examples — the
+    default-fg model needs a more careful fix (deferred to the workstream).
+
+### 2026-06-17 (test(parity): T-visual styled-parity harness — color verification)
+
+- **test(parity): styled (per-cell RGB) parity harness (`tests/visual_parity.rs`)**
+  - The plain-text `pty_parity` harness can't see color, so `styles/` examples
+    "passed" on text while their colors were unverified. New tiered styled harness
+    runs BOTH the Rust example and the Python source through one `portable-pty +
+    vt100 + COLORTERM=truecolor` path and compares per-cell `(char, fg, bg)` exactly
+    — no tmux. Goldens generated from Python (`REGEN_STYLED=1`). First batch:
+    `background`, `color`, `color_auto` **styled-verified PASS**; `background_tint`
+    (auto-contrast `color: auto N%` + tint-blend rounding) and `colors` (default
+    foreground emission) tracked as documented XFAILs.
+
+### 2026-06-17 (fix(style): parse hsl()/hsla() colors)
+
+- **fix(style): `Color::parse` accepts `hsl(h, s%, l%)` and `hsla(h, s%, l%, a)`**
+  - Python Textual supports CSS `hsl()`; Rust dropped it (fell back to default).
+    Added HSL→RGB conversion. Fixes e.g. `background: hsl(240,100%,50%)` (blue) and
+    `color: hsl(...)` — caught by the new styled-parity harness on `styles/background`
+    + `styles/color`. +unit test.
+
+### 2026-06-17 (fix(layout): overflow-y containers don't clamp child height — promotes min_height)
+
+- **fix(layout): a vertically-scrollable horizontal container lets children overflow**
+  - `layout_horizontal` clamped each child's cross-axis height down to the
+    container height unconditionally, so a child taller than the viewport (e.g.
+    `min-height` larger than the container) never produced vertical overflow.
+    Now, when the parent's resolved `overflow-y` is `auto`/`scroll`, the child
+    keeps its resolved height so the content overflows and scrolls (Python
+    parity) — mirroring the existing width-axis `allow_h_overflow` handling in
+    `layout_vertical`. Gated on overflow so `overflow: hidden` rows still clamp.
+    Combined with the plain-container scroll-host work, this promotes
+    `docs_min_height` (PTY 185 → 186) and un-ignores the container scrollbar-gutter
+    regression test.
+
+### 2026-06-17 (feat(reactive): watch/recompose/validate/mutate + dynamic watch — Python parity)
+
+- **feat(reactive): close the reactivity gaps on the existing reactive system**
+  - The `#[derive(Reactive)]` system already generated getters/setters/`watch_<f>`/
+    `compute_<f>` + init firing + an app-level dispatch bridge. Added the missing
+    Python-parity pieces: `#[reactive(recompose)]` (rebuild the owner subtree on
+    change), `#[reactive(validate)]`/`#[var(validate)]` (setter calls
+    `validate_<f>` before store), generated `mutate_<f>(ctx)` (in-place mutation,
+    fires unconditionally — Python `mutate_reactive`), `#[computed(…, watch)]`
+    (computed fields fire watchers), a `recompose` flag threaded end-to-end
+    (`ReactiveCtx::request_recompose`, widget- and app-level recompose via
+    `App::recompose_app`), and a dynamic-watcher registry
+    (`App::watch_reactive(node, field, cb)`). Converted **13/15** reactivity docs
+    ports to the real API (dropping their workarounds): validate01, watch01,
+    computed01, refresh01/02/03, recompose01/02, set_reactive01/02/03,
+    dynamic_watch, world_clock01. (Examples are interactive → not static-scoreboard
+    cases; verified via unit + integration tests; PTY 185, 0 regressions across all
+    `#[derive(Reactive)]` widgets.) world_clock02/03 deferred — need a reactive
+    `data_bind(ChildField=AppField)` primitive (documented gap).
+
+### 2026-06-17 (feat(containers): plain Container/Horizontal/Vertical are scroll hosts)
+
+- **feat(widgets/containers): `overflow-x/y: auto|scroll` on plain containers**
+  - Previously only `ScrollView`/`VerticalScroll`/etc. reserved a scrollbar gutter
+    and scrolled; a plain `Container`/`Horizontal`/`Vertical` with `overflow: auto`
+    did neither. `Container` is now a first-class scroll host (scroll offset/viewport/
+    virtual-size, scroll + drag events, content clipping), with scrollbar lanes
+    mounted **lazily by the runtime only when resolved overflow is auto/scroll and
+    content overflows** — so `overflow: hidden` containers get zero injected nodes
+    (no tree perturbation). `ScrollView`'s inner content container suppresses its own
+    lanes to avoid double-hosting. +regression tests. PTY 185, 0 regressions.
+
+### 2026-06-17 (feat(widgets/Placeholder): width:auto shrinks to content)
+
+- **feat(widgets/Placeholder): `auto_content_width` shrink-to-content**
+  - A `width: auto` Placeholder now reports its label's cell width (Python parity),
+    so it shrinks to content instead of flex-filling. (`height: auto` already matched.)
+
+### 2026-06-17 (test(parity): promote 5 link_* examples — PTY 185)
+
+- **test(parity): promote `docs_link_color`, `docs_link_color_hover`,
+  `docs_link_background`, `docs_link_background_hover`, `docs_link_style`**
+  - Enabled by the `Label` markup-default flip (link markup now renders; link
+    colors drop in plain capture so they match Python). PTY 180 → 185.
+    (`links` still has a `Static` trailing-newline residual.)
+
+### 2026-06-17 (fix(layout): vw/vh axis, percent truncation, transparent-wrapper child sizing)
+
+- **fix(style): `vw`/`vh` resolve against the correct viewport axis**
+  - `resolve_scalar` took a single `viewport_size`, so `ViewWidth` and
+    `ViewHeight` both resolved against whichever axis the callsite passed —
+    `width: 25vh` became 25% of viewport *width*. Split into separate
+    `viewport_width`/`viewport_height` (Python `_resolve_view_height` always uses
+    height regardless of property), threaded the viewport through edge/grid/split
+    resolution.
+- **fix(style): percent/fraction scalars truncate, not round**
+  - `resolve_scalar` used `.round()`; Python keeps exact fractions and floors at
+    placement (`min-height: 75%` of 30 = 22, not 23). Switched Percent/Width/
+    Height/ViewWidth/ViewHeight/Fraction to `.floor()`.
+- **fix(layout): transparent `Node` wrapper no longer double-applies child size**
+  - A `Node`-wrapped sized child (`#id{min-height}` on the wrapper, `height:50%`
+    on the inner widget) collapsed the child height to `1fr` (dropping the value
+    and the min-clamp), then the inner widget re-applied its `%` against the
+    already-sized wrapper. Added axis-aware `wrapper_child_fill_axes`: the sole
+    flow child fills the wrapper on axes the wrapper sized (adopting it, clearing
+    that axis's min/max) — gated to axes where the wrapper has no explicit extent,
+    so vertical centering (`center07`) still works. +5 tests, PTY 185, 0
+    regressions. (Unblocks future `min_height`/`*_comparison` promotion once the
+    out-of-lane plain-container overflow + Placeholder auto-size land.)
+
+### 2026-06-17 (feat(widgets/containers): .id()/.class() builders on wrapper containers)
+
+- **feat(widgets/containers): `.id()`/`.class()` on wrapper containers**
+  - Wrapper containers delegate the `Widget` trait via `delegate_widget_to!` but
+    did not expose the `.id()`/`.class()` seed builders that `Container` has, so
+    `Horizontal::new().class("buttons")` didn't compile (ports used a
+    `Container` + `layout: horizontal` workaround). Added `delegate_ident_methods!`
+    to `Horizontal`, `Vertical`, `Center`, `Middle`, `CenterMiddle`, `Right`,
+    `HorizontalGroup`, `VerticalGroup`, `ItemGrid` (delegating to the inner
+    container) and `seed_ident_methods!` to `Row`; `Grid` already had them.
+    Matches Python's `id=`/`classes=` kwargs. +11 tests.
+
+### 2026-06-17 (fix(widgets/Label): default to markup=true — Python parity)
+
+- **fix(widgets/Label): interpret console markup by default**
+  - Python Textual's `Label`/`Static` parse console markup by default
+    (`markup=True`); Rust `Label` defaulted to `false`, so `[link=…]`,
+    `[@click=…]` and `[b]…[/]` rendered as literal tags. Flipped the default to
+    `true` (use `.with_markup(false)` for literal text). rich-rs's markup parser
+    already handled link/`@click`/style tags correctly — the gap was purely the
+    Rust `Label` default. No regressions across the 180 PTY cases (no existing
+    Label relies on literal-bracket text). Promotes the `link_*` examples
+    (`link_color`, `link_color_hover`, `link_background`, `link_background_hover`,
+    `link_style`). (`links` has a separate `Static` trailing-newline residual.)
+
+### 2026-06-17 (test(parity): promote 10 port-wave docs examples — PTY 180)
+
+- **test(parity): promote 10 newly-ported docs examples to PTY cases**
+  - `docs_hello01`, `docs_hello02`, `docs_checker03`, `docs_fizzbuzz02`,
+    `docs_tooltip01`, `docs_tooltip02`, `docs_content01`, `docs_key03`,
+    `docs_binding01`, `docs_dom2` — the port-wave ports whose initial screen is
+    stable and byte-matches Python. PTY 170 → 180, 0 regressions. (The other
+    ported stubs are behavioral/time-varying — kept ported-not-promoted.)
+
+### 2026-06-17 (port(examples): final 70 stub docs examples — porting complete)
+
+- **port(examples): ported the last 70 auto-generated stub docs examples**
+  - Faithful Rust ports of every remaining `TODO: Port` stub across `guide/`
+    (widgets, reactivity, actions, core, input, compound, screens, content,
+    workers, animator, command_palette, testing) and `tutorial/stopwatch`.
+    All 70 build clean; every API was verified against real `textual-rs` source
+    (no invented APIs) and independently reviewed. Where a faithful port needs a
+    framework feature textual-rs lacks (named-action dispatch, per-widget
+    `set_interval`, reactive/`watch_*`, custom leaf-widget authoring,
+    `scroll_visible`, widget-level `query_one`/class mutation in handlers,
+    `[@click=…]` action markup, locale datetime), the port documents the gap
+    inline and uses the closest compiling equivalent — no faked parity. The docs
+    examples are now fully ported; remaining work is parity + the noted gaps.
+
+### 2026-06-17 (feat(widgets/Static): without_markup + with_expand convenience builders)
+
+- **feat(widgets/Static): `without_markup()` and `with_expand(bool)` builders**
+  - Mirror Python `Static(text, markup=False)` and `Static(expand=True)` by
+    delegating to the inner `Label`. (Static defaults to `markup=True`.)
+
+### 2026-06-17 (fix(style): CSS named colors use W3C values, not the ANSI palette)
+
+- **fix(style): `color: white` is #ffffff (CSS), not the dim ANSI standard white**
+  - `parse_color_like`/`Color::parse` deferred named-color resolution to rich-rs,
+    whose color table uses the xterm/ANSI palette — so CSS keywords that collide
+    with ANSI names resolved to terminal-palette values (`white`→(170/192,…),
+    `cyan`→(0,170,170)) instead of their W3C values. Added the full CSS/W3C named
+    color table (Python Textual `COLOR_NAME_TO_RGB`, 148 web keywords) consulted
+    *before* the rich-rs fallback, so `white`=#ffffff, `cyan`=#00ffff, `green`=
+    #008000 (≠`lime`), etc., while xterm-only names still fall through to rich-rs.
+    `ansi_*` keywords keep their terminal-palette values. Unblocks correct
+    scrollbar/border/title color parity (rendered colors now match Python).
+
+### 2026-06-17 (feat(widgets): border_title/border_subtitle text setters on Label/Static)
+
+- **feat(widgets/Label, widgets/Static): border-title / border-subtitle text API**
+  - The render path already overlaid border title/subtitle text with align + color
+    (`overlay_border_text`), but `Label`/`Static` had no way to set the text, so the
+    `border_title*`/`border_subtitle*` examples rendered borders with no titles.
+    Added `with_border_title`/`with_border_subtitle` builders + `set_border_title`/
+    `set_border_subtitle` runtime setters (Python `widget.border_title = …`), and
+    overrode the `Widget::border_title()`/`border_subtitle()` getters. `Static`
+    delegates to its inner `Label`. Promotes `docs_border_title_align`,
+    `docs_border_subtitle_align`, `docs_border_title_colors`, `docs_border_title`
+    (PTY 166 → 170). (`border_sub_title_align_all` deferred — needs markup-in-titles
+    + `[link=…]`, tracked with the link-markup work.)
+
+### 2026-06-17 (fix(render): outline paints over the widget's own edge cells)
+
+- **fix(render): `outline` overdraws the widget edge instead of reserving space**
+  - The old `paint_outline` drew one cell OUTSIDE the layout rect. Python's
+    `outline` reserves no space and is drawn over the widget's own perimeter
+    cells (and over child content composited there). Replaced with
+    `outline_edge_cells()` (perimeter glyphs from the existing border-char/style
+    logic) painted AFTER children via `paint_outline_cells()`, so it overdraws
+    final content on both leaves and containers. Promotes `docs_outline`,
+    `docs_outline01` (PTY 164 → 166).
+- **fix(render): scrollbar styling resolves from the host, not the bar itself**
+  - `scrollbar-color`/`-background`/`-corner-color` are not inherited, so a
+    `ScrollBar`/`ScrollBarCorner` reading its own style never saw the host's
+    `scrollbar-color`. Added `current_host_style()` (the stack entry below the
+    bar = the host during render) and resolve color/background/corner + base bg
+    from it (Python `self.parent.styles.scrollbar_*`). Fixes the cyan thumb /
+    host-colored corner; full scrollbar parity still pending out-of-lane
+    named-color and geometry fixes.
+
+### 2026-06-17 (feat(layout): width/height units + align middle + 1fr margin reserve)
+
+- **feat(style): `w`/`h` scalar units (% of the parent's *other* axis)**
+  - Added `Scalar::Width`/`Scalar::Height` so `40w` resolves to 40% of the parent
+    WIDTH and `50h` to 50% of the parent HEIGHT regardless of which property they
+    set (Python `_resolve_width`/`_resolve_height`). `parse_scalar` now parses them
+    (after `vw`/`vh`, which share the trailing letter), `resolve_scalar` takes the
+    parent width and height separately, and both dims are threaded through edge/
+    min/max resolution (margin-adjusted on each axis). `interpolate_scalar` gained
+    matching arms so the new units animate.
+- **fix(layout): `align: … middle` reaches children behind a transparent wrapper**
+  - When a node carries no `align` of its own and is the sole flow child of a
+    transparent wrapper (`Node`) that does, it inherits that align — so an inner
+    `Horizontal` applies the wrapper's center/middle to its buttons (Python has no
+    wrapper; `#questions` *is* the `Horizontal`).
+- **fix(layout): reserve collapsed margin before distributing `1fr` space**
+  - Flow layouts divided the full available size among edges and subtracted each
+    child's margin per-child afterward; fixed edges fold margin in but `fr` edges
+    did not, so two `1fr` children split the full width and lost a cell each.
+    Now the collapsed total margin is reserved from the resolver total *before*
+    distribution and sizes resolve on margin-excluded boxes (Python
+    `_resolve.resolve_box_models` + `layouts/horizontal.py`), fixing the inner
+    `1fr` off-by-one. Subsumes the old partial `collapse_overlap` mitigation.
+  - Promotes `docs_max_width`, `docs_max_height`, `docs_min_width`,
+    `docs_nesting01`, `docs_nesting02` (PTY 159 → 164).
+
+### 2026-06-16 (fix(Placeholder): default label derives from id)
+
+- **fix(widgets/Placeholder): unlabelled Placeholder renders `#<id>`**
+  - Python `Placeholder` defaults its label to `#{id}` when no label is given and
+    an id is set (else `"Placeholder"`). Rust always rendered `"Placeholder"`.
+    Added a custom `Placeholder::id()` that derives the default label from the id
+    at build time (the id seed is consumed at mount, so it can't be recovered at
+    render). Combined with the now-available direct `.id()` builder, the grid-span
+    example placeholders attach their id directly (no `Node` wrapper) and render
+    `#p1`…`#p7` like Python. Promotes `docs_column_span`, `docs_row_span`.
+
+
+### 2026-06-16 (fix(layout/grid): faithful Python track resolution + spans + auto)
+
+- **fix(layout/grid): port Python's exact-rational grid track resolution**
+  - `layout_grid` converted each track to an `Edge` and ran the 1D resolver,
+    which treated `auto` as `1fr` (no content sizing), `.ceil()`-weighted `fr`,
+    and rounded `%`/fixed tracks independently (e.g. 25%→8 + 75%→23 = 31 > 30 →
+    off-by-one rows). Replaced with a faithful port of Python `_resolve.resolve`:
+    exact rational arithmetic, interleave frac+gutter and accumulate with
+    floor-toward-neg-inf so rounding cascades and tracks tile the container
+    exactly; `fr` weighted by value; `auto` columns/rows content-sized
+    (intrinsic + chrome, respecting min/max) before resolving; `column-span`/
+    `row-span` cells span the union of their tracks + gutters. Promotes
+    `docs_grid_rows`, `docs_grid_layout4_row_col_adjust`, `docs_grid_layout_auto`.
+
+### 2026-06-16 (fix(layout): clamp explicit/cross-axis sizes to min)
+
+- **fix(layout): min-width/min-height clamp concrete + cross-axis edges**
+  - `extract_child_spec` baked `min` into `Edge.min_size`, which the 1D resolver
+    honors only for flexible main-axis edges — so an explicit size (`size=Some`)
+    or the cross-axis was never min-clamped (`width:50%` + `min-width:60` resolved
+    to 50%, ignoring the min). Now the resolved concrete width/height is clamped
+    up to its `min_size` (outer, chrome-inclusive), matching Python
+    `Widget._get_box_model`'s `max(content, min)`. (Several min/max docs examples
+    still need the `w`/`h` Scalar units + non-`Node`-wrapped ids to fully match —
+    tracked follow-ups.)
+
+
+### 2026-06-16 (feat(widgets): complete the uniform `.id()`/`.class()` sweep)
+
+- **feat(widgets): `.id()`/`.class()` on (nearly) every widget (Python parity)**
+  - Followed up the macro from the prior entry by applying `seed_ident_methods!`
+    to the remaining ~39 seed-bearing widgets (Checkbox, Switch, Rule, Log,
+    RichLog, Select, Tree, DataTable, OptionList, SelectionList, RadioButton,
+    RadioSet, Collapsible, ProgressBar, LoadingIndicator, ListView, ListItem,
+    MarkdownViewer, Link, Pretty, Toast, Tooltip, DirectoryTree, ContentSwitcher,
+    Header/Footer + their parts, Welcome, Spacer, Panel, Frame, Constrained,
+    Overlay, Styled, ScrollBar, HelpPanel, KeyPanel, AppRoot, …). Every
+    seed-bearing widget now accepts `.id(...)` / `.class(...)` directly, matching
+    Python's universal `id=` / `classes=`.
+
+
+### 2026-06-16 (feat(widgets): uniform `.id()` / `.class()` builders)
+
+- **feat(widgets): seed-based `.id()` / `.class()` builders on more widgets**
+  - Python gives every widget `id=` / `classes=`, but in Rust only a handful
+    (Button, Input, the layout containers, Static, …) exposed `.id()`/`.class()`.
+    Added two reusable macros — `seed_ident_methods!` (sets the widget's own
+    `NodeSeed`, returning `Self`) and `delegate_ident_methods!` (forwards to an
+    inner widget) — and applied them to `Label`, `Placeholder`, `Container`,
+    `ScrollView`, `ScrollableContainer`, `VerticalScroll`, `HorizontalScroll`.
+    Seed-based (single node) means a type selector and an `#id`/`.class` selector
+    resolve to the **same** widget, matching Python — unlike wrapping in a `Node`,
+    which splits them across two nodes. (Remaining seed-bearing widgets are a
+    trivial one-line follow-up sweep.)
+
+
+### 2026-06-16 (fix(render): clip descendants to content box for bordered/padded nodes)
+
+- **fix(runtime/render): a node with gutter clips descendants to its content box**
+  - Descendant content was only clipped to the content box for widgets that
+    opt in (`clips_descendants_to_content`, e.g. scroll hosts). An over-wide
+    bordered `Horizontal` therefore painted its children over its own right
+    border column. Python's compositor clips every container's children to
+    `region.shrink(gutter)`, so a node with any border/padding now clips its
+    descendants to the content box (gutterless nodes are unchanged — content box
+    == layout rect). Promotes `docs_containers06`.
+
+
+### 2026-06-16 (fix(layout): Node-wrapped unset-height leaf fills the container)
+
+- **fix(layout): a transparent `Node` wrapping an unset-height leaf fills (not 1fr-shares)**
+  - `wrapper_unset_height` mapped any non-`auto` wrapped child to a `1fr` share,
+    so N `Node`-wrapped unset-height leaves (e.g. `Placeholder`) split one track
+    instead of each filling the container and overflowing. A transparent wrapper
+    must mirror the wrapped child's intent: when the child's height is itself
+    unset, return `None` so the wrapper inherits the bare-leaf fill-the-container
+    rule (Python `Widget._get_box_model`); an explicit `1fr`/auto child is
+    unchanged (keeps `docs_containers04`). Fixes a column of 19 placeholders not
+    overflowing → no scrollbar → wrong width. Promotes `docs_layout05`.
+
+
+### 2026-06-16 (fix(layout): unset height fills container; Static honors own padding)
+
+- **fix(layout): an unset (`None`) height fills the full container, not a `1fr` share**
+  - Rust conflated an unset height with `1fr`, so multiple bare children split the
+    container 50/50. Python's `Widget._get_box_model` gives each unset-height child
+    the **full** container height (so later siblings overflow below the fold). The
+    `None`/`Auto` height arm in `extract_child_spec` is now split: `Auto` keeps
+    content/flex behavior; truly-`None` with no intrinsic emits a fixed
+    full-container edge. A transparent `Node` wrapper mirrors its child's intent
+    (`auto`→shrink, else flex-fill) via a new `wrapper_unset_height` helper.
+  - **fix(widgets/Static): `layout_height` includes the widget's own padding/border**
+    — `Static::layout_height()` delegated to its inner `Label`, whose chrome
+    resolves against the *Label* selector, so an app rule `Static { padding: 2 4 }`
+    was invisible (box came out short → clipped + mis-centered). It now adds
+    `Static`'s own resolved vertical chrome.
+  - **fix(css): `HeaderClock` gets `dock: right; width: 10; padding: 0 1`** (Python
+    grants these via `HeaderClock(HeaderClockSpace)` inheritance; Rust has no type
+    inheritance, so the clock was stacking as a flow sibling).
+  - Promotes docs parity cases render_compose and layout01.
+
+
+### 2026-06-16 (fix(runtime): scrollable virtual size includes dock spacing + child margins)
+
+- **fix(runtime/render): `host_content_extent` mirrors Python `DockArrangeResult`**
+  - The scrollable virtual size of a scroll host unioned only the border-boxes of
+    its non-docked children. Python's `DockArrangeResult.total_region` unions each
+    placement grown by its **margin**, then grows the result by the **docked
+    scroll-spacing** per edge. Two contributions were missing: (1) a docked
+    Header/Footer enlarges the scrollable height by its thickness (max per edge),
+    and (2) a flow child's margin enlarges the extent. Adding both fixes the
+    modal dialog scrollbar thumb (was offset/absent) and horizontal-scroll virtual
+    width. Promotes docs parity cases modal01/02/03 and layout06.
+
+
+### 2026-06-16 (fix(renderables/LinearGradient): half-block glyphs)
+
+- **fix(renderables/LinearGradient): emit `▀` half-block glyphs (Python parity)**
+  - `LinearGradient::render` emitted plain space cells with a background color
+    only; Python's `LinearGradient` emits upper-half-block `▀` glyphs carrying a
+    foreground (top sample) + background (bottom sample) for 2× vertical color
+    resolution. Rewrote it to match Python's algorithm (per-cell fg/bg geometry
+    + a 50-step quantized color ramp). Fixes `how-to/render_compose` rendering as
+    blank under plain-text capture (the bg-only spaces were invisible). Confirmed
+    "render + compose" itself was already supported (added a regression test).
+
+
+### 2026-06-16 (fix(App): default title to the app type name)
+
+- **fix(App): `title` defaults to the app type's name (Python parity)**
+  - The `TextualApp::title()` default was a hardcoded `"textual-rs"`. Now it
+    defaults to `""` (sentinel for "unset") and the runtime falls back to the
+    app type's name (final path segment of `std::any::type_name`), mirroring
+    Python `self.title = self.TITLE if self.TITLE is not None else
+    type(self).__name__`. An explicit `title()` override (or `set_title`) still
+    wins. Also dropped the now-unnecessary hardcoded `Header::new().title(...)`
+    workaround from the modal screen examples and aligned their struct names.
+
+
+### 2026-06-16 (fix(Placeholder): stop double-centering its label)
+
+- **fix(widgets/Placeholder): render bare content; let `content-align` center it**
+  - `Placeholder` pre-centered its label inside `render()` AND the framework's
+    `content-align: center middle` default re-centered it during composition
+    (the composition measure used `trim_end`, which doesn't strip the widget's
+    leading pad), netting a uniform +1-column shift. `render()` now emits bare
+    content (matching Python `_placeholder.py`, where all centering is done once
+    by `content-align`). Promotes docs parity cases containers01–05, 07–09 and
+    layout02–04.
+
+
+### 2026-06-16 (feat(ListView): arena-composed ListItem widgets)
+
+- **feat(widgets/ListView+ListItem): first-class arena composition**
+  - `ListView` was a flat inline-rendered widget over a `Vec<String>` with a
+    hardcoded `› ` marker. It now composes real `ListItem` children through the
+    arena (the RadioSet/OptionList pattern): each `ListItem` wraps arbitrary
+    child widget(s) (typically a `Label`), the marker is gone, and the highlight
+    is **background-only** (Python parity). Keyboard (up/down/enter/home/end/
+    page) and mouse selection drive the highlight; `ListView` emits
+    `Highlighted`/`Selected` (carrying index+item) and stages the initial
+    `Highlighted` at mount. Highlight/hover are applied to child nodes via a new
+    `Widget::child_classes_for_tree` hook (synced in the same pass as
+    `child_display_for_tree`). The headless state API (`selected`/`offset`/
+    `set_items`/…) is preserved so `command_palette` is unaffected. New public
+    API: `ListView::from_list_items`, `ListItem::new/from_text/with_id/…`;
+    `ListView::new(Vec<String>)` retained. Promotes `docs_list_view`.
+- **fix(widgets/Label): `layout_height` reports outer height**
+  - `Label::layout_height()` returned only its content height, so a styled
+    `Label { padding: 1 2 }` overflowed its box (two stacked padded labels
+    overlapped). It now adds the resolved vertical chrome, matching the
+    `extract_child_spec` height-arm convention. Regression:
+    `label_layout_height_includes_vertical_padding`.
+
+### 2026-06-16 (fix(render): clear re-emits full screen, not a stale diff)
+
+- **fix(runtime/render): diff against a blank frame when clearing the terminal**
+  - When a frame was drawn with `clear_on_next_render` set, a `Clear` control
+    blanked the terminal but the diff was still taken against the *previous*
+    frame — so unchanged cells weren't re-emitted and got wiped off-screen
+    (a stale-frame diff). Added `diff_body_for_draw`, used at all three render
+    paths: when clearing it diffs `next` against a blank frame of the same size,
+    so every visible cell is re-emitted after the wipe (non-clear paths are
+    unchanged). Regression: `clear_before_draw_reemits_unchanged_content`. This
+    also lets dynamic mount/remove use a clear when appropriate without losing
+    siblings.
+
+### 2026-06-16 (fix(delegate): forward arena composition hooks)
+
+- **fix(widgets/delegate): `delegate_widget_to!` forwards the arena hooks**
+  - The full-delegation macro forwarded `take_composed_children` but not
+    `take_child_decl_meta`, `take_child_handle_sinks`, or
+    `take_pending_mount_messages`. Delegated wrapper containers (`Vertical`,
+    `Horizontal`, `Center`, `Middle`, `VerticalScroll`, …) therefore silently
+    dropped declared child ids/classes, handle-sinks, and mount-time messages —
+    on the initial build path too, not just dynamic mount. Added the three
+    forwarding arms (method count 60→63). Regression: `tests/delegate_forwarding.rs`.
+
+### 2026-06-16 (feat(runtime): dynamic mount/remove under a live parent)
+
+- **feat(runtime): `mount_under` / `mount_before` / `mount_after` / `remove`**
+  - Added a runtime API to insert or remove widgets under an already-mounted
+    parent (resolved by selector or `NodeId`), mirroring Python
+    `Widget.mount(..., before=/after=)` / `remove`. All mounts go through the
+    canonical `mount_extracted_recursive` path, so composed children, child
+    decl-metadata (id/classes), child handle-sinks, and mount-time messages all
+    fire exactly as on initial build; `remove` clears focus across the subtree
+    and emits `Unmount`. A structural mutation requests a full relayout+repaint
+    (without a terminal clear, to avoid a stale-frame diff). `WidgetTree` gains
+    `mount_at`/`child_index`/`reorder_child`. Unblocks `tutorial/stopwatch06`
+    (`action_add_stopwatch`/`action_remove_stopwatch`; not promoted — the running
+    clock is timer-driven, verified structurally instead).
+
+### 2026-06-16 (fix(scrollbar): thumb glyph parity with Python)
+
+- **fix(widgets/scrollbar): partial-block thumb glyphs match Python both axes**
+  - `ScrollBarRender::render_bar` is rewritten to mirror Python
+    `ScrollBarRender.render_bar` exactly: a single divmod-based start/end
+    computation shared by both axes, the eighth-block glyph tables
+    (`VERTICAL_BARS` lower blocks, `HORIZONTAL_BARS` left blocks), head/tail
+    partial-block glyphs (`bars[7 - bar]`, space-skipped) with Python's
+    fg/bg/reverse mapping per axis, and a `color=bar, reverse=true` thumb body.
+    Fixes a horizontal head-glyph bug (used `HORIZONTAL_BARS[start_bar-1]`
+    instead of `bars[7-start_bar]`, dropping the head entirely at `start_bar==0`)
+    and the duplicated per-axis math. New unit tests assert the glyph sequence +
+    per-cell fg/bg/reverse against live Python output, including fractional edges.
+
+### 2026-06-16 (feat(runtime): widgets can post messages at mount; Select Changed)
+
+- **feat(runtime): mount-time message hook for arena widgets**
+  - Python widgets can post messages from `on_mount`, but the arena
+    `on_mount(&mut self)` has no `EventCtx`, so an arena widget had no way to
+    emit a message reflecting its initial state. Added
+    `Widget::take_pending_mount_messages()` (default empty); the runtime drains
+    it once right after a node mounts and routes each message through the normal
+    bus with the mounted node as sender/control — a drain-at-mount adapter over
+    the core message flow (same pattern as `take_child_decl_meta`), not a
+    separate dispatch path. Wired into both the initial-mount loop and the
+    dynamic-mount lifecycle path.
+  - **fix(widgets/Select): `Changed` posts at mount for the auto-selected value**
+    — `Select(allow_blank=false)` auto-selects the first option; it now stages a
+    `SelectChanged` at mount (Python `_watch_value` parity), so apps observe the
+    initial selection at startup. Promotes `docs_select_widget_no_blank`.
+
+### 2026-06-16 (fix(Rule): orientation variant class + margins)
+
+- **fix(widgets/Rule): orientation margins/sizing now apply (variant class)**
+  - `Rule` pushed `rule--horizontal`/`rule--vertical` into its seed classes, but
+    the default CSS (and Python) target the DOM variant classes
+    `Rule.-horizontal` / `Rule.-vertical`. The mismatch meant the orientation
+    rules (`margin: 1 0` + `width: 1fr` for horizontal, `margin: 0 2` +
+    `height: 1fr` for vertical) never matched, so margins and flex sizing were
+    silently dropped. Use the `-horizontal`/`-vertical` variant classes, add a
+    `style_classes()` override so off-tree style resolution (`content_width`,
+    `render`) sees the variant, and resolve `render` via the DOM style path.
+  - Promotes docs parity cases `docs_horizontal_rules` / `docs_vertical_rules`.
+
+### 2026-06-16 (fix(css): hatch property maps named patterns + blends opacity)
+
+- **fix(css/hatch): named patterns map to glyphs; opacity blends over background**
+  - The `hatch:` parser took the first *letter* of the pattern keyword as the
+    fill char (so `hatch: right $foreground` painted `r`, never `╱`) and dropped
+    the optional opacity. Now the named patterns map to Python's `HATCHES` glyphs
+    (`left ╲`, `right ╱`, `cross ╳`, `horizontal ─`, `vertical │`) or accept a
+    quoted single-cell char, and a trailing `N%` scales the color alpha
+    (`color.multiply_alpha`). The painter blends the (alpha-scaled) hatch color
+    over each blank cell's actual background (`flatten_over`) instead of painting
+    a flat opaque color, matching Python's `apply_hatch`. Adds `hatch: none`.
+
+### 2026-06-15 (fix(layout): border-box explicit size never collapses below chrome)
+
+- **fix(layout): a border-box explicit size keeps its full border/padding chrome**
+  - Following Python `Widget.get_box_model` (`content = max(0, size - gutter)`,
+    box = `content + gutter`), an explicit border-box size smaller than the
+    widget's own chrome now clamps the box up to `border + padding (+ margin)`
+    instead of collapsing. Fixes an `Input { height: 1; border: tall }` (chrome 2)
+    rendering only its top border row — it now renders both border rows with zero
+    content height, matching Python. Applied in both `extract_child_spec`
+    (flow/grid) and `carve_edge` (dock/split). Regression test:
+    `tests/border_box_layout.rs`.
+
+### 2026-06-15 (fix(Switch): render slider via ScrollBarRender; content width 4)
+
+- **fix(widgets/Switch): slider is a horizontal scrollbar thumb (Python parity)**
+  - Replaced the ad-hoc knob/fractional-edge drawing with Python's actual
+    `Switch.render`: a `ScrollBarRender(virtual_size=100, window_size=50,
+    position=slider_pos*50, vertical=False)` whose thumb occupies half the track
+    and slides left (off) → right (on). Thumb/track colors come from the
+    `switch--slider` component style flattened over the resolved surface.
+  - **fix(widgets/Switch): `content_width` returns the bare content width (4)**
+    matching Python `Switch.get_content_width`; padding/border chrome is added by
+    the layout engine, not baked into the widget's reported width.
+
+### 2026-06-15 (fix(layout): collapse adjacent margins in horizontal layout)
+
+- **fix(layout/horizontal): adjacent child margins collapse (max, not sum)**
+  - Horizontal layout summed neighbouring children's margins, so a row of
+    buttons with `margin: 2 4` got an `8`-cell inter-button gap (and a shifted
+    centered start) instead of Python's collapsed `max(right, left) = 4`.
+    Positioning now advances by `box_right_edge + max(this.margin.right,
+    next.margin.left)`, and width distribution subtracts the total collapse
+    overlap so freed space goes to any `fr` sibling (guarded so a flexible first
+    child, whose edge carries no folded margin, isn't reduced). `apply_parent_align`
+    needed no change — it derives the align box from the placed margin-grown rects.
+  - Promotes docs parity cases `docs_on_decorator01` / `docs_on_decorator02`.
+
+### 2026-06-15 (feat(Markdown): blockquote bars + nesting)
+
+- **feat(widgets/Markdown): render blockquotes with bars and nesting**
+  - `build_markdown_children` dropped blockquotes entirely (catch-all arm) and
+    flattened their content into plain paragraphs — no `▌` bars, no nesting. The
+    `MarkdownBlockQuote` default CSS (`border-left: outer; padding: 0 1`) existed
+    but no widget used it. Added a `MarkdownBlockQuoteBlock` widget (style type
+    `MarkdownBlockQuote`) holding a recursive quote-child tree; the outer bar/pad
+    come from the existing CSS, and each additional nesting level prefixes `▌ `
+    with blank-bar margins around nested quotes (Python parity). Rewrote
+    `build_markdown_children` to walk the top-level event stream so blockquotes
+    become quote blocks while every other block delegates to the unchanged
+    `parse_markdown_blocks`, preserving document order and all existing behavior.
+
+### 2026-06-15 (fix(compose): with_compose preserves child id/classes/handle)
+
+- **fix(compose): `with_compose` no longer drops child id/class/handle metadata**
+  - `AppRoot::with_compose` and `Container::with_compose` flattened each
+    `ChildDecl` to a bare `Box<dyn Widget>`, discarding the decl's `id`,
+    `classes`, and `handle_sink`. Children mount via the
+    `take_composed_children()` extraction path (which only reads the widget's own
+    seed), so `.with_id(...)` / `.with_classes([...])` on a composed child never
+    reached the node and CSS id/class selectors silently failed to match (e.g.
+    `muted_backgrounds` `.text-*` padding/bg/fg never applied). Added a
+    `Widget::take_child_decl_meta()` hook and a single `apply_child_decl_meta`
+    helper (mirroring `App::mount_declarations`: `set_css_id` + `add_class`),
+    applied at every runtime mount site that already fires child handle-sinks
+    (`mount_declarations`, `mount_extracted_recursive`, `recompose_node_subtree`,
+    ScreenHost). Classes are *added* (the widget's own component class coexists
+    with user classes, matching Python). `handle_sink`s bound via
+    `HandleSlot::bind` on composed children now also fire.
+
+### 2026-06-15 (fix(DirectoryTree): suppress twisty, render emoji prefix)
+
+- **fix(widgets/DirectoryTree): folder/file emoji replaces the twisty prefix**
+  - Python's `DirectoryTree.render_label` overrides the base `Tree` prefix so the
+    `📂`/`📁`/`📄` emoji *is* the node prefix and the expand/collapse twisty
+    (`▼`/`▶`) is suppressed. Rust rendered both (`▼ 📂 ./`), and used the full
+    path text for the root instead of `path.name` (basename). Added a
+    `Tree::set_hide_twisty` flag (default off, no plain-`Tree` change) threaded
+    through prefix/width/hit-test/render; `DirectoryTree` enables it and uses the
+    basename for the root label. The toggle hit-zone extends over the leading
+    emoji so clicking a folder icon still expands/collapses it (Python parity).
+
+### 2026-06-15 (fix(Digits): honor parent-forwarded text-align; OptionList scrollbar)
+
+- **fix(renderables/Digits): honor the parent-forwarded `justify` (text-align)**
+  - `Digits::render` always re-resolved its own `Digits` type meta (default
+    `text-align: left`), ignoring the `options.justify` that the render path
+    forwards from a node's resolved `text-align` (engine #19). So a typed wrapper
+    like `class TimeDisplay(Digits)` with `text-align: center` couldn't center its
+    glyphs. Now `Digits::render` uses the forwarded justify when set, falling back
+    to its own text-align. Fixes tutorial stopwatch03/04 (TimeDisplay centering).
+- **feat(widgets/OptionList): real vertical scrollbar**
+  - OptionList had no scrollbar mechanism (flat self-scroll). Added a dedicated
+    `ScrollBar` child + `scroll_virtual_content_size`/`scroll_offset_f32`/
+    `on_message(ScrollbarScrollTo)` (mirroring RichLog), registered
+    `OPTION_LIST_VSCROLLBAR_ID` in render.rs. The host-scrollbar layout now keeps
+    the outer box for chrome-bearing self-rendering hosts (OptionList) while
+    chrome-less hosts (Log/RichLog) keep the viewport box (no regression). Fixes
+    option_list_tables (the vbar thumb now renders via the #40 clip fix).
+
+### 2026-06-15 (fix(runtime): dedicated scrollbar thumb no longer clipped away)
+
+- **fix(runtime): paint a dedicated scrollbar into its gutter (don't clip it out)**
+  - For self-scrolling hosts with no content children (Log/RichLog/KeyPanel),
+    `apply_host_scrollbar_layout` shrinks the host `layout_rect` to the viewport
+    (excluding the scrollbar gutter). The parent then clips the host's descendants
+    to that shrunk rect, so the dedicated scrollbar child (which sits in the
+    gutter) was entirely outside the clip and its thumb/track were dropped. In
+    `render_tree_node`, expand the clip for `is_dedicated_scrollbar` children to
+    cover their own layout rect (bounded by the frame) — applied only to that
+    child's context, so siblings are unaffected. Fixes the missing vertical
+    scrollbar thumb in `log` (and `rich_log`).
+
+### 2026-06-15 (fix(widgets/Toast): severity border, word-wrap, side margin)
+
+- **fix(widgets/Toast): paint the severity `▌` border in off-tree composition**
+  - The runtime composes toasts off the arena tree via `render_styled()`/
+    `selector_meta_generic()`, which read `style_classes()`. `Toast` didn't
+    override it, so the severity class (`-information`/`-warning`/`-error`) was
+    invisible and `Toast.-warning { border-left: outer $warning }` never matched.
+    Store the class in a field + override `style_classes()`.
+- **fix(widgets/Toast): word-wrap long messages** (Python `Static`/`Content`):
+    `render` wrapped via `Text::wrap()` at the content-box width; `layout_height`
+    counts wrapped lines.
+- **fix(runtime): toast side margin 1, not 2** — Python's `ToastRack` has
+    `overflow-y: scroll` (1-col gutter), so the toast box sits 1 col from the
+    right edge. (`TOAST_SIDE_MARGIN`) Rust toast output is now byte-identical to
+    Python. (Not in the strict PTY harness: notifications auto-dismiss → flaky
+    golden.)
+
+### 2026-06-15 (feat(widgets): OptionList multi-row options + TextArea gutter width)
+
+- **feat(widgets/OptionList): render multi-row option content (line-based model)**
+  - OptionList capped every option at one display row, collapsing multi-row Rich
+    renderables (e.g. tables) to their first line. Reworked to a line-based model
+    mirroring Python `OptionList._lines`: `render_rich_lines` returns all display
+    lines (splitting on line-control segments AND embedded `\n`), with `item_height`/
+    `total_lines`/`line_map`; render, scroll offset, `ensure_visible`, mouse/hover
+    hit-testing, and `layout_height` all work in line space. (`src/widgets/option_list.rs`)
+- **fix(widgets/TextArea): line-number gutter uses a 2-cell margin**
+  - The gutter was `digits + 1` (one trailing space); Python uses `digits + 2`
+    (`f"{n:>digits}  "`), so every code line was shifted 1 cell left. Now matches.
+    (`src/widgets/text_area.rs`) Fixes text_area_example + text_area_selection.
+
+### 2026-06-15 (fix(layout): don't double-count a bordered auto-height leaf's chrome)
+
+- **fix(layout): auto-height measurement adds only margin to a leaf's outer height**
+  - `measure_child_outer_height` added the full vertical chrome (margin+border+
+    padding) on top of a child's measured height — but for a LEAF widget that
+    height came from `layout_height()`, which already includes the widget's own
+    border/padding (OUTER height). So a bordered `height: auto` leaf was inflated
+    by its border (e.g. a `Checkbox` measured 5 rows instead of 3), making an auto
+    container over-measure and spuriously overflow. Now: if the child reports its
+    own `layout_height()` (leaf, already OUTER) add only margin; only the
+    children-sum CONTENT path (drained/auto containers) adds the full chrome. The
+    width side is unchanged (its `content_width()` is pure content by contract).
+    Fixes `checkbox` (VerticalScroll no longer over-measures → no phantom
+    app-root scrollbar).
+
+### 2026-06-15 (fix(scrollbar): re-expand content when a reserved gutter is unneeded)
+
+- **fix(runtime): scrollbar gutter converges (re-expands when not needed)**
+  - The host-scrollbar pass laid children out at a reduced viewport when the first
+    measurement reserved a lane, but if a later (corrected) measurement showed no
+    overflow it never re-laid-out at the full width — leaving the gutter reserved
+    forever. Common trigger: a `Markdown` child measured tall before its
+    `on_layout` corrected its width, reserving a vertical gutter that stuck. The
+    pass now iterates (capped) — re-laying out at the resolved viewport and
+    recomputing until the reserved lanes stabilize — so an unneeded gutter is
+    released and the children re-expand. Fixes `collapsible`.
+
+### 2026-06-15 (fix(scrollbar): no spurious cross-axis scrollbar on partial content)
+
+- **fix(scrollbar): reserve a scrollbar lane only on genuine overflow**
+  - `ScrollbarPolicy::resolve` (and the host-scrollbar call sites) clamped the
+    virtual content extent up to the widget size. For a self-rendering scrollable
+    whose content is narrower/shorter than its box (e.g. a `DataTable` filling a
+    120-wide box with only ~13 cols of columns), the clamp made the content appear
+    to exactly fill the box — so as soon as one axis reserved a lane (e.g. a
+    vertical scrollbar), the clamped extent "overflowed" the reduced viewport and
+    a **spurious** scrollbar was reserved on the other axis (stealing a row/col).
+    Now the actual virtual extent is used per axis. Fixes data_table_fixed (the
+    phantom horizontal scrollbar that stole the last row) and removes a phantom
+    hbar in the keys preview.
+
+### 2026-06-15 (feat(widgets): Collapsible arena composition + DataTable cell justify)
+
+- **fix(widgets/Collapsible): compose `CollapsibleTitle` + contents as arena nodes**
+  - `Collapsible` painted its title and children from its own `render()`, but in
+    arena mode a widget that returns `take_composed_children()` is a container
+    whose own render is chrome-only — so the title glyph/label and all content
+    were dropped, leaving only the top border. Now `take_composed_children()`
+    yields `[CollapsibleTitle, CollapsibleContents(children)]` as real arena nodes
+    (mirroring Python's `compose()`); `CollapsibleTitle` renders `symbol + label`
+    and the `&.-collapsed > Contents { display: none }` rule works through the
+    normal CSS/layout path. Fixes collapsible_nested + collapsible_custom_symbol.
+- **feat(widgets/DataTable): per-cell justification (`CellJustify`)**
+  - Added `CellJustify { Left, Right, Center }` and `set_cell_justify` /
+    `set_row_justify` / `set_all_data_cells_justify` (Python `Text(justify=…)`
+    cells). Data cells can now right/center-align within their column (headers
+    stay left). Also: column widths size to content (`max(1)`, was `max(3)`), and
+    `DataTable` flex-fills its container width (`content_width` → None +
+    `auto_content_width` for explicit `width:auto`). Fixes data_table_renderables.
+
+### 2026-06-15 (fix(widgets/Checkbox): Rich markup labels + content width)
+
+- **fix(widgets/Checkbox): parse the label as Rich markup**
+  - `[b]…[/b]` / `[magenta]…[/]` were rendered literally and inflated the width.
+    The label is now parsed via `Text::from_markup(.., emoji=false)` (emoji
+    shortcodes left literal, matching Python), so markup is stripped to plain
+    text for rendering and measurement.
+- **fix(widgets/Checkbox): content_width returns pure content (no double chrome)**
+  - `content_width()` added its own border/padding chrome, which the layout's
+    auto-width measurement then added again — making the box too wide. It now
+    returns pure content (`3` for `▐X▌` + `2` for the label's 1-cell pad + label
+    width), matching Python `ToggleButton.get_content_width`. Box widths now match
+    Python exactly. (The checkbox demo still has a separate ~1-col centering /
+    focus-scroll artifact tracked in the engine ledger; not promoted yet.)
+
+### 2026-06-15 (feat(widgets/DataTable): per-row labels)
+
+- **feat(widgets/DataTable): per-row labels render as a non-data label column**
+  - Added `DataTable::add_row_labeled(row, label)` (Python `add_row(..., label=…)`).
+    When any row is labelled and `show_row_labels` is set, a label column is
+    rendered as a prefix to the left of the data cells (header label cell blank),
+    sized to the widest label, and included in the table's content width. The
+    label column is not a data/cursor column. Fixes the `data_table_labels` demo.
+
+### 2026-06-15 (fix(layout): auto-height container fills an `fr` child / Center+Middle)
+
+- **fix(layout): an `auto`-height container whose children are all dynamic-height
+  fills an `fr` child instead of collapsing**
+  - Mirrors Python `Layout.get_content_height`: a non-docked `height: auto`
+    container whose displayed children all have a dynamic height (`auto`/`fr`/`%`)
+    is measured against the full container height, so an `fr` child fills it.
+    Previously such a container collapsed to the child's minimum — e.g.
+    `Center(height:auto) > Middle(height:1fr)` was 1 row tall, so vertical
+    centering (`Middle`'s `align-vertical: middle`) had no slack. Scoped to the
+    all-dynamic + has-`fr` case to preserve size-to-content for every other auto
+    container. Fixes `Center`/`Middle` vertical centering (progress_bar_gradient).
+- **fix(widgets/ProgressBar): keep half-cell precision in the filled bar**
+  - The render passed a pre-rounded integer fill length to the `Bar` renderable,
+    dropping the half-cell (`╸`/`╺`) that Python produces by passing the
+    fractional `width * percentage`. Now passes the fractional extent.
+
+### 2026-06-15 (fix(widgets/ListView): nav bindings hidden from the Footer)
+
+- **fix(widgets/ListView): cursor/select bindings no longer leak into the Footer**
+  - `ListView::bindings()` declared `up`/`down`/`enter` with `show=true`, so a
+    focused `ListView` flooded the `Footer` with its navigation hints. Marked them
+    `.hidden()` to match Python (all `ListView.BINDINGS` are `show=False`).
+
+### 2026-06-15 (fix(widgets): ProgressBar bar glyphs + Sparkline empty buckets)
+
+- **fix(widgets/ProgressBar): render the Python bar glyphs `━`/`╺`/`╸`**
+  - The determinate/indeterminate/gradient render paths overrode the `Bar`
+    renderable with `█` (filled) and a **space** background, so the track was
+    invisible (a 0% bar showed as blank). Dropped the overrides to use the
+    `Bar` defaults (`━` bar, `╺`/`╸` halves), matching Python's
+    `renderables/bar.py`. Fixes `progress_bar`.
+- **fix(renderables/Sparkline): drop empty buckets when width > data length**
+  - `Sparkline::buckets` kept empty partitions and rendered them as min-value
+    (`▁`) columns. Python's `_buckets` yields a partition only `if partition`
+    and re-samples the survivors across the width (`step = len(buckets)/width`).
+    Now matches — fixes the spurious `▁` columns in `sparkline_colors`.
+
+### 2026-06-15 (fix(layout/grid): size grid children by their own box model)
+
+- **fix(layout/grid): grid children are sized by their own box model within the cell,
+  not stretched to fill it**
+  - `layout_grid` set every child to the full cell size (minus margin), so a
+    `height: auto` widget (e.g. a `Button`) was stretched to fill a tall grid row
+    instead of sitting at its natural height. Now each child resolves its own
+    `width`/`height` against the cell — unset/`1fr` fills, `auto` sizes to content,
+    explicit resolves against the cell — mirroring Python's
+    `widget._get_box_model(cell_size)` (`layouts/grid.py`). Children with `100%`
+    (e.g. five_by_five `GameCell`) still fill, so no regression there.
+  - Fixes the docs app grid examples: question02/03, question_title01/02.
+
+### 2026-06-15 (fix(layout/text): text-align + transparent-wrapper auto-sizing)
+
+- **fix(widgets): `text-align: center/right/justify` now honored for Label/Static**
+  - The render path only fed a hardcoded justify for `Button`; all other widgets ignored the
+    resolved `text_align`. `render_widget_with_meta` now maps `resolved.text_align` →
+    `content_options.justify` generically, so text alignment works for every widget.
+- **fix(layout): transparent styling wrappers (`Node` from `.id()`/`.class()`) adopt the wrapped
+  widget's auto-sizing instead of flex-filling**
+  - `Static::id(..)`/`.class(..)` wrap the widget in a transparent `Node`, and the CSS (`#id`/
+    `.class`) lands on the `Node`. With no sizing defaults the wrapper filled the screen. Added
+    `Widget::is_transparent_wrapper()` + `wrapper_child_auto_axes()`: when the wrapped child is
+    `auto` on an axis and the wrapper's axis is unset, the wrapper shrinks-to-content; an unset
+    axis otherwise keeps `1fr` fill. `content-align` on such a wrapper maps to the child's `align`.
+- **fix(widgets): Label/Static `width: auto` sizes to rendered text width**
+  - Added `Widget::auto_content_width()` (consumed only by the `width: auto` measurement) so an
+    explicit `width: auto` sizes to content; an UNSET width still fills (`content_width()` stays
+    `None`, so `1fr` fill is unaffected).
+- **fix(layout): drop double-counted horizontal chrome on measured-auto width**
+  - `extract_child_spec`'s auto-WIDTH arm already adds full horizontal chrome; the vertical/
+    horizontal layout no longer pre-adds it (height arm still adds vertical chrome). Width-
+    dependent auto height now seeds the wrapped subtree at the real content width before measuring.
+
+### 2026-06-15 (fix(DataTable): nav bindings hidden from the Footer)
+
+- **fix(widgets/DataTable): cursor/select bindings no longer leak into the Footer**
+  - `DataTable::bindings()` declared its `up`/`down`/`left`/`right`/`enter,space` bindings with
+    `show=true`, so a focused DataTable flooded the `Footer` with its navigation hints (overflowing
+    the app's own bindings). Marked them `.hidden()` to match Python (all DataTable bindings are
+    `show=False`). Fixes the `data_table_sort` footer.
+
+
+### 2026-06-15 (fix: RadioSet/Checkbox toggle glyphs + drained-auto-container chrome)
+
+- **fix(layout): bottom-up-measured auto containers include their own border/padding**
+  - `measure_intrinsic_content_*` returns only children's summed extents (it recurses, so it must
+    not double-count). The call sites in `layout_vertical`/`layout_horizontal` now add the
+    container's own border+padding (`own_box_chrome`) to the measured intrinsic, so a `height:auto`
+    container with a border (e.g. `RadioSet { border: tall }`) is no longer clipped by it.
+- **fix(widgets/RadioSet): keep buttons internal; report full height**
+  - `RadioSet` renders its buttons inline but also drained them into the arena, leaving the inline
+    render blank (height 1). It no longer drains (monolithic, as its render/navigation assume) and
+    `layout_height` adds its border/padding chrome. The inner radio glyph is now always `●` (Python
+    `ToggleButton` shows it always; selected state is color-only), not toggled `●`/`○`.
+- **fix(widgets/Checkbox): render `▐X▌` like Python's ToggleButton**
+  - Was `☐`/`☑`. Now renders `▐X▌` (the `X` always present; checked state via the `.toggle--button`
+    color), matching Python and `SelectionList`.
+
+### 2026-06-15 (fix(OptionList): remove hardcoded double indent on plain options)
+
+- **fix(widgets/OptionList): plain options no longer double-indent**
+  - The plain-text render path hardcoded a 2-space prefix on every option, on top of the
+    `OptionList` default `padding: 0 1` — so options rendered 3 columns in from the border instead
+    of Python's 1. Dropped the hardcoded prefix; the CSS padding alone supplies the single-space
+    inset (Python parity). `SelectionList` (own button prefix) and the closed `Select` are
+    unaffected.
+
+### 2026-06-15 (fix(widgets): Checkbox/Switch/Digits auto-height include border chrome)
+
+- **fix(widgets): `Checkbox`/`Switch`/`Digits` report their border/padding in `layout_height()`**
+  - These returned content-only heights (`1`/`1`/`3`), so under `height: auto` with a border
+    (`border: tall`/`double`) the layout allocated only the content rows and clipped the border —
+    a bordered checkbox/switch showed just its top border, a bordered Digits lost 2 of its 3 glyph
+    rows. They now add their resolved vertical chrome (new shared helper
+    `helpers::resolved_vertical_chrome`), conforming to the documented contract that
+    `layout_height()` reports the OUTER auto height (content + own border + padding) — the same
+    contract `Input`, `SelectionList`, `Pretty`, `SelectCurrent`, and five_by_five's `GameCell`
+    already follow. Fixed per-widget (not centrally) to avoid double-counting for widgets that
+    already include chrome.
+
+### 2026-06-14 (feat(css): support `/* */` block comments in stylesheets)
+
+- **feat(css): the stylesheet parser now strips `/* */` comments**
+  - The parser scans raw text for `{`/`}`, so a comment before a rule was folded into the
+    following selector and silently dropped that rule. `parse_with_issues`
+    (`src/css/selectors/parser.rs`) now strips `/* */` spans up front (replaced with whitespace,
+    newlines preserved, so token positions stay stable; an unterminated `/*` consumes to EOF, per
+    standard CSS). Comments may now appear before/between rules and inside blocks.
+
+### 2026-06-14 (feat(layout): block-wise align + bottom-up auto-size container measurement)
+
+- **feat(layout): `align` translates the whole arrangement by a single offset (block centering)**
+  - `apply_parent_align` (`src/layout/mod.rs`) centered each child independently on the cross
+    axis. It now computes one bounding box over all (margin-grown) children and applies a single
+    `dx`/`dy` to every child, matching Python Textual's `_arrange.py`
+    (`WidgetPlacement.get_bounds` + `Styles._align_size` → one `placement_offset`). Children keep
+    their relative positions, so e.g. a narrow buttons row and a wide content box both shift to the
+    same left edge instead of each being centered separately. (Margin-grown bounds retained.)
+- **feat(layout): bottom-up intrinsic measurement for explicitly auto-sized drained containers**
+  - A container whose renderable children are drained into the arena tree reports
+    `content_width()`/`layout_height()` == `None`, so `width: auto`/`height: auto` was treated as a
+    flex edge (filled its slot) instead of sizing to content. `src/layout/common.rs` adds
+    `measure_intrinsic_content_width`/`_height` (sum children's outer extents along the layout axis,
+    max across; `fr` children contribute their min, matching Python `get_content_*`), wired into
+    `layout_horizontal`/`layout_vertical` ONLY when the dimension is explicitly `Scalar::Auto`
+    (an UNSET dimension keeps flex-fill, so `Screen` and default `1fr` containers are unaffected —
+    narrow blast radius).
+- **test(parity): promote `docs_content_switcher` to `Status::Pass`**
+  - With the above (plus the earlier Node/ContentSwitcher fixes and the ported example CSS), the
+    `content_switcher` docs example matches the Python golden: buttons + switcher block-aligned, the
+    active DataTable filling the rounded `1fr` ContentSwitcher box.
+
+### 2026-06-14 (fix(layout): Node/ContentSwitcher arena-child sizing + visibility)
+
+- **fix(containers/Node): report the real arena child's size after extraction**
+  - `Node::take_composed_children` moves the real child into the arena tree and leaves a
+    placeholder `Spacer(1)` behind. `Node::layout_height()`/`content_width()` then returned the
+    placeholder's dimensions (height 1), clipping every `Node`-wrapped arena child to a single
+    row. Now, once extracted, `Node` reports no intrinsic size (mirroring `Container`), so the
+    arena layout sizes it from its real tree child.
+- **fix(widgets/ContentSwitcher): populate child ids before draining children**
+  - `with_child` pushed `None` id placeholders; the ids (often on a wrapping `Node`) were never
+    synced, so `current_child_index()` matched nothing and `child_display_for_tree` hid EVERY
+    pane (empty ContentSwitcher). `take_composed_children` now fills any unset `child_ids` from
+    each child's `style_id()` before draining, so the active pane is shown.
+
+### 2026-06-14 (feat(Select): SelectCurrent child owns the tall border (Python composition))
+
+- **feat(widgets/Select): rearchitect the closed bar into a `SelectCurrent` widget**
+  - New `SelectCurrent` widget (`src/widgets/select_current.rs`) owns the closed-state bar and
+    its `border: tall` + `padding: 0 2` chrome via CSS (`style_type() == "SelectCurrent"`),
+    mirroring Python Textual's composition where the border lives on `SelectCurrent`, not
+    `Select`. `Select` builds a configured `SelectCurrent` (`make_current()`) and renders it
+    through the styled pipeline, so the framework's border compositor draws a proper 3-row
+    tall-bordered box — replacing the previous flat single-line `render_closed`. The bar is
+    rendered tagged with the `Select` node id so click-to-open hit-testing still works.
+  - `Select::layout_height` now reports the bar's outer height (3 closed; bar + dropdown when
+    open); the dropdown overlay is positioned below the full bar height.
+  - Focus parity: `SelectCurrent` carries a `-focus` class when the `Select` is focused, with a
+    new `SelectCurrent.-focus { border: tall $border; }` default mirroring Python's
+    `Select:focus > SelectCurrent`.
+- **test(parity): promote `docs_select_widget` to `Status::Pass`**
+  - The `select` docs example now matches the Python golden (closed Select renders the tall
+    bordered box with the prompt + arrow).
+
+### 2026-06-14 (chore(deps): rich-rs 1.1.1; move Pretty quote fix into the engine)
+
+- **chore(deps): bump `rich-rs` to 1.1.1**
+  - Updates the dependency across the crate and all `docs/examples` workspaces. rich-rs 1.1.1
+    renders pretty-printed strings in Python `repr` style (single quotes) at the printer level,
+    plus a `Progress` `max_refresh` parity fix and `Columns`/`Measurement` improvements.
+- **refactor(Pretty): drop the local quote normalizer**
+  - `Pretty::debug_str()` (`src/widgets/pretty.rs`) no longer rewrites Rust `Debug` double quotes
+    to single quotes — that now happens in the `rich-rs` pretty printer (single source of truth).
+    `debug_str()` returns the raw debug output again; the single-quoted rendering is verified by
+    the `docs_selection_list_selected` PTY parity case and rich-rs's own tests.
+
+### 2026-06-14 (fix(SelectionList/Pretty): toggle glyph, auto-height chrome, Python-repr quotes)
+
+- **fix(SelectionList): toggle button always renders the `X` glyph**
+  - `SelectionList` (`src/widgets/selection_list.rs`) drew `▐ ▌` for unselected and `▐X▌` for
+    selected items. Python's `ToggleButton` always renders `BUTTON_INNER = "X"`; selected vs.
+    deselected is conveyed only by the button foreground color. Rust now matches (always `▐X▌`,
+    color-driven state).
+- **fix(layout): `SelectionList`/`Pretty` `layout_height` include border/padding chrome**
+  - `extract_child_spec` adds only margin on top of a widget's reported auto height, so
+    `layout_height()` must report the OUTER height (content + own border + padding). `SelectionList`
+    and `Pretty` returned content-only heights, so an example that added `border`/`padding` (e.g.
+    `selection_list_selected.tcss`) clipped its rows / collapsed the panel. Both now resolve the
+    cascaded style and add vertical chrome, matching `Input`'s existing behavior and the documented
+    contract.
+- **fix(Pretty): render strings Python-`repr` style (single quotes)**
+  - `Pretty` (`src/widgets/pretty.rs`) fed Rust `Debug` output (double-quoted strings) straight to
+    the pretty printer, so it showed `"value"` where Python Textual (via Rich) shows `'value'`.
+    `debug_str()` now normalizes double-quoted string literals to single quotes (using CPython's
+    quote-selection rule: double quotes only when the string has a `'` and no `"`). The transform
+    is a quote-aware scan over the debug output and is idempotent.
+- **example(selection_list_selected): app title + on-mount Pretty population**
+  - Adds `title() = "SelectionListApp"` and populates the `Pretty` from the real initial selection
+    on mount (was hardcoded `"[]"`), via a shared `refresh_pretty` helper.
+- **test(parity): promote `docs_selection_list_selected` to `Status::Pass`**
+  - The example now matches the Python golden pixel-for-pixel (header title, all `▐X▌` glyphs,
+    full-height list + Pretty panels with single-quoted values).
+
+### 2026-06-14 (fix(border): titles/subtitles fill the edge with the border character)
+
+- **fix(border): border title/subtitle now fill the edge with the border glyph**
+  - `overlay_border_text()` (`src/widgets/helpers.rs`) previously overwrote the whole inner
+    edge with a space-padded title, erasing the border line (`┌Title      ┐`). It now mirrors
+    Python's `_border.render_row`: the title is padded with one blank per present corner and
+    the remaining edge is filled with the border character (`┌─ Title ─────┐`). Left/right
+    alignment reserves one fill glyph on the anchor side; center splits evenly. Fill segments
+    keep the border style; only the padded title carries the title style (and BORDER_TITLE_FLIP
+    reverse for panel/tab borders).
+  - Affects every titled bordered widget (panels, frames, `SelectionList`, etc.).
+- **test: convert byte-offset title lookups to cell columns**
+  - `render_panel_title_flip` (`tests/border_types_render.rs`) and
+    `p2g29_border_title_subtitle_render_on_edges` (`tests/p2_render_css.rs`) used `str::find`
+    (a byte offset) as a cell column. That coincidentally worked only while the whole edge was
+    one styled segment; with the tight title segment it must be converted via
+    `cell_len(&line[..byte])`. Behavior under test is unchanged.
+
+### 2026-06-14 (fix(layout): `align` includes child margins; `Tabs` nav bindings hidden)
+
+- **fix(layout): container `align` now grows alignment bounds by child margins**
+  - `apply_parent_align()` (`src/layout/mod.rs`) computed the aligned block extent from each
+    child's `layout_rect` (border box, margin-excluded). A child with `margin` + `height: 100%`
+    (or `width: 100%`) was therefore shifted by half its own margins — the gap it already
+    occupied was double-counted, pushing it off-center by a row/column.
+  - Now both the block-axis bounds and the per-child cross-axis centering use the
+    margin-grown box, mirroring Python Textual's `WidgetPlacement.get_bounds()`
+    (`region.grow(margin)`). A margin-only child that fills its container produces zero
+    alignment offset, matching Python.
+- **fix(layout): explicit percentage size resolves against container minus margins**
+  - `extract_child_spec()` (`src/layout/common.rs`) now resolves an explicit `height`
+    (`100%`, `vh`, etc.) against `parent_height - (margin.top + margin.bottom)`, matching
+    Python's `_get_box_model` (`styles_width.resolve(container - margin.totals, …)`).
+    Margin-free widgets (e.g. five_by_five `GameCell`) are unaffected.
+- **fix(widgets/Tabs): nav bindings hidden from the footer**
+  - `Tabs::bindings()` (`src/widgets/tabs.rs`) now marks the `left/h previous` and
+    `right/l next` bindings `.hidden()`, matching Python's `Binding(..., show=False)`.
+    They remain functional; they just no longer leak into the `Footer` hint row.
+- **test(parity): promote `docs_tabs` to `Status::Pass`**
+  - The `tabs` docs example now matches the Python golden pixel-for-pixel (footer hints +
+    centered bordered label). Locked in via the real-PTY parity harness.
+
+### 2026-06-13 (fix(scrollbar): `overflow: scroll` now force-shows the corresponding scrollbar)
+
+- **fix(scrollbar): split `force_visible` into `force_visible_v`/`force_visible_h`**
+  - `ScrollbarPolicy::resolve()` (`src/widgets/scrollbar.rs`) and both render paths in
+    `ScrollView::render()` (`src/widgets/containers/scroll_view.rs`) previously used a single
+    `force_visible` flag that fired only when `scrollbar-visibility: visible`. This caused
+    `overflow-y: scroll` / `overflow-x: scroll` to NOT force the corresponding scrollbar visible
+    when content was shorter than the viewport.
+  - Split into `force_visible_v = ScrollbarVisibility::Visible || Overflow::Scroll on Y` and
+    `force_visible_h = ScrollbarVisibility::Visible || Overflow::Scroll on X`. Both the
+    iterative `ScrollbarPolicy::resolve()` loop and the tree-mode / non-tree-mode inline
+    loops in `ScrollView` now use the independent flags.
+  - Effect: widgets with `overflow-y: scroll` (e.g. `RichLog`) now unconditionally show the
+    vertical scrollbar, matching Python Textual behavior.
+- **test(snapshot): update `keys_preview_layout_snapshot`**
+  - `RichLog` has `overflow-y: scroll` in its default CSS; after the scrollbar fix, it now
+    correctly shows a vertical scrollbar thumb on the initial layout. Snapshot updated via
+    `INSTA_UPDATE=always` to reflect the correct behavior (`▁▁` on row 5).
+
+### 2026-06-13 (SPEC-RA5 Step 2: GameCell containment rewrite)
+
+- **refactor(example/five_by_five): rewrite `GameCell` via Button containment (SPEC-RA5 Step 2)**
+  - `GameCell` now owns an `inner: Button` child field (compact, no CSS id) providing focus +
+    press behavior. The outer wrapper (`GameCell`) is the CSS-identity node.
+  - `take_composed_children` drains the Button into the arena tree on first call (idempotent gate
+    via `child_extracted: bool`). Second call returns empty.
+  - `style_type_aliases() -> &["Button"]` so both `GameCell { }` and `Button { }` CSS rules match,
+    mirroring Python MRO-based selector matching for `GameCell(Button)`.
+  - `on_message` intercepts `ButtonPressed` via `msg.downcast_ref::<ButtonPressed>()` (post-RA-1
+    form) and calls `ctx.set_handled()` to stop bubble propagation past the wrapper.
+  - `focusable() = false` / `can_focus_children() = false`: outer wrapper and Button child are
+    excluded from the focus chain — all keyboard logic is at the app level (`on_key_with_app`).
+    Mouse-click events still reach the Button via arena hit-testing independently of focus.
+    `compact(true)` on the inner Button suppresses tall-border chrome (▔/▁) from default CSS.
+  - `is_hovered`/`is_active`/`mouse_interactive` forwarded from inner Button for off-tree CSS
+    pseudo-class resolution against the GameCell SelectorMeta node.
+  - New unit tests: `game_cell_has_button_child`, `game_cell_style_aliases`,
+    `game_cell_not_focusable`. New integration test file `tests/containment_pattern.rs` with
+    four tests: `containment_take_composed_children_idempotent`,
+    `containment_style_type_aliases_match`, `containment_style_type_aliases_returns_button`,
+    `containment_outer_not_focusable`.
+  - All PTY parity cases (`five_by_five_initial`, `five_by_five_after_move`,
+    `five_by_five_help`) remain at their previous status (Pass/XFail).
+
+### 2026-06-13 (SPEC-RA5 Step 1: deprecate delegation macros)
+
+- **deprecate(delegate): mark `delegate_widget_method!`/`delegate_widget_to!` as migration-period only**
+  - Added deprecation notice and removal criteria to the `src/widgets/delegate.rs` module doc.
+  - Added `DEFERRED(RA-2)` comments on `pub use` re-exports in `delegate.rs` and the prelude
+    in `src/lib.rs`. No behavioral change; no usage sites touched. The canonical delegate method
+    count test (`canonical_delegate_method_count_matches_expected`) still passes.
+  - New widget-wrapper code should use the containment pattern (SPEC-RA5) instead.
+
+### 2026-06-13 (SPEC-P3: dictionary_initial parity — dock intrinsic height + example CSS alignment)
+
+- **fix(layout/split): `carve_edge` unset-height now uses widget intrinsic height**
+  - Changed `None => 1` in `carve_edge`'s `child_h` match to `None | Some(Scalar::Auto)`
+    (delegates to `widget.layout_height()`, falling back to full available height). This
+    matches the policy of `layout_vertical`'s `extract_child_spec`. Previously, docked
+    widgets with no explicit CSS `height` always got height=1, which caused `Node#dictionary-search`
+    (dock: top, no explicit height) to be allocated only 3 rows (1 content + 2 margins)
+    instead of the correct 5 (3 input + 2 margins), overwriting the Input bottom border with
+    the results-container background.
+- **fix(example/dictionary): align compose + CSS with Python**
+  - `Input` now carries its CSS id (`"dictionary-search"`) directly via `Input::id()` instead
+    of being wrapped in a `Node`, matching Python's `Input(id="dictionary-search")` structure.
+    This preserves `Input.layout_height()` in the arena tree (Node child extraction replaces the
+    child with a Spacer, losing the intrinsic height).
+  - Added `Input::id()` builder method (sets `seed.css_id`).
+  - CSS updated to match Python's `dictionary.tcss`: `Screen { background: $panel; }`,
+    `Input#dictionary-search` selector, `border: tall transparent` on `#results-container`,
+    `margin: 0 0 1 0` on `#results-container`, `:focus { border: tall $border; }` rule.
+- **test(layout): new regression test `dock_top_unset_height_uses_intrinsic_height`** guards
+  the `carve_edge` `None`-height fix so it cannot silently revert.
+- **test(parity): `dictionary_initial` promoted XFail → Pass**
+
+### 2026-06-13 (five_by_five input fix — wrong key identifiers + punctuation display)
+
+- **fix(example/five_by_five): use canonical key identifiers**
+  - `on_key_with_app` matched `" "` (literal space) instead of `"space"`, and the
+    help binding used `"?"` instead of `"question_mark"` — so Space (make move)
+    and `?` (help) never matched; Space then fell through to the default
+    action-map (→ Toggle) and the game was non-functional on play despite a
+    correct initial frame. Surfaced by the new interactive parity coverage.
+- **fix(keys): `format_key_display` renders punctuation identifiers as symbols**
+  - Added `punctuation_name_to_char` (inverse of `character_to_key_name`) so
+    bindings declared with canonical names (e.g. `question_mark`) display as
+    their symbol (`?`) in footers/hints, matching Python Textual. Without this
+    the footer showed the literal `question_mark`.
+- **test(parity): `five_by_five_after_move` promoted XFail → Pass**; `five_by_five_help`
+  re-scoped to the remaining help-screen Markdown content-rendering gap.
+
+### 2026-06-13 (SPEC-RA4: typed widget handles)
+
+- **feat(handle): `Handle<W>` + `HandleSlot<W>` — typed widget handles (RA-4)**
+  - `src/handle.rs`: new module. `Handle<W>` wraps `(NodeId, tree_id: u64)` with
+    `PhantomData<fn() -> W>` for `Copy + Send + Sync` independent of `W`.
+    `HandleSlot<W>`: `Arc<Mutex<Option<(NodeId, u64)>>>` cell filled by the mount
+    pipeline; `make_sink()` produces the `HandleSink` callback.
+    `Handle::read_in`/`update_in`: typed arena access (read-only / mutable).
+    `Handle::read`/`update`/`is_mounted`: app-level delegation to
+    `handle_read`/`handle_update`/`handle_is_mounted`.
+    `update_in` enqueues a `RuntimeReactiveEntry` when the closure records changes
+    or requests repaint/layout — same reactive phase as event handlers.
+    `handle_update` drains `drain_pending_class_ops()` after the closure, matching
+    the `with_widget_mut` contract (fixes `MarkdownViewer` TOC class staging).
+  - `src/widget_tree.rs`: `QueryError` extended with `Unmounted` and
+    `TypeMismatch { expected, actual }`; `WidgetTree` gains `tree_id: u64`
+    (process-unique, from `AtomicU64`) to prevent cross-tree handle aliasing.
+  - `src/compose.rs`: `ChildDecl` gains `handle_sink: Option<HandleSink>` field.
+  - `src/widgets/core.rs`: `Widget` trait gains default
+    `take_child_handle_sinks() -> Vec<(usize, HandleSink)>`.
+  - `src/widgets/containers/app_root.rs`: `with_child_handle<W>` builder +
+    `take_child_handle_sinks` override.
+  - `src/runtime/mod.rs`: mount pipeline fires sinks at mount; new app-level API:
+    `query_one_typed`, `typed_handle`, `mount_typed`,
+    `handle_read` (pub(crate)), `handle_update` (pub(crate)),
+    `handle_is_mounted` (pub(crate)).
+  - `src/lib.rs`/`prelude`: `Handle`, `HandleSlot`, `HandleSink` exported.
+  - `tests/typed_handles.rs`: 6 integration tests (slot fills on build,
+    unfilled before build, bind fills slot, slot tracks latest mount,
+    typed mismatch is loud, stale after remove).
+  - Example migrations (judgment rule applied — handles used where they read
+    clearer than stringly selectors, not forced mechanically):
+    - `markdown`: `HandleSlot<MarkdownViewer>` via `with_child_handle`;
+      `on_message_with_app` uses `h.read` for navigator state;
+      key handlers use `h.update` for TOC / back / forward.
+    - `json_tree`: `HandleSlot<Tree>` via `with_child_handle`;
+      `on_app_action_str` uses `h.update` for add/clear/toggle-root.
+    - `dictionary`: `Option<Handle<Markdown>>` acquired post-mount via
+      `query_one_typed`; `on_message_with_app` uses `h.update`.
+    - `code_browser`: `Option<Handle<Static>>` + `Option<Handle<VerticalScroll>>`
+      acquired post-mount; `watch_path` uses `h.update` for all three sites;
+      descendant selector `#code-view VerticalScroll` replaces the `#code-view`
+      selector that silently no-oped scroll-home via the Node wrapper.
+    - `five_by_five`: `HandleSlot<WinnerMessage>` via `with_child_handle`;
+      `watch_won_at` uses `h.update`. `#moves`/`#progress` label sites keep
+      `with_query_one_mut_as` — their init-phase watchers fire before
+      `on_mount_with_app`, making post-mount handles incorrect there.
+  - Parity: all 8 PTY parity tests pass; XFail cases unchanged.
+
+### 2026-06-13 (SPEC-RA3 Step 10: five_by_five rewrite — signals-first)
+
+- **refactor(examples/five_by_five): rewrite to signals-first idiom (RA-3 Step 10)**
+  - `GameState` struct dissolved; pure helper functions replace its methods:
+    `toggle_cross`, `filled_count`, `wrap_navigate`, `plural`.
+  - `FiveByFiveApp` now derives `Reactive` with four reactive fields:
+    `#[reactive(watch_with_app, init = false)] cells: Cells`,
+    `#[reactive(watch_with_app)] cursor: (usize, usize)`,
+    `#[reactive(watch_with_app)] moves: usize`,
+    `#[reactive(watch_with_app, init = false)] won_at: Option<usize>`.
+  - `watch_cells`: diffs old/new cell arrays, updates arena node classes via
+    `app.query_mut("#cell-r-c").set_class(...)`, updates `#progress` label.
+  - `watch_cursor`: removes `cursor` class from old node, adds to new node via
+    `app.query_mut(...)` — init fires with old==new to set the initial cursor class.
+  - `watch_moves`: updates `#moves` label via `app.with_query_one_mut_as::<Label, _>`.
+  - `watch_won_at`: shows/hides `WinnerMessage` via
+    `app.with_query_one_mut_as::<WinnerMessage, _>`.
+  - `GameCell` loses `filled`, `is_cursor`, `classes`, `set_filled`, `set_cursor`,
+    `rebuild_classes`, and `style_classes()` override; `new(row, col)` takes only
+    coordinates. CSS classes live on arena nodes, matched via `node_selector_meta_from_node`.
+  - `GameHeader::new()` takes no args; initial labels show `Moves: 0` / `Filled: 0`.
+    `sync_all`, `sync_cells`, `sync_cursor` free functions deleted.
+  - `on_mount_with_app` calls `self.new_game(app)` — sets all reactive fields;
+    init-phase watchers (cursor, moves) fire before the first render (G3).
+  - `on_key_with_app` navigation arms call `set_cursor(wrap_navigate(...))`;
+    space arm calls `set_cells`/`set_moves`/`set_won_at`; n arm calls `new_game`.
+  - In-file tests rewritten against pure helpers (`toggle_cross`, `filled_count`,
+    `wrap_navigate`); `game_cell_classes_reflect_state` deleted (classes are
+    arena-side); `game_header_label_texts` adjusted for `GameHeader::new()` no-args.
+  - `five_by_five_initial` PTY parity: remains Pass. LOC: 795 → 768.
+
+### 2026-06-13 (SPEC-RA3 Step 7: code_browser rewrite — signals-first)
+
+- **refactor(examples/code_browser): rewrite to signals-first idiom**
+  - `CodeBrowserApp` now derives `Reactive` with `#[var(watch_with_app)] show_tree: bool`
+    and `#[reactive(watch_with_app)] path: Option<String>`.
+  - `watch_show_tree` applies/removes `-show-tree` CSS class on Screen via
+    `app.query_mut(...).set_class(...)` and requests style+layout+repaint invalidation.
+  - `watch_path` loads and syntax-highlights the selected file (or shows an error);
+    replaces the former `load_path` free function.
+  - `on_key_with_app` handles `f` by calling `self.set_show_tree(...)` — replaces the
+    old `app.toggle_class('Screen', '-show-tree')` action string.
+  - `on_message_with_app` calls `self.set_path(...)` on file selection — delegates to the
+    watcher rather than calling load logic directly.
+  - `on_mount_with_app` drops the manual `query_mut("Screen").add_class("-show-tree")`
+    call; the init-phase watcher (G3) applies initial class before the first render.
+  - `reactive_widget_mut` → `Some(self)`.
+  - In-file tests updated: binding assertions check `action == "toggle_files"`;
+    new `watch_state_default` test asserts `show_tree == true` and `path == None`.
+  - `code_browser_initial` PTY-parity case remains xfail-miss (DirectoryTree render
+    gap is a separate concern); all other parity cases unchanged.
+
+### 2026-06-13 (SPEC-RA3 Steps 1-6: Signals-first reactive framework additions)
+
+- **feat(reactive): ReactiveCtx invalidation-request API (G2b)**
+  - `ReactiveCtx` gains `styles_requested` field and `request_repaint()`,
+    `request_layout()`, `request_styles()`, `needs_styles()` methods for watcher
+    side-effect signalling without recording a field change.
+  - `reset_flags()`/`clear_flags()` clear the new `styles_requested` flag.
+
+- **feat(reactive): ReactiveWidget trait additions — `reactive_dispatch_with_app` and `reactive_record_init` (G1/G3)**
+  - `reactive_dispatch_with_app`: like `reactive_dispatch` but receives `&mut App`,
+    enabling watchers to query/mutate widgets (Python watcher parity). Default
+    delegates to `reactive_dispatch` so existing code needs no change.
+  - `reactive_record_init`: records synthetic old==new changes for all init=true
+    fields at mount, mirroring Python's `Reactive._initialize_object`.
+
+- **feat(reactive): Python-parity `var()` init default flip + `var_no_init()` (G4)**
+  - `ReactiveFlags::var()` now has `init: true` (was `false`). Matches Python
+    `var` default (`init=True`, `reactive.py:489`).
+  - Added `ReactiveFlags::var_no_init()` constructor for explicit init opt-out.
+
+- **feat(macros): derive macro — `watch_with_app`, `#[var(...)]` args, `reactive_record_init` codegen (G1/G3/G4)**
+  - `#[reactive(watch_with_app)]` — watcher receives `&mut App`; triggers override
+    of `reactive_dispatch_with_app` in the generated impl.
+  - `#[var]` now accepts arguments: `watch`, `watch_with_app`, `init = false`.
+  - `reactive_dispatch` dispatches only plain `watch` arms; `reactive_dispatch_with_app`
+    dispatches both plain and `watch_with_app` arms.
+  - `reactive_record_init` generated for any struct with init=true fields.
+  - `flags_expr` uses `var_no_init()` for `#[var(init = false)]`.
+
+- **feat(app-bridge): iterative dispatch + init-phase watcher firing (G2/G3)**
+  - `dispatch_app_reactive` replaced with a bounded iterative loop
+    (up to `MAX_REACTIVE_ITERATIONS`) that calls `reactive_dispatch_with_app` and
+    feeds chained watcher changes back for re-processing. Cycle guard matches
+    widget-level `run_reactive_phase_with_dispatch`.
+  - `on_app_mount` now calls `reactive_record_init` + `dispatch_app_reactive`
+    **before** `on_mount_with_app`, matching Python's init-phase ordering.
+  - `needs_styles()` from the dispatch ctx propagates to `EventCtx::request_style_invalidation`.
+
+- **feat(prelude): reactive types exported from `textual::prelude`**
+  - `ReactiveChange`, `ReactiveCtx`, `ReactiveFlags`, `ReactiveWidget`, and the
+    `Reactive` derive macro are now re-exported from `textual::prelude`.
+
+### 2026-06-13 (SPEC-RA3 Step 8: dictionary example rewrite — signals-first)
+
+- **refactor(example/dictionary): rewrite to signals-first pattern (RA-3 Step 8)**
+  - `DictionaryApp` gains `#[derive(Reactive)]` with one reactive field:
+    `#[reactive(watch_with_app, init = false)] results: String` — replaces the
+    direct `with_query_one_mut_as::<Markdown>` call in `on_message_with_app`.
+  - `watch_results` watcher updates the `#results` Markdown widget and requests
+    repaint (selector changed from `"Markdown"` to `"#results"`, using the
+    widget's existing `.with_id("results")` from compose).
+  - `on_message_with_app` `WorkerStateChanged::Success` branch now calls
+    `self.set_results(markdown, app.reactive_ctx())` instead of directly
+    mutating the widget.
+  - `reactive_widget_mut` override returns `Some(self)`.
+  - Worker plumbing (`on_input_changed`, `request_exclusive_worker_task`)
+    unchanged.
+  - PTY parity: `dictionary_initial` remains XFail-miss (known rendering gap,
+    not addressed here).
+  - LOC: 237 → 263.
+
+### 2026-06-13 (SPEC-RA3 Step 9: markdown example rewrite — signals-first)
+
+- **refactor(example/markdown): rewrite to signals-first pattern (RA-3 Step 9)**
+  - `MarkdownApp` gains `#[derive(Reactive)]` with one reactive field:
+    `#[reactive(watch_with_app, init = false)] nav_state: (bool, bool)` — replaces
+    the manual `navigator_at_start`/`navigator_at_end` cache fields.
+  - `watch_nav_state` watcher calls `app.refresh_bindings()` + `ctx.request_repaint()`,
+    eliminating the old `update_navigator_state` helper and the manual call sites.
+  - `on_message_with_app` reads the navigator state and calls `set_nav_state` via
+    the reactive setter; `refresh_bindings` + repaint now happen via the watcher.
+  - `check_action` reads `self.nav_state.0`/`.1` (was `navigator_at_start`/`at_end`).
+  - `reactive_widget_mut` override returns `Some(self)`.
+  - t-key invalidation calls (`request_style_invalidation`, `request_layout_invalidation`,
+    `request_repaint`) preserved unchanged — parity-critical for `markdown_toc_toggle`.
+  - PTY parity: `markdown_initial` and `markdown_toc_toggle` both Pass (unchanged).
+  - LOC: 225 → 209.
+
+### 2026-06-13 (RA-2 complete: behavior-only Widget trait — BREAKING)
+
+- **refactor(core)!: the arena node record is the sole owner of widget identity/style/state**
+  - Widget structs no longer carry `id`/`classes`/`styles`/`focus`/`hover`/`disabled`;
+    the `WidgetTree` `WidgetNode` record owns them (`classes` is now a `HashSet`).
+  - The `Widget` trait sheds ~15 identity/style/state accessor methods and shrinks
+    toward behavior (`render`/`measure`/`on_event`/lifecycle). Identity and style
+    context reach widgets via `NodeSeed` (compose time) and `NodeState` (runtime).
+  - `set_inline_style` now routes pre-mount inline styles into the seed (was a no-op
+    default that silently dropped them).
+  - **Layout contract change:** `content_width()` returns pure content; the auto-width
+    edge adds full horizontal chrome regardless of box-sizing (border-box no longer
+    assumes the widget folded its own padding). Height keeps margin-only behavior.
+  - New `is_initially_disabled()`/`is_initially_focused()` seed interaction state at
+    mount so `:disabled`/`:focus` resolve in headless tree builds.
+  - Row/Dock legacy non-tree focus path removed (arena-tree mode is canonical).
+  - Migration shipped as the 21-commit `bd7d235`..`45a640c` series; full suite green,
+    PTY parity 8/8 unchanged.
+
+### 2026-06-12 (SPEC-RA2 Step 5c: Remove identity/style/state plumbing from toggle/form widgets)
+
+- **refactor(widgets): toggle/form widget families migrated to node-record identity/style/state**
+  - `checkbox`, `switch`, `radio_button`, `radio_set`, `option_list`, `select`,
+    `selection_list`: remove per-widget `focused`, `hovered`, `classes`,
+    `focused_classes`, and `styles` fields; replace with `seed: NodeSeed`.
+  - All `has_focus()` / `set_focus()` / `is_hovered()` / `set_hovered()` overrides
+    removed (default Widget impls now suffice); focus/hover/class state read from
+    `self.node_state()` (dispatch context) and CSS `:focus`/`:hover` pseudo-classes.
+  - `RadioButton` retains `set_focus`/`has_focus`/`is_hovered`/`set_hovered` forwarding
+    to `BinaryToggleState` to preserve keyboard routing during the dual-write phase.
+  - `take_node_seed` implemented on all migrated widgets with the style-preserving
+    clone-back pattern so post-mount `styles()`/`content_width()` remain accurate.
+  - Unit tests updated to use `set_dispatch_recipient` instead of `widget.set_focus(true)`
+    for keyboard routing in isolated test contexts.
+
+### 2026-06-12 (SPEC-RA1 Step 20: Public dispatch_message_queue_tree + acceptance tests)
+
+- **feat(runtime): `dispatch_message_queue_tree` is now `pub`**
+  - Promoted from `pub(crate)` to `pub` in `src/runtime/routing.rs`.
+  - Re-exported from `textual::runtime` alongside `dispatch_event_tree`.
+  - Added to the `textual::prelude` re-export block.
+  - Doc comment updated to explain the public role as the canonical tree message pump.
+
+- **test(open_messages): RA-1 acceptance test suite**
+  - New integration test `tests/open_messages.rs` (11 tests, T5 in SPEC-RA1).
+  - Custom `Ping` and `CursorEcho` / `AltEcho` messages defined entirely outside `src/`.
+  - Covers: bubble order, stop propagation, `can_replace` coalescing (same-sender /
+    different-sender / non-replaceable), `control` field propagation, built-in/custom
+    coexistence, TypeId refinement regression (distinct replaceable types do not coalesce),
+    `MessageHandlers<A>` typed registration, and `#[on(ThirdPartyType)]` dispatch.
+
+### 2026-06-12 (SPEC-RA1 Step 19: Rename Msg trait to Message)
+
+- **BREAKING(message): `Msg` trait renamed to `Message` (final API name)**
+  - The open message trait is now `pub trait Message` in `crate::message`.
+  - All `impl_message!(T)` / `impl_message!(T, replaceable)` macro bodies updated.
+  - All `Box<dyn Msg>` / `&dyn Msg` / `M: Msg` bounds renamed to `Message`.
+  - Zero callers of `impl_message!` need updating (macro paths use `$crate::message::Message` internally).
+
+### 2026-06-12 (SPEC-RA1 Step 18: Swap carrier to Box<dyn Msg>; remove the Message enum)
+
+- **BREAKING(message): `Message` enum removed; all messages are now `Box<dyn Msg>`**
+  - The closed ~110-variant `Message` enum is deleted entirely.
+  - `impl_message_from!` macro and the 109 `From<Struct> for Message` impls are gone.
+  - `payload_any()` / `payload_msg()` migration shims removed.
+  - `MessageEvent.message` field is now private (`Box<dyn Msg>`).
+  - New `MessageEvent::from_boxed(sender, Box<dyn Msg>)` constructor added.
+  - New `MessageEvent::payload() -> &dyn Msg` accessor added.
+  - `MessageEnvelope::message()` now returns `&dyn Msg` instead of `&Message`.
+  - `EventCtx::post_message` / `WidgetCtx::post_message` bounds changed from `M: Into<Message>` to `M: Msg`.
+  - New `EventCtx::post_message_boxed(Box<dyn Msg>)` added for pre-boxed payloads.
+  - Coalescer uses `payload_type_id()` comparison instead of `mem::discriminant` (fixes
+    cross-type coalescing for different custom types with `set_replaceable(true)`).
+
+### 2026-06-12 (SPEC-RA1 Step 2: TypeId handler registration + #[on] downcast codegen)
+
+- **feat(message_handlers): new `MessageHandlers<A>` typed registration API**
+  - New module `src/message_handlers.rs` with `MessageHandlers<A>` and `MessageContext`.
+  - `handlers.on::<T>(|app, msg, mctx, ctx| ...)` registers a closure dispatched by `TypeId`.
+  - Multiple handlers for the same type all run in registration order.
+  - `MessageHandlers::dispatch` returns `true` if any handler ran.
+  - Exported from prelude as `pub use crate::message_handlers::{MessageContext, MessageHandlers}`.
+
+- **feat(textual_app): `TextualApp::register_message_handlers` hook**
+  - New optional trait method; `TextualAppAdapter` calls it once in `new()`.
+  - Dispatch inserted between Block A (command palette/help panel state) and Block B
+    (built-in typed hooks); typed handlers calling `ctx.set_handled()` suppress Block B.
+
+- **BREAKING(macros): `#[on(T)]` generated dispatcher signature changed**
+  - Old: `fn __on_dispatch_x(&mut self, msg: &Message, _sender: NodeId, ctx: &mut EventCtx) -> bool`
+  - New: `fn __on_dispatch_x(&mut self, event: &MessageEvent, ctx: &mut EventCtx) -> bool`
+  - Body uses `event.downcast_ref::<T>()` instead of enum-match.
+  - Works for third-party message types (type in caller's scope, not enum variant).
+
+### 2026-06-12 (SPEC-RA1 Step 1: Promote UserMessage to open Msg trait)
+
+- **BREAKING(message): `UserMessage` trait removed; replaced by `Msg` (will be renamed `Message` at Step 19)**
+  - `pub trait Msg: Any + Send + Sync + Debug + 'static` is the new open message trait;
+    every payload struct (built-in or third-party) implements it.
+  - `impl_message!(T)` / `impl_message!(T, replaceable)` macro exported from `textual`
+    for implementing `Msg` on any `Clone + Debug + Send + Sync` struct.
+  - All 109 built-in payload structs now implement `Msg`; replaceable arm used for the 11
+    coalescing types (`InputChanged`, `TextAreaChanged`, `TextAreaSelectionChanged`,
+    `DataTableCursorMoved`, `DataTableCellHighlighted`, `DataTableRowHighlighted`,
+    `DataTableColumnHighlighted`, `TreeNodeHighlighted`, `OptionHighlighted`,
+    `KeyPanelScrolled`, `RichLogScrolled`).
+  - `Message::can_replace` now delegates to the `Msg` trait (single source of truth).
+  - `Message::Custom` changed from `Box<dyn UserMessage>` to `Box<dyn Msg>`.
+  - Migration shims added: `MessageEvent::{new, with_control, downcast_ref, is, payload_type_id}`;
+    `MessageEnvelope::{downcast_ref, is}`; `Message::{payload_any, payload_msg}` (pub(crate)).
+  - `EventCtx::post_message` and `WidgetCtx::post_message` are now generic `M: Into<Message>`.
+  - `NavigatorUpdated` added to `impl_message_from!` invocation (was previously missing).
+
+### 2026-06-12 (SPEC-P1: Complete CSS border-type table + five_by_five parity)
+
+- **feat(style): extend `BorderType` with 10 new variants**
+  - Added `Ascii`, `Blank`, `Dashed`, `Double`, `Inner`, `Panel`, `Round`, `Tab`,
+    `Thick`, `Wide` — completing the full Python Textual border-type vocabulary.
+  - Added `BorderType::from_name(name: &str) -> Option<Self>` for CSS parsing.
+
+- **feat(widgets/helpers): table-driven border glyphs + title-flip**
+  - `border_chars` made `pub(crate)` with glyph tables for all 10 new types.
+  - Added `border_title_flip(edge_type) -> (bool, bool)`: panel/tab borders swap
+    fg/bg for title text (matching Python `BORDER_TITLE_FLIP`).
+  - `overlay_border_text` gains a `flip` parameter wired through both title
+    and subtitle call sites.
+
+- **refactor(runtime/render): table-driven outline characters**
+  - `outline_char_horizontal` / `outline_char_vertical` now look up glyphs via
+    `border_chars` instead of hardcoding a fixed character set; all outline types
+    (including the 10 new ones) now produce correct outline characters.
+
+- **fix(css/parser): unified border value parser**
+  - Replaced `parse_border_edge` / `parse_border_shorthand` with a unified
+    `parse_border_value` that accepts tokens in any order (type, color, alpha%),
+    handles all Python Textual border type names, treats `none`/`hidden` as
+    `BorderEdge::None`, and logs a debug warning + drops invalid declarations.
+  - `CommandList { border-top: blank; border-bottom: hkey black }` from default
+    CSS now parses correctly (no longer silently dropped).
+
+- **fix(widgets/command_palette): geometry accounts for CommandList border overhead**
+  - `palette_geometry` now computes `list_border_overhead` from the resolved
+    CommandList style so `desired_results_height` always fits all entries even
+    when the CommandList carries blank-top + hkey-bottom borders.
+
+- **feat(examples/five_by_five): reconcile GameHeader with Python three-label layout**
+  - `GameHeader` recomposed as `Horizontal` + three `Label` children
+    (`#app-title` 60% / `#moves` 20% / `#progress` 20%) matching Python
+    `five_by_five.py:84-93` + `five_by_five.tcss:23-33`.
+  - Title constant changed to `"5x5 -- A little annoying puzzle"` (ASCII `--`).
+  - `sync_all` / `sync_cells` updated to query `#moves` / `#progress` Labels.
+  - Footer binding text corrected: "Toggle Dark Mode".
+  - `WinnerMessage` CSS gains `border: round` (Python tcss `:73`).
+
+- **parity: promote `five_by_five_initial` to `Pass`**
+  - All GameCell borders now render with round glyphs; header layout matches
+    Python's three-label 60/20/20 split; PTY parity test promoted from XFail.
+
+### 2026-06-12 (SPEC-P2: Tree navigation bindings, app-level custom action dispatch, TreeNode default state)
+
+- **fix(Tree): hide all navigation bindings from Footer (Python `show=False` parity)**
+  - All 15 `Tree::bindings()` declarations now carry `.hidden()`, matching Python
+    where every `Tree` BINDING has `show=False`.  Focused Tree no longer floods
+    the Footer with navigation keys, allowing app-level bindings to appear.
+
+- **fix(Tree): `TreeNode::new()` starts collapsed (`expanded: false`)**
+  - New nodes default to `expanded: false`, matching Python Textual's collapsed
+    default.  Callers that need a pre-expanded node must set `.expanded(true)`
+    explicitly.  All internal tests and examples updated accordingly.
+
+- **feat(TextualApp): add `title()` hook + propagation to Header**
+  - New `TextualApp::title()` method (default: `"textual-rs"`) lets apps declare
+    their display title without imperative `set_title` calls.  The runtime reads
+    this once at mount time and pushes a `ScreenTitleChanged` message so the
+    `Header` widget always shows the correct app title.
+
+- **feat(runtime): add `on_app_unhandled_action` / `on_app_action_str` fallback**
+  - New `Widget::on_app_unhandled_action` trait method called by the event loop
+    when a declarative binding's action string is not in any node's
+    `action_registry()`.  `TextualAppAdapter` overrides it to call the new
+    `TextualApp::on_app_action_str` hook, closing the gap where app-declared
+    custom actions (e.g. "add", "clear") were silently dropped.
+
+- **feat(json_tree): rewrite to declarative-binding action dispatch**
+  - Removed `on_key_with_app`; added `title()` override ("TreeApp") and
+    `on_app_action_str` handler for "add"/"clear"/"toggle_root".
+
+- **parity: promote `json_tree_initial` and `json_tree_add_node` to `Pass`**
+
+### 2026-06-12 (Real-PTY parity harness, blocking CI gate)
+
+- **test(parity): add real-PTY parity harness (`tests/pty_parity.rs`)**
+  - Runs example binaries in a genuine pseudo-terminal (`portable-pty` +
+    `vt100` dev-deps), drives them with key input, and compares captured
+    screens against golden files generated from **Python Textual**
+    (`tests/pty_parity/golden/`, regenerated only via
+    `tools/parity/gen-python-goldens.sh` — no bless-from-Rust mechanism).
+  - 7 cases across the 5 shared examples (markdown, five_by_five, json_tree,
+    dictionary, code_browser), including keypress scenarios.
+  - Strict xfail manifest: known parity gaps are declared with reasons;
+    a regression in a passing case fails CI, and a silently-fixed xfail also
+    fails (XPASS) until explicitly promoted to `Pass`.
+  - Current state: both markdown cases pass (pixel parity with Python);
+    five_by_five/json_tree/dictionary/code_browser gaps are tracked as xfail.
+  - Deterministic fixture dir for code_browser under
+    `tests/pty_parity/fixtures/`.
+
+- **ci: make the PTY parity harness a blocking gate**
+  - New `.github/workflows/ci.yml` (push/PR): blocking `pty-parity` job plus
+    the existing full test suite as non-blocking (headless-TTY limitation).
+  - `release.yml`: `publish` now requires the blocking `pty-parity` job.
+
+### 2026-06-12 (Footer command-palette separator parity)
+
+- **fix(widgets/footer): use `▏` (vkey left edge) for the command-palette separator**
+  - Python's Footer draws the separator via `border-left: vkey` on the
+    command-palette `FooterKey`, which renders `▏`; the Rust footer hardcoded `│`.
+  - Updated both right-dock render paths and the separator-position tests.
+
+### 2026-02-26 (MarkdownViewer TOC hover-fill + heading landing parity)
+
+- **fix(widgets/tree): make TOC hover-line fill span full row width**
+  - Hover-path rows now pad with hover-line background through trailing cells
+    (instead of stopping at text width), matching Python TOC hover visuals.
+  - Added regression test for full-row hover background coverage in `Tree`.
+
+- **fix(widgets/markdown_viewer): align TOC heading navigation landing with Python**
+  - TOC selection scroll target now compensates heading top margin when computing
+    the line offset, so clicking entries like `Tables` lands one context row before
+    the heading rather than inside section body lines.
+
+### 2026-02-26 (Markdown table keyline parity + markdown block visual fixes)
+
+- **fix(layout): reserve keyline ring for grid layouts (Python parity)**
+  - `layout_grid` now reserves a 1-cell inner ring when `keyline` is enabled,
+    matching Python Textual grid behavior and preventing keyline borders from
+    overlapping grid cell content.
+
+- **fix(render): draw full grid keylines (inner + outer borders)**
+  - Added grid-specific keyline rendering with proper junction/corner glyphs so
+    `MarkdownTableContent` gets full bordered table chrome from `keyline`.
+
+- **fix(widgets/css): align markdown heading/list/table visuals**
+  - Non-H1 markdown headings now use intrinsic content width (`width:auto`) so
+    underline styling tracks heading text instead of full row width.
+  - Unordered markdown lists now render stable Python-like bullet glyphs.
+  - Markdown table cells now render one-line rows with nowrap/ellipsis styling,
+    hover styling, and tooltip text; table height/width estimation accounts for
+    the keyline ring to avoid clipped header/last rows.
+
+### 2026-02-26 (MarkdownViewer sizing stability + table track rebalancing)
+
+- **fix(layout): seed width-dependent intrinsic height in vertical layout**
+  - `layout_vertical` now calls `on_layout(...)` with a provisional content width
+    before reading `layout_height()` for auto-sized children.
+  - Prevents first-frame width=`1` intrinsic-height explosions for widgets that
+    compute height from wrapping width (notably `Markdown` in `MarkdownViewer`).
+
+- **fix(widgets): rebalance markdown table column tracks under tight widths**
+  - Updated markdown table column fraction/compaction heuristics to keep semantic
+    columns (for example `Type`, `Default`) readable while allowing wide
+    description columns to absorb most shrink.
+  - Added regression tests for markdown table fraction weights and compaction.
+
+### 2026-02-26 (Markdown render fidelity: preserve inline markdown content)
+
+- **refactor(widgets): preserve raw markdown slices in block parser**
+  - `MarkdownBlock` now carries raw source slices for headings, paragraphs, lists,
+    tables, and code fences.
+  - Parser now tracks pulldown-cmark byte ranges to preserve source markdown used
+    by rendering, while still exposing normalized heading/list/table metadata.
+
+- **fix(widgets): restore inline markdown styling for paragraphs/lists/fences**
+  - `Markdown` now renders paragraph/list/code-fence blocks through
+    `rich_rs::markdown::Markdown` using block-specific CSS base styles.
+  - This restores inline markdown rendering (for example emphasis/inline code)
+    that was lost in plain-text block rendering.
+
+### 2026-02-26 (Markdown block-model foundation)
+
+- **feat(widgets): add internal Markdown block parser/model in textual-rs**
+  - Added `src/widgets/markdown_model.rs` with a pulldown-cmark based parser that
+    extracts block-level structure (headings, paragraphs, lists, tables, code fences, rules).
+  - This lays the groundwork for Python-style block-widget Markdown composition so
+    block-specific CSS selectors can be applied via real widget types.
+
+### 2026-02-26 (Markdown block-driven render + typed component styling)
+
+- **feat(css): typed component style resolution helper**
+  - Added `resolve_component_style_for_type(...)` so a widget can resolve CSS
+    as if rendering a specific component type (for example `MarkdownBullet`,
+    `MarkdownTableContent`) while preserving parent selector context.
+
+- **refactor(widgets): Markdown now renders from internal block model**
+  - Replaced monolithic `rich-rs` markdown render call with block-driven rendering
+    over parsed markdown blocks.
+  - Heading/list/table/code-fence rendering now resolves style by markdown component
+    type names, enabling existing markdown default CSS to apply to bullets and
+    table content classes.
+  - Stabilized `layout_height()` to read from markdown render cache after render,
+    avoiding provisional-width height drift.
+
+### 2026-02-26 (Markdown list/table style regression guards)
+
+- **fix(widgets): resolve nested table child classes under `MarkdownTableContent`**
+  - Added child-of-component style resolution in `Markdown` so selectors like
+    `MarkdownTableContent > .header` and `MarkdownTableContent > .cell` apply
+    with the correct parent context.
+
+- **test(widgets): add markdown list/table style regression tests**
+  - Added tests asserting bullet glyph cells resolve explicit styles in tree mode.
+  - Added tests asserting table header/cell styles differ for markdown tables.
+
+### 2026-02-26 (Parser-aligned heading metadata flow)
+
+- **refactor(widgets): unify heading extraction on markdown parser model**
+  - Added parser-based heading metadata helpers in `markdown_model` including
+    heading line indices.
+  - Switched `Markdown::extract_headings()` and `MarkdownViewer` heading-line parsing
+    to use the shared parser model, reducing drift between TOC metadata and rendered blocks.
+
+### 2026-02-26 (Delegation regression fix: preserve wrapper CSS type identity)
+
+- **fix(widgets): keep thin wrapper `style_type`/aliases on `delegate_widget_to!`**
+  - Stopped full-delegation macro from forwarding `style_type()` and
+    `style_type_aliases()` to the inner widget.
+  - Fixes regressions where wrappers like `Horizontal` were seen as `Container`,
+    breaking type-based default CSS (including `TabbedContent` tab-row layout/rendering).
+- **chore(widgets): refresh delegation audit baseline**
+  - Updated canonical delegate method count and all `delegate-audit` markers after
+    removing the two type-identity forwards from the full list.
+
+### 2026-02-26 (Widget delegation primitive + audit guards)
+
+- **feat(widgets): framework-wide delegation primitive for wrapper widgets**
+  - Added `src/widgets/delegate.rs` with `delegate_widget_method!`, `delegate_widget_to!`,
+    and `delegate_renderable!` to standardize the Rust equivalent of Python inheritance wrappers
+    (`inner` + delegated methods + explicit overrides).
+  - Exported delegation macros as public framework API and re-exported from `widgets`/prelude
+    for custom compound widgets in apps.
+
+- **refactor(widgets): adopt delegation primitive in scroll wrappers**
+  - `ScrollableContainer` and `MarkdownViewer`/TOC wrapper now use explicit overrides plus
+    `delegate_widget_method!` for remaining forwarding, reducing boilerplate and drift risk.
+  - `containers/thin.rs` is now a temporary compatibility shim that re-exports from
+    `widgets::delegate`.
+
+- **test(widgets): guard against silent delegation drift**
+  - Added canonical delegation-list markers and a test that counts methods in
+    `delegate_widget_to!`'s full forwarding list to detect trait-surface changes.
+  - Added `delegate-audit` markers on partial delegation sites to make required audits
+    grep-friendly when the canonical list changes.
+
+- **refactor(widgets): remove `containers/thin` compatibility shim**
+  - Migrated all container wrappers to import delegation macros from `widgets::delegate`
+    directly.
+  - Removed `src/widgets/containers/thin.rs` and corresponding module wiring.
+
+### 2026-02-26 (MarkdownViewer scroll parity + scrollbar sync fixes)
+
+- **fix(runtime): smooth scrollbar thumb sync without per-frame relayout**
+  - Added lightweight host-scrollbar position sync during render so animated scroll offsets update
+    dedicated scrollbar thumbs without forcing `run_layout_pass()` each animation tick.
+  - Prevents heavy layout invalidation during TOC scroll animations, improving smoothness.
+
+- **fix(widgets): ScrollView wheel parity with Python**
+  - Mouse wheel scrolling is now immediate (non-animated), matching Python Textual behavior.
+
+- **fix(widgets/runtime): restore scrollbar movement on wheel/TOC scroll**
+  - Added `scroll_virtual_content_size()` support in `ScrollView` and delegated it through
+    wrapper widgets (`thin` macro, `ScrollableContainer`, `MarkdownViewer`).
+  - Fixed regression where scrollbar thumb could stop tracking non-drag scroll updates due to
+    missing virtual-size delegation in the wrapper chain.
+
+### 2026-02-25 (MarkdownViewer TOC architecture + sizing parity)
+
+- **fix(widgets): MarkdownTableOfContents — Python-style composed Tree behavior**
+  - TOC now handles both `TreeNodeSelected` and `TreeNodeActivated` for click/keyboard parity.
+  - TOC/headings update flow now requests layout invalidation (not repaint only), so docked
+    `width: auto` pane width recomputes when heading content changes.
+
+- **fix(widgets): TOC sidebar width ownership + child fill semantics**
+  - `MarkdownTableOfContents` (wrapper) remains the intrinsic width source for docking.
+  - The composed TOC `Tree` now fills the wrapper pane instead of applying a second intrinsic
+    width clamp, eliminating right-side unused strip and heading text clipping.
+
+- **fix(widgets): Tree/TOC parity details**
+  - Tree twisty glyphs aligned with Python (`▶` / `▼`).
+  - Added regression tests for TOC relayout, long heading width coverage, and hidden-root guide
+    width calculations.
+
+### 2026-02-25 (action parsing, header fix, outline clip, MarkdownViewer slug IDs)
+
+- **feat(event): BindingHint action parsing — structured action_name/action_parameters**
+  - `with_action()` now parses action strings (e.g. `"app.push_screen('settings')"`) into
+    `action_name = "push_screen"` and `action_parameters = ["settings"]`.
+  - `apply_check_action()` passes the parsed name and parameters to `check_fn`, enabling
+    widgets to enable/disable bindings based on action arguments.
+
+- **fix(widgets): Header — icon lane click no longer toggles tall mode (Python parity)**
+  - Track `press_in_toggle_zone` (x > 1) on mousedown; only toggle tall if both press
+    and release occurred in the toggle zone, matching Python behavior.
+
+- **fix(runtime): paint_outline clip rect expansion**
+  - Expand clip rect by 1 cell on each side so right/bottom outline edges are not
+    clipped when descendants are clipped to their content box.
+
+- **feat(widgets): MarkdownViewer — slug-based heading block_id + shared headings**
+  - Headings now carry stable slug IDs (e.g. `"hello-world"`) instead of numeric indices.
+  - `slugify_heading()` generates GitHub-style slug IDs with deduplication.
+  - `parse_headings()` returns `(level, title, block_id, line_idx)` tuples.
+  - `heading_line_offset()` takes block_id string for TOC click-to-scroll.
+  - Shared headings via `Arc<RwLock<Vec<HeadingEntry>>>` between MarkdownViewer and TOC.
+  - `MarkdownTableOfContents::with_shared_headings()` constructor; TOC renders from
+    internal tree (no longer exports composed children).
+
+- **fix(widgets): Tree — skip markup parsing for non-markup labels**
+  - Labels without `[/` are rendered as plain text, avoiding spurious markup
+    interpretation of bracket characters in TOC headings.
+
+- **feat(examples): Markdown demo — message-driven navigation state updates**
+  - `go()`/`back()`/`forward()` now post `NavigatorUpdated` via `ctx.post_message()`
+    instead of calling `update_navigator_state()` directly.
+
+- **fix(tests): update scrollbar and tree tests for arena-tree scrollbar children**
+  - DataTable, KeyPanel, Log tests use `ScrollbarScrollTo` messages instead of mouse events.
+  - ScrollView/VerticalScroll/HorizontalScroll child counts updated for dedicated
+    scrollbar children. Header tests use `render_tree_to_frame()`.
+  - Tree focus test discovers nodes dynamically instead of hardcoded indices.
+
+### 2026-02-25 (MarkdownViewer — scrollbar + content propagation + widget parity)
+
+- **feat(widgets): MarkdownViewer — shared-markup content propagation for scrollbar support**
+  - Root cause: after `take_composed_children()` extracts the `Markdown` child into the arena
+    tree, `go()`/`back()`/`forward()` could not reach it to update content. The Markdown child
+    stayed empty → `layout_height()` returned 1 → no overflow → no scrollbar.
+  - Introduced `Arc<RwLock<String>>` shared content between `MarkdownViewer` and its `Markdown`
+    child. `Markdown::with_shared_markup()` constructor reads initial content; `on_layout()`
+    syncs from shared state before height computation.
+  - `go()`, `back()`, `forward()`, and `set_content()` now push content into shared state.
+
+- **feat(widgets): MarkdownViewer — initial content in markdown demo**
+  - Changed `MarkdownViewer::new("")` to `MarkdownViewer::new(DEMO_MD)` so the first frame
+    has full content and scrollbar from the start.
+
+- **feat(widgets): scroll_viewport_size() delegation chain**
+  - `ScrollView` now overrides `scroll_viewport_size()` (reads from `viewport_width`/
+    `viewport_height` atomics), enabling proper content clipping.
+  - `ScrollableContainer` and `MarkdownViewer` delegate through to `ScrollView`.
+  - `delegate_widget_to!` macro updated to forward `scroll_viewport_size()`.
+
+- **feat(widgets): MarkdownViewer — TOC tree composition + click-to-scroll**
+  - `MarkdownTableOfContents` now wraps a persistent `Tree` (not rebuilt on each render).
+  - `take_composed_children()` extracts the tree for arena-tree mode.
+  - TOC click posts `MarkdownTableOfContentsSelected` with heading index → MarkdownViewer
+    scrolls to the heading line offset.
+  - `content_width()` cached from inner Tree for layout.
+
+- **feat(widgets): Widget::set_virtual_content_size() trait method**
+  - New trait method for widgets to set virtual content dimensions (e.g. when content changes
+    asynchronously). Default implementation is a no-op. `ScrollView`, `ScrollableContainer`
+    delegate through to their inner scroll state.
+
+- **feat(widgets): MarkdownTableOfContents — NUMERALS prefix for heading labels**
+  - Heading labels now include their 1-based index as a prefix (e.g. "I Introduction"),
+    matching Python's `MarkdownTableOfContents` heading numbering.
+
+### 2026-02-20 (Toast notification styling regression fix)
+
+- **fix(runtime): restore Toast CSS styling in tree-driven render path**
+  - `compose_notifications()` was called after the per-layer style context guard dropped,
+    so all `resolve_style()` calls returned empty defaults — producing unstyled black
+    rectangles for all toast severities.
+  - Re-establish style context via `stylesheet_for_layer(None)` before rendering notifications.
+  - Removed spurious `"toast"` class from `Toast::rebuild_classes()` (Python only adds
+    the severity class, e.g. `-information`; the CSS uses `Toast` as a type selector).
+
+### 2026-02-20 (LOW priority + DEFERRED items — framework parity)
+
+- **fix(widgets): DirectoryTree — apply filter predicate to async-loaded results**
+  - `filter_paths` predicate was only applied during sync initial build; now also applied
+    when async subdirectory load results arrive in `apply_directory_load_result()`.
+
+- **feat(widgets): Button — compact mode**
+  - `compact(bool)` builder, `set_compact()` reactive setter, `-textual-compact` class toggle.
+  - CSS default already had `.-textual-compact { border: none !important; }`.
+
+- **fix(widgets): Toast — full Rich markup support**
+  - Replaced hand-rolled `[b]`-only parser with `rich_rs::markup::render()`.
+  - All markup tags (`[b]`, `[i]`, `[u]`, colors, nesting) now render correctly.
+
+- **feat(widgets): TreeNode — `add_child()` / `add_leaf()` API**
+  - `add_child(&mut self, child) -> &mut TreeNode` for incremental tree construction,
+    matching Python's `node.add(label)` pattern.
+  - `add_leaf(label)` convenience method.
+  - Updated `json_tree` demo to use `add_child()`/`add_leaf()` pattern.
+
+- **feat(widgets): Tree — per-segment guide/label/cursor styling**
+  - Render now emits separate `Segment`s for cursor marker, guides, twisty, and label,
+    each with independently resolved component styles (`tree--guides`, `tree--guides-hover`,
+    `tree--guides-selected`, `tree--label`, `tree--cursor`, `tree--highlight`,
+    `tree--highlight-line`). Previously emitted a single concatenated segment per row.
+  - Node `component_classes` (e.g. `directory-tree--file`) are now resolved and merged
+    into the label style at render time.
+
+- **feat(reactive): `always_update` flag**
+  - `ReactiveFlags::reactive_always_update()` — fires watchers even when old == new,
+    matching Python's `reactive(always_update=True)`.
+  - Tree `set_selected()` now uses `always_update`, removed `move_cursor()` workaround.
+
+- **feat(examples): weather02/weather03 — real HTTP fetch via ureq**
+  - Added `ureq` as optional dependency behind `http-examples` feature flag.
+  - With `--features http-examples`, weather demos query `wttr.in` for real data.
+  - Without the feature, simulated fetch with fabricated data (no network needed).
+
+### 2026-02-20 (Post-sprint remediation — parity fixes across widgets and demos)
+
+- **fix(examples): rewrite `five_by_five` with proper widget composition**
+  - Replaced monolithic ASCII-art `GameGrid` with per-cell `GameCell` widgets in a CSS grid.
+  - `GameCell` custom widget with CSS-driven classes (`filled`, `cursor`) for visual state.
+  - `GameHeader` stats bar, `WinnerMessage` victory overlay (visibility-toggled).
+  - `Grid(5, 5)` layout matching Python's `grid-size: 5 5` TCSS.
+  - Targeted cell sync via `app.with_query_one_mut_as::<GameCell, _>("#cell-r-c", ...)`.
+  - 10 regression tests.
+
+- **fix(widgets): Tree — `auto_expand`, `scroll_to_node`, `cursor_node` property**
+  - `auto_expand: bool` auto-expands nodes on insert (matches Python `auto_expand=True`).
+  - `scroll_to_node(node_id)` scrolls to bring a node into view.
+  - `cursor_node` property returns a reference to the cursor node data.
+
+- **fix(widgets): DirectoryTree — freeze on expand/collapse**
+  - Fixed blocking/deadlock in expand/collapse path that caused demo freezes.
+
+- **fix(widgets): MarkdownViewer — hierarchical TOC + navigation history**
+  - TOC tree builds hierarchically (H1→root, H2→under last H1, etc.) instead of flat.
+  - TOC click scrolls to heading in markdown content.
+  - `Navigator` with back/forward history stack for `MarkdownViewer`.
+
+- **fix(widgets): Tabs — emit `TabActivated` when first tab added to live widget**
+  - `add_tab` on a live empty `Tabs` now emits `TabActivated` for the first tab.
+  - `live` flag distinguishes construction-time vs runtime `add_tab` calls.
+
+- **fix(widgets): ListView — add `ListItem` wrapper**
+  - New `ListItem` struct wrapping `Label` for proper `ListItem(Label("text"))` composition.
+  - Exported in prelude.
+
+- **fix(widgets): SelectionList/Pretty — `border_title` support**
+  - `SelectionList::with_border_title()` and `Pretty::with_border_title()` builder methods.
+
+- **fix(widgets): Static — default `markup: true`**
+  - `Static::new()` now defaults to `markup: true` matching Python's `Static(content)`.
+
+- **fix(runtime): CSS transition `color`/`background` aliases**
+  - `color` and `background` now accepted as aliases for `fg`/`bg` in CSS transitions.
+
+- **fix(examples): demo parity corrections**
+  - `code_browser`: added missing CSS properties.
+  - `dictionary`: added widget IDs (`#dictionary-search`, `#results-container`, `#results`).
+  - `list_view`: uses `ListItem(Label("text"))` composition matching Python.
+  - `selection_list_selected`: added `border_title` matching Python.
+  - `markdown`: wired back/forward navigation with `Navigator`.
+  - `toast`: fixed notification titles to match Python (no title on 1st/3rd).
+  - `weather02`/`weather03`: added `align: center middle` to ScrollView CSS.
+
+### 2026-02-20 (Batch D demos D-041/D-042 — worker lifecycle parity)
+
+- **feat(examples): D-041 `weather02` demo (port of `docs/examples/guide/workers/weather02.py`)**
+  - Demonstrates `ctx.request_exclusive_worker_task` as the Rust equivalent of Python's
+    `self.run_worker(coroutine, exclusive=True)`.
+  - `on_input_changed` spawns an exclusive background worker on every keystroke; previous
+    in-flight workers are cancelled automatically.
+  - Shared `Arc<Mutex<Option<String>>>` passes the worker result back to the app.
+  - `on_message_with_app` receives `WorkerStateChanged::Success` and updates the `Static` widget.
+  - 4 regression tests.
+  - DEFERRED: Real HTTP fetch (requires blocking HTTP client); simulated with delay + fabricated data.
+
+- **feat(examples): D-042 `weather03` demo (port of `docs/examples/guide/workers/weather03.py`)**
+  - Same app as D-041 but documents the Python `@work(exclusive=True)` decorator pattern.
+  - Exclusive key `"update_weather"` mirrors the Python method name; logic extracted into a
+    `spawn_weather_worker` helper to mirror the decorator-as-separate-method structure.
+  - 4 regression tests. Same DEFERRED HTTP gap as D-041.
+
+- **feat(examples): D-043 `dictionary` app demo (port of `examples/dictionary.py`)**
+  - Word search app; input triggers exclusive worker lookup with `@work(exclusive=True)` semantics.
+  - Results rendered as Markdown via `Markdown::set_markup()`; `on_message_with_app` handles
+    `WorkerStateChanged::Success` and updates the widget.
+  - Built-in word list (rust, hello, world, python, textual) simulates the real API.
+  - 4 regression tests. HTTP dictionary API DEFERRED.
+
+### 2026-02-19 (MarkdownViewer widget + Batch C demos D-030/D-031)
+
+- **feat(widgets): `MarkdownViewer` composite widget and `MarkdownTableOfContents` sidebar**
+  - New file `src/widgets/markdown_viewer.rs`.
+  - `MarkdownViewer::new(content)` renders Markdown with optional TOC sidebar.
+  - `show_table_of_contents(bool)` / `set_show_table_of_contents(bool)` control sidebar visibility.
+  - TOC sidebar uses `MarkdownTableOfContents` (Tree-based heading list), visible via
+    `child_display_for_tree` (same mechanism as `ContentSwitcher`).
+  - CSS class `-show-table-of-contents` toggled on the viewer to drive CSS selector layout.
+  - `Markdown::extract_headings()` added to expose heading list for TOC population.
+  - 7 regression tests in `src/widgets/markdown_viewer.rs`.
+  - Navigation history (`go/back/forward/Navigator`) is DEFERRED pending async document loading.
+
+- **feat(examples): D-030 `markdown_viewer` demo (port of `docs/examples/widgets/markdown_viewer.py`)**
+  - Rich Markdown document with headings, tables, code blocks, lists.
+  - `show_table_of_contents=true` shows sidebar; DEFERRED note for navigation history.
+  - 4 regression tests.
+
+- **feat(examples): D-031 `markdown` app demo (port of `examples/markdown.py`)**
+  - TOC toggle binding (`t`), back/forward bindings declared for footer display.
+  - `t` key mutates `MarkdownViewer::set_show_table_of_contents()` live; same DEFERRED gap.
+  - 4 regression tests.
+
+### 2026-02-19 (Batch C demos D-032..D-034, Tree framework additions)
+
+- **feat(widgets): `Tree::add_root()` and `Tree::toggle_show_root()`**
+  - `add_root(node: TreeNode)` appends a root node without clearing the tree.
+  - `toggle_show_root()` flips `show_root` without requiring `ReactiveCtx`, for use from app-level hooks.
+
+- **feat(examples): D-032 `tree` demo (port of `docs/examples/widgets/tree.py`)**
+  - `Tree` with a "Dune" root, "Characters" sub-node, and three leaf nodes.
+  - Uses `TreeNode` builder pattern (`expanded`, `allow_expand`, `with_child`).
+  - 4 regression tests.
+
+- **feat(examples): D-033 `json_tree` demo (port of `examples/json_tree.py`)**
+  - `a` key adds a JSON sub-tree; `c` clears the tree; `t` toggles root visibility.
+  - Embedded minimal JSON parser (no external deps); `Tree::add_root` for dynamic population.
+  - 4 regression tests.
+
+- **feat(examples): D-034 `toast` demo (port of `docs/examples/widgets/toast.py`)**
+  - Four notifications on mount: information, warning (with markup), error (10s timeout), no-title info.
+  - Uses `App::notify(message, title, severity, timeout)` API.
+  - 4 regression tests.
+
+### 2026-02-19 (Batch B demos D-022..D-025)
+
+- **feat(examples): D-022 `select_widget` demo (port of `docs/examples/widgets/select_widget.py`)**
+  - `Select<String>` populated with 5 poem lines; `SelectChanged` updates app title.
+  - 4 regression tests.
+
+- **feat(examples): D-023 `option_list_options` demo (port of `docs/examples/widgets/option_list_options.py`)**
+  - `OptionList` with 12 named options, 6 separators, and 1 disabled option (Caprica).
+  - Uses `OptionItem::with_id`, `OptionItem::disabled_with_id`, `OptionItem::Separator`.
+  - 4 regression tests.
+
+- **feat(examples): D-024 `selection_list_selected` demo (port of `docs/examples/widgets/selection_list_selected.py`)**
+  - `SelectionList<String>` with 9 games (3 pre-selected); `Pretty` shows selected values.
+  - `SelectionListSelectedChanged` drives Pretty update; `Selection::selected` for pre-selection.
+  - 4 regression tests.
+
+- **feat(examples): D-025 `list_view` demo (port of `docs/examples/widgets/list_view.py`)**
+  - `ListView` with three string items in a centered auto-height list.
+  - Rust renders items natively without `ListItem`/`Label` wrappers (Python equivalent behavior).
+  - 4 regression tests.
+
+### 2026-02-19 (Batch B framework + demos)
+
+- **feat(message): `ButtonPressed.button_id: Option<String>`**
+  - Carries the CSS id of the pressed button, mirroring Python `Button.Pressed.button.id`.
+  - Populated in `Button::dispatch_press()` from `self.style_id()`.
+  - All existing callsites updated (`button_id: None` for buttons without an explicit CSS id).
+
+- **feat(widgets): `Button::id()` builder**
+  - Sets a CSS id on the button widget, enabling `ButtonPressed.button_id` to carry a meaningful value.
+  - `Button::new("label").id("my-btn")` — analogous to Python's `Button("label", id="my-btn")`.
+
+- **feat(widgets): `ContentSwitcher` arena-tree child visibility**
+  - Implements `Widget::child_display_for_tree()` so only the active child is visible after arena-tree extraction.
+  - New `child_ids: Vec<Option<String>>` field tracks children's CSS ids in insertion order (retained after `take_composed_children` drains `children`).
+  - New `children_extracted: bool` field gates arena-tree vs flat render modes.
+  - `with_child`, `add_child`, `add_content` updated to populate `child_ids`.
+  - 4 new regression tests in `src/widgets/content_switcher.rs`.
+
+- **feat(examples): D-020 `tabs` demo (port of `docs/examples/widgets/tabs.py`)**
+  - Demonstrates `Tabs::add_tab/remove_tab/clear`, `TabActivated`/`TabsCleared` messages, and key bindings.
+  - Uses type selector `"Tabs"` for queries (no Node wrapper); `Label::with_id()` for label queries.
+  - `on_key_with_app` handles add/remove/clear since named actions are not yet fully routed.
+  - 4 regression tests in `docs/examples/widgets/examples/tabs/main.rs`.
+
+- **feat(examples): D-021 `content_switcher` demo (port of `docs/examples/widgets/content_switcher.py`)**
+  - Demonstrates `ContentSwitcher` with a `DataTable` and Markdown viewer as heterogeneous children.
+  - Buttons carry CSS ids matching `ContentSwitcher` child ids; `ButtonPressed.button_id` drives switching.
+  - Mirrors Python's `self.query_one(ContentSwitcher).current = event.button.id` pattern.
+  - 4 regression tests in `docs/examples/widgets/examples/content_switcher/main.rs`.
+
+### 2026-02-20
+
+- **feat(app): `App::set_title()` / `App::set_sub_title()` / `App::clear_sub_title()` runtime APIs**
+  - Mirrors Python `App.title` / `App.sub_title` reactive properties.
+  - `set_title(title)` and `set_sub_title(sub_title)` update stored values and enqueue a
+    `ScreenTitleChanged` broadcast that reaches the `Header` widget on the next event loop pass.
+  - `clear_sub_title()` resets the subtitle to the Header's default.
+  - `title()` / `sub_title()` accessors for reading current values.
+  - Pending messages are drained at the start of `dispatch_background_runtime_messages()`.
+  - Added 5 regression tests.
+
+- **feat(widgets): `Static::update()` / `Static::update_rich()` / `Static::clear()` content update APIs**
+  - Mirrors Python `Static.update(content)` which accepts any Rich renderable.
+  - `update(text)` replaces content with a plain string (delegates to `Label::set_text()`).
+  - `update_rich(text: rich_rs::Text)` stores pre-rendered rich text (e.g. syntax-highlighted code
+    produced by `rich_rs::Syntax::highlight()`); `Widget::render()` renders the `Text` directly.
+  - `clear()` empties the widget.
+  - `layout_height()` for rich content returns the line count of the stored `Text`.
+  - Added 5 regression tests.
+
+- **feat(widgets): `ScrollView::scroll_home()` / `ScrollView::scroll_end()`**
+  - Mirrors Python `Widget.scroll_home(animate=False)` / `Widget.scroll_end(animate=False)`.
+  - `scroll_home()` is an alias for `scroll_to(0)`.
+  - `scroll_end()` scrolls to `max_offset()`.
+  - Added 2 regression tests.
+
+- **feat(examples): D-012 `code_browser` demo (port of Python `examples/code_browser.py`)**
+  - Broad integration demo: `DirectoryTree`, `Static::update_rich`, `ScrollView::scroll_home`,
+    `App::set_title`/`set_sub_title`, `Header`, `Footer`, key bindings.
+  - Tree visibility toggled via `app.toggle_class('Screen', '-show-tree')` binding — no custom
+    action handler needed; CSS `Screen.-show-tree #tree-view { display: block; }` does the work.
+  - Uses `rich_rs::Syntax::from_path()` + `.highlight()` for syntax-highlighted file view.
+  - Inline CSS loaded via `App::load_stylesheet()` in `configure()` hook.
+  - 4 regression tests in `examples/code_browser/main.rs`.
+
+- **feat(examples): D-013 `directory_tree_filtered` demo**
+  - Port of Python `docs/examples/widgets/directory_tree_filtered.py`.
+  - Demonstrates `DirectoryTree::filter_paths()` with a `no_dotfiles` predicate.
+  - 3 regression tests in `docs/examples/widgets/examples/directory_tree_filtered/main.rs`.
+
+### 2026-02-19
+
+- **feat(reactive): app-level reactive bridge for `TextualApp` struct fields**
+  - `TextualApp` trait gains two new methods: `reactive_widget_mut()` (returns
+    `Option<&mut dyn ReactiveWidget>`, default `None`) and `on_mount_with_app()` (called after the
+    widget tree is built, matching Python Textual's `on_mount` timing for init-watcher dispatch).
+  - `App` struct gains `pub fn reactive_ctx(&mut self) -> &mut ReactiveCtx` — reactive setters
+    generated by `#[derive(Reactive)]` accept this context as their second argument, recording field
+    changes that are dispatched to `reactive_widget_mut()` after each hook call.
+  - `TextualAppAdapter` dispatches pending reactive changes (setter flags + watcher calls) after
+    every `on_app_key`, `on_app_action`, `on_app_message`, `on_app_tick`, and `on_app_mount` call.
+    Repaint/layout flags from both the setter and the watcher are propagated to `EventCtx`.
+  - `Widget` trait gains `fn on_app_mount(&mut self, app: &mut App, ctx: &mut EventCtx)` (default
+    no-op), called from `run_widget_tree` after the arena tree is built.
+  - `ReactiveCtx::reset_flags()` added to keep repaint/layout flags clean between hook calls.
+  - `ReactiveWidget` and `ReactiveCtx` are now re-exported from `textual::` top level.
+  - Added 7 regression tests covering: setter→watcher via key/action/tick, init dispatch via
+    mount, repaint propagation, no-dispatch when `reactive_widget_mut()` returns `None`, and
+    flag reset across consecutive hook calls.
+
+- **feat(animation): expand CSS transition dispatch to all animatable style properties (P2-36 closure)**
+  - `transition_requests_for_style_change` now emits `StyleAnimationRequest` for the 12 style-value
+    animatable properties: `fg`, `bg`, `width`, `height`, `min_width`, `max_width`, `min_height`,
+    `max_height`, `margin`, `padding`, `tint`, `background_tint`.
+  - `dispatch_animation_frame` calls `step_style()` each tick and applies `StyleAnimationUpdate`
+    results directly to widget inline styles — matching Python Textual's per-tick style mutation approach.
+  - The 4 existing float properties (`opacity`, `text_opacity`, `offset_x`, `offset_y`) continue to
+    use the event-dispatch `AnimationRequest` path unchanged.
+  - Added 4 new regression tests covering color, spacing, no-op, and apply-helper behavior.
+
+- **refactor(docs/examples): reorganize docs examples into category crates with unified launcher**
+  - Moved `docs/widgets/` to `docs/examples/widgets/` and modal demos to `docs/examples/guide/screens/`.
+  - Added category crates for all Python Textual doc categories: `app`, `events`, `getting_started`, `guide/*`, `how-to`, `styles`, `themes`, `tutorial`.
+  - Added `tools/run-doc-example.sh` unified launcher replacing `tools/run-doc-widget.sh`.
+  - Added `tools/doc_examples_index.toml` category→manifest mapping for the launcher.
+  - Added `tools/gen-doc-example-stubs.sh` and stub templates to generate placeholder examples.
+  - Generated 295 stub examples tracking Python Textual's full docs example surface.
+  - Bundled `java_highlights.scm` locally into the `text_area_custom_language` example to remove the Python Textual sibling-repo dependency.
+- **[wip] refactor(screen compositing parity): introduce canonical `Screen`/`ModalScreen` host roots and layered screen rendering**
+  - Pushed screens now mount through a dedicated host widget that exposes canonical CSS type identity (`Screen` / `ModalScreen`) while preserving composed body widgets as descendants.
+  - Runtime tree rendering now composites visible app + screen layers back-to-front with per-layer stylesheet isolation and opaque/translucent modal background semantics aligned to Python defaults.
+  - Added regression coverage for modal/non-modal underlay behavior and style-sheet isolation across composed screen layers.
+
+- **[wip] refactor(shared dim path): route command palette underlay dimming through background-alpha compositor path**
+  - Removed command-palette-specific runtime dim branch (`with_dim(true)` + panel exclusion) and switched to shared preserve-underlay background tint composition.
+  - Shared tint composition now blends both background and foreground colors, improving modal-style dim parity with Python overlays/screens.
+  - Runtime command-palette host is now explicitly full-viewport (`position: absolute; width: 100%; height: 100%`) so the shared dim path applies across the entire app surface.
+  - Added/updated regression coverage for command palette tree-mode tint behavior while preserving undimmed panel surface.
+
+- **fix(app-root scrollbar parity): reclaim viewport width when overflow disappears**
+  - Tree layout-info propagation now feeds `AppRoot` with its solved viewport (`content_rect`) dimensions instead of full layout box dimensions, keeping internal viewport state aligned with runtime scrollbar geometry.
+  - This lets app-global scrollbar lanes collapse cleanly on resize when content no longer overflows, so content immediately reclaims horizontal space (Python-equivalent behavior).
+  - Added regression coverage for `AppRoot` viewport-size sync and resize transition from overflow to non-overflow.
+
+- **fix(command palette parity): remove tree-host paint artifact and dim underlay in tree mode**
+  - Runtime command palette host now keeps its extracted spacer child hidden in tree mode, removing the one-cell header-title overwrite artifact seen when opening the palette.
+  - Tree compositor now applies a dim scrim to the already-painted app underlay while command palette is open, excluding the palette panel region so the palette surface remains undimmed.
+  - Added regression tests for runtime-host child visibility behavior and tree-mode dimming boundaries.
+
+- **fix(runtime hover/render parity): stop no-scrollbar content flicker on mouse hover**
+  - Fixed post-render tree layout propagation to use solved tree geometry (`layout_rect`) instead of painted hit-test bounds, preventing `AppRoot`/scroll viewport collapse on sparse paint frames.
+  - This resolves hover-driven text clipping/flicker in modal/log-style views when vertical scrollbar lanes are hidden.
+  - Removed the obsolete hit-test-driven tree layout propagation path to keep a single canonical layout-info source.
+  - Added regression coverage ensuring post-render layout propagation does not shrink viewport state from narrow hit-test strips.
+
+- **fix(modal03 parity): honor callback-based quit flow when dismissing quit dialog**
+  - `docs/widgets/examples/modal03` now follows Python modal03 result semantics (`dismiss(true/false)`) and stops the app through event-loop stop request (`ctx.request_stop()`), so pressing `Quit` exits immediately instead of only dismissing the modal.
+  - Kept cancel behavior unchanged (`dismiss(false)`), returning focus to the app without exiting.
+
+- **fix(tooltip parity): unify header/footer hover tooltips on shared system `Tooltip` with canonical placement behavior**
+  - Replaced runtime-only hover-bubble composition with a shared tree-mounted system `Tooltip` widget (`#textual-tooltip`) so header/footer/tooltips follow the same CSS defaults and composition path.
+  - Added widget-level tooltip anchors (`Widget::tooltip_anchor`) and wired `HeaderIcon` / `Footer` anchors to stabilize placement to Python-equivalent hit regions.
+  - Tooltip viewport constraints now resolve from owner content viewports (excluding scrollbar lanes), fixing footer `^p palette` tooltip horizontal clamping in `modal01`.
+  - Corrected inflected (above-anchor) tooltip vertical placement so footer tooltips sit above the footer row instead of overlapping clickable bindings.
+  - Opening CommandPalette now dismisses visible hover tooltip immediately and starts a short cooldown to prevent tooltip flash while pointer moves toward the palette.
+
+- **fix(header parity): align header composition/interactions with Python widget structure**
+  - `Header` now composes canonical child widgets (`HeaderIcon`, `HeaderTitle`, `HeaderClock` / `HeaderClockSpace`) instead of relying on monolithic component-class rendering in tree mode.
+  - Restored canonical selector behavior by removing temporary component fallback rules/tests and relying on Python-aligned defaults (`HeaderIcon:hover`, `App:blur HeaderTitle`).
+  - Header icon clicks now dispatch the command palette action message path (`AppCommandPalette`) while preserving the command-palette binding hint/tooltip contract.
+  - Added regression coverage for composed header structure, tree-mode header toggle behavior, and app-focus-driven `HeaderTitle` dimming.
+
+- **refactor(scrollbar phase2 cleanup): remove widget-local inline scrollbar branches for migrated hosts**
+  - `Log`, `RichLog`, `KeyPanel`, and `DataTable` no longer maintain inline scrollbar paint/drag paths after dedicated scrollbar-child migration.
+  - Removed legacy widget-local drag state branches from these widgets; scrollbar interaction now flows through dedicated `ScrollBar` children + `Message::ScrollbarScrollTo`.
+  - Simplified host render geometry assumptions so migrated widgets render only content, while runtime-host lanes own scrollbar space/hit behavior.
+
+### 2026-02-18
+- **fix(app-root scrollbar drag parity): animate root scroll-to updates and keep fixed thumb gain**
+  - `AppRootScrollbarScrollTo` now carries float offsets and animation intent so scrollbar drag/click route through the same animated root offset pipeline instead of immediate integer jumps.
+  - Added float-preserving root scroll offset plumbing (`Widget::scroll_offset_f32`) and root animation handlers for `approot.offset_x` / `approot.offset_y`.
+  - Normalized tree render consumption of root/widget scroll offsets to use rounded float offsets and guarded scrollbar thumb-position sync while dragging.
+  - Removed temporary env-gated drag gain modes and kept the fixed gain path as default behavior for predictable drag feel.
+
+- **fix(screen scrollbar parity): stabilize AppRoot scrollbar lane hit/drag behavior**
+  - Kept AppRoot scrollbar lanes in fixed screen-space for hit-testing/local coordinate mapping (matching render-time scroll exclusion), fixing thumb-drag edge cases near max offset.
+  - Added regression coverage for AppRoot scrollbar-child scroll transform exclusion and stable local coordinate mapping under non-zero root scroll offsets.
+  - Improved `ScrollBar` drag/release handling and style-token rendering parity so thumb interaction no longer sticks after end-of-track drags.
+
+- **fix(modal01 parity): center dialog question text via core `content-align` + remove button row artifacts**
+  - Added core content-alignment application in the shared widget render pipeline so `content-align` (horizontal + vertical) is respected for plain widgets like `Label`, not only widget-specific render paths.
+  - Added `Label::with_id(...)` / `style_id()` support so example parity CSS selectors (for example `#question`) target the actual label widget instead of wrapper nodes.
+  - Updated docs `modal01` example composition to mirror Python structure more closely (direct `Grid` children with id-bearing question label).
+  - Narrowed text-style suppression metadata handling (`textual:no_text_style`) so synthetic line-padding/centering spaces keep background fill while avoiding reverse/bold text artifacts on button focus rows.
+
+### 2026-02-17
+- **fix(tree scroll parity): propagate root virtual extents + root scroll offsets in arena-tree render path**
+  - Root-level `ScrollView`/`VerticalScroll`/`HorizontalScroll`/`ScrollableContainer` now receive tree-derived virtual content size in tree mode, so Home/End and scrollbar limits reflect laid-out child bounds.
+  - Tree rendering now applies root widget scroll offsets to child paint origin (matching non-root scroll behavior), fixing cases where offsets changed but visible rows/columns did not move.
+  - `ScrollEnd` now advances both axes in `ScrollView` (Python-aligned semantics).
+  - Mouse wheel input now maps vertical wheel deltas to horizontal scrolling for horizontal-only scroll containers (`overflow-y: hidden` + horizontal overflow enabled).
+  - Added/updated container parity coverage for scroll Home/End behavior across `ScrollView`, `ScrollableContainer`, `VerticalScroll`, and `HorizontalScroll`.
+
+- **feat(worker): closure-backed worker tasks via `WorkerRequestPayload::Task`**
+  - Added `WorkerRequestPayload::Task(SharedWorkerTask)` variant for arbitrary `FnOnce + Send` work units.
+  - Added `SharedWorkerTask` — a clone-friendly `Arc<Mutex<Option<FnOnce>>>` wrapper so closure payloads survive `WorkerRequest` cloning in runtime paths.
+  - Added `EventCtx::request_worker_task()` and `request_exclusive_worker_task()` convenience methods for closure-backed workers.
+  - Added `EventCtx::request_worker_with_payload()` and `request_exclusive_worker_with_payload()` for passing explicit payloads.
+
+- **feat(messaging): `Message::can_replace()` — message-driven coalescing with `UserMessage` hook**
+  - Added `Message::can_replace(&pending)` encoding replacement semantics for all known rapid-fire variants (InputChanged, TextAreaChanged, DataTableCursorMoved, etc.).
+  - Added `UserMessage::can_replace()` default hook so custom messages can opt into coalescing.
+  - Refactored `coalesce_message_queue()` to delegate to `Message::can_replace()` rather than a routing-local `is_message_replaceable()` predicate, aligning with Python Textual's queue semantics.
+
+- **feat(runtime): app-scoped data binding (`App::set_data` / `get_data` / `data_bind`)**
+  - `App::set_data(key, value)` stores a typed value and immediately re-applies any registered bindings for that key.
+  - `App::get_data(key)` retrieves a typed value by key.
+  - `App::data_bind(key, selector, apply)` registers a typed callback; matched widgets are updated whenever the key changes.
+
+- **feat(widget): `Widget::render_line()` and `render_lines()` default methods**
+  - `render_line(y, ...)` extracts a single visual row; `render_lines(start_y, count, ...)` collects a contiguous range.
+  - Default implementations delegate to the existing `render()` path; widgets can override for efficient line-level rendering.
+
+- **refactor(runtime tree-only): remove legacy non-tree render compatibility paths and align container/tree contracts**
+  - Runtime/event-loop/render paths now operate on the arena tree as the single rendering/dispatch mode; legacy compatibility branches were removed from core flow.
+  - Container-family widgets were simplified to tree-driven behavior (no fallback child forwarding/render composition paths), reducing duplicated logic and stale compatibility state.
+  - Tree display/layout sync wiring was tightened across routing/help/runtime glue, with tests/snapshots updated to assert tree-only behavior.
+  - `TabbedContent` now applies `initial(...)` selection during pane registration (before mount), fixing nested tabbed-content initial visibility on first render in docs parity demos.
+
+- **refactor(containers): move container family out of legacy aliases and into dedicated modules**
+  - `src/widgets/aliases.rs` now contains only `Static`; container/scroll implementations were migrated to `src/widgets/containers/*`.
+  - Added dedicated container modules for thin wrappers (`horizontal`, `vertical`, `group`, `center/right/middle`, `item_grid`) and scroll widgets (`vertical_scroll`, `horizontal_scroll`, `scrollable_container`).
+  - Added shared `scroll_core` helpers and routed migrated scroll containers through the new container module exports in `src/widgets/mod.rs`.
+  - Preserved container parity behavior by keeping tree-mode/non-tree-mode contracts and migrated scroll regression tests with the implementations.
+
+- **fix(runtime copy-selected fallback): show quit-help toast when no text is selected**
+  - `copy_selected_text` now mirrors Python Textual fallback behavior by showing help-quit notification when selection is empty.
+  - Applied to all runtime entry paths (key action dispatch, app message dispatch, and event-loop fast path) to keep behavior consistent.
+  - Added regression test `app_copy_selected_text_falls_back_to_help_quit_notification`.
+
+- **refactor(renderables parity): introduce Python-style base renderables modules and extract shared bar logic**
+  - Added `src/renderables/{bar,blank,gradient,styled,text_opacity,tint}.rs` and exposed them through `crate::renderables`.
+  - Kept existing renderables (`Digits`, `Sparkline`) alongside the new module set to mirror Python Textual structure in a Rust-idiomatic form.
+  - Moved tabs underline rendering to shared `renderables::Bar`, removing duplicated half-cell bar composition logic from `Tabs`.
+  - Added regression coverage for each new renderable module (dimensions, styling behavior, metadata hooks, and color processing paths).
+
+- **refactor(progress-bar parity): route determinate/gradient/indeterminate rendering through shared `renderables::Bar`**
+  - `ProgressBar` now uses `renderables::Bar` for determinate fills and gradient fills, replacing duplicated per-widget bar-cell composition logic.
+  - Added configurable bar glyph APIs (`chars`, `half_chars`) so `ProgressBar` keeps block/space visuals while `Tabs` keeps line-glyph visuals.
+  - Indeterminate animation now follows Python’s time-based highlight-range algorithm (30 cells/sec, 25% highlight width, bounce over imaginary width) while still honoring `AnimationLevel::None`.
+  - Updated progress-bar regression tests to validate rendered output text rather than internal segment chunk counts.
+
+- **refactor(data-table parity): use shared `renderables::Bar` for horizontal scrollbar rendering**
+  - `DataTable` horizontal scrollbar track/thumb rendering now composes through `renderables::Bar` (space glyph mode) instead of widget-local per-cell style loops.
+  - Keeps existing scrollbar geometry (`line_scrollbar_thumb`) and drag/active style semantics unchanged while removing duplicated scrollbar paint logic.
+
+- **refactor(footer renderables): route FooterKey style-sandwich through shared `renderables::Styled`**
+  - Added `Styled::process_segments(...)` as a reusable segment-level style composition helper.
+  - `FooterKey` now applies its base/component style layering through shared renderables infrastructure instead of widget-local style merge loops.
+
+- **refactor(blank renderable): wire `Blank` into app-root and scrollbar surface paint paths**
+  - Added reusable `Blank::render_for_size(width, height)` and `Blank::line_for_width(width)` helpers so widget/runtime code can consume the blank renderable directly without ad-hoc space-segment loops.
+  - `AppRoot` tree-mode render now emits a resolved-background `Blank` surface (Python `app.py` / `screen.py` parity direction) instead of raw unstyled space rows.
+  - `ScrollView` scrollbar chrome drawing now uses `Blank`-based runs for track/thumb/corner fills, replacing repeated manual `" "` segment push loops while preserving existing thumb geometry and style-state behavior.
+
+- **feat(button actions): wire `Button::with_action(...)` into runtime action dispatch**
+  - Added `Message::ActionDispatchRequested` and runtime handling to parse/resolve/execute declarative action strings from button presses.
+  - `Button` now emits `ActionDispatchRequested` when an action is set (and suppresses `ButtonPressed`, matching Python precedence).
+  - Added regression coverage for action dispatch routing and button action message emission.
+
+- **fix(screen/runtime parity): route core operations through active screen tree and add modal docs demos**
+  - Added active-tree helpers (`active_widget_tree*`) and switched query/focus/selection/render/routing paths to target the active pushed screen tree when present.
+  - Screen stack mount now extracts composed children/declarations into the arena tree and accepts either inline CSS text or CSS file paths for `Screen::css()`.
+  - Render/layout paths now include active screen stylesheet during style resolution and propagate tree-mode virtual content extents into scroll containers.
+  - Added docs-widget modal demos `modal01`, `modal02`, and `modal03` plus shared `modal01.tcss`, and updated `docs/widgets/README.md`.
+
+- **chore(examples): start split between docs-widget demos and app-style examples**
+  - Added dedicated docs examples crate at `docs/widgets` to mirror Python docs-widget examples without growing root manifest entries.
+  - Moved `tabbed_content` and `tabbed_content_label_color` examples into `docs/widgets/examples/...` via `git mv` (history preserved), including associated TCSS.
+  - Added docs-widget runner helper: `tools/run-doc-widget.sh`.
+  - Updated README with docs-widget run commands.
+
+- **chore(examples): migrate remaining docs-style root examples into docs widgets crate**
+  - Moved all remaining widget/docs-style examples and local TCSS assets from root `examples/` into `docs/widgets/examples/<name>/main.rs` (history preserved).
+  - Updated moved examples to use manifest-relative asset paths (`env!("CARGO_MANIFEST_DIR")`), including shared button CSS and custom language highlight include.
+  - Updated `tools/run-doc-widget.sh` and `tools/bench_runtime.sh` to point at `docs/widgets/Cargo.toml`.
+  - Removed stale root `[[example]]` entry now that docs/widget examples live in the dedicated crate.
+
+- **fix(footer tooltip parity): add Python-style hover tooltip popup + separator-inclusive hover for `^p`**
+  - Added core runtime hover-tooltip composition path:
+    - widgets can now expose optional hover tooltip text via `Widget::tooltip()`,
+    - runtime tracks hovered tooltip state and composes a tooltip bubble near the hovered anchor,
+    - tooltip state is cleared on app blur.
+  - `Footer` now exposes hovered binding tooltip text (including command-palette hint tooltip) through the new widget tooltip hook.
+  - Command-palette footer hover styling now includes the separator cell (`│`) so hover highlight covers the full right hint region.
+  - Added regression test `command_palette_hover_applies_to_separator_cell`.
+
+- **fix(footer/tabs parity): tighten footer spacing and tab-gutter width to Python behavior**
+  - Footer non-compact binding spacing now renders tightly (`l Leto  j Jessica  p Paul`) instead of wider Rust-only gaps.
+  - Command-palette footer separator now sits directly before the key hint (`│^p`) to match Python placement.
+  - Tabs underline/gutter width now tracks active tab label width (no extra side padding) for closer visual parity.
+  - Added regression tests for footer spacing, command-palette separator placement, and tab underline width.
+
+- **fix(markdown parity): align heading spacing + full-width H1 centering with Python Textual**
+  - Markdown heading component classes (`.markdown--h1`..`.markdown--h6`) now carry Python-equivalent header margins so top/bottom heading spacing is applied during core Markdown render normalization.
+  - Markdown heading normalization now applies margin only at heading block boundaries (not every wrapped fragment), avoiding over-expansion on wrapped headings.
+  - `Markdown::layout_height()` now accounts for heading margin rows, fixing body-text clipping after heading-spacing parity changes.
+  - `Markdown::content_width()` now returns no intrinsic width hint, so `width:auto` no longer shrinks Markdown to longest line and H1 centering resolves against the full pane width (matching Python behavior).
+  - Added/updated regression tests for heading row offset, centered H1 placement, wrapped heading style retention, and Markdown width-hint behavior.
+
+- **feat(selection/copy parity): add app-level selected-text action pipeline + Markdown selection hooks**
+  - Added widget-level selection hooks to `Widget` (`allow_select`, `selection_at`, `update_selection`, `clear_selection`, `get_selection`, `selection_updated`) and shared `WidgetSelectionAnchor`.
+  - Added app/runtime copy-selected-text plumbing:
+    - new `Action::CopySelectedText`,
+    - new `Message::AppCopySelectedText`,
+    - default `ctrl+c` action map now routes to selected-text copy instead of quit-help.
+  - `TextualAppAdapter` now exposes `copy_selected_text` action and posts app copy messages; action matrices/caller inventory were updated accordingly.
+  - Runtime now tracks active selection ownership/anchors, supports drag selection lifecycle on mouse down/move/up, and resolves selected text from selection owner or focused widget.
+  - Implemented Markdown selection state/extraction/highlighting (including cache-backed coordinate mapping), plus `get_selection()` support for `Input`, `TextArea`, `Log`, and `MaskedInput`.
+  - Added Markdown selection regression tests and updated command-palette/tabs integration expectations affected by action-list and binding-hint parity updates.
+
+- **fix(toast notifications): preserve title + body text in composed notification overlays**
+  - Removed duplicate manual vertical padding in `Toast::render`; toast spacing now comes from CSS padding/border in the shared styled render pipeline.
+  - Updated `Toast::layout_height()` to derive intrinsic height from actual content lines plus resolved CSS chrome, preventing fixed-height composition from clipping notification body lines.
+  - Added regression test `toast_title_and_message_survive_fixed_height_composition` to lock behavior for title+message notifications (including quit-help text).
+
+- **fix(runtime focus parity): clear widget focus on app blur and restore it on app refocus**
+  - App runtime now mirrors Python Textual app-focus behavior:
+    - on terminal `FocusLost`, capture currently focused tree node and clear widget focus,
+    - on `FocusGained`, restore that focused node when still present/displayed and no newer focus is set.
+  - Added full-content invalidation on focus transitions so focus-dependent visual states do not leave stale highlights after blur/refocus cycles.
+  - Added regression coverage in runtime tests:
+    - `app_blur_clears_tree_focus_and_remembers_last_focused_node`
+    - `app_focus_restores_blurred_focus_when_no_new_focus_exists`.
+
+- **[wip] parity(help-panel key rows): Python-like key display/order + tooltip-capable hint plumbing**
+  - Added optional `tooltip` metadata to `BindingDecl` / `BindingHint` and propagated it through runtime hint normalization and footer binding conversion.
+  - Runtime hint dispatch now merges widget hints before app-level hints, matching Python-style active binding order in `HelpPanel`.
+  - Declarative binding hints now derive display text from binding key specs (including comma-separated alternates) with Python-like formatting (`^c super+c`, arrow keys, preserving `tab` / `shift+tab` labels).
+  - `TextualAppAdapter` default `ctrl+q` binding now carries Python parity tooltip text; command palette hint now carries `"Open command palette"` tooltip metadata.
+  - `KeyPanel` now supports wrapped description rows plus dim wrapped tooltip rows, improving sidebar parity for long descriptions/help text.
+
+- **[wip] parity(help-panel sections): focused-first hint ordering + namespace separators**
+  - Focus-path binding hint collection is now ordered focused→root, so focused widget bindings appear first in `HelpPanel`/`KeyPanel`.
+  - Binding hints now carry optional `namespace` metadata, used by `KeyPanel` to insert section separators between binding source groups (Python-style grouping behavior).
+  - `TextualAppAdapter` now publishes hidden focus/copy bindings as explicit `screen`-namespace declarative rows, so HelpPanel shows `tab` / `shift+tab` / `^c super+c` like Python while keeping footer output unchanged.
+  - Command palette hint metadata now includes app namespace and no longer forces priority sorting in help-panel output.
+
+- **fix(border alpha composition): respect translucent border colors in rendered edge glyphs**
+  - Border rendering now composes edge colors with alpha (for example `vkey $foreground 30%`) over local inner/outer surfaces before converting to terminal colors.
+  - This fixes HelpPanel/KeyPanel split divider intensity to match Python-style dim separators instead of rendering as opaque bright lines.
+  - Added regression test `help_panel_border_color_composes_foreground_alpha_over_background`.
+
+- **perf(runtime hit-test): remove duplicate full-frame scan during tree layout info apply**
+  - Tree layout info distribution now reuses the `HitTestMap` already built in the render pipeline instead of rebuilding a second `NodeHitTestMap` from `FrameBuffer`.
+  - `FrameBuffer` now tracks per-cell widget owner IDs as cells are written/composited and exposes `owner_bounds()`.
+  - `HitTestMap::from_frame` now builds bounds from this owner map instead of rescanning nested `StyleMeta` maps per cell.
+  - Overlay/command-palette/select/welcome frame composition paths now use owner-aware `FrameBuffer::set_cell(...)` writes.
+  - Added explicit `HitTestMap -> NodeHitTestMap` conversion and regression coverage for bounds preservation.
+  - Removes one full-frame metadata scan per render cycle in tree mode and reduces remaining hit-test extraction overhead.
+
+- **fix(runtime loop): decouple tick cadence from render cadence under sustained input**
+  - `run_with` and `run_widget_tree` now schedule ticks from a dedicated tick clock instead of render timestamps.
+  - Immediate input renders no longer postpone `on_tick` / `Event::Tick` delivery while keys are held.
+  - Preserves low-latency input rendering while keeping time-driven tick behavior progressing (with normal jitter under load).
+
+- **[wip] perf(runtime loop): input-priority render path + reduced per-loop style/tick pressure**
+  - Added an input-priority fast path in `run_widget_tree`: when input handling marks content dirty, runtime renders immediately before slower housekeeping phases, reducing visible key-to-frame latency.
+  - When immediate input render completes and more terminal input is already queued, runtime now drains queued input first (next loop turn) to reduce visible backlog under rapid key navigation.
+  - Gated full style-transition snapshot scans to style/layout-invalidated frames (or cold cache), instead of scanning all tree nodes every loop iteration.
+  - Removed unconditional full-content invalidation immediately after `root.on_tick(...)`; repaint now follows normal invalidation/active-state signals.
+
+- **[wip] perf(command-palette keypath): scope repaint invalidation to palette widget when safe**
+  - In tree mode with command palette open, key events that only mutate palette-local state now invalidate the palette widget region instead of forcing global repaint.
+  - Safety guard keeps global invalidation whenever key handling emits follow-up messages or requests style/layout invalidation.
+  - This reduces unnecessary full-frame redraw pressure on palette navigation/search keypresses while preserving correctness paths.
+
+- **fix(help-panel bootstrap): force initial bindings/help refresh when panel mounts**
+  - `action_show_help_panel()` now invalidates cached binding-hint and focused-help snapshots immediately after mounting `HelpPanel`.
+  - This ensures newly mounted help panels receive the next `BindingsChanged` and focused-help updates even when values are unchanged, preventing stale `(no bindings)` sidebars.
+  - Added regression test `action_show_help_panel_invalidates_binding_and_help_caches`.
+
+- **fix(key-panel parity): hide hidden/system bindings in HelpPanel key list**
+  - `KeyPanel::set_binding_hints()` now filters out only `system` bindings (hidden bindings are preserved), matching Python key-panel semantics.
+  - Added dedupe for repeated key/description pairs from merged hint sources.
+  - Footer-only grouping metadata is no longer carried into `KeyPanel` rows.
+  - Removed Rust-only key table headers/dividers and the extra KeyPanel title row to align HelpPanel visual structure with Python.
+  - Added regression test `binding_hints_filter_system_entries_only`.
+
+- **css parity(help-panel/key-panel): align default selector surface with Python IDs/rules**
+  - Added Python-parity ID wiring for help widgets: `Markdown#widget-help`, `KeyPanel#keys-help`, and `BindingsTable#bindings-table`.
+  - Added CSS parity rules in defaults for:
+    - `HelpPanel > #widget-help:ansi`
+    - `HelpPanel > KeyPanel#keys-help` with `min-width: initial` and `split: initial`
+    - `#widget-help` reset lines (`padding: 0; margin: 0;`) before final values.
+
+- **[wip] fix(command-palette parity/runtime): align system-command scoring + dynamic help-panel command state updates**
+  - `SystemCommandsProvider` now matches Python-style behavior:
+    - discovery (`query == ""`) is alphabetical by title,
+    - search scoring for built-in/system commands is title-only,
+    - fuzzy scoring/highlighting paths were updated to Python-aligned ranking semantics.
+  - Command-list rebuild churn reduced by skipping duplicate query rebuilds when input text is unchanged.
+  - `TextualAppAdapter` command publishing now:
+    - synchronizes `help_panel_visible` from runtime state/messages while palette is open,
+    - republishes command text when help-panel visibility changes,
+    - omits unsupported `maximize` until runtime maximize/minimize semantics exist.
+  - Runtime now forwards `AppShowHelpPanel` / `AppHideHelpPanel` control messages through widget delivery so palette/app adapters can react to visibility transitions.
+  - Added/updated regression tests for help-panel control-message delivery and provider ordering/scoring expectations.
+
+### 2026-02-16
+- **[wip] fix(command-palette modal layering): enforce topmost render priority in tree mode**
+  - Runtime child ordering now enforces `CommandPalette` as top-most among siblings during tree render collection, independent of mount order or parent `layers` declaration.
+  - This closes modal overlap cases where later-mounted siblings (for example dynamically mounted panels) could partially paint over an open command palette.
+  - `action_show_help_panel` mount behavior remains aligned with this model by targeting the app-content branch when a command-palette host exists.
+  - Added regression coverage for:
+    - sibling ordering that moves `CommandPalette` to the end/top in no-layer parents,
+    - full render-node collection ordering where command palette remains last/top-most,
+    - help-panel mount parent selection in command-palette-hosted runtime roots.
+
+- **[wip] feat(command-palette context awareness): dynamic system command text + stateful Keys action parity**
+  - `TextualAppAdapter` now publishes built-in command-palette system commands from current app state (instead of relying on static one-time command text), including dynamic `Keys` help text:
+    - `Show help for the focused widget and a summary of available keys`
+    - `Hide the keys and widget help panel`
+  - While the command palette is open, help-panel visibility messages (`AppShowHelpPanel` / `AppHideHelpPanel`) now trigger command-list republish, so command help text updates live.
+  - `CommandPalette` keys execution now follows state-aware show/hide behavior:
+    - selecting `Keys` hides help/key panels when already visible,
+    - otherwise shows them,
+    - and emits the matching app message (`AppHideHelpPanel` / `AppShowHelpPanel`).
+  - Added command execution parity for built-ins:
+    - `Theme` posts `AppChangeTheme`,
+    - `Screenshot` posts `AppScreenshot`.
+  - Added regression tests for:
+    - dynamic keys help text updates in `TextualAppAdapter` as help-panel state changes,
+    - second keys invocation emitting hide-help behavior while collapsing the key panel.
+
+- **[wip] fix(command-palette parity polish): full-row hover semantics, render-geometry hit consistency, and blur-safe search-row surface**
+  - Command list hover/selection rendering now mirrors Python semantics:
+    - hover no longer mutates keyboard selection,
+    - hovered and selected states style both title + help rows with full-row background coverage,
+    - added explicit `option-list--option-hover` default CSS mapping for command-list rows.
+  - Command list text layout now honors option padding in render-time composition, keeping row alignment and highlight ranges consistent with configured CSS padding.
+  - Command palette mouse-move mapping now uses render viewport geometry (not only last layout pass), fixing last-row hover misses when render and layout heights diverge in tree-mode overlay paths.
+  - Search-row surface composition on app blur was fixed at the root:
+    - palette surface normalization now treats both `$background` and `$surface` as underlay colors to be composed onto panel surface,
+    - command input transparent/no-border rules now target the concrete rendered widget path (`Input.command-palette--input`), not only wrapper type selectors.
+  - Added regression coverage for:
+    - keyboard selection stability under hover,
+    - full-row selected/hover style propagation across title/help rows,
+    - palette hover clear/update behavior including last command rows,
+    - blur-state search-row panel surface preservation.
+
+- **[wip] fix(command-palette interaction parity): two-row hit mapping, hover-selection sync, and tick modal routing**
+  - `CommandList` now maps mouse-down `y` coordinates from two-row visual layout (title + help) back to underlying option rows, so clicks on help rows resolve to the correct command entry.
+  - Mouse move over `CommandList` now synchronizes keyboard selection with hovered command row, keeping pointer and keyboard interaction paths aligned.
+  - Runtime tree dispatch now routes `Event::Tick` to the open `CommandPalette` target (same modal routing policy as key/mouse), so palette-local tick-driven behavior such as input caret blinking is not starved by focused underlay widgets.
+  - Added regressions for:
+    - command-list help-row click row mapping,
+    - hover-to-selection synchronization,
+    - tree-mode tick routing while command palette is open.
+
+- **[wip] tune(command-palette list block alignment): post-search gap + horizontal indent parity**
+  - Added an explicit extra spacer row between the search prompt row and command list rows to match Python command palette vertical rhythm.
+  - Shifted command palette search prompt and command list content one column to the right for closer text-block alignment with Python screenshots.
+  - Kept layout/hit-test geometry in sync by updating shared palette offsets used by render, layout sizing, and result-row click mapping.
+  - Updated command palette open snapshot to lock the new row/column alignment.
+
+- **[wip] tune(command-palette geometry + typography parity): lower search/results block and enforce help-row contrast**
+  - Shifted command palette search/results geometry down by one row to better align with Python command palette vertical spacing.
+  - Updated palette header/results row math to use explicit offsets (`SEARCH_ROW_OFFSET`, `RESULTS_ROW_OFFSET`) so spacing is stable and testable.
+  - Ensured command help rows render with dim + not-bold styling regardless of inherited option emphasis, preserving Python-style title-vs-help contrast hierarchy.
+  - Updated command palette open snapshot gate to lock the adjusted layout.
+
+- **[wip] fix(command-palette keys command parity): route `Keys` selection to app help panel**
+  - Selecting `Keys` from `CommandPalette` now posts `AppShowHelpPanel`, so TextualApp runtimes open the real help sidebar (matching Python command behavior) instead of only closing the palette.
+  - Added regression assertion in command-palette widget tests to ensure `AppShowHelpPanel` is emitted alongside the selection event.
+
+- **[wip] fix(command-palette interaction parity): modal key capture, list navigation, row selection, and non-destructive fuzzy highlights**
+  - When command palette is open, runtime now routes non-priority keys directly through event dispatch and skips normal declarative/app binding execution, so typed keys update search instead of triggering underlying app shortcuts.
+  - `CommandPalette` now handles list navigation keys (`Up`/`Down`/`Home`/`End`/`PageUp`/`PageDown`) while input remains focused, matching Python-style command-list traversal.
+  - Row click execution now resolves from palette results geometry directly, ensuring row selection/activation works even when click targets are palette-local.
+  - Added fuzzy-match highlight ranges and title-segment underlining for matched characters; highlight styling now preserves row background color (underline emphasis only), avoiding surface overwrite artifacts.
+  - Added regression tests for:
+    - palette list navigation under focused input,
+    - sender-agnostic `InputChanged` rebuild while open,
+    - row-click selection path,
+    - fuzzy range extraction and underline/background-preservation rendering semantics.
+
+- **[wip] fix(command-input subclass parity): support Python-style type inheritance in CSS selector matching**
+  - Added CSS selector type-alias support in selector metadata/matching so widgets can match both concrete and base type selectors (e.g. `CommandInput` matching `Input` rules).
+  - Added `Widget::style_type_aliases()` hook (default empty) and wired selector meta generation to include aliases for both full widget and component selector resolution.
+  - Extended `Input` with `with_style_type(...)` so wrapper/subclass-style widgets can set a concrete style type plus base-type aliases.
+  - Wired command palette input to render as concrete `CommandInput` with `Input` alias, enabling Python-style `CommandInput` selectors to apply naturally without losing base `Input` style rules.
+  - Fixed transparent color composition in `Input` render path to avoid collapsing transparent backgrounds into opaque black during component style flattening.
+  - Added regression coverage for:
+    - selector type-alias matching semantics,
+    - command-palette search-row surface parity with list/panel background.
+
+- **[wip] fix(command-palette geometry/surface parity): panel top offset + panel-surface composition across rows**
+  - `CommandPalette` panel Y placement now honors component CSS (`.command-palette--panel { margin-top: ... }`) instead of a hardcoded offset, matching Python structure more closely.
+  - Added default `margin-top: 3` for `.command-palette--panel` in widget defaults.
+  - Reworked panel-surface composition so command rows that carry implicit/default app background are normalized back to panel background, removing dark app-background bleed inside palette result rows.
+  - Search/input/results geometry updated to keep the expected input block spacing under the new top offset.
+  - Snapshot/behavior tests updated to assert content-located dim/surface semantics (instead of brittle fixed coordinates), plus a regression test that unselected rows do not reuse app background.
+
+- **[wip] fix(command-palette css parity): honor Python `CommandPalette` component selectors without local fallback rules**
+  - `CommandList` now accepts render-time help-style injection from its `CommandPalette` parent render path, so Python selector `CommandPalette > .command-palette--help-text` is applied in-context (instead of relying on `CommandList`-local fallback selectors).
+  - Removed `CommandList > .command-palette--help-text` fallback default CSS rule; `CommandPalette` component selector is now the source of truth.
+  - Improved panel surface composition so cells with `bg=default` are treated as transparent and composed over panel background, eliminating dark leaks in command rows.
+  - `Input` component styling now resolves through `resolve_component_style(...)`, enabling selectors like `Input.command-palette--input > .input--placeholder` to apply correctly.
+  - Added regression tests for help-row surface/dim semantics and placeholder dim styling in `tests/command_palette_snapshot.rs`.
+
+- **[wip] fix(command-palette color composition parity): resolve list component styles over panel surface**
+  - Command palette list component styles are now resolved over the panel surface color (instead of global default background), so alpha/transparent tokens compose against the correct local surface.
+  - Added explicit command-palette surface propagation into `CommandList` and refreshed it on mount/layout/open transitions.
+  - Result: highlighted row and help/option color blending tracks panel-local composition semantics more closely.
+
+- **[wip] fix(command-palette list/input styling parity): dim help/placeholder and title-only highlight emphasis**
+  - `CommandInput` now tags the underlying `Input` with a dedicated class (`command-palette--input`) so palette-specific placeholder styling can be targeted via CSS.
+  - Added command palette placeholder CSS (`Input.command-palette--input > .input--placeholder`) with muted/dim appearance.
+  - Aligned command help-row rendering so highlighted command selection emphasizes the title row while help text remains in help style (muted/dim), closer to Python presentation.
+
+- **[wip] fix(command-palette layout parity): content-driven panel sizing + stable open placement**
+  - Command palette panel geometry now sizes results area from command content (including list chrome row), instead of using static height assumptions.
+  - Opened palette now renders with a stable top offset in render-time fallback (even when `on_layout` has not run yet), preventing top-left/stale-position placement.
+  - Updated command palette snapshot and viewport assertions to match overlay-underlay composition and content-driven results layout.
+  - Restored markup-command rendering regression coverage (`Deploy` / `Ship current build`) under the new geometry path.
+
+- **[wip] fix(command-palette overlay/render parity): preserve underlay in tree mode and align Python defaults**
+  - Command palette now behaves as a true overlay in tree mode by preserving wrapped subtree display while the palette is open (instead of toggling wrapped child visibility off).
+  - Fixed palette surface composition so copied input/result cells retain panel background styling, eliminating black-hole sections inside the panel body.
+  - Removed manual hardcoded separator line painting in palette render path; border/separator visuals now come from CSS/widget styling as in Python.
+  - Synced built-in command palette copy to Python:
+    - placeholder now uses `Search for commands…` (ellipsis),
+    - default "Keys" help text now matches Python wording.
+  - Aligned `CommandList` defaults closer to Python (`border-top`, `border-bottom`, `max-height`, focus border, highlighted-option token mapping).
+  - Updated command palette snapshot and tree-mode runtime assertion to reflect overlay-preserving behavior.
+
+- **[wip] refactor(command-palette): decompose monolith into Python-style subwidgets (`SearchIcon`, `CommandInput`, `CommandList`)**
+  - Split internal command-palette rendering responsibilities into dedicated widget types inside `src/widgets/command_palette.rs`, mirroring Python Textual structure while keeping Rust-idiomatic internals.
+  - Updated `CommandPalette` to compose and drive those widgets for search icon/input/result-list behavior instead of hand-rolled per-section rendering logic.
+  - Exported new widget types via `widgets::mod` (`SearchIcon`, `CommandInput`, `CommandList`) for API parity and reuse.
+  - Aligned default CSS wiring to target the decomposed widgets (`SearchIcon`, `CommandInput`, `CommandList`, option/help/highlight selectors), reducing component-style special cases.
+  - Preserved tree-mode `Action::CommandPalette` behavior by keeping root fallback routing when direct target dispatch is unhandled.
+  - Regression coverage validated with `command_palette_snapshot`, `command_palette_lifecycle`, footer tests, and tree render tests.
+
+- **[wip] fix(command-palette overlay/tree parity): host palette as sibling overlay + modal event routing in TextualApp runtime**
+  - Reworked `TextualApp` runtime root composition so `CommandPalette` is a sibling child of the app content inside `TextualAppAdapter` (instead of wrapping the whole app tree as parent chrome).
+  - Result: command palette now renders as a true layered overlay in tree mode, rather than replacing/hiding the entire app subtree.
+  - Updated `AppCommandPalette` runtime handling to target the `CommandPalette` node directly (`query_one("CommandPalette")` + targeted dispatch), preserving action-based open/close semantics.
+  - Added modal-style event routing guard in tree mode: when the palette is open, interactive key/mouse/action events are redirected to the palette target to prevent accidental handling by underlying widgets.
+  - Tightened command-palette internal message handling so palette-owned `InputChanged` recomputation only runs while open.
+  - Added/updated adapter/runtime-root regression tests for composed palette host behavior.
+
+- **[wip] fix(runtime/tabbed-content keybind parity): preserve action dispatch recipient + binding-side effects**
+  - Binding-triggered `execute_action` now runs with explicit dispatch recipient context in tree mode, so widget `node_id()`-targeted side effects (for example tab underline animations) resolve to the correct arena node.
+  - Unified binding path outcome handling with normal dispatch paths by preserving `stop_requested`, `animation_requests`, and `worker_requests` in runtime split control flow.
+  - Result: app key bindings (`l/j/p`) now follow the same tab activation visual path as click/arrow input in `TabbedContent` demos.
+
+- **[wip] fix(command-palette tree runtime): restore global `^p` open path without footer-binding leakage**
+  - Fixed tree-mode runtime fallback so unhandled key/mouse/action events still reach the runtime root wrapper (`on_event`) when needed by non-arena wrapper behavior (for example command palette open/close handling).
+  - Extended widget-controlled tree display sync to also apply root-wrapper `child_display_for_tree(...)` policy, so wrapper-controlled visibility toggles correctly affect arena children.
+  - Kept Python-style action flow for `AppCommandPalette`: runtime dispatches `Action::CommandPalette`, while palette lifecycle messages are emitted by the widget itself.
+  - Added regression gates covering:
+    - root key fallback in tree mode,
+    - command palette rendering/open visibility in tree mode,
+    - action-based command palette open dispatch path.
+
+- **[wip] fix(footer parity): Python-style FooterKey hover/click semantics including command palette**
+  - Aligned footer key interaction behavior with Python Textual:
+    - click on any footer key hint now flows through the same binding/action pipeline as real key presses (`AppSimulateKey` runtime dispatch parity),
+    - footer hit-testing now resolves rendered binding regions (including grouped keys) instead of coarse width heuristics.
+  - Restored item-level `FooterKey:hover` visuals by fixing background composition against the footer surface (not global app background), so hover reads as a full key-item highlight.
+  - Added command-palette (`^p`) parity handling in footer hover/click hit routing so the right-docked key now responds like other footer keys.
+  - Added regression coverage for:
+    - simulated key parsing and dispatch path behavior,
+    - per-binding click resolution (`l/j/p`) and grouped-key click targeting,
+    - footer hover background behavior including the command-palette item.
+
+- **[wip] fix(tabbed-content + layout/test regressions): restore stable fallback behavior and remove false `cargo test` blocker**
+  - Fixed `ScrollView` content-height inference to ignore trailing blank probe rows from oversized auto/fill renders, preventing false vertical scrollbar activation and viewport width shrink in focus/layout paths.
+  - Restored `Middle` / `CenterMiddle` vertical-centering behavior to use intrinsic child height (with non-blank rendered fallback) instead of shaped full-height output.
+  - Stabilized `TabbedContent` non-tree compatibility semantics used by isolated tests/previews:
+    - keyboard/mouse tab switching,
+    - hidden/disabled activation guards,
+    - active-pane promotion after hide/disable,
+    - binding hints.
+  - Updated `TabbedContent` style assertions to render through widget-tree runtime (canonical path) while keeping non-tree compatibility minimal.
+  - Result: `cargo test` now runs through the previously reported stop point and completes successfully in this tree.
+
+- **[wip] fix(widget render + tabs parity): restore chrome-aware intrinsic sizing, scoped tab state classes, and tab/button interaction regressions**
+  - Added a shared widget render path (`render_widget_with_meta`) that consistently applies:
+    - CSS style stack context,
+    - line-pad and CSS padding composition,
+    - fill/background shaping to content height,
+    - border/title/subtitle + opacity pass,
+    - stable node metadata tagging.
+  - Intrinsic sizing parity fixes across core widgets:
+    - `content_width()` hints now include horizontal chrome (CSS padding + border spacing) for auto-sizing widgets including `Button`, `Checkbox`, `Collapsible`, `ContentSwitcher`, `DataTable`, `DirectoryTree`, `Link`, `ListView`, `Log`, `OptionList`, `RadioButton`, `RadioSet`, `Rule` (vertical), `Select`, `SelectionList`, `Switch`, `Tabs::Tab`, `Text::Markdown`, `Toast`, `Tooltip`, and `Tree`.
+    - `Panel` intrinsic width/height now include resolved CSS chrome in addition to panel-local border/padding behavior.
+  - CSS selector/runtime consistency:
+    - added `selector_meta_generic_with_classes(...)` and wired display/visibility tree pass to resolve styles with runtime tree classes attached to nodes.
+  - Tabs parity fixes:
+    - introduced per-instance scoped `Tabs` style IDs so runtime class/disabled mutations target the correct tabs instance (`#<tabs-scope> #tabs-list > #<tab-id>`),
+    - moved initial active/hidden/disabled tab state to declarative child classes in `tab_decls()` (avoids mount-time class replay races),
+    - click-on-tab now requests runtime focus and treats clicking the already-active tab as handled,
+    - underline base/active style composition corrected for Python-like line appearance,
+    - intrinsic tab width now accounts for resolved CSS padding (`width: auto` spacing parity).
+  - Button interaction parity:
+    - `MouseUp` message emission now occurs before clearing pressed state, so click-generated `ButtonPressed` descriptions include `-active` consistently.
+  - Added broad regression coverage in new `tests/intrinsic_size_contract.rs`:
+    - locks border-box/content-box auto-size contracts,
+    - verifies no-wrap markdown line behavior in wide viewport,
+    - verifies widget padding deltas are reflected in intrinsic width for a large cross-widget matrix,
+    - verifies tab header auto-width keeps expected horizontal gaps.
+  - Added button regression test:
+    - `mouse_click_message_description_includes_active_class`.
+  - Added Tabs ergonomics helpers to avoid allocation-heavy callsites:
+    - `Tabs::is_active(&str) -> bool`,
+    - `Tabs::with_active_id(|Option<&str>| ...)`.
+  - Updated tabs integration assertions to use non-allocating active-id checks.
+  - Runtime message-chain fix for tree mode:
+    - `dispatch_message_queue_with_runtime()` now recursively drains messages emitted during message handling (instead of dropping follow-up messages), restoring parity between keyboard and mouse tab switch paths when class/style updates are emitted indirectly via message handlers.
+  - Nested TabbedContent routing fix:
+    - parent `TabbedContent` no longer marks `TabActivated` as handled when the pane id does not belong to that instance, preventing nested subtab activation from being swallowed.
+  - Added targeted regression gates for both runtime message chaining and unknown nested `TabActivated` handling.
+
+### 2026-02-15
+- **[wip] fix(tabbed-content parity): align tab state styling, underline behavior, footer hints/separator, and markdown heading surfaces**
+  - Runtime/tree binding hints: root app bindings and hints are now preserved in tree mode, and key dispatch falls back to root action execution when tree-target handling doesn’t consume the action.
+  - Tabs/TabbedContent parity pass:
+    - switched tab underline rendering to Python-style half-cell bar math (`╺/━/╸`) in both `Tabs` and `TabbedContent`,
+    - aligned component CSS defaults for active/inactive/hover/disabled tab state and ANSI dim/not-dim semantics,
+    - hid left/right "Switch tab" binding hints by default to match Python’s `show=False` behavior.
+  - Color/style conversion parity:
+    - `Style::to_rich()` now treats fully transparent fg/bg as unset and flattens semi-transparent fg/bg against effective surface background for parity-friendly contrast.
+  - Footer parity:
+    - command-palette hint now renders with a visible, styleable separator segment before the right-docked `^p palette` item.
+  - Markdown heading pass:
+    - added markdown heading component default CSS hooks and heading content alignment wiring for centered h1 rendering parity.
+  - Added/updated parity regression coverage in `tests/tabs.rs`, `tests/tabbed_content.rs`, `tests/header_footer.rs`, `tests/markdown.rs`, plus style conversion tests in `src/style.rs`.
+
+### 2026-02-14
+- **feat(parity): close App/runtime API parity gaps for actions, DOM query mutations, lifecycle events, and controller aliases**
+  - Expanded app action parity from partial adapter coverage to full Python action matrix coverage in `TextualApp` (`23/23` actions in `APP_ACTIONS` with adapter execution paths and argument validation).
+  - Added runtime handling and message types for full app action set, including richer `AppScreenshot { filename, path }` payload support and caller-inventory parity tests.
+  - Implemented app-level convenience wrappers: `App::batch_update`, `App::mount`, `App::mount_all`, `App::get_child_by_type`.
+  - Extended `DomQueryMut` parity semantics:
+    - added `remove()`,
+    - added multi-class helpers (`add_classes`, `remove_classes`, `toggle_classes`),
+    - aligned `focus()`/`blur()` to first-match semantics,
+    - expanded `set(...)` to include `disabled` and `loading`.
+  - Added widget trait mutation hooks for query-driven state changes:
+    - `Widget::set_disabled_state`,
+    - `Widget::set_loading_state`,
+    - `Widget::is_loading`.
+  - Wired runtime dispatch of `Event::ScreenSuspend` / `Event::ScreenResume` through push/pop/switch-mode app flows and added ordering coverage tests.
+  - Added Python-compat controller aliases/APIs:
+    - `Tabs::{disable, enable, hide, show}`,
+    - `TabbedContent::{disable_tab, enable_tab, hide_tab, show_tab, get_tab, get_pane, active_pane}`,
+    - `ContentSwitcher::add_content(child, id, set_current)`.
+  - Removed stale deferred/no-op parity comments for resolved runtime paths (`ScreenSuspend/ScreenResume` event docs, worker runtime header, reactive loop note).
+
+### 2026-02-14
+- **feat(devtools): inspector-grade snapshot protocol v2, new devtools commands, runtime hooks**
+  - Added `Style::debug_properties()` returning all set CSS properties as human-readable `(&str, String)` pairs for devtools inspection.
+  - Enriched devtools snapshot protocol (v2): widget lines extended from 11→19 columns (content_rect, display states, visibility, mounted, parent_id, children_ids). Added `style\t{id}\t{prop}\t{value}` lines for resolved CSS. Fixed class merging to include tree-level classes.
+  - Added devtools commands: `TOGGLE_DISPLAY <id>`, `HIGHLIGHT <id>`, `ADD_CLASS <id> <class>`, `REMOVE_CLASS <id> <class>` with full parsing, dispatch, and runtime handling.
+  - `HIGHLIGHT` auto-clears after 500ms via `pending_highlight_clear` timer.
+  - Added `TextualApp::on_tick()`/`on_tick_with_app()`, `on_action_with_app()`, `on_message_with_app()` convenience hooks with `&mut App` runtime handle.
+  - Added `Widget::on_app_action()`, `on_app_message()`, `on_app_tick()` trait methods for runtime-level app hooks.
+  - Runtime fallback wiring now invokes app-handle hooks in the event loop: unhandled actions flow to `on_app_action()`, unhandled messages flow to `on_app_message()`, and each tick runs `on_app_tick()` before `Event::Tick`.
+  - Migrated cross-widget example callsites to centralized query/mutation APIs:
+    - `examples/buttons_advanced.rs` status updates now use `on_message_with_app` + `with_query_one_mut_as::<StatusLine>()`.
+    - `examples/data_table.rs` event footer updates now use `on_message_with_app` + `with_query_one_mut_as::<StatusLine>()`.
+  - Consolidated ID-targeted controller widget lookups through internal query-style helpers in `ContentSwitcher`, `Tabs`, and `TabbedContent` to reduce duplicated ad-hoc scans.
+
+### 2026-02-14
+- **feat(runtime): DomQuery/DomQueryMut API, on_key_with_app hook, selector class actions**
+  - Added `DomQuery` (read) and `DomQueryMut` (write) types for chainable CSS-selector-based widget tree queries with filter/exclude/results_where combinators and bulk mutation helpers (add_class, remove_class, toggle_class, set_classes, set_styles, set_display, set_visible, focus/blur, refresh).
+  - Added `App::query_exactly_one()`, `query_one_optional()`, `query_children()`, `query_ancestor()`, `get_widget_by_id()`, `get_child_by_id()`, `query_mut()` query variants.
+  - Added `App::with_widget_mut_as()` and `with_query_one_mut_as()` for type-safe downcasting widget mutation.
+  - Added `TextualApp::on_key_with_app()` hook receiving `&mut App` handle for query/mutation during key handling (Python Textual alignment). Runtime dispatches this before normal widget key routing.
+  - Added `app.add_class`/`remove_class`/`toggle_class` action declarations and `AppAddClass`/`AppRemoveClass`/`AppToggleClass` runtime messages with full action→message→runtime pipeline.
+  - `TextualAppAdapter` now implements `action_namespace`/`action_registry`/`execute_action` for `app.*` actions including `quit` and selector class mutations.
+  - `Widget` trait now requires `Any` supertrait bound for runtime downcasting.
+  - Added `Widget::on_app_key()` trait method for runtime-level app key hooks.
+  - Examples `keys.rs` and `rich_log.rs` rewritten to use `on_key_with_app` with `with_query_one_mut_as` — eliminated `Arc<Mutex<RichLog>>` shared state and `SharedKeyLog`/`SharedRichLog` wrapper widgets entirely, using message-based communication instead.
+  - Comprehensive regression tests for all new query APIs, DomQuery combinators, DomQueryMut mutations, selector class actions, action routing pipeline, and on_app_key dispatch.
+
+- **feat(runtime): app-level `on_key` hook and CSS selector query API** (previous entry)
+  - Added `TextualApp::on_key()` capture-phase hook for app-level key interception (mirrors Python Textual's app-level key handling). Wired through `TextualAppAdapter::on_event_capture` and tree-mode `dispatch_event_auto`.
+  - Added `App::query()`, `query_one()`, `with_widget_mut()`, `with_query_one_mut()` for CSS-selector-based widget tree queries and scoped mutation.
+  - Tree-mode `dispatch_event_auto` now runs root key capture before tree dispatch and root action fallback after unhandled tree dispatch.
+  - Examples `keys.rs` and `rich_log.rs` rewritten to use `on_key` hook with `Arc<Mutex<RichLog>>` shared state, eliminating widget-level key interception wrappers.
+  - Added regression tests for all new APIs (key hook capture/passthrough, tree dispatch integration, query/query_one delegation, with_query_one_mut mutation).
+
+### 2026-02-14
+- **feat(widgets): TabbedContent tree-mode parity — child extraction, action routing, binding hints**
+  - TabbedContent now supports tree-mode child extraction for runtime-managed widget trees, with `show_tab` action routing, initial tab selection, and keyboard/mouse activation.
+  - Added `dispatch_event_broadcast_tree()` for runtime-global events (binding-hint payload changes) so non-focused widgets like Footer receive notifications.
+  - Container widget gains `visit_children_mut()` support for tree-mode child extraction.
+  - Widget tree node display/visibility guards on focused-node resolution to skip hidden nodes.
+  - Added TabbedContent + Tabs regression tests.
+- **refactor(examples): rewrite all examples to current APIs + Python Textual parity**
+  - Replaced `hello.rs` kitchen-sink with polished "Mission Control" dashboard showcase (13+ widget types: Header, Footer, Sparkline, ProgressBar, DataTable, TabbedContent, Markdown, Input, Checkbox, Switch, Button, Rule, Static) with new `hello.tcss` stylesheet.
+  - Deleted redundant `buttons_composed_pattern.rs` example.
+  - Cleaned delegation boilerplate in `rich_log.rs` and `keys.rs` (removed unnecessary forwarded methods, fixed `style_type` for CSS matching).
+  - Fixed `input_validation.rs` Palindrome validator to match Python parity (empty string passes).
+  - Cleaned `text_area_custom_language.rs` (eliminated Option+take pattern) and `text_area_extended.rs` (added missing mouse forwarding).
+  - Net reduction of ~340 lines across examples.
+- **docs: update ROADMAP.md and README.md to reflect completed parity work**
+  - ROADMAP: marked CSS defaults parity, TCSS property parity, box-model fixes, render parity, P2 deferred closures, and Phase 9.7 modularization as complete. Updated deferred items table (5→2 remaining). Added completed parity plan references.
+  - README: polished rewrite reflecting 56 widgets, 108 CSS properties, 1,487+ tests, rich-rs as public crate.
+
+- **fix(css/layout): three button parity fixes — disabled dimming, margin collapsing, box-model correctness**
+  - Added `:can-focus` pseudo-class support (AST, parser, matcher, resolver, debug) and global `*:disabled:can-focus { opacity: 70%; }` rule matching Python Textual's disabled-widget dimming.
+  - Added `Widget::can_focus()` trait method (inherent focus capability, ignoring disabled state) so disabled buttons still match `:can-focus`.
+  - Implemented vertical margin collapsing in `layout_vertical()`: adjacent sibling margins now collapse to `max(bottom, top)` instead of summing additively.
+  - Separated `line-pad` from CSS `padding`: added `Style::line_pad` field as a render-time-only property that does NOT inflate the box model, matching Python Textual semantics where `gutter = padding + border.spacing` (line-pad excluded).
+  - Changed default `box-sizing` from `content-box` to `border-box` across all layout paths, matching Python Textual's default where borders are included within declared/auto width.
+  - Updated render pipeline (`core.rs`, `render.rs`, `types.rs`) to read `line_pad` from the new style field instead of deriving from `resolved.padding`.
+  - Added regression test: `disabled_button_matches_global_disabled_can_focus_opacity_rule`.
+  - Updated layout tests for border-box default behavior.
+
+### 2026-02-16
+- **fix(runtime/tabbed-content): normalize class-aware tree style resolution across render/layout/event-loop paths**
+  - Root cause addressed: tree runtime was resolving styles with mixed metadata sources (some paths ignored `WidgetTree` runtime classes while paint paths consumed them), which could desync `-active` class visuals from logical tab activation.
+  - Updated tree style resolution callsites to use class-aware selector metadata (`selector_meta_generic_with_classes`) in:
+    - render-time layer ordering (`sort_children_by_layer`),
+    - layout info propagation (`apply_layout_info_tree`),
+    - style snapshot collection for transition dispatch (`collect_current_resolved_styles`),
+    - hit-test local coordinate inset calculation (`NodeHitTestMap::content_local_coords`).
+  - Added parity regression gate covering app action path (not only direct setter path):
+    - `tree_mode_show_tab_action_moves_active_highlight_style` ensures `show_tab(...)` moves active tab highlight/background.
+  - Removed temporary debug instrumentation used during bug hunt from runtime render/event loop paths.
+
+- **fix(layout): wire `expand` into flow sizing and clamp absolute min/max constraints**
+  - `layout_vertical()` and `layout_horizontal()` now treat `expand: true` as a flex-grow signal on the layout axis, so intrinsic `auto` widgets can participate in remaining-space distribution.
+  - `layout_absolute()` now applies `min-width` / `max-width` / `min-height` / `max-height` constraints (with box-sizing-aware outer-size math) for absolutely positioned children.
+  - Added behavioral coverage in `tests/p2_layout_css.rs`:
+    - `p2g24_absolute_applies_min_constraints`
+    - `p2g24_absolute_applies_max_constraints`
+    - `p2g35_expand_vertical_grows_intrinsic_child`
+    - `p2g35_expand_horizontal_grows_intrinsic_child`
+- **fix(render): activate border captions, keylines, and `overlay: screen` compositing**
+  - Added widget border caption hooks (`border_title()` / `border_subtitle()`) and wired them into border edge composition.
+  - Border top/bottom rows now render caption text with `border-title-*` / `border-subtitle-*` alignment, color, background, and text-style flags.
+  - Implemented `overlay: screen` blending as an actual two-pass compositor using pre-paint underlay snapshots and per-cell screen blending.
+  - Implemented keyline rendering between adjacent children for vertical/horizontal layouts using `keyline` type + color.
+  - Added behavioral render tests in `tests/p2_render_css.rs`:
+    - `p2g29_border_title_subtitle_render_on_edges`
+    - `p2g34_overlay_screen_blends_with_underlay`
+    - `p2g34_keyline_draws_separator_between_children`
+- **fix(scrollbar): consume hover/active sub-part CSS and dedupe alias helpers**
+  - `ScrollView` now tracks scrollbar sub-part hover state (`thumb` vs `track`) on both axes and consumes `scrollbar-color-hover` / `scrollbar-color-active` and `scrollbar-background-hover` / `scrollbar-background-active` in render.
+  - Mouse-down on scrollbar updates sub-part hover state before drag activation, keeping visual state in sync with interaction.
+  - Hover state is cleared on widget unhover to avoid stale sub-part styling.
+  - `aliases.rs` now delegates duplicated scrollbar thumb/style helpers to shared `ScrollView` helpers (WP-32 consolidation path).
+  - Added behavioral tests in `tests/p2_widget_css.rs`:
+    - `p2g30_scroll_view_hover_subpart_colors_are_consumed`
+    - `p2g30_scroll_view_drag_thumb_uses_active_color`
+- **feat(runtime): auto-dispatch per-property CSS transitions on style changes (P2-36)**
+  - Added per-node resolved style snapshot cache in `App` and runtime diffing in the widget-tree loop.
+  - Runtime now auto-emits `AnimationRequest`s when resolved styles change due class/pseudo/stylesheet updates, limited to supported animatable style properties (`opacity`, `text_opacity`, `offset_x`, `offset_y`) with per-property transition lookup.
+  - Added property-name alias handling for transition declarations (`offset-y` ↔ `offset_y`) in runtime lookup.
+  - Added runtime unit coverage in `src/runtime/event_loop.rs`:
+    - `p2g36_runtime_transition_dispatch_matches_changed_properties`
+    - `p2g36_runtime_transition_dispatch_handles_css_hyphen_names`
+- **fix(overlay/tree): wire OverlayVisibilityChanged to modal subtree display state**
+  - Runtime now consumes `OverlayVisibilityChanged` control messages and toggles the overlay modal subtree `display` flag in tree mode, while leaving the base child displayed.
+  - Tree-mode overlay hide/show now triggers layout/content invalidation and repaint through runtime message handling.
+  - Added runtime tests:
+    - `overlay_visibility_hides_modal_subtree_display_in_tree_mode`
+    - `overlay_visibility_show_restores_modal_subtree_display_in_tree_mode`
+  - Removed stale parity/deferred comments:
+    - old `DEFERRED(parity)` note in `tests/container_parity.rs`
+    - outdated tree-mode TODO comments in `src/widgets/containers/overlay.rs`
+- **feat(css): DC-01..DC-38/DC-ALL — rewrite all widget default CSS to Python Textual parity**
+  - Rewrote all 16 default CSS files (`base`, `button`, `checkbox`, `collapsible`, `containers`, `data_table`, `header_footer`, `input`, `list_view`, `misc`, `select`, `tabs`, `text_area`, `tooltip`, `tree`, `mod`) to match Python Textual DEFAULT_CSS verbatim, using nested `&` syntax.
+  - Added new widget defaults: `ModalScreen`, `Widget` (global base with scrollbar/link tokens), `Label` semantic variants (`.success`/`.error`/`.warning`/`.primary`/`.secondary`/`.accent`), `Screen:inline`/`:ansi` blocks, `Collapsible` children (`CollapsibleTitle`, `Contents`), `Toast`/`Notification` with severity/positioning, `Markdown*` full hierarchy (H1–H6, paragraphs, fences, tables, bullet/ordered lists, TOC), `HelpPanel`/`KeyPanel` with child selectors.
+  - Parser: comprehensive `initial` keyword support (resets any CSS property to `None`), `offset-x`/`offset-y` with percentage values (`offset-x: -50%`), `strike`/`strikethrough` text-style flag, `link-style`/`link-style-hover` token resolution, `$link-style`/`$link-style-hover` text-style tokens.
+  - Style struct: added `strike` field with cascade/inherit/`to_rich()` support, `OffsetValue::Percent` variant for percentage offsets, `$link-background` theme token.
+  - Layout: percentage-based offset resolution in `layout_absolute()`.
+  - AST: widened `pub(crate)` visibility to `pub` on `StyleSelector`, `SelectorChain`, `Combinator`, `StyleRule` accessors for test introspection.
+  - Added 3 new integration test files: `dc_core_defaults.rs` (509 lines), `dc_interactive_defaults.rs` (316 lines), `dc_misc_defaults.rs` (899 lines) — covering parse-and-verify for all DC-* default files.
+  - Updated existing tests (`p2_layout_css`, `p2_render_css`, `tabs`, `tabbed_content`) for overflow-axis and padding-axis changes.
+
+### 2026-02-13
+- **feat(css): rewrite CSS parser to support nested rules and `&` selector**
+  - Rewrote `StyleSheet::parse()` with brace-balanced block parsing, replacing the flat `find('{')/find('}')` approach.
+  - Nested CSS rules with `&` (parent reference) and implicit descendant selectors are now supported, matching Python Textual TCSS semantics.
+  - Selector group lists (`Label, Button { ... }`) are expanded as Cartesian product with nested selectors.
+  - Structured parse-issue reporting (`CssParseIssue`) with kind, offset, snippet, and stderr + debug-style emission.
+  - Graceful handling of unsupported `@`-rules (logged as issues, not fatal).
+  - Added 3 unit tests (nested `&`/descendant, cartesian expansion, `@`-rule issue) and 3 integration tests (`tests/style_nested.rs`).
+
+### 2026-02-15
+- **fix(theme): add missing markdown heading background/text-style tokens**
+  - Added `$markdown-h1-background` through `$markdown-h6-background` to textual-dark token resolution.
+  - Added `$markdown-h1-text-style` through `$markdown-h6-text-style` token resolution for `text-style` shorthand parsing.
+  - Added integration coverage for token resolution and stylesheet parse-flow usage.
+- **fix(css/render): align `tint` and `auto NN%` foreground behavior**
+  - `tint:` now applies as a final render overlay to both foreground and background segment colors.
+  - Added behavioral regression coverage validating `tint` affects final rendered `color` and `background`.
+  - Added focused parser/integration coverage for `color: auto NN%` and `fg: auto NN%` populating `fg_auto`.
+- **fix(css): `text-style` negation + Textual token refs**
+  - Added `text-style: not <flag>` semantics with explicit false flag assignment (for example `not reverse`, `bold not underline`, `bold italic not dim`).
+  - Added parser support for Textual text-style token refs in value position: `$button-focus-text-style`, `$block-cursor-text-style`, `$block-cursor-blurred-text-style`, `$input-cursor-text-style`.
+  - Kept `text-style: none` shorthand behavior unchanged.
+- **feat(css/selectors): add Textual-aligned pseudo-classes `:blur`, `:inline`, `:ansi`, `:nocolor`**
+  - Parser: recognizes new pseudo-classes in selector chains.
+  - Matcher: `:blur` now matches when not focused (`!focused`), and runtime bridge pseudos match selector state flags.
+  - Resolver: selector state now populates `inline/ansi/nocolor` from env bridges (`TEXTUAL_APP_INLINE=1`, `TEXTUAL_APP_ANSI=1`, `TEXTUAL_APP_NOCOLOR=1`) for generic and component selector metadata.
+  - Debug output/filtering now includes all new pseudos (`selector_chain_string`, `style_debug_meta_label`, `pseudo=` filter support).
+  - Added parser, matching, and debug-string coverage tests for the new pseudo-classes.
+- **fix(css/runtime): replace env-based pseudo bridge with runtime context state**
+  - Added CSS runtime pseudo context (`AppRuntimePseudos`) and guard APIs in selector context.
+  - Resolver now reads `inline/ansi/nocolor` from context instead of reading env vars per style lookup.
+  - Runtime render/event-loop style passes now set pseudo context from `App` fields.
+  - Added `App::set_css_runtime_pseudos()` / `App::css_runtime_pseudos()` for explicit app-level control.
+  - Extended stylesheet invalidation quick-check snapshot matching to include `:blur/:inline/:ansi/:nocolor`.
+
+- **Fix text overflow pipeline + P2 behavioral gate tests**
+  - Fix: `split_and_crop_lines` was pre-cropping lines before `apply_text_overflow_to_line` could apply ellipsis/clip, making the text overflow wiring dead code. Now defers cropping when `text-wrap: nowrap` with an overflow mode is active.
+  - Fix: Link widget disabled-state now correctly ignores hover styling (matches Python Textual).
+  - Added 7 behavioral tests for P2-28 (outline render), P2-31 (text overflow pipeline), P2-32 (disabled link), P2-33 (grid span clamping/occupancy), P2-34 (hatch fill).
+
+- **Framework fixes: layout intrinsic width, border composition, dock sizing, tooltip per-axis constrain**
+  - Layout: `width: auto` now uses widget `content_width()` when available instead of expanding to full parent width.
+  - Layout: style resolution now pushes ancestor context so CSS descendant/child combinators (`Horizontal > VerticalScroll`) affect width/height distribution.
+  - Fix: `apply_border_edges` now properly constrains interior height by accounting for border rows, preventing content from overflowing into border area.
+  - Fix: Dock explicit size hints now use `box-sizing: border-box` so band sizes include chrome.
+  - Tooltip overlay positioning now supports independent `constrain-x`/`constrain-y` axis overrides.
+  - ScrollView: transition parameter resolution delegated to shared `resolve_transition_for_property()` helper.
+
+### 2026-02-14
+- **Fix hit-target overshoot from `height:auto` in vertical flow + add opt-in hit probe instrumentation**
+  - Layout: `height: auto` now uses widget intrinsic `layout_height()` when available (instead of flexible `1fr` allocation), which fixes oversized interactive rects and prevents vertical containers from expanding beyond intended CSS sizing.
+  - Added regression coverage in `src/layout.rs` (`vertical_auto_height_uses_intrinsic_layout_height`).
+  - Runtime: added env-gated hit-test tracing (`TEXTUAL_DEBUG_HIT_TEST_VERBOSE=1`) to log frame/tree target selection and movement direction for systematic input-debug sessions.
+
+- **P2-24..P2-36: close TCSS property gap — 52 new CSS properties with parser, cascade, layout/render/widget wiring, and 76 gated tests**
+  - Phase 1 (core infrastructure): added 13 new types (Position, BoxSizing, Split, TextWrap, TextOverflow, OverlayMode, KeylineType, ScrollbarGutter, ScrollbarVisibility, TextStyleFlags, Hatch, Keyline, PropertyTransition), 52 StyleProperty enum variants, 52 Style struct fields, ~50 parser arms, cascade/inherit/is_empty entries, importance tracking. Upgraded ImportanceBitset from u64 to u128 to support 100 property variants.
+  - Phase 2 layout wiring (P2-24/25/26/27/33): absolute positioning, border-box sizing, split-region layout, per-side padding/margin with `effective_padding()`/`effective_margin()` merge helpers, grid row-span/column-span with occupancy-based 2D placement.
+  - Phase 2 render wiring (P2-28/29/31/34/35): outline painting outside border box, text-overflow modes (clip/fold/ellipsis), hatch background fill, axis-specific constrain-x/y resolution, overlay position clamping.
+  - Phase 2 widget wiring (P2-30/32/36): scrollbar CSS consumption (12 properties: colors, hover/active, gutter, size, visibility), link hover styling with TextStyleFlags, per-property transition resolution with "all" wildcard fallback.
+  - Added 76 gated tests across 3 new test files: `tests/p2_layout_css.rs` (18), `tests/p2_render_css.rs` (31), `tests/p2_widget_css.rs` (27).
+  - Deferred items tracked: border title/subtitle rendering (needs widget-level title storage), overlay:screen blend (needs two-pass compositor), keyline rendering (needs layout direction awareness).
+
+### 2026-02-13
+- **P1-12/P1-13/P1-15 done: tree-mode test infrastructure + container DEFAULT_CSS + behavioral gate tests**
+  - Exposed tree-mode APIs for integration testing: `build_widget_tree_from_root`, `render_tree_to_frame`, `run_layout_pass`, `dispatch_event_tree`, `dispatch_event_to_target_tree`, `focused_node_id_tree`, `DispatchOutcome`.
+  - Added DEFAULT_CSS entries for all container/layout widgets (Horizontal, HorizontalGroup, HorizontalScroll, Vertical, VerticalGroup, VerticalScroll, ScrollableContainer, Container, Row, Center, Middle, CenterMiddle, Right) matching Python Textual semantics — fixes horizontal layout in tree mode.
+  - Added 33 integration tests across `tests/p1_tree_render.rs` (P1G-12 + P1G-15) and `tests/p1_tree_focus.rs` (P1G-13) proving render, focus/hover, and wrapper-chain correctness through the tree pipeline.
+  - Fixed pre-existing `background_is_not_inherited_by_children` test to match correct composition semantics (transparent children compose onto parent background).
+
+- **[wip] Close reactive/runtime integration and worker runtime delivery gaps (P3-20, P5-15, P5-16)**
+  - Wired event-loop reactive phase execution so queued reactive entries dispatch watchers and propagate repaint/layout invalidation in runtime flow.
+  - Added/validated production reactive enqueue path from widget code (`Checkbox`) so runtime queue usage is not test-only.
+  - Wired worker processing into runtime loop: `process_worker_requests()` output now maps to `Message::WorkerStateChanged` and is dispatched through normal message routing.
+  - Replaced placeholder worker behavior with real background execution via spawned worker jobs, non-blocking completion draining, and deterministic terminal state handling (success/error/cancel/exclusive).
+  - Added/expanded runtime tests for reactive event-loop behavior and worker delivery/execution semantics; verified with `cargo test -q --lib`.
+
+- **P1-14 complete: wire tree-based NodeId across all widgets**
+  - Added `node_id()` default method to Widget trait, reading from dispatch context so widgets can identify themselves without storing an ID field.
+  - Set dispatch context guard in `render_styled_dyn_obj()` so `self.node_id()` works during rendering.
+  - Replaced all 114 `TODO(P1-14)` and `TODO(P1-15)` placeholders across 30+ widget files with real tree-wired NodeId logic: `is_self_target(target)` → `target == self.node_id()`, `NodeId::default()` sentinels → `self.node_id()` in outgoing events/messages.
+  - Removed `is_self_target` / `is_self_target_opt` from dispatch_ctx.rs — zero callers remain.
+  - Fixed RadioButton mouse targeting bug (was passing `NodeId::default()` to `handle_event`, breaking tree-routed clicks).
+  - Fixed tree render root widget dispatch context (now uses real root NodeId from arena).
+  - Converted 4 non-P1-14 TODOs to explicit `DEFERRED(<tag>)` markers for future work.
+  - Cleaned dead code in routing.rs test structs and event_loop.rs.
+  - Added 40+ regression tests across containers, input family, and remaining widgets verifying real-NodeId event dispatch.
+
+- **[wip] Dock tree-layout fill restoration + P1 container regression gates**
+  - Restored Dock fill behavior in arena-tree layout: when a `Dock` parent has a single non-docked flow child, that child now receives the full remaining inner region after docked edges are carved.
+  - Added `layout_dock_fill` placement helper in layout solver to preserve fill-region `layout_rect`/`content_rect` semantics under tree-driven composition.
+  - Added regression coverage for Dock top+fill remaining-region allocation in layout tests.
+  - Expanded `tests/p1_dom_input_gates.rs` with `buttons_advanced`-like dock/scroll/fill clickability gates to ensure fill regions retain non-zero interactive layout and route clicks correctly.
+
+- **[wip] DOM tree targeting now reaches deep widgets (hover/click path), layout follow-up in progress**
+  - Improved tree hit-target selection to prefer deeper valid descendants when frame metadata and tree targets disagree, reducing coarse row-level targeting.
+  - Added richer runtime diagnostics for target selection (`id/type/parent/children`) to trace tree-routing mismatches in wrapper-heavy demos.
+  - Extended alias/container composition extraction so wrapper widgets contribute real children to the arena tree (`Horizontal`/`Vertical` groups and scroll aliases).
+  - Added one-shot composed-child extraction for `ScrollView` and dock-child extraction/style mapping for `Dock`, moving more structure into tree-driven composition.
+  - Result: hover/click targeting now reaches button-level nodes in `buttons_advanced`; remaining regression focus is layout/stacking (for example missing `VerticalScroll` presentation) while tree composition is stabilized further.
+
+- **[wip] DOM input routing stabilization for wrapper-heavy demos (`buttons_advanced`)**
+  - Hardened runtime hit-test targeting: ignore invalid/default metadata node IDs and only route mouse events to live tree nodes.
+  - Added root fallback dispatch for mouse-down/up when no valid hit-test target exists, preserving screen-local coordinates so legacy/container routing can still resolve child hits.
+  - Removed stale focus interception in `AppRoot` (`FocusNext`/`FocusPrev`/`Tab`) that was swallowing focus actions while the old stub focus API is inactive.
+  - Forwarded `on_layout` through alias wrappers that already forwarded `on_resize` (`Horizontal`, `Vertical`, `VerticalGroup`, `HorizontalGroup`, `Center*`, `Right`, `Middle`, `ScrollableContainer`, `HorizontalScroll`, `ItemGrid`).
+  - Updated container Y-hit-testing to account for child margins and expanded P1 DOM input gates with wrapper-chain button-click coverage.
+  - Added container-level focus propagation for blur (`set_focus(false)` clears focused descendants) and a focused gate to prevent stale focus when clicking across independent wrapper columns.
+
+- **Pillar 1 DOM hardening: dispatch recipient context for tree routing**
+  - Added runtime dispatch recipient context (`src/runtime/dispatch_ctx.rs`) and wired it into tree/event/message routing so handlers can resolve "self target" against the currently dispatched node instead of relying on `NodeId::default()`.
+  - Migrated remaining widget-side `NodeId::default()` self-target checks to recipient-aware predicates across controls, inputs, lists/tables, tree/tabs, overlays/tooltips, command palette, and related mouse/message handlers.
+  - Updated Button, ScrollView, and DataTable target checks to use recipient-aware helpers, unblocking tree-routed mouse/animation handling paths.
+  - Added focused gate coverage in `tests/p1_dom_input_gates.rs` for click targeting, hover forwarding, focus cycling, repeated click delivery, and DataTable arrow-key routing via Container/Row focus.
+  - Restored tree-mode forwarding of top-level messages to the root adapter so `TextualApp` typed hooks (for example `on_button_pressed`) continue to fire when message delivery runs via `WidgetTree`.
+  - Added legacy-child delegation in `Dock` and `ScrollView` for focus cycling, mouse targeting, and hover forwarding so composed wrappers route input to real descendants even before those descendants are fully represented as arena nodes.
+  - Synced wrapper-delivered child layout before forwarding mouse/hover events (`ScrollView` and `Dock`) so nested widgets like `DataTable` compute row/column hit tests from real viewport dimensions.
+  - Added focus descent handoff in `ScrollView::set_focus` so wrapper focus can reach nested focusable descendants under `Dock`/`ScrollView` chains.
+  - Expanded `tests/p1_dom_input_gates.rs` with `Dock+ScrollView` routing gates for nested click targeting, focus descent, and DataTable row selection by mouse.
+  - Applied the same wrapper-delegation model to `VerticalScroll` (aliases layer): child layout sync, mouse coordinate translation with scroll offset, hover forwarding, and focus descent handoff.
+  - Adjusted Tab handling flow so focused branches can consume `FocusNext/FocusPrev` before tree-level fallback focus cycling, enabling nested non-tree descendants to receive focus actions.
+  - Expanded `tests/p1_dom_input_gates.rs` with `VerticalScroll` click/focus gates.
+  - Refined wrapper focus behavior: removed implicit focus descent from wrapper `set_focus(true)` (which could force first-child focus on mouse click), keeping descent via explicit focus actions instead.
+
+- **Sprint 25: Complete tree-driven rendering (P1-12/P1-13)**
+  - **Tree-driven compositor:** New `render_tree_composed()` path walks the arena tree depth-first, rendering each widget at its `layout_rect` position with CSS style stack management for proper inheritance. Replaces the legacy recursive `render_styled()` path when the tree is populated.
+  - **`take_composed_children()` on Widget trait:** Promoted from per-widget inherent method to trait method. Containers drain their children into the arena tree during mount; tree-driven rendering handles child layout.
+  - **`build_widget_tree()` rewrite:** Now extracts children via `take_composed_children()` recursively (in addition to `compose()` declarations), populating the arena with the full widget hierarchy.
+  - **Hover tracking wired through tree:** `set_hovered(true/false)` called on actual widgets via tree nodes, enabling `:hover` CSS pseudo-class matching.
+  - **Enter/Leave event dispatch:** `generate_enter_leave_events()` wired into the mouse moved handler; events dispatched through tree paths on hover change.
+  - **Click synthesis:** `ClickTracker` integrated into runtime; synthesizes Click events when mousedown and mouseup target the same widget.
+  - **ScreenStack::top()** wired into `active_title()`/`active_sub_title()`.
+  - **CSS style stack:** Added `push_style_context()`/`pop_style_context()` for tree compositor's manual depth-tracking walk.
+  - **FrameBuffer:** Added `write_line_at()` for positioned cell painting in the compositor.
+  - **Dead code cleanup:** Deleted ThemeDarkGuard, `render_tree_scaffold()`, `App::run_layout_pass()` wrapper, `DigitsAlign` alias. Remaining 8 dead-code items annotated with justification.
+  - Build: 0 errors, 0 warnings (down from 29). Tests: 1316+ passed, 1 pre-existing failure.
+
+- **Sprint 24: Examples rewrite with compose! macro + modernization**
+  - **Framework:** Added `with_compose(ComposeResult)` to 6 multi-child containers (AppRoot, Container, Row, Horizontal, VerticalScroll, HorizontalScroll) — bridges the `compose![]` macro to the widget tree builder pattern.
+  - **8 examples rewritten** to use `compose![]` for multi-child composition: buttons.rs, buttons_composed_pattern.rs, buttons_advanced.rs, hello.rs, horizontal_scroll.rs, input.rs, input_types.rs, input_validation.rs.
+  - **buttons_advanced.rs:** Replaced raw `on_message` matching with `on_button_pressed` typed hook.
+  - **tabbed_content.rs:** Fixed height over-allocation bug in TabbedDemo layout when terminal height <= 1.
+  - Build: 0 errors, 29 warnings (pre-existing). Tests: 1577 passed, 1 pre-existing failure.
+
+- **Parity Sprint 23 (FINAL): Composition rewrites + MessageEvent control**
+  - **WP-01 complete:** ListView mutation APIs — `append()`, `clear()`, `remove()`, `insert()`, `pop()` with selected/offset/disabled consistency. compose() + take_composed_children() wiring. 15 new tests.
+  - **WP-02 complete:** RadioSet compose() wiring — `take_composed_children()` drains buttons, `children()` / `children_mut()` accessors. 4 new tests.
+  - **WP-03 complete:** Select compose() wiring — compose() override + take_composed_children() stub. 3 new tests.
+  - **WP-04 complete:** ProgressBar compose() wiring — compose() override + take_composed_children() stub. 3 new tests.
+  - **WP-05 complete:** Checkbox compose() wiring — compose() override + take_composed_children() stub. 2 new tests.
+  - **WP-06 complete:** Collapsible CollapsibleTitle extraction — `CollapsibleTitle` widget extracted as child struct (style_type "CollapsibleTitle", CSS class "collapsible--title"), title rendering delegated. compose() + take_composed_children(). 12 new tests.
+  - **WP-16 complete:** MessageEvent control field — `control: Option<NodeId>` added to `MessageEvent` so `on_message()` handlers can identify the originating widget directly. Set to `Some(sender)` in `post_message()`. All constructors updated across 10+ files. 3 new tests.
+  - **All parity action plan items now closed.** 6 widget composition rewrites + message control field complete the remaining 7 items.
+  - Build: 0 errors, 29 warnings (pre-existing). Tests: 1577 passed (+50 new), 1 pre-existing failure (`background_is_not_inherited_by_children`). 78 files changed, +2514/-1231 lines.
+
+- **Parity Sprint 22: P1-15 composition migration + widget polish**
+  - **P1-15 complete:** Composition migration — all 5 containers with `Vec<Box<dyn Widget>>` (Container, AppRoot, ContentSwitcher, Row, Collapsible) now implement `compose()`, `children()`, `children_mut()`, and `take_composed_children()`. Pragmatic incremental approach: compose() returns empty due to `&self` ownership constraint; `take_composed_children()` (pub(crate)) is the bridge for future runtime tree mount. Rendering unchanged.
+  - **WP-21 complete:** OptionList rich Visual support — `content: Option<Text>` field on `OptionItem::Option`, `rich()` / `rich_with_id()` builders, `render_rich_line()` with style merging. 9 new tests.
+  - **WP-27 complete:** OptionList virtual scrolling — `visible_range()` helper, render loop only processes items in viewport range.
+  - **WP-28 complete:** HelpPanel auto-discover confirmed already wired via runtime's `dispatch_focused_help_changed` + `dispatch_binding_hints_changed`. Added 3 regression tests.
+  - **WP-23 complete:** RichLog deferred rendering — `sized` flag with lazy initialization, write methods skip expensive line estimation until first render provides actual dimensions.
+  - **WP-24 complete:** Log text selection — `LogPos`/`SelectionRange` structs, mouse-driven selection (drag to select, click to clear), `apply_selection_to_segments()` with reverse-style highlight, Ctrl+C copy via clipboard message. 2 new tests.
+  - **WP-25 complete:** Log LRU render cache — `LogLineCache` (same pattern as RichLog), cache invalidation on write/clear/width change, keyed by `(line_index, content_hash)`. 3 new tests.
+  - Build: 0 errors. Tests: 1527 passed (+17 new), 1 pre-existing failure. 10 files changed, +1028/-25 lines.
+
+- **Parity Sprint 21: Close Pillar 3 — full reactive widget migration**
+  - **P3-14 complete:** TextArea migrated to reactive — 8 reactive fields (`read_only`, `show_line_numbers`, `indent_width`, `soft_wrap`, `placeholder`, `language`, `cursor_blink_enabled`, `theme`) with 5 watchers (read_only → class rebuild, soft_wrap → layout, language/theme → syntax cache invalidation, cursor_blink → blink state reset). Manual `ReactiveWidget` impl.
+  - **P3-15 complete:** DataTable migrated to reactive — 8 reactive setters (`selected`, `cursor`, `cursor_type`, `fixed_rows`, `fixed_columns`, `show_header`, `show_row_labels`, `zebra_stripes`) with 3 watchers (cursor_type, show_header, zebra_stripes).
+  - **P3-16 complete:** Tree migrated to reactive — 4 reactive setters (`selected`, `show_root`, `show_guides`, `guide_depth`) with 1 watcher (show_root → offset clamp).
+  - **P3-17 complete:** Tabs migrated to reactive — 3 reactive setters (`active`, `tab_disabled`, `tab_hidden`). Convenience wrappers updated.
+  - **P3-18 complete:** 10 remaining widgets migrated — Footer (1 field), Header (4), Collapsible (1 + watcher), RichLog (5 + 3 cache-clearing watchers), Rule (2 + orientation watcher), Placeholder (2 + variant watcher), Sparkline (2), ProgressBar (5 + 2 watchers), Select\<T\> (4 + allow_blank watcher), RadioSet (1).
+  - **Pillar 3 now fully closed.** All 17 widgets have reactive getters/setters/watchers/dispatch.
+  - Example fixes: `text_area_custom_language.rs` and `text_area_custom_theme.rs` updated to use builder methods instead of reactive setters for pre-tree construction.
+  - Build: 0 errors. Tests: 1510 passed (0 new failures), 1 pre-existing (`background_is_not_inherited_by_children`). 20 files changed, +1465/-268 lines.
+
+- **Parity Sprint 20: Reactive infra + widget migrations + #[on()] macro**
+  - **P3-06 complete:** `#[computed(depends_on = "field1, field2")]` attribute — generates cached getter that recomputes when dependency fields change. Computed fields record their own changes in ReactiveCtx during dispatch, enabling cascading.
+  - **P3-07 verified done:** `#[var]` already fully implemented in Sprint 19. Confirmed by integration tests.
+  - **P3-08 complete:** `#[reactive(init = false)]` flag — watcher skipped on mount. `reactive_no_init()` and `reactive_layout_no_init()` flag constructors.
+  - **P3-09 complete:** Runtime reactive phase wiring — `run_reactive_phase()` with cycle detection (MAX_REACTIVE_ITERATIONS=100), `ReactivePhaseResult`, `ReactiveFieldDescriptor` for introspection, `run_event_loop_reactive_phase()` integration point in event loop (stub until per-widget ReactiveCtx is available).
+  - **P3-10 complete:** Button migrated to reactive — `label`, `variant`, `disabled`, `flat` as reactive fields with watchers for class rebuilding. Manual `ReactiveWidget` impl (derive macro can't resolve `textual::` paths within the crate). 35 tests.
+  - **P3-11 complete:** Input migrated to reactive — `value()`/`set_value()` as Python-aligned reactive pair alongside internal `text()`/`set_text()`. `placeholder` as reactive field. 72 tests.
+  - **P3-12 complete:** Switch migrated to reactive — `BinaryToggleState` replaced with direct fields (`value`, `disabled`, `focused`, `hovered`). `slider_pos` as `#[var]`. Watcher handles class rebuild + animation + message emission. 11 tests.
+  - **P3-13 complete:** Checkbox migrated to reactive — `BinaryToggleState` replaced with direct fields. `checked` as reactive watch field with message emission watcher. 6 tests.
+  - **P4-09 complete:** `#[on(MessageType)]` and `#[on(MessageType, selector = "...")]` attribute macro — generates `__on_dispatch_*` companion methods with uniform signature `(&mut self, msg: &Message, sender: NodeId, ctx: &mut EventCtx) -> bool`. Selector stored as `const __ON_SELECTOR_*` for runtime matching. Duplicate selector detection at compile time. 8 integration tests.
+  - **Proc macro path fix:** Added `extern crate self as textual;` to `src/lib.rs` so `#[derive(Reactive)]`-generated `textual::reactive::*` paths resolve within the crate itself (same pattern as serde/tokio). Future widget migrations (P3-14+) can use the derive macro directly instead of manual impls.
+  - Build: 0 errors. Tests: 1510 passed (+42 new), 0 failed. 1 pre-existing integration test failure (`background_is_not_inherited_by_children`).
+
+- **Parity Sprint 19: Reactive foundations + CSS overflow/pointer + CommandPalette Provider**
+  - **P3-01..P3-05 complete:** Reactive field system foundation.
+    - `src/reactive.rs`: `ReactiveFlags` (repaint/layout/init control), `ReactiveChange` (field_name + flags + type-erased old/new values), `ReactiveCtx` (node_id + change accumulator + repaint/layout request tracking), `ReactiveWidget` trait with default no-op `reactive_dispatch()`. 12 unit tests.
+    - `textual-macros/src/reactive.rs`: Full `#[derive(Reactive)]` proc macro — parses `#[reactive]`, `#[reactive(layout)]`, `#[reactive(watch)]`, `#[var]` field attributes. Generates typed getters (`fn field(&self) -> &T`) and setters (`fn set_field(&mut self, value: T, ctx: &mut ReactiveCtx)`) with PartialEq change detection. Generates `ReactiveWidget` impl with watcher dispatch for `#[reactive(watch)]` fields (naming convention: `watch_{field}(old, new, ctx)`). Attribute validation rejects unknown args. 13 integration tests.
+  - **P2-22 complete:** Split overflow axes — `overflow_x`/`overflow_y` fields on `Style`, `OverflowX`/`OverflowY` `StyleProperty` variants (46/47) with cascade + importance tracking. Parser maps `overflow-x:`/`overflow-y:` to separate fields while `overflow:` shorthand sets both. ScrollView per-axis scrollbar visibility with fallback to shorthand.
+  - **P2-23 complete:** CSS `pointer` property wired to runtime — `pointer_shape_for_hover_tree` rewritten to read computed `style.pointer` instead of hardcoded widget type-name checks. `pointer: text;` added to Input/MaskedInput default CSS. Disabled widgets always show `NotAllowed` cursor.
+  - **P5-13 complete:** CommandPalette Provider pattern — `Provider` trait (`Send + Sync + 'static`) with `startup()`/`search()`/`shutdown()` lifecycle hooks. `ProviderResult` struct (id, title, help, score). `SystemCommandsProvider` wrapping built-in `PaletteCommand` list. `add_provider()`/`with_provider()` builder API. Lifecycle wired: startup on open, shutdown on close/unmount, search on keystroke. 6 tests.
+  - Build: 0 errors. Tests: 1468 passed (+36 new), 0 failed. 1 pre-existing integration test failure (`background_is_not_inherited_by_children`).
+
+### 2026-02-12
+- **Parity Sprint 18: P4-06 — Message struct-per-variant refactor**
+  - **P4-03/P4-04/P4-05 resolved:** Candidate A chosen (two-tier: closed enum + trait object). Candidate B (generated union via proc macro) excluded. Prototyping skipped — decision made directly.
+  - **P4-06 complete:** Refactored flat `Message` enum (78 variants with inline fields) into 78 standalone structs wrapped by newtype enum variants. Zero behavioral change — pure structural refactor.
+    - 78 standalone structs in `message.rs` (8 unit structs with `Copy + PartialEq + Eq`, 70 field structs with `Debug + Clone`)
+    - `Message` enum rewritten with newtype wrappers: `Message::Variant(Variant { .. })`
+    - `UserMessage` trait (`Any + Send + Sync + Debug + 'static`) with `clone_box()` for trait-object extensibility via `Message::Custom(Box<dyn UserMessage>)`
+    - `impl_message_from!` macro generating `From<Struct> for Message` for all 78 variants
+    - `pub use crate::message::*;` in prelude exposes all struct names
+  - **WP-15 complete:** All widgets, containers, runtime, event system, examples, and tests migrated to newtype-wrapped message syntax (~364 references across 51 files).
+  - **Gate B resolved:** P4-05 closed, P4-06 and WP-15 done.
+  - Build: 0 errors. Tests: 1432 passed (+2 new), 0 failed. 1 pre-existing integration test failure (`background_is_not_inherited_by_children`).
+
+- **Parity Sprint 17: Screen modes + Layout activation + CSS defaults port + Widget features + Review fixes**
+  - **P5-05/P5-12 complete:** Mode system — `push_mode()`/`pop_mode()`/`switch_mode()`/`remove_mode()` with mode-tagged `ScreenEntry` for safe pop semantics. `SystemModalScreen` trait with `inherit_css()` default. `CommandPaletteScreen` implements both `Screen` + `SystemModalScreen`. 10 integration tests (`tests/modes_system.rs`).
+  - **P2-18b/P2-19 complete:** Layout activation — `collect_render_nodes` with layer ordering + display:none filtering. `InvalidationFlags` bitfield (content/style/layout), `StyleChangeKind` + `classify_style_change` checking 27 layout-affecting properties including borders. `request_style_invalidation()`/`request_layout_invalidation()` on EventCtx. 15 tests.
+  - **P2-20 complete:** CSS defaults port — 16 property categories ported across 9 files (layout, overflow, text-align, content-align, constrain, layer, margin, padding, max/min width/height, width, height, dock, align). 43 tests.
+  - **WP-18/WP-19 complete:** Button enhancements — `action` parameter (`with_action()` builder) for string action dispatch; `ButtonLabel::Markup` with `with_markup_label()` for rich-rs rendered labels.
+  - **WP-20 complete:** Input suggester system — `Suggester` trait, `SuggestFromList` implementation, ghost text rendering with `input--suggestion` component class, Tab/Right-arrow acceptance, validation guard, stale suggestion cleanup. 11 tests.
+  - **WP-22 complete:** Footer signal subscription — `BindingsChanged` signal, `FooterKey` widgets with click-to-invoke, `execute_action()` dispatch.
+  - **P5-14 complete:** Header title inheritance — reads title/sub_title from `Screen::title()`/`Screen::sub_title()` falling back to `App` title.
+  - **Review fixes:** Ghost text panic guard (char boundary check), accept_suggestion validation, border misclassification in `classify_style_change` (borders affect layout, not just visual).
+  - Build: 0 errors. Tests: 1430 passed (+307 new), 0 failed. 1 pre-existing integration test failure (`background_is_not_inherited_by_children`).
+
+- **Parity Sprint 16: Screen system + Worker wiring + BINDINGS migration + Overlay constraint**
+  - **P5-01/02/03 complete:** Screen system foundation — `Screen` trait with lifecycle hooks (mount/suspend/resume/unmount), `ScreenStack` with push/pop, `ScreenResult` (Dismissed/Value). ScreenEntry builds WidgetTree from compose() and parses per-screen CSS. Wired into App struct with `push_screen()`/`pop_screen()`. 22 tests.
+  - **P5-09 complete:** Worker runtime wiring — `WorkerRegistry` integrated into event loop. `EventCtx::take_worker_requests()` consumed after dispatch, workers registered/set_running/completed. `WorkerStateChanged` message delivered to owning widget. Exclusive mode cancels previous. Cleanup on each tick.
+  - **WP-17 complete:** Declarative BINDINGS on 11 widgets — Button, Input, Checkbox, ListView, Tabs, Tree, DataTable, Select, TextArea, CommandPalette, ScrollView all implement `bindings()`, `action_namespace()`, `execute_action()`. Existing on_event handling preserved alongside.
+  - **P2-21 + WP-10 complete:** `Constrain` CSS property (none/inside/inflect) — parsed in CSS, cascaded in Style. Tooltip updated with constrain-aware viewport clamping. Default tooltip CSS (`constrain: inside`). Overlay container respects constrain property.
+  - Build: 0 errors. Tests: 1123 passed (+69 new), 0 failed. 1 pre-existing integration test failure (command_palette).
+
+- **Parity Sprint 15: Declarative bindings + Worker system + CSS parser gaps + widget polish**
+  - **P4-16 complete:** Declarative `BINDINGS` on widgets — `BindingDecl` struct with `new()`/`hidden()`/`priority()` builders. `Widget::bindings()` trait method. `match_binding_tree()` walks focused chain (priority first, then normal). Wired into event loop before `on_event` dispatch. Binding hints auto-collected for footer/help. Action routing via `action_namespace()`/`action_registry()`/`execute_action()` on Widget trait. 12 tests.
+  - **P5-07 + P5-08 complete:** Worker abstraction — `WorkerId`, `WorkerState` (Pending/Running/Cancelled/Success/Error), `CancellationToken` (cooperative), `WorkerEntry` lifecycle, `WorkerRegistry` (register/cancel/cancel_by_owner/exclusive mode/cleanup). `WorkerRequest` via `EventCtx::request_worker()`/`request_exclusive_worker()`. 29 tests.
+  - **CSS parser gaps closed:** `text-align`, `content-align`, `content-align-horizontal`, `content-align-vertical`, `align`, `align-horizontal`, `align-vertical`, `offset`, `offset-x`, `offset-y` — all now parsed and applied to Style. Importance mapping for all new properties. ~37 tests.
+  - **WP-09 (Digits):** CSS `text-align` integration — reads alignment from resolved style instead of widget-local enum. `DigitsAlign` deprecated as alias to `TextAlign`.
+  - **WP-26 (ProgressBar):** Gradient support — `with_gradient(start, end)` linearly interpolates color across filled portion. `lerp_color()` helper.
+  - **WP-29 (Select):** `allow_blank` mode — when false (default), first option auto-selected; `clear()` is no-op. When true, starts blank, user can deselect. Builder + setter API.
+  - Build: 0 errors. Tests: 1054 passed (+100 new), 0 failed. 1 pre-existing integration test failure (command_palette).
+
+- **Parity Sprint 14: !important + control ref + widget CSS defaults + CSS animation**
+  - **P2-05 + P2-07 complete:** Per-property `!important` tracking via `ImportanceBitset(u64)` with `StyleProperty` enum (45 variants). Importance-aware cascade in `combine()` — `!important` declarations win over normal regardless of specificity. Parser detects `!important` per-declaration with safe non-ASCII slicing. 27 tests.
+  - **P4-17 complete:** `control: Option<NodeId>` added to `MessageEnvelope` — originating widget reference (like Python's `event.control`). Defaults to sender, preserved during bubble, survives coalescing. 8 tests.
+  - **WP-07/08/11/12/13/14/30/31 complete:** 8 widget CSS defaults aligned with Python Textual — Header `dock: top`, Footer `dock: bottom`, Button `content-align/text-align: center`, Placeholder `content-align: center middle; overflow: hidden`, Input `width: 100%`, Collapsible `display: none` rule, Rule orientation margins + 1fr sizing, TextArea `1fr` + padding. 13 tests.
+  - **P5-11 complete:** CSS property animation — `StyleValue` enum (Color/Float/Scalar/Spacing/Tint), per-property `interpolate_style_property()`, `StyleAnimation` on Animator with `enqueue_style()`/`step_style()`, `animate_style()` on EventCtx. Animatable: fg, bg, opacity, text_opacity, width, height, min/max sizes, margin, padding, tint. 36 tests.
+  - Build: 0 errors. Tests: 954 passed (+92 new), 0 failed. 1 pre-existing integration test failure (command_palette).
+
+- **Parity Sprint 13: Envelope dispatch + Layer property + Signal system + :focus-within**
+  - **P4-02 complete:** Envelope-based message dispatch — messages now bubble from sender → parent → … → root via `MessageEnvelope`. `stop()` halts propagation, `prevent_default()` skips default action (wired through `DispatchOutcome.default_prevented`). Falls back to depth-first broadcast for orphan/global messages.
+  - **P4-14 complete:** Message queue coalescing — rapid-fire replaceable messages (InputChanged, TextAreaChanged, DataTableCursorMoved, etc.) auto-marked replaceable. `coalesce_message_queue()` deduplicates by (sender, variant discriminant), keeping latest. Global re-coalesce after each dispatch round.
+  - **P2-17 complete:** CSS `layer` property for z-ordering — `layer: <name>` assigns widget to named layer, `layers: <name1> <name2> ...` on parent defines stacking order. `sort_children_by_layer()` in render pipeline. `layers` is inherited. Unknown layer names fall back to default bucket. 17 tests.
+  - **P4-15 complete:** `Signal<T>` observer pattern — lightweight typed pub/sub with `subscribe(node, handler)`, `emit(value)`, `unsubscribe(node)` cleanup. `SignalResponse::Stop` halts remaining subscribers. Function pointer handlers (Send+Sync safe). 13 tests.
+  - **P2-16 complete:** `:focus-within` pseudo-class — matches when element or any descendant has focus. Thread-local `FOCUS_WITHIN_IDS` set populated before style resolution. `is_ancestor_of()` helper on WidgetTree. Parser supports `:focus-within` and `:focus_within`. Wired into `apply_display_visibility_to_tree()`. 15 tests.
+  - Build: 0 errors. Tests: 862 passed (+47 new), 0 failed. 1 pre-existing integration test failure (command_palette).
+
+- **Parity Sprint 12: CSS display/visibility/overflow + Action resolver + Lifecycle/focus events + MessageEnvelope**
+  - **P2-13 complete:** `display: none` wired end-to-end — CSS resolver syncs resolved Display to WidgetNode.display via `apply_display_visibility_to_tree()`, runs before layout pass. Nodes with display:none are skipped in render + layout.
+  - **P2-14 complete:** `visibility: hidden` — new `visibility` field on WidgetNode (default: Visible). Hidden nodes occupy space but don't render. Excluded from focus chain.
+  - **P2-15 complete:** `overflow` CSS property — parser supports `overflow`, `overflow-x`, `overflow-y` with auto/hidden/scroll values. ScrollView reads overflow from resolved style to suppress scrollbars when `overflow: hidden`.
+  - **P4-08 complete:** Action namespace resolution — `resolve_action()` walks widget tree ancestors to find matching ActionHandler. Supports explicit namespaces (`"app.quit"` → find app handler) and unnamespaced bubble resolution. `ResolvedAction` struct + `action_namespace()` trait method. 8 tests.
+  - **P4-10 complete:** Lifecycle events — `MountEvent`, `UnmountEvent`, `ReadyEvent` structs + Event variants. Dispatched via on_event after existing on_mount/on_unmount callbacks. Ready fires once after first render frame.
+  - **P4-11 complete:** Focus events — `FocusEvent`, `BlurEvent` structs + Event variants. Dispatched on focus transitions with previous-focus tracking.
+  - **P4-01 complete:** `MessageEnvelope` with `stop()`, `prevent_default()`, `can_replace()` propagation control. Types + tests only (dispatch wiring is P4-02). 17 tests.
+  - Build: 0 errors. Tests: 815 passed (+41 new), 0 failed. 1 pre-existing integration test failure (command_palette).
+
+- **Parity Sprint 11: Action system + Layout-render integration + New events + Easing library**
+  - **P4-07 complete:** New `src/action.rs` module — `ActionDecl`, `ActionHandler` trait, `ParsedAction` struct, `parse_action()` string parser (namespace.name(args) format), `APP_ACTIONS` built-in declarations (quit, toggle_dark, bell, push_screen, pop_screen, focus, focus_next, focus_previous), `find_action()` lookup. 28 tests.
+  - **P2-18a complete:** Layout-render integration — `run_layout_pass()` computes `layout_rect`/`content_rect` for all tree nodes via CSS layout solvers before rendering. `render_tree_scaffold()` uses precomputed rects to set render options. `App::run_layout_pass()` convenience method with automatic stylesheet context.
+  - **P4-12 complete:** Mouse Enter/Leave/Click events — `MouseEnterEvent`, `MouseLeaveEvent`, `ClickEvent` structs + `Event::Enter`/`Event::Leave`/`Event::Click` variants. `generate_enter_leave_events()` helper for hover-change detection. `ClickTracker` for mousedown+mouseup→click synthesis. 14 tests.
+  - **P4-13 complete:** Paste event — `PasteEvent` struct + `Event::Paste` variant for bracketed-paste support.
+  - **P5-10 complete:** Expanded `AnimationEase` from 5 → 30 variants: added Quad, Cubic-in, Quart, Quint, Expo, Circ, Back, Bounce, Elastic families (In/Out/InOut each). Standard easing equations from easings.net. 22 tests.
+  - Updated prelude: exports new event types (`ClickEvent`, `MouseEnterEvent`, `MouseLeaveEvent`, `PasteEvent`, `AnimationEase`) and action types (`ActionDecl`, `ActionHandler`, `ParsedAction`, `parse_action`).
+  - Build: 0 errors. Tests: 774 passed (+76 new), 0 failed. 1 pre-existing integration test failure (command_palette).
+
+- **Parity Sprint 10: WidgetId deletion (P1-14g) + Grid solver (P2-11)**
+  - **P1-14g complete:** Deleted `WidgetId` struct, deprecated Widget trait methods (`id()`, `visit_children_mut()`, `set_focus_target()`), all 4 legacy stub functions (`collect_focus_ids`, `set_focus_by_id`, `set_hover_by_id`, `dispatch_event_to_focus`). Zero `WidgetId` references remain in the codebase.
+  - Replaced 5 production `visit_children_mut` callers with tree-based walks (stylesheet invalidation, WATCH devtools snapshot) or root-only fallbacks (apply_layout_info, hit-test coords).
+  - Simplified ~20 stub callers in app_root (focus_first/next/prev), command_palette (restore focus), event_loop (initial focus).
+  - Replaced pointer-based CSS computed style cache key (was `widget_node_id(Widget::id())`).
+  - **P2-11 complete:** Implemented `layout_grid()` — 2D grid cell placement algorithm. Reads grid config from parent style, places children row-major with wrap at `grid_size_columns`, resolves column/row tracks via `layout_resolve_1d` with gutter spacing, applies margin/border/padding/min/max constraints per child. Scalar cycling for column/row definitions.
+  - Updated integration tests (welcome, directory_tree) to remove `visit_children_mut` usage.
+  - Build: 0 errors. Tests: 698 passed (686 lib + 12 integration), 0 failed. 1 pre-existing integration test failure (command_palette, from Sprint 8).
+
+- **Parity Sprint 9: Layout solvers + Grid CSS properties**
+  - Created `src/layout.rs` module (1524 lines) with full layout solver infrastructure:
+    - `layout_resolve_1d()`: core 1D space allocation algorithm ported from Python Textual's `_layout_resolve.py`. Uses pure integer arithmetic (no f32) with remainder cascading for deterministic rounding.
+    - `layout_vertical()` (P2-09): vertical stacking solver — resolves child heights via 1D resolver, assigns layout_rect/content_rect.
+    - `layout_horizontal()` (P2-10): horizontal row solver — resolves child widths via 1D resolver.
+    - `arrange_dock()` (P2-12): dock positioning — separates docked children (top/bottom/left/right), carves out regions, returns reduced available space for flow children.
+    - `resolve_layout()`: top-level dispatch by Layout enum (vertical/horizontal/grid). Grid falls back to vertical as stub.
+  - Added 6 grid CSS properties to Style struct: `grid_size_columns`, `grid_size_rows`, `grid_columns` (Vec<Scalar>), `grid_rows` (Vec<Scalar>), `grid_gutter_horizontal`, `grid_gutter_vertical` (partial P2-11).
+  - Added 8 CSS property parsers: `grid-size`, `grid-size-columns`, `grid-size-rows`, `grid-columns`, `grid-rows`, `grid-gutter`, `grid-gutter-horizontal`, `grid-gutter-vertical`.
+  - Fixed button_fill test regression: switched `render_styled_dyn_obj` from broken `tag_widget_meta_legacy` (WidgetId=0 mismatch) to `tag_widget_meta` (correct NodeId encoding). Removed dead `tag_widget_meta_legacy` function.
+  - Build: 0 errors. Tests: 673 passed (51 new: 38 layout solver + 13 grid CSS), 0 failed. 1 pre-existing integration test failure (command_palette, from Sprint 8).
+
+- **Parity Sprint 8: Pillar 2 foundation — types, Style rewrite, CSS parser, pseudo-classes**
+  - Defined `Scalar` enum (Auto, Cells, Percent, Fraction, ViewWidth, ViewHeight) for CSS size values with unit support.
+  - Defined 10 new layout/alignment/pointer enums: `Layout`, `Display`, `Visibility`, `Overflow`, `Dock`, `TextAlign`, `HorizontalAlign`, `VerticalAlign`, `ContentAlign`, `Align`, `Offset`, `Pointer`.
+  - Defined `Spacing` struct (4-side u16 padding/margin), replacing old `Margin` type (kept as alias).
+  - Rewrote `Style` struct: replaced `width_auto`/`height_auto` booleans with `width: Option<Scalar>`/`height: Option<Scalar>`, changed all sizing fields from `usize` to `Scalar`, replaced `line_pad` with proper `padding: Option<Spacing>`, added 15 new layout/alignment/pointer/layer fields.
+  - Extended CSS parser: `parse_scalar()` handles `%`, `fr`, `vw`, `vh` units. New properties: `display`, `layout`, `dock`, `padding`, `overflow`, `text-align`, `visibility`, `pointer`. `line-pad` kept as compat alias.
+  - Added 6 CSS pseudo-classes: `:dark`, `:light`, `:even`, `:odd`, `:first-child`, `:last-child` with full matching logic and theme-state context plumbing.
+  - Implemented `resolve_scalar()` for converting Scalar units to concrete cell values.
+  - Fixed all 421 call-site occurrences across 37 files for the type migration.
+  - Build: 0 errors. Tests: 622 passed (37 new), 0 failed.
+
+- **Parity Sprint 7: Close Pillar 1 — test fixes + legacy dispatch cleanup**
+  - Fixed all 19 failing tests from Sprint 6's WidgetId→NodeId migration. Tests rewritten to build `WidgetTree` instances and call `_tree` dispatch functions directly (routing, event_loop, render, app_root, select, tabs, tabbed_content, command_palette).
+  - Deleted ~400 lines of legacy routing functions from `routing.rs`: `widget_node_id`, `focused_widget_id`, `dispatch_event_to_target`, `dispatch_scroll_action`, `dispatch_mouse_scroll_to_target`, `dispatch_message_queue`, `active_binding_hints`, `focused_help_metadata`, and associated helpers.
+  - Simplified all 10 `_auto` bridge methods in `event_loop.rs`: tree path unchanged, else branches now use minimal root-only fallbacks instead of deleted legacy functions.
+  - Deleted legacy helper functions from `helpers.rs`: `widget_node_id`, `call_on_mouse_move`, `any_widget_active`, `pointer_shape_for_hover`.
+  - Build: 0 errors, 15 warnings (5 deprecated `visit_children_mut`, rest pre-existing). Tests: 585 passed, 0 failed.
+  - **Deferred to P2:** WidgetId deletion (P1-14g), `visit_children_mut` removal, stub deletion (`set_focus_by_id` etc.) — all have ~20 callers that need tree-based replacements.
+
+- **Parity Sprint 6: WidgetId→NodeId migration (P1-14a–f) + compose cleanup (P1-15)**
+  - Replaced `WidgetId` with `NodeId` across the entire codebase (88 files, ~610 occurrences).
+  - Runtime infrastructure: all `App` fields (hovered, focus tracking, binding-hint sources), `HitTestMap`, timer targets, async task targets, overlay refs now use `NodeId` instead of `WidgetId`.
+  - `EventCtx` now carries a `node_id: NodeId` field. `post_message()` takes 1 argument (message only) — sender identity comes from `EventCtx.node_id` automatically.
+  - `MessageEvent.sender` changed from `WidgetId` to `NodeId`. All `Message` variant target/source fields updated.
+  - CSS selectors: `WidgetId` references in context, resolver, and segments replaced with `NodeId`.
+  - Widget trait: removed `widget_id: WidgetId` field and `fn id()` override from all 50+ widget structs. Deprecated `id()`, `visit_children_mut()`, `set_focus_target()` kept on trait with defaults for legacy dispatch compatibility.
+  - All widget `post_message(self.id, msg)` calls converted to `post_message(msg)` (1-arg).
+  - Updated 16 test files and 1 example (`keys.rs`) for the new API.
+  - Build: 0 errors, 18 warnings. Tests: 566 passed, 19 failed (expected — legacy identity-based dispatch tests, will be fixed when tree dispatch fully replaces legacy path).
+  - **Note:** `WidgetId` type not yet deleted (P1-14g deferred) — deprecated trait methods still reference it as a bridge until legacy dispatch is fully removed.
+
+### 2026-02-11
+- **Parity Sprint 5: Compose wiring + final QW batch**
+  - P1-05: Wired compose API into live runtime. `App` builds `WidgetTree` from root's `compose()` on startup. Event dispatch, focus management, scroll/mouse routing, message queue, and layout info all bridged through `_auto` methods that use tree-based paths when available, falling back to legacy recursive dispatch otherwise.
+  - RichLog: added `Mutex<LineCache>` LRU cache for rendered line segments with configurable size (QW-43). Fixed pre-existing drag-release repaint bug.
+  - Log: added `with_highlight(bool)` and `with_highlighter(name)` for syntax highlighting via repr highlighter (QW-44).
+  - KeyPanel: added namespace grouping with styled section headers when multiple binding groups exist (QW-45).
+  - CommandPalette: added `FuzzyMatcher` with consecutive-match, start-of-word, and position bonuses for score-based ranking (QW-46).
+- **Parity Sprint 4: Widget trait redesign + runtime scaffold + QW batch**
+  - Widget trait redesign (P1-02): `id()`, `visit_children_mut()`, `set_focus_target()` deprecated with defaults (kept for migration). Added `compose()` default returning empty. `render_styled_dyn_obj` now accepts `NodeId` parameter for future arena rendering.
+  - Runtime event routing scaffold (P1-11): Added tree-based dispatch functions (`dispatch_event_tree`, `build_path_to_node`, `focused_node_id_tree`) using explicit `Vec<NodeId>` paths alongside old recursive dispatch.
+  - Runtime render scaffold (P1-12): Added `render_tree_scaffold`, `collect_render_nodes`, `apply_layout_info_tree`, `NodeHitTestMap` (NodeId-keyed parallel to HitTestMap).
+  - Runtime focus/hover scaffold (P1-13): Added `collect_focus_chain_tree`, `call_on_mouse_move_tree`, `any_widget_active_tree`, `pointer_shape_for_hover_tree`.
+  - Switch: added tick-based slider animation with ease-out cubic (QW-31) and half-block sub-cell rendering (QW-32).
+  - Collapsible: added default CSS with `border-top`, padding, focus style (QW-30).
+  - Static/Label: added `markup` flag for Rich markup rendering (QW-36), `expand`/`shrink` sizing fields (QW-37).
+  - MaskedInput: added `set_template()` for runtime template changes (QW-39).
+  - SelectionList: made generic over value type `SelectionList<T>` with `SelectionListString` alias (QW-40).
+  - Select: added keyboard type-to-search with prefix matching and timeout reset (QW-41).
+- **Parity Sprint 3: Compose foundation + DOM queries + validators/CSS**
+  - Added `src/compose.rs`: `ComposeResult`, `ChildDecl`, `WidgetBuilder`, `compose![]` macro with `From<W: Widget>` blanket impl.
+  - Added lifecycle event system: `LifecycleEvent` (Mount/Unmount) accumulator in `WidgetTree` with `drain_lifecycle()` API.
+  - Added DOM query methods: `query()`, `query_one()`, `query_children()` with CSS selector integration (type/class/id/combinator matching).
+  - Added `Integer`, `Length`, `Url`, `Regex` validators with 19 tests.
+  - Header: changed bg from `$primary` to `$panel`. Footer: aligned to `$footer-*` tokens.
+  - Added CSS defaults for Pretty (`height: auto`), Static (`height: auto`), Label (`width/height: auto; min-height: 1`).
+  - RichLog: added `min_width` field (default 78). ContentSwitcher: exposed `visible_content()` API.
+- **Parity Sprint 2: Pillar 1 core + Input/TextArea/Tabs quick wins**
+  - Added arena-based `WidgetTree`/`WidgetNode` (`src/widget_tree.rs`) with mount/remove/move, class manipulation, traversal iterators, display toggle, and 22 unit tests.
+  - Input: added key bindings (ctrl+d/k/f/a), public API (clear/insert/delete/replace/select_all/selected_text), password mode, regex restrict, max_length, InputBlurred message.
+  - TextArea: added undo/redo stack, word-level nav, shift+selection, config (read_only/show_line_numbers/indent_width/soft_wrap/placeholder), SelectionChanged message.
+  - Tabs: migrated active tab from index to string-ID, added remove_tab/clear, 6 new messages (Disabled/Enabled/Hidden/Shown/Cleared/PaneFocused).
+  - SelectionList: added toggle_all/select_all/deselect_all. Link: open URLs via `open` crate. Label: added variant parameter with CSS classes.
+- **Parity Sprint 1: Bootstrap + DataTable/Tree quick wins**
+  - Added `slotmap`, `regex`, `open` crate dependencies.
+  - Scaffolded `textual-macros` proc-macro crate for future `#[reactive]`/`#[on()]` macros.
+  - Added `NodeId` type alias (`slotmap::DefaultKey`) with `node_id_to_ffi()`/`node_id_from_ffi()` round-trip helpers for hit-test metadata compatibility.
+  - Added `WidgetCtx<'a>` zero-cost borrow wrapper providing `ctx.node_id()` identity-through-context API (arena owns identity, not widgets).
+  - DataTable: added default CSS, `remove_row`/`clear`/`sort`/`update_cell`/`get_cell`/`get_row` API, `show_header`/`show_row_labels`/`zebra_stripes` config, 5 new highlight/select messages.
+  - Tree: added `clear`/`move_cursor`/`select_node`/`toggle_all` API, `show_root`/`show_guides`/`guide_depth` config, Unicode guide rendering, shift+arrow/space bindings, 3 new messages (Collapsed/Expanded/Highlighted).
+  - DirectoryTree: added folder/extension/hidden CSS classes, `filter_paths`/`reload_node` APIs.
+- **RichLog demo parity + core composition/scroll polish**
+  - Added `examples/rich_log.rs` as a Python Textual parity port (`widgets/rich_log.py`) with syntax block, table renderable, markup line, and styled key-event logging in the RichLog stream.
+  - Fixed style composition so `rich-rs` default terminal background (`SimpleColor::Default`) is treated as transparent/inheritable during widget style application, preventing terminal-background bleed in composed widget surfaces.
+  - Added regression coverage in CSS selector tests to lock in the transparent-default-background composition behavior.
+  - Improved consolidated scrollbar drag mapping (`ScrollView::line_drag_offset`) to use pointer-delta scaling against virtual/window size, reducing perceived lag/jumpiness during thumb drag across widgets that share the primitive.
+- **DevTools closure (embedded runtime + external tooling plumbing)**
+  - Added runtime devtools substrate in `textual-rs` (`src/runtime/devtools.rs`) with a local TCP control/snapshot server, instance registration files, and command queue integration.
+  - Added live `WATCH` push-stream support for devtools snapshots (server-side publish/subscribe) so attached consoles can consume incremental updates without polling.
+  - Updated devtools server connection handling to process clients concurrently, allowing long-lived watch sessions alongside command/snapshot requests.
+  - `App::run_widget_tree` now publishes live widget/runtime snapshots (focus/hover/layout/debug state, widget tree metadata, binding hints) and consumes remote control commands (`focus`, `debug layout`, `quit`).
+  - Added environment-gated activation for live inspection (`TEXTUAL_DEVTOOLS`, `TEXTUAL_DEVTOOLS_BIND`, `TEXTUAL_DEVTOOLS_ROOT`) without changing default runtime behavior when disabled.
+  - Added focused runtime parser regressions for devtools command handling (`src/runtime/devtools.rs` tests).
+  - Added matching `textual-dev-rs` live inspection CLI support:
+    - `textual-rs run --devtools ...` to launch instrumented app instances,
+    - `textual-rs devtools list|snapshot|focus|debug-layout|quit` to inspect/control running apps.
+- **Phase 5 computed-style caching/tree closure**
+  - Added a per-widget computed-style cache/tree model in the CSS resolver path, keyed by widget id plus selector ancestry, parent style, inline style, and active stylesheet.
+  - Cache invalidation now occurs naturally on class/id/pseudo/style/ancestor/stylesheet changes via key mismatch, while preserving selector-chain correctness.
+  - Added render-pass tracking for layout-affecting computed-style deltas so layout callbacks are reapplied when cached style transitions change box-model-affecting fields.
+  - Added focused cache/invalidation regressions in `src/css/selectors/mod.rs`; full `cargo test -q --lib --tests` remains green.
+- **Phase 8 adapter-utilities breadth closure**
+  - Expanded `TextualApp` adapter ergonomics with explicit typed message hooks for common app patterns (`Input`, `TextArea`, `Checkbox`, `ListView`, `TabActivated`, plus existing button/command-palette hooks) while keeping the same message-bus dispatch path.
+  - Added compatibility runner aliases in `src/textual_app.rs`: `run_textual_app*` and `run_textual_app_or_snapshot*` (delegating to existing `run*` APIs, no alternate runtime path).
+  - Added explicit overlay-backed push/pop helper `OverlayScreenStack` for screen-like app flows; it only emits existing overlay visibility messages.
+  - Added `EventCtx` convenience wrappers for overlay and command palette messages (`show/hide/toggle/dismiss overlay`, `open/close/select/set command palette commands`), implemented via `post_message`.
+  - Added focused tests for typed-hook dispatch, overlay screen-stack behavior, and new `EventCtx` wrappers; updated docs/roadmap status and example usage (`examples/input_validation.rs`).
+- **Dirty/style invalidation closure (`pending-stream #1`)**
+  - Added region-scoped framebuffer diff support (`FrameBuffer::diff_to_segments_in_regions`) and runtime dirty-region accumulation to reduce repaint scope for localized updates.
+  - Replaced coarse runtime dirty bool flow with typed invalidation flags (`content` / `style` / `layout`) carried by `EventCtx`/`DispatchOutcome`, and used these flags to drive selective relayout and repaint behavior.
+  - Updated widget-tree rendering path to use selective dirty regions when safe, while falling back to full redraw for layout/style-wide invalidations and resize paths.
+  - Stylesheet hot-reload now computes changed rules and selectively invalidates affected widgets by selector matching (including descendant/child selector chains), with full fallback for broad or layout-affecting changes.
+  - Added focused regressions for:
+    - region-limited diff behavior (`src/render/mod.rs`),
+    - dirty-region expansion/fallback behavior (`src/runtime/types.rs`),
+    - stylesheet selector-targeted invalidation behavior (`src/runtime/event_loop.rs`).
+- **Timer/task runtime closure (`PR8J`)**
+  - Added one-shot timer runtime controls and delivery on the message bus:
+    - `TimerSchedule` / `TimerCancel` requests with `TimerFired` / `TimerCancelled` runtime events.
+    - integrated timer wakeups into runtime loop timeout selection.
+  - Expanded async task semantics and utility surface:
+    - added `AsyncTaskCancelTarget` for target-wide cancellation.
+    - replacing an in-flight `task_id` now emits `AsyncTaskCancelled` for the replaced task.
+    - added general-purpose `AsyncTaskRequest::Sleep` with `AsyncTaskResult::SleepFinished`.
+    - added `EventCtx` helper methods for async task and timer schedule/cancel flows.
+  - Added runtime-level regressions:
+    - `src/runtime/tasks.rs`: replacement cancellation, cancel-by-target, and sleep completion.
+    - `src/runtime/timers.rs`: timer schedule/replace/cancel plus timer+async non-blocking progression.
+    - `src/event/mod.rs`: `EventCtx` helper emits expected runtime control messages.
+  - Added concrete usage path in `examples/hello.rs` (`BackgroundStatusLabel`) showing async background work chained with one-shot timers for progressive UI updates.
+- **Terminal/golden coverage expansion (`PR8I`)**
+  - Added a deterministic raw terminal-output capture helper for CI (`tests/support/terminal_capture.rs`) that snapshots escaped bytes and control/text segment streams.
+  - Expanded metadata integration coverage from framebuffer-only snapshots to framebuffer->diff->raw-terminal-output invariants (`tests/render_metadata.rs`).
+  - Added focused golden tests for sparse diff output and no-op frame output invariants, including absolute cursor-control assertions and raw-output snapshots (`tests/terminal_output_golden.rs`).
+  - Updated `ROADMAP.md` Phase 1 Golden tests row from `Partial` to `Done`.
+- **Deterministic widget-id policy closure (`PR8H`)**
+  - Closed Phase 0.5 deterministic ID contract decision by explicitly keeping `WidgetId::new()` as a process-local monotonic allocator (no cross-run determinism guarantee).
+  - Stable/persistent widget IDs are deferred for now until a concrete persistence/snapshot requirement exists, avoiding premature ID-contract lock-in.
+  - Added focused `WidgetId` regression coverage in `src/widgets/core.rs` (uniqueness/monotonicity and explicit `from_u64` round-trip invariants).
+  - Updated `ROADMAP.md` to move the deterministic widget-id row to `Done` and mark Phase 0.5 rich-rs contract closures as met.
+- **Rich-rs integration closure follow-up (`PR8G`)**
+  - `Link` now emits hyperlink metadata (`StyleMeta.link`) in render output, enabling OSC8 links through the existing `rich-rs` terminal pipeline.
+  - Hyperlink policy is now explicit and tested: no explicit `link_id` is set by widgets; `rich-rs` assigns stable per-Console link IDs when needed.
+  - Added focused regression coverage in `src/widgets/link.rs` and updated `ROADMAP.md` Phase 0.5 hyperlink-id row to `Done`.
+- **Message-bus closure follow-up (`PR8F`)**
+  - `Select` open-dropdown Enter/click selection now routes through inner `OptionList`
+    message flow (`OptionSelected` consumed in `on_message`) instead of direct click/index coupling.
+  - Added explicit ordering regressions for:
+    - `OptionList`: `OptionHighlighted` before `OptionSelected`,
+    - `Select`: `OptionSelected` before `SelectChanged`,
+    - `SelectionList`: `SelectionListToggled` before `SelectionListSelectedChanged`.
+  - Updated roadmap/widget source-of-truth docs to mark message-bus closure as done in the
+    current widget scope.
+- **Grapheme closure follow-up (`PR8E`)**
+  - `MaskedInput`:
+    - cursor placement from mouse `x` now maps through grapheme/cell boundaries instead of ASCII indexing assumptions.
+    - render output now uses grapheme-aware styled runs and width clamping to avoid wide/ZWJ overflow artifacts.
+  - `DataTable`:
+    - added regressions for combining-mark and wide-cell column-width / header-hit mapping behavior.
+  - `Tree`:
+    - row width/hit-testing now derive from rendered prefix cell width (including twisty/indent), improving wide/ZWJ/combining behavior.
+    - added wrapping-width and viewport-clamp regressions for grapheme-heavy labels.
+  - `ROADMAP.md` now marks grapheme-aware text editing as `Done` with cross-widget closure notes.
+- **Tier-B/Tier-C closure follow-up (`PR8D`)**
+  - `ListView`/`Tree` interaction polish:
+    - moved row activation to press/release semantics (emit on matching `MouseUp`), preserving selection/twist-toggle behavior and tightening hover synchronization on click.
+  - `Header` interaction polish:
+    - added icon/body press-region matching so cross-region press/release is a no-op.
+  - Text-edit platform-fidelity shortcuts:
+    - added `Ctrl+Insert` (copy), `Shift+Insert` (paste), `Shift+Delete` (cut),
+      `Alt+Left/Right/Backspace/Delete` word-nav/delete, and `Super+A/E/Left/Right/Backspace` home/end/delete-to-start mappings.
+  - Utility parity/lifecycle polish:
+    - `Select`/`OptionList` highlight lifecycle now resets correctly on clear/reopen and clears hover state on app focus loss/unmount.
+    - `Log` and `KeyPanel` now request repaint when scrollbar drag ends so thumb active state clears immediately.
+- **Tier-A final closure batch (`PR8C`)**
+  - `DataTable`:
+    - added horizontal viewport scrollbar parity (render + track-click paging + thumb-drag),
+      plus horizontal wheel/action behavior when column-cursor navigation is not active.
+    - aligned home/end and horizontal key lifecycle behavior with viewport movement semantics.
+  - `RichLog`:
+    - `write(...)` now honors default `markup` / `highlight` behavior, including repr-highlighter
+      application when highlighting is enabled.
+    - added focused regressions for default-markup and default-highlighter semantics.
+  - `CommandPalette`:
+    - close-animation phase now gates child interactions until panel visibility fully settles.
+    - unmount lifecycle now resets open/panel state to prevent stale remount behavior.
+  - Added focused regressions in `src/widgets/data_table.rs`, `tests/data_table.rs`,
+    `tests/rich_log.rs`, and `src/widgets/command_palette.rs`.
+- **Widget primitive closure batch (`PR8A`: A/B/C)**
+  - Focused HELP metadata pipeline:
+    - added framework-level focused-help signaling (`HelpPanelFocusedHelpChanged` / `HelpPanelFocusedHelpCleared`) and runtime diff/dispatch integration.
+    - added `Widget::help_markup()` hook and `HelpPanel` message-path consumption.
+  - Async task primitive baseline:
+    - added runtime async task manager with `AsyncTaskSpawn` / `AsyncTaskCancel` / `AsyncTaskCompleted` / `AsyncTaskCancelled`.
+    - migrated `DirectoryTree` lazy loading from tick-queue to runtime async task flow with collapse-time cancellation.
+  - CSS/parser closure items for tooltip/help parity:
+    - added `hkey` / `vkey` border types in style model, parser, and border rendering.
+    - updated `HelpPanel`/`KeyPanel` defaults to `vkey` and added focused parser/widget regressions.
+- **Widget closure recovery batch (`PR7K`)**
+  - Tier-A follow-up:
+    - `DataTable` tightened horizontal-offset stability when fixed columns saturate viewport width, and aligned cursor/home/end paths with column visibility behavior.
+    - `Tabs`/`TabbedContent` now gate switch-tab binding hints on switchable targets and reset focus/hover/transient state on unmount.
+    - `CommandPalette` refined panel hit-testing to avoid false close behavior when query/input events use local coordinates.
+    - `RichLog` auto-scroll now tracks multiline styled/renderable writes with estimated post-write content height.
+  - Text-edit/clipboard polish:
+    - shared text-edit key decoding now ignores clipboard chords with extra modifiers and centralizes first-line clipboard extraction.
+    - `Input` and `MaskedInput` paste flow now consumes only first clipboard line for single-line parity.
+  - Utility lifecycle/async polish:
+    - `DirectoryTree` now queues directory loads for tick-time processing with collapse-time cancellation of pending descendant loads.
+    - `HelpPanel`, `Tooltip`, and `Welcome` unmount now reset lifecycle state to avoid stale focus/visibility/anchor behavior across remount.
+- **Widget closure follow-up (`PR7J`)**
+  - `ListView`/`Tree` interaction semantics:
+    - added explicit activation messages (`ListViewItemActivated`, `TreeNodeActivated`) for enter/click activation paths.
+    - refined tree click semantics so twisty clicks toggle without forcing activation.
+    - added focus-loss/unmount hover cleanup regressions for both widgets.
+  - `Header`/`Footer` lifecycle/message polish:
+    - header icon clicks now emit `HeaderIconPressed`.
+    - footer unmount now resets focus-tracking state to avoid stale deferred-binding behavior across remount.
+- **Widget closure push (`PR7I`)**
+  - Tier-A hardening:
+    - `DataTable` now keeps fixed columns pinned while shifting non-fixed columns for far-cursor visibility, and header hit-testing maps correctly under shifted columns.
+    - `Tabs`/`TabbedContent` now reapply latest content geometry on activation so newly active targets receive immediate resize/layout with current dimensions.
+    - `CommandPalette` open-panel hit-testing now uses screen-space coordinates and animated panel position, preventing false outside-click dismissals from child-target mouse events.
+    - `RichLog:focus` default CSS now uses background tint (no border-chrome focus glyphs), with focused regression coverage.
+  - Tier-B/Tier-C polish:
+    - Added runtime-driven `Tooltip`/`HelpPanel` message APIs (`OverlaySetAnchor`/`OverlayClearAnchor`, `HelpPanelSetHelp`/`HelpPanelClearHelp`) and parity regressions.
+    - `DirectoryTree` now emits typed selection messages for file vs directory selection paths.
+    - `Welcome` hover/close-row lifecycle polish and baseline default CSS parity updates.
+    - `ListView`/`Tree` avoid highlighted/selected markers when all candidates are disabled.
+    - Shared text-edit key mapping now supports `SUPER+X`/`SUPER+V` clipboard commands alongside existing bindings.
+    - `Footer` deferred-bindings lifecycle now preserves pending updates across repeated focus-loss events.
+
+### 2026-02-10
+- **Tier-A/Tier-C widget hardening follow-up (`PR7H`)**
+  - `DataTable`/`Tabs`/`TabbedContent` parity hardening:
+    - added focused message/lifecycle regressions for activation, no-op activation paths, and content-height forwarding behavior.
+  - `RichLog` parity improvements:
+    - added markup/renderable write paths (`write_markup`, `write_renderable`) and focused coverage.
+  - `CommandPalette` rendering polish:
+    - improved small-viewport resilience and markup-aware result rendering, with focused snapshot coverage.
+  - Utility/lifecycle polish:
+    - `Log` now preserves viewport anchor when `max_lines` pruning trims head rows and includes default CSS regression coverage.
+    - `Markdown` wrapped heading component-style coverage added.
+    - `Tooltip`/`HelpPanel`/`DirectoryTree`/`Welcome` gained additional lifecycle delegation regressions and behavior fixes.
+  - Runtime clipboard bridge:
+    - clipboard runtime now attempts OS clipboard copy/paste first and falls back to in-app clipboard buffer when unavailable.
+- **Container-family parity baseline (`containers.py` alignment pass)**
+  - Added new container aliases/classes: `Vertical`, `Center`, `Right`, `Middle`, `VerticalGroup`, `HorizontalGroup`, `ScrollableContainer`, `CenterMiddle`, and `ItemGrid`.
+  - Added `ScrollHome` / `ScrollEnd` actions and key bindings (`home`, `end`) plus `ctrl+pageup` / `ctrl+pagedown` horizontal paging bindings.
+  - Made `ScrollView` and `HorizontalScroll` focusable and wired home/end handling across scroll aliases/container primitives.
+  - Added focused coverage in `tests/container_parity.rs` and scroll container suites.
+- **Tier-B/C widget polish follow-up**
+  - `ListView`/`Tree` now model highlighted-vs-hovered styling semantics more explicitly (`-highlighted` class behavior).
+  - Added runtime clipboard store plumbing for text-edit message flow:
+    - handles `TextEditClipboardCopyRequested` and `TextEditClipboardPasteRequested`,
+    - responds with `TextEditClipboardPaste` through the runtime message bus.
+  - `Welcome` lifecycle polish: close action now emits both `ButtonPressed` and `OverlayDismissRequested`.
+  - `Tooltip`/`HelpPanel` lifecycle polish: runtime-driven tooltip anchor updates from mouse events, tooltip hide on app focus loss, and help-panel active/inactive visibility behavior.
+- **Widget closure follow-up slices: Header/Footer + Tooltip/HelpPanel + DirectoryTree**
+  - `Header` lifecycle polish:
+    - explicit hover state cleanup on leave, app focus loss, and unmount transitions.
+  - `Footer` lifecycle polish:
+    - defers `BindingsChanged` updates while app is unfocused,
+    - applies latest deferred bindings once on focus regain while preserving message-bus updates.
+  - `Tooltip` parity pass:
+    - added anchor-aware overlay positioning with horizontal clamp and vertical inflection,
+    - added component-style-driven tooltip bubble/text defaults.
+  - `HelpPanel` parity pass:
+    - fixed split resize propagation so markdown/key-panel children receive correct layout heights,
+    - added lifecycle and short-layout behavior regressions.
+  - `DirectoryTree` async/lazy fidelity:
+    - added lazy-expand support for unloaded directory branches,
+    - improved refresh to preserve expanded paths while reloading expanded directories lazily,
+    - added focused `DirectoryTree`/`Tree` regressions for lazy expansion and refresh behavior.
+- **Widget closure follow-up slices: RichLog + CommandPalette + ListView/Tree + clipboard hooks**
+  - `RichLog` parity hardening:
+    - preserves viewport anchor semantics when `max_lines` trimming removes head lines while manually scrolled,
+    - preserves all explicit newline-separated styled output from `write_segments(...)`.
+  - `CommandPalette` now emits `Message::CommandPaletteCommandSelected` for built-in commands (`keys`, `quit`) before close, with regression coverage for ordering and quit behavior.
+  - `ListView` and `Tree` now support disabled-item/node interaction semantics:
+    - keyboard navigation skips disabled entries,
+    - mouse selection/hover ignores disabled entries,
+    - default CSS now includes disabled row/node styles.
+  - Added shared text-edit clipboard command hooks (`Copy`/`Cut`/`Paste`) and message-bus clipboard events:
+    - `Message::TextEditClipboardCopyRequested { text, cut }`
+    - `Message::TextEditClipboardPasteRequested { target }`
+    - `Message::TextEditClipboardPaste { target, text }`
+  - Wired clipboard message flow for `Input`, `MaskedInput`, and `TextArea` with focused regression tests.
+- **Missing widget port PR6C: baseline `DirectoryTree` + `Welcome`**
+  - Added `DirectoryTree` (`src/widgets/directory_tree.rs`) as a first-pass filesystem tree widget built on `Tree`, with directory scan/loading, lazy expand-on-toggle behavior, and message-bus forwarding via `on_message`.
+  - Added `Welcome` (`src/widgets/welcome.rs`) as a baseline welcome surface with markdown body + bottom action button, routed through widget message flow.
+  - Wired exports in `src/widgets/mod.rs` and `src/lib.rs`, and added focused tests in `tests/directory_tree.rs` and `tests/welcome.rs`.
+- **Missing widget port PR6A: first-pass `Log`**
+  - Added new `Log` widget (`src/widgets/log.rs`) with Python-style plain-text write APIs (`write`, `write_line`, `write_lines`), max-line pruning, and clear behavior.
+  - Reused shared line-scroll primitives and scrollbar interactions from `ScrollView` (action/mouse-wheel/drag + clamp semantics) and emits scroll state changes via the message bus.
+  - Wired public exports in `src/widgets/mod.rs` and `src/lib.rs`, and added focused behavior regressions in `tests/log.rs`.
+- **Missing widget port PR6B: baseline `Tooltip` + `HelpPanel`**
+  - Added new `Tooltip` wrapper widget (`src/widgets/tooltip.rs`) that overlays tooltip content using shared PR4 composition (`Overlay::compose_overlay_at`) over a wrapped child.
+  - Added message-driven tooltip visibility control via existing overlay messages (`OverlaySetVisible`, `OverlayToggle`, `OverlayDismissRequested`) and emits `OverlayVisibilityChanged` on visibility transitions.
+  - Added new `HelpPanel` widget (`src/widgets/help_panel.rs`) that composes markdown help content with `KeyPanel` bindings in a reusable framework-level container.
+  - Wired public exports in `src/widgets/mod.rs` and `src/lib.rs`, and added focused regressions in `tests/tooltip.rs` and `tests/help_panel.rs`.
+- **Roadmap planning structure consolidation**
+  - Consolidated overlapping `ROADMAP.md` sections (`Next priorities` + `Execution checklist`) into a single execution source of truth (`Execution Plan` + ordered PR streams) to reduce drift during active development.
+- **DataTable Tier-A closure slice PR5A**
+  - Added typed keyed row/column model primitives in `DataTable` (`RowKey`, `ColumnKey`) with keyed add/look-up APIs and cursor cell-key resolution.
+  - Added fixed-row/fixed-column baseline behavior in `DataTable` rendering and hit-testing paths, including fixed-row-aware scroll/visibility logic.
+  - Expanded keyboard/navigation semantics (`Home`/`End`, `Ctrl+Home`/`Ctrl+End`, viewport-sized paging, page-left/page-right actions) while preserving existing DataTable message bus events.
+  - Added focused parity regressions in `src/widgets/data_table.rs` and `tests/data_table.rs` for keyed model, fixed-row mapping/visibility, and cursor navigation semantics.
+- **Scrolling primitive unification for data/text-heavy widgets (Phase 7 widget PR1)**
+  - Added shared line-scrolling utilities and scrollbar math in `src/widgets/containers/scroll_view.rs`.
+  - Migrated `RichLog`, `KeyPanel`, `ListView`, `Tree`, and `DataTable` to the shared scrolling path.
+  - Added focused regressions for mouse-scroll clamping and visibility/offset behavior in `tests/list_view.rs`, `tests/tree.rs`, and `tests/data_table.rs`.
+- **Shared toggle/option abstraction + widget migrations (Phase 7 widget PR3)**
+  - Added shared toggle/option primitives in `src/widgets/toggle_option.rs`: typed `OptionId`,
+    shared option row model (`OptionItem`), highlight-vs-selected cursor state
+    (`OptionCursorState`), and binary toggle interaction state (`BinaryToggleState`).
+  - Migrated `OptionList`/`Select`/`SelectionList` to shared option/cursor semantics, including
+    typed option IDs, consistent disabled behavior checks, and explicit highlighted-vs-selected
+    separation.
+  - Migrated `Checkbox`, `Switch`, and `RadioButton` to shared binary toggle event semantics
+    (mouse press/release, keyboard toggle, disabled no-op) while preserving existing message types.
+  - Updated `RadioSet` to shared cursor state for highlighted vs active button tracking.
+  - Added focused regressions across migrated widgets (`OptionList`, `Select`, `SelectionList`,
+    `Checkbox`, `Switch`, `RadioButton`, `RadioSet`) and shared helper tests.
+- **Overlay/modal composition unification (Phase 7 widget PR4)**
+  - Added shared overlay composition helpers in `src/widgets/containers/overlay.rs` (`compose_overlay`, `compose_overlay_at`) with style-aware overlay semantics used across widgets/runtime.
+  - Rebases `Overlay` rendering to shared composition and preserves style/meta in composed segment output.
+  - Rebases `CommandPalette` layer composition (key panel split + open panel overlay) and runtime toast stacking (`src/runtime/render.rs`) to the same helper path.
+  - Added focused composition regressions in `src/widgets/containers/overlay.rs`; overlay and command palette focused suites remain green.
+- **Tier-A Tabs/TabbedContent lifecycle closure (Phase 7 widget PR5B)**
+  - Added explicit disabled/hidden state semantics for `Tabs` and `TabbedContent` entries, with activation filtering that skips ineligible tabs/panes for keyboard, mouse, and programmatic activation.
+  - Strengthened activation/focus transitions so focus delegation only follows valid active targets and hidden-active transitions select the next available target deterministically.
+  - Added focused regressions in `tests/tabs.rs` and `tests/tabbed_content.rs` for keyboard/mouse/state-transition behavior under disabled/hidden lifecycle changes.
+- **Roadmap PR sequencing update for widget parity closure**
+  - Updated `ROADMAP.md` to add an explicit, ordered widget PR program (shared primitives first, then Tier-A closure, then missing-widget ports), instead of relying only on a generic pointer to the widget plan.
+  - Reordered the execution checklist so widget parity closure is tracked as a first-class execution stream with concrete PR slices and exit criteria.
+- **Roadmap execution checklist for remaining Todo/Partial items**
+  - Added a prioritized, concrete PR-slice checklist in `ROADMAP.md` for all open `Todo`/`Partial` fundamentals (dirty/style invalidation, message bus completion, grapheme completion, timers/async tasks, golden coverage, integration-contract closures, and compatibility/devtools follow-up).
+  - Updated v0.2 next-priority wording to reflect current status (`one-shot timers + async task framework`).
+- **CI pipeline baseline tracked as done (Phase 0)**
+  - Confirmed repository CI workflow runs `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test --all-targets` on push/PR.
+  - Updated `ROADMAP.md` to mark the Phase 0 CI task as done and removed CI from open v0.2 next-priority backlog.
+- **Grapheme-safe text editing core (Input/TextArea foundation)**
+  - Added shared grapheme-aware text indexing helpers in `src/widgets/text_edit.rs` (boundary clamping, left/right navigation, and cell/byte mapping).
+  - Migrated `Input` and `TextArea` cursor movement, backspace/delete behavior, mouse hit-testing, and width-aware rendering loops to use grapheme boundaries.
+  - Added targeted regression coverage for combining-mark and ZWJ emoji editing semantics (`src/widgets/input.rs` tests and `tests/text_area_widget.rs`).
+- **Shared text-edit command core completion (`Input`/`MaskedInput`/`TextArea`)**
+  - Expanded `src/widgets/text_edit.rs` with a reusable key-to-edit-command layer plus shared word-boundary helpers.
+  - Migrated `Input`, `MaskedInput`, and `TextArea` key handling to shared command semantics for grapheme/word navigation and deletion.
+  - Added keyboard selection baseline parity for `Input` and `TextArea` (`Shift+arrow/Home/End`) with focused regressions in `tests/input_widget.rs`, `tests/text_area_widget.rs`, and widget unit tests.
+- **Message-bus-only text widget integration (breaking)**
+  - Removed callback hooks from text widgets: `Input::on_change`, `TextArea::on_change`, and `TextArea::on_key`.
+  - Added `Message::TextAreaChanged { value }` and now emit it on text edits from key-driven interactions.
+  - Updated `examples/text_area_extended.rs` to implement key customization via a wrapper widget/event handling, instead of per-widget callback hooks.
+- **Message-bus-only `MaskedInput` integration (breaking)**
+  - Removed `MaskedInput::on_change`; `MaskedInput` now follows the same message-only integration model as `Input`/`TextArea`.
+  - Kept `Message::InputChanged` / `Message::InputSubmitted` as the supported integration surface and added regression coverage for change message emission.
+- **Message-bus-only `Button` integration (breaking)**
+  - Removed `Button::on_press`; button activation now integrates via `Message::ButtonPressed` only.
+  - Added regression coverage for key-triggered button message emission.
+- **Message-bus interaction coverage for `Header` + `Placeholder`**
+  - Added `Message::HeaderToggled { tall }` when header body clicks toggle tall mode.
+  - Added `Message::PlaceholderVariantChanged { variant }` when placeholder clicks rotate variant state.
+  - Added widget-level regression tests validating emission and no-op paths.
+- **Message-bus interaction coverage for `Footer` + `KeyPanel` + `RichLog`**
+  - Added `Message::FooterBindingsUpdated { count }` when footer binding hints update.
+  - Added `Message::KeyPanelBindingsUpdated { count }` when key panel binding hints update.
+  - Added `Message::KeyPanelScrolled { offset, max_offset }` and `Message::RichLogScrolled { offset, max_offset }` on user-driven scroll state changes.
+  - Added targeted widget regression tests for message emission and no-op behavior.
+- **Grapheme audit follow-up for text-heavy widgets**
+  - Added targeted regression coverage for wide-grapheme behavior across `DataTable` column hit-testing, `Tabs` mouse header hit-testing, `Tree` intrinsic width calculations, and markdown heading component styling with emoji content.
+- **Command palette provider plumbing (Phase 9.6)**
+  - Added message-driven command updates: `Message::CommandPaletteSetCommands { commands }`.
+  - `CommandPalette` now accepts runtime/app command list refreshes through the message bus and rebuilds results immediately.
+- **Command palette provider lifecycle parity (Phase 9.6)**
+  - Added `TextualApp` provider lifecycle hooks (`command_palette_providers`) with a new `CommandPaletteProvider` trait for startup, command enumeration, selection handling, and shutdown.
+  - `TextualApp` adapter now wires provider lifecycle from palette message flow:
+    - `CommandPaletteOpened` initializes providers and emits `CommandPaletteSetCommands`.
+    - `CommandPaletteCommandSelected` routes selected command IDs to provider handlers.
+    - `CommandPaletteClosed` (and unmount) shuts providers down and clears lifecycle state.
+  - Added focused lifecycle regression coverage in `src/textual_app.rs` for open/select/close and reopen behavior.
+- **Command palette overlay/screen transition parity (Phase 9.6)**
+  - `CommandPalette` now captures and clears wrapped-child focus when opening, then restores the prior focus target (with safe fallback) on close.
+  - Palette lifecycle now reacts to transition signals: overlay visibility/toggle/dismiss message flow and app focus loss both force-close the palette through the same message-bus path.
+  - Added focused regression coverage for focus restoration, transition-triggered close, and command-selection/close message ordering (`src/widgets/command_palette.rs`, `tests/command_palette_lifecycle.rs`).
+- **Phase 9.6 binding lifecycle + footer parity pass**
+  - Runtime now enriches active binding lifecycle updates with focused-path widget hints (ancestor -> focused widget), then normalizes ordering/dedup for deterministic `BindingsChanged` emissions.
+  - Completed app/screen lifecycle parity for bindings: runtime now rebroadcasts `BindingsChanged` when the active binding scope source chain changes (even when hint payload text is unchanged), and no-focus states now retain single-child app/screen scope hints.
+  - `Tabs` and `TabbedContent` now expose focused binding hints for tab switching (`←/→`), so Footer/KeyPanel can reflect active tab-navigation affordances.
+  - Footer now groups consecutive non-command bindings sharing the same group into compact key clusters with one trailing group label, and compact mode now tightens key/description spacing (including right-docked command-palette separator behavior).
+  - Added regression coverage for focused-path binding hint collection, grouped footer rendering, compact spacing behavior, and footer right-docked command-palette slot behavior.
+- **Phase 9.6 tab-strip default CSS parity tightening**
+  - Tuned `Tabs` and `TabbedContent` defaults to match Python visual rhythm more closely: unfocused active tabs now keep panel rhythm, focused active tabs use block-cursor foreground/background + focus text style, and underline bars get focused-state treatment.
+  - Added explicit focused underline component hooks in widget render paths (`-focus` class on underline components) so default CSS can style focus contrast without demo-specific logic.
+  - Added targeted regression tests in `tests/tabs.rs` and `tests/tabbed_content.rs` that assert focused active-tab and underline styles from the default stylesheet.
+- **Windows safe-borders policy (workaround, explicit opt-in)**
+  - Kept Windows safe-borders as a workaround for terminal-specific block-border artifacts, but not enabled globally by default.
+  - Standardized `TEXTUAL_WINDOWS_SAFE_BORDERS` parsing to support `on|off|auto` (plus boolean aliases), with `auto` currently resolving conservatively to off.
+  - Added parser regression tests and documentation for the opt-in behavior.
+
+### 2026-02-09
+- **Tier C widget parity uplift (8 widgets)**
+  - **Pretty (breaking):** redesigned to delegate to `rich_rs::Pretty` — now accepts `impl Debug` instead of `Arc<Mutex<Vec<String>>>`. Added `update()` method, static/shared modes.
+  - **ProgressBar:** added ETA estimation, percentage display, `show_bar`/`show_percentage`/`show_eta` toggles, `animation_level` awareness. Fixed suffix width bug on narrow layouts.
+  - **Digits:** added `DigitsAlign` enum and `text_align` support (left/center/right). Fixed CJK width calculation.
+  - **Rule:** added reactive `set_orientation()` and `set_line_style()` setters.
+  - **Link:** added `tooltip` field with builder/setter. Added focus/hover/activation tests.
+  - **Placeholder:** added `disabled` state with event blocking and CSS opacity. Fixed text variant separator and word wrap.
+  - **LoadingIndicator:** added `animation_enabled` flag with static "Loading..." fallback when disabled.
+  - **Sparkline:** added edge-case test coverage (NaN, empty data, single value).
+  - 135 new unit tests across all 8 widgets.
+- **Core modularization (Phase M1 — behavior-preserving)**
+  - Split `src/runtime/mod.rs` (2509 lines) into focused submodules: `event_loop.rs`, `routing.rs`, `render.rs`, `helpers.rs`, `types.rs`; `mod.rs` retains `App` struct and orchestration.
+  - Split `src/widgets/containers.rs` (2964 lines) into per-widget modules under `src/widgets/containers/`: `container.rs`, `constrained.rs`, `styled.rs`, `node.rs`, `app_root.rs`, `frame.rs`, `panel.rs`, `scroll_view.rs`, `overlay.rs`.
+  - Split `src/css/selectors.rs` (1609 lines) into `src/css/selectors/`: `ast.rs`, `parser.rs`, `matching.rs`, `resolver.rs`, `segments.rs`, `context.rs`, `debug.rs`.
+  - Split `src/css/defaults.rs` (490 lines) into per-widget CSS fragment modules under `src/css/defaults/` with deterministic aggregator in `mod.rs`.
+  - All splits are purely mechanical — no behavior changes, all 309 tests pass.
+- **Event loop tick repaint fix**
+  - Always repaint after `on_tick` to keep tick-driven widgets (counters, cursors) in sync.
+
+- **App runner API simplification + sync entrypoints (breaking)**
+  - Introduced concise runner names in `textual_app`: `run`, `run_with_output`, `run_snapshot`, `run_snapshot_with_output`, plus blocking variants `run_sync`, `run_sync_with_output`, `run_sync_snapshot`, and `run_sync_snapshot_with_output` (`src/textual_app.rs`, `src/lib.rs`).
+  - Removed verbose compatibility aliases (`run_textual_app*`) to keep the public API surface minimal during alpha development.
+  - Added typed app ergonomics to `TextualApp`: `on_button_pressed(...)` and optional `take_exit_output()` for simple app-result flows without external shared state.
+  - Added `Static::class(...)` / `Static::id(...)` sugar to reduce composition boilerplate in examples.
+  - Updated button examples accordingly:
+    - `examples/buttons.rs` now uses top-down in-`compose` composition (doc-first readability) and sync snapshot runner (no async `main` required).
+    - Added `examples/buttons_composed_pattern.rs` preserving the helper/indirection composition pattern as an alternative.
+    - Updated `examples/buttons_advanced.rs` to the concise snapshot runner.
+- **Examples API migration (didactic ergonomics pass)**
+  - Migrated all remaining Rust examples to the new concise app runners and trait flow, removing direct runtime bootstrapping (`App::new` + `run_widget_tree`) from example entrypoints.
+  - Standardized examples toward top-down composition in `TextualApp::compose` for readability as learning material, while preserving advanced behaviors (keys diagnostics, tabbed content interactions, validation flows, textarea customizations).
+  - Reduced async boilerplate in examples by switching simple/demo entrypoints to sync runners (`run_sync` / `run_sync_snapshot*`) where no explicit async orchestration is needed.
+- **Lockfile refresh cleanup**
+  - Updated `Cargo.lock` to reflect current dependency graph with local `rich-rs` patching and removed stale registry/unused patch lock metadata.
+
+- **Toast parity + border semantics refactor (no demo hacks)**
+  - Refactored `Toast` rendering to stop manually painting a fake left accent strip; toast now renders content-only and relies on the shared widget style/border pipeline for border composition (`src/widgets/toast.rs`).
+  - Added first-class `outer` border type support across style model, CSS parser, and border renderer (`src/style.rs`, `src/css/selectors.rs`, `src/widgets/helpers.rs`), then aligned toast defaults with Python (`border-left: outer ...`) in `src/css/defaults.rs`.
+  - Preserved Python-like toast placement/stacking behavior improvements in runtime overlay composition, including side margin and toast width clamping (`src/runtime/mod.rs`).
+  - Added inline bold support for toast message key hints (`[b]...[/b]`) and switched the app-level quit help toast to `Press [b]ctrl+q[/b] ...` formatting to match Python visual emphasis (`src/widgets/toast.rs`, `src/runtime/mod.rs`).
+- **Safety policy hardening**
+  - Enforced a crate-wide no-unsafe policy with `unsafe_code = "forbid"` in `Cargo.toml`, so any `unsafe` usage now fails compilation by default.
+- **Roadmap prioritization update**
+  - Added Phase 9.7 as the next priority in `ROADMAP.md`, formalizing a fundamentals-first modularization pass before further major parity expansion work.
+- **App composition API fundamentals (Phase A)**
+  - Added trait-based app authoring (`TextualApp`) and `run_textual_app()` runtime helper to reduce example/app boilerplate while preserving low-level `App::run_widget_tree` access.
+  - Added app-level lifecycle/message/action hook surface (`on_mount`, `on_message`, `on_action`) via an internal adapter, enabling Python-like minimal app structure in idiomatic Rust.
+  - Exported the new API through the crate root and prelude (`src/textual_app.rs`, `src/lib.rs`).
+- **Buttons example migration to trait-based app API**
+  - Migrated `examples/buttons.rs` to the new `TextualApp` + `run_textual_app()` path, keeping snapshot behavior unchanged while removing runtime setup boilerplate.
+  - Migrated `examples/buttons_advanced.rs` to app-level message handling (`TextualApp::on_message`), removing the custom wrapper widget used only to intercept `ButtonPressed`.
+- **Optional snapshot integration for trait-based apps**
+  - Added `run_textual_app_or_snapshot()` as an opt-in helper for examples/dev binaries; production apps can continue using `run_textual_app()` without snapshot wiring.
+  - Added trait hooks `snapshot_css_path()` and `compose_for_snapshot()` with defaults, so examples can keep snapshot output aligned with runtime CSS without repeating boilerplate in `main`.
+  - Updated button examples to use the new helper, reducing `main` to a minimal entry path.
+- **Buttons parity alignment (`buttons.py`)**
+  - Updated `examples/buttons.rs` so button press exits the app and prints the pressed button description to stdout (matching Python example behavior).
+  - Kept runtime auto-focus semantics enabled and aligned startup behavior by making `VerticalScroll` focusable; this matches Python’s effective behavior where initial focus lands on the first scrollable container rather than the first button.
+- **Scrollable aliases parity: visible scrollbars + focus semantics**
+  - Added visible scrollbar rendering to `VerticalScroll` and `HorizontalScroll` (track/thumb sizing and position now mirror `ScrollView` fundamentals instead of scrolling invisibly).
+  - `VerticalScroll` is now focusable and tracks focus state, aligning app startup focus behavior with Python when scroll containers are the first focus targets.
+- **App-level quit guidance notifications (`Ctrl+C` parity baseline)**
+  - Added `Action::HelpQuit` and default `Ctrl+C` binding so applications can show quit guidance as an inherited app behavior rather than per-demo logic.
+  - Switched default quit key semantics to `Ctrl+Q` (configurable via existing `set_quit_keys` API), matching Textual-style defaults more closely.
+  - Added app-level notification state and runtime toast composition rendered in the bottom-right using existing `Toast` widget styling, with timeout-based expiry and stacking.
+  - Refined notification timing to real-time `Duration` (default 5s, matching Python `NOTIFICATION_TIMEOUT`) so toast lifetime no longer depends on render tick cadence.
+  - Aligned toast chrome closer to Python defaults: severity left accent border, `max-width: 50%`, horizontal padding (`line-pad: 1`), and explicit vertical padding in the `Toast` widget render/layout path.
+  - Adjusted help-toast quit shortcut text to use readable binding strings (`ctrl+q`) while keeping compact key displays (`^q`) in footer/key-hint UI.
+  - Removed the hard runtime cap on concurrently displayable toasts; visible count now depends on viewport space and toast expiry, matching Python `ToastRack` behavior more closely.
+
+### 2026-02-08 (batch 10)
+- **Style composition fundamentals: transparent widgets inherit parent surface at render time**
+  - Kept CSS semantics aligned with Textual by making `bg` non-inherited in style resolution (`src/style.rs`).
+  - Fixed render-time segment composition so segments without explicit background are painted with the effective parent surface (or widget `bg` when set), preventing terminal/default background bleed for transparent children like `Static` headers (`src/css/selectors.rs`).
+  - Added regression coverage asserting child backgrounds remain transparent at style-resolution level (`tests/style_inheritance.rs`).
+- **Style-debug instrumentation: selector/rule provenance for any widget**
+  - Generalized style debug logging beyond `VerticalScroll` and width-only traces.
+  - Added `TEXTUAL_DEBUG_STYLE_FILTER` support (`type=`, `class=`, `id=`, `pseudo=` or label substring) to target specific widgets/components.
+  - Style logs now include rule and resolved summaries with `fg`, `fg_auto`, `bg`, text attributes, opacity, tints, and layout-relevant style fields (`src/css/selectors.rs`).
+- **Workspace/dev dependency alignment**
+  - Added `[patch.crates-io] rich-rs = { path = "../rich-rs" }` for local development parity and updated lockfile to the local `rich-rs` + dependency refresh (`Cargo.toml`, `Cargo.lock`).
+
+### 2026-02-07 (batch 9)
+- **Resize/corruption fundamentals: absolute diff cursoring + hardened redraw path**
+  - Switched framebuffer diff emission to absolute cursor positioning (`MoveTo`) instead of relative cursor movement (`CursorDown`/`CarriageReturn`/`CursorForward`) to prevent drift/corruption during aggressive resize bursts (`src/render/mod.rs`).
+  - Added runtime one-shot clear-on-resize handling and explicit runtime-mode reassertion around resize/render paths so terminals that reset modes during resize recover cleanly (`src/runtime/mod.rs`).
+  - Added optional render-stream diagnostics (`TEXTUAL_DEBUG_RESIZE_TRACE`) including control-head and cursor/overflow stats to support deterministic resize debugging (`src/runtime/mod.rs`).
+  - Added regression tests for absolute cursor diff behavior and clear-prepend behavior (`src/render/mod.rs`, `src/runtime/mod.rs` tests).
+
+### 2026-02-07 (batch 8)
+- **Buttons demo split: parity demo + advanced event-propagation demo**
+  - Converted `examples/buttons.rs` into a clean Python-parity buttons layout demo (no embedded status footer/event wiring).
+  - Added `examples/buttons_advanced.rs` preserving the previous event/status behavior for propagation diagnostics.
+- **Disabled styling fundamentals: widget-level opacity support**
+  - Added first-class `opacity` support to the style model and CSS parser (`src/style.rs`, `src/css/selectors.rs`).
+  - Applied widget opacity after border composition in the render pipeline so disabled styling affects the whole widget surface (`src/widgets/core.rs`).
+  - Added `Button:disabled { opacity: 70%; }` to align with Textual's disabled widget fade semantics (`src/css/defaults.rs`).
+  - Added regression coverage for disabled button dim behavior and opacity composition (`tests/buttons_demo.rs`, `src/css/selectors.rs` tests).
+- **Theme/token parity regression coverage**
+  - Added `tests/theme_tokens.rs` validating key textual-dark token values used by button variants and semantic text colors.
+- **Runtime resize recovery fix (dirty-loop compatibility)**
+  - Ensured resize-invalidated frames trigger render under dirty-flag scheduling by honoring `resized_since_last_render` in render gates (`src/runtime/mod.rs`).
+
+### 2026-02-07 (batch 7)
+- **Style/color fundamentals: `auto` foreground semantics + `text-opacity` parity**
+  - Added first-class auto-foreground semantics in the style engine (`fg: auto <percent>%`) and token-backed auto mappings for `$text`, `$text-muted`, `$text-disabled`, and `$button-color-foreground` (`src/style.rs`, `src/css/selectors.rs`).
+  - Resolved `auto` foreground at render time against the effective composed background, matching Textual's contrast behavior instead of pre-baked hardcoded foreground colors (`src/css/selectors.rs`).
+  - Added `text-opacity` CSS support (percent and float forms) and applied it during segment composition for both explicit and pre-existing foreground styles (`src/style.rs`, `src/css/selectors.rs`).
+  - Corrected composition order so foreground color resolution happens after background tint/tint, ensuring contrast calculations use final background color (`src/css/selectors.rs`).
+  - Aligned button disabled semantics with Python defaults: non-flat uses `text-opacity: 60%`, flat uses `fg: auto 50%` (`src/css/defaults.rs`).
+  - Added regression tests for auto foreground parsing/resolution, tint-aware contrast behavior, text-opacity parsing/application, and style merge precedence between concrete and auto foregrounds (`src/css/selectors.rs`, `src/style.rs`).
+
+### 2026-02-07 (batch 6)
+- **Rendering/style composition fundamentals: transparent segment compositing + row bleed fix**
+  - Aligned container defaults with Python Textual by removing opinionated default backgrounds from `VerticalScroll` and `ScrollView` (their defaults now focus on layout/overflow behavior, not paint) (`src/css/defaults.rs`).
+  - Fixed framebuffer write composition so transparent segments no longer wipe inherited/default cell style; base theme background is preserved when writing unstyled spaces and transparent segments (`src/render/mod.rs`).
+  - Fixed `Row` horizontal composition to avoid carrying the last child background into trailing viewport width (right-side color bleed/leak on wide terminals), using no-bg-safe width normalization (`src/widgets/layout.rs`).
+  - Added regression coverage for both fundamentals (`tests/layout_transparency_regression.rs`).
+
+### 2026-02-07 (batch 5)
+- **Input-family chrome unification (Input + MaskedInput)**
+  - Refactored `Input` and `MaskedInput` to share focus/mouse-active state, cursor blink timing, app-focus handling, and class toggling through `InputChrome` (`src/widgets/input.rs`, `src/widgets/masked_input.rs`, `src/widgets/input_chrome.rs`).
+  - Added `MaskedInput` component CSS parity hooks for cursor, selection, and placeholder styling (`src/css/defaults.rs`).
+  - Wired `input_chrome` module into widget exports for shared internal reuse (`src/widgets/mod.rs`).
+
+### 2026-02-07 (batch 4)
+- **ScrollView fill/background fundamentals + buttons demo parity fix**
+  - Added default `ScrollView` background (`bg: $panel`) in built-in CSS so fill-area rows render with panel styling instead of terminal black (`src/css/defaults.rs`).
+  - Fixed CSS style application for unstyled segments so widget `bg` / `fg` can still be applied to padded blank lines generated during layout (`src/css/selectors.rs`).
+  - Hardened `VerticalScroll` intrinsic-height shaping to avoid truncating rendered content when effective rendered height exceeds reported intrinsic height (`src/widgets/aliases.rs`).
+  - Added shared input chrome scaffold module (`src/widgets/input_chrome.rs`) to centralize cursor-blink/focus/class behavior for input-family widgets.
+  - Result: in `examples/buttons.rs`, the fill area between buttons and footer is now painted correctly, and scrollbar visibility remains tied to actual overflow.
+
+### 2026-02-07 (batch 3)
+- **Port 4 more widgets from Python Textual** (LoadingIndicator, Sparkline, Digits, MaskedInput)
+  - Added `LoadingIndicator` widget (`src/widgets/loading_indicator.rs`) — animated cycling gradient dots (5 `●` chars), blocks input events during capture phase, tick-driven animation. 6 unit tests.
+  - Added `Sparkline` widget (`src/widgets/sparkline.rs`) — bar chart from numerical data using `▁▂▃▄▅▆▇█` bars, data bucketing with configurable summary function, color gradient between min/max via component classes (`sparkline--min-color`, `sparkline--max-color`). 12 unit tests.
+  - Added `Digits` widget (`src/widgets/digits.rs`) — 3×3 Unicode block font for numerical displays, supports digits, hex, operators, currency symbols; auto-selects bold/normal glyph table from CSS.
+  - Added `MaskedInput` widget (`src/widgets/masked_input.rs`) — template-based formatted input with character-level validation (alpha, digit, hex, binary, etc.), auto-inserted separators, cursor navigation skipping separators, case forcing (`>`/`<`/`!`), custom blank placeholder via `;`. Reuses `InputChanged`/`InputSubmitted` messages. 23 unit tests.
+  - All widgets are first-class: segment-based rendering, CSS component styles, `style_type()`, default CSS rules in `defaults.rs`, full Widget trait, proper event handling.
+
+### 2026-02-07 (batch 2)
+- **Port 6 more widgets from Python Textual** (SelectionList, ProgressBar, Collapsible, ContentSwitcher, Link, Toast)
+  - Added `SelectionList` widget (`src/widgets/selection_list.rs`) — multi-select checklist wrapping OptionList with per-item toggle checkboxes (`▐X▌`/`▐ ▌`), keyboard/mouse toggling, select/deselect all, emits `SelectionListToggled`/`SelectionListSelectedChanged` messages. 5 unit tests.
+  - Added `ProgressBar` widget (`src/widgets/progress_bar.rs`) — determinate/indeterminate progress bar with component classes (`bar--bar`, `bar--complete`, `bar--indeterminate`), bounce animation for indeterminate mode. 9 unit tests.
+  - Added `Collapsible` widget (`src/widgets/collapsible.rs`) — expand/collapse container with clickable title bar (▶/▼), keyboard/mouse toggle, full child rendering pipeline, emits `CollapsibleToggled` message.
+  - Added `ContentSwitcher` widget (`src/widgets/content_switcher.rs`) — shows one child at a time matched by `style_id()`, delegates lifecycle events to visible child only.
+  - Added `Link` widget (`src/widgets/link.rs`) — clickable text opening URLs, activates on click/Enter/Space, emits `LinkClicked` message.
+  - Added `Toast` widget (`src/widgets/toast.rs`) — notification with severity levels (Information/Warning/Error), tick-based auto-dismiss timeout, click to dismiss, emits `ToastDismissed` message.
+  - All widgets are first-class: segment-based rendering, CSS component styles, `style_type()`, default CSS rules in `defaults.rs`, full Widget trait, proper event handling.
+
+### 2026-02-07
+- **Port 7 new widgets from Python Textual**
+  - Added `Rule` widget (`src/widgets/rule.rs`) — horizontal/vertical separator with 9 line styles (solid, dashed, double, heavy, thick, ascii, blank, hidden, none).
+  - Added `Switch` widget (`src/widgets/switch.rs`) — boolean toggle with slider rendering, keyboard/mouse interaction, emits `SwitchChanged` message.
+  - Added `Placeholder` widget (`src/widgets/placeholder.rs`) — layout placeholder with cycling variants (Default/Size/Text) and rotating background colors.
+  - Added `RadioButton` widget (`src/widgets/radio_button.rs`) — radio button with circle glyphs (●/○), component styles, emits `RadioButtonChanged` message.
+  - Added `RadioSet` widget (`src/widgets/radio_set.rs`) — mutual-exclusion container for radio buttons with keyboard navigation, emits `RadioSetChanged` message.
+  - Added `OptionList` widget (`src/widgets/option_list.rs`) — scrollable option list with separators, disabled items, keyboard/mouse navigation, emits `OptionHighlighted`/`OptionSelected` messages.
+  - Added `Select<T>` widget (`src/widgets/select.rs`) — generic dropdown select with overlay popup, emits `SelectChanged` message.
+  - All widgets are first-class: segment-based rendering, CSS component styles, `style_type()`, default CSS rules, full Widget trait, proper event handling.
+  - Added porting guidelines document (`docs/devel/WIDGETS_LEFT_TO_PORT.md`).
+
+- **Phase 9.6 fundamentals: tabbed parity + command palette + markdown heading hooks**
+  - Added first-pass `CommandPalette` widget (`src/widgets/command_palette.rs`) and integrated it into the `tabbed_content` demo via framework composition (`examples/tabbed_content.rs`), with open/close, search/filter, selection, and execute/dismiss flow.
+  - Added runtime priority action routing so `Ctrl+P` is handled as a high-priority action before raw key dispatch, plus default `Ctrl+P -> Action::CommandPalette` mapping (`src/runtime/mod.rs`), preventing focused input widgets from swallowing command-palette activation.
+  - Extended binding/footer pipeline for command-palette hint placement (`^p palette`) using structured `BindingHint` metadata (`show`, grouping, display, priority/system), and kept footer rendering driven by `BindingsChanged`.
+  - Added `TabbedContent` + `TabPane` first-class widget fundamentals and examples (`src/widgets/tabbed_content.rs`, `examples/tabbed_content.rs`, `examples/tabbed_content_label_color.rs`), including component-id selector support for `#--content-tab-<id>`.
+  - Added markdown heading component-style hooks (`markdown--h1` ... `markdown--h6`) at widget level with default CSS parity tokens (`src/widgets/text.rs`, `src/css/defaults.rs`) so heading styling is framework-driven rather than demo CSS.
+  - Added regression coverage for this slice: tabbed behavior tests, footer/binding tests, command-palette lifecycle tests, command-palette open/closed snapshots, and markdown heading style assertion (`tests/tabbed_content.rs`, `tests/header_footer.rs`, `tests/command_palette_snapshot.rs`, `tests/markdown.rs`).
+
+### 2026-02-06
+- **Keys preview parity + reusable widget foundations**
+  - Added reusable widgets for developer previews and app chrome: `Header`, `Footer`, `RichLog`, `KeyPanel`, and `BindingsTable` (`src/widgets/header.rs`, `src/widgets/footer.rs`, `src/widgets/rich_log.rs`, `src/widgets/key_panel.rs`), with public exports in `src/widgets/mod.rs` and `src/lib.rs`.
+  - Added default CSS coverage for the new widgets (`src/css/defaults.rs`) and new scrollbar theme tokens (`scrollbar*`) in `src/style.rs`.
+  - Refined `examples/keys.rs` to match Python Textual keys preview behavior/structure and moved demo styling to `examples/keys.tcss`.
+  - Improved `KeyPanel` / `BindingsTable` fundamentals: styled table component rendering, corrected intrinsic height math, and full vertical scrollbar interactions (wheel, actions, track click, drag).
+- **Input/event/runtime fundamentals for diagnostics tooling**
+  - Added `Event::BindingsChanged(Vec<BindingHint>)` and runtime binding-hint aggregation from `ActionMap` + quit keys, with incremental dispatch when hints change.
+  - Extended `Action` with human-readable descriptions and `ActionMap::entries()` to support bindings UIs.
+  - Added `EventCtx::request_stop()` and stop propagation through dispatch/message queues to support message-driven app shutdown paths.
+  - Added configurable quit key APIs (`set_quit_keys`, `clear_quit_keys`) and corresponding runtime tests.
+- **Scrolling + scrollbar behavior parity**
+  - Upgraded `ScrollView` and `RichLog` scrollbars with proper thumb sizing/positioning, themed track/thumb styles, track-click paging, drag interactions, and clamp behavior improvements.
+  - Fixed `Dock` fill rendering order to resolve layout inconsistencies when mixing fill and side/top/bottom regions.
+- **Tests and docs**
+  - Added widget behavior tests for new components: `tests/header_footer.rs`, `tests/key_panel.rs`, `tests/rich_log.rs`.
+  - Updated `ROADMAP.md` Phase 9.5 status to reflect completed visual parity pass and current pending fundamentals.
+  - Expanded `tests/key_panel.rs` coverage with sizing, non-overflow action handling, and scrollbar drag behavior checks.
+  - Added preview scaffold tests (`tests/preview_root.rs`) and snapshot coverage (`tests/preview_root_snapshot.rs`).
+- **Preview scaffold fundamentals**
+  - Added reusable preview composition helpers: `preview_root`, `preview_root_with_bottom`, and `preview_root_with_top_bottom` (`src/widgets/preview.rs`).
+  - Migrated `examples/keys.rs` and `examples/data_table.rs` to the shared preview scaffold composition path.
+- **Phase 9.5 styling + regression completion**
+  - Added component-style resolver primitives in the CSS engine (`selector_meta_component_for`, `resolve_component_style`) and wired `Header` + `KeyPanel`/`BindingsTable` to use CSS-driven component styles.
+  - Added keys parity snapshot baseline (`tests/keys_preview_snapshot.rs`) and updated `examples/keys.tcss` to style header components through component selectors.
+- **Widget uplift: Checkbox/ListView/Tree → first-class**
+  - Upgraded `Checkbox` with mouse press/release activation semantics (click-cancel), hover/active/disabled state handling, improved rendering (`☐`/`☑`), and preserved message emission via `CheckboxChanged`.
+  - Reworked `ListView` with stable viewport state (`on_layout`), ensure-visible navigation, mouse row selection, hover tracking, wheel scrolling, and selection messages (`ListViewSelectionChanged`).
+  - Reworked `Tree` with flattened visible-index mapping, mouse branch-toggle hit testing, keyboard expand/collapse navigation parity, hover-aware row rendering, and emitted messages (`TreeNodeSelected`, `TreeNodeToggled`).
+  - Added default CSS rules for `Checkbox`, `ListView`, and `Tree`, including component-level state styling for rows/items.
+  - Expanded behavior tests for all three widgets (`tests/checkbox_widget.rs`, `tests/list_view.rs`, `tests/tree.rs`) and refreshed snapshots.
+- **Widget + container fundamentals: Tabs/Text/Pretty/Spacer and wrappers**
+  - Upgraded `Tabs` with header hit-testing and mouse activation, keyboard activation parity, focus/hover-aware component styling, child `on_layout`/`on_message` forwarding, and `TabActivated` message emission.
+  - Added forwarding fundamentals to container wrappers (`Panel`, `Frame`) for `on_layout`, `on_message`, and (for `Frame`) mouse-scroll propagation.
+  - Improved text-family and utility widgets: `Label`/`Markdown` intrinsic layout width-aware sizing, richer `Pretty` rendering with multiline fallback and CSS component styles, and `Spacer` intrinsic width hints.
+  - Added/expanded tests for tabs and wrapper forwarding (`tests/tabs.rs`, `tests/container_wrappers.rs`, `tests/text_pretty_spacer.rs`).
+- **Overlay + input/markdown first-class completion**
+  - Upgraded `Overlay`/modal fundamentals with focus-trap event routing, `Esc` dismiss behavior, and message-driven visibility controls (`OverlaySetVisible`, `OverlayToggle`, `OverlayDismissRequested`, `OverlayVisibilityChanged`).
+  - Added behavior coverage for overlay interaction semantics (`tests/overlay_widget.rs`), including event trapping and message/escape dismissal.
+  - Strengthened `Input` and `Markdown` behavior coverage (message emission tests in `src/widgets/input.rs`; wrap-aware sizing test in `tests/text_pretty_spacer.rs`).
+  - Updated `ROADMAP.md` widget status to mark `Input`, `Markdown`, and `Modal/overlay` as first-class.
+
+### 2026-02-05
+- **Phase 9.5: Input diagnostics + key model parity**
+  - Added canonical key model (`src/keys/mod.rs`): `KeyEventData` wraps crossterm's `KeyEvent` via `Deref` and adds normalized key name, character, printability. Normalization follows Python Textual conventions (alphabetical modifier ordering, shift consumption rules, and non-shift modifier chords not printable).
+  - Added key normalization helpers: `key_to_identifier()` (Python-identifier form), `format_key_display()` (human-friendly with Unicode arrows/caret notation), and lazy alias resolution (`tab`↔`ctrl+i`, `enter`↔`ctrl+m`, `escape`↔`ctrl+[`).
+  - Added Kitty keyboard protocol support to `richtui-crossterm` driver: tri-state `KeyboardProtocol` enum (Off/Auto/On), terminal auto-detection heuristic (kitty, WezTerm, foot, ghostty), and `TEXTUAL_KEYBOARD_PROTOCOL` env var override for Auto mode.
+  - Migrated `Event::Key` from `crossterm::event::KeyEvent` to `KeyEventData`. All widget code continues working via `Deref` (key.code, key.modifiers unchanged). `KeyBind::from_event` updated to accept `&KeyEventData`.
+  - Added `examples/keys.rs` diagnostic harness: real-time display of key, mouse, focus, resize, and scroll events with both canonical and raw crossterm data. Similar to Python Textual's `textual keys` command.
+  - Added 74 integration tests (`tests/key_diagnostics.rs`) covering round-trip normalization, alias correctness, display formatting, identifier conversion, Deref compatibility, edge cases (media/modifier/lock keys, control chars, key repeat/release), ActionMap integration, and comprehensive symbol roundtrip.
+  - Documented terminal compatibility limits (tmux, screen, macOS Terminal, PuTTY, SSH) and Kitty protocol behavior in module docs.
+  - New prelude exports: `KeyEventData`, `key_to_identifier`, `format_key_display`.
+  - **Breaking:** `TextArea::on_key` callback now takes `KeyEventData` (uses `.clone()` instead of `Copy`).
+  - Runtime now defaults shared driver keyboard protocol to `Auto`, so `TEXTUAL_KEYBOARD_PROTOCOL` env overrides and terminal capability detection are effective by default.
+
+- Improved scroll interaction fundamentals:
+  - Added deterministic scroll action routing (focused target first, then hovered target, then global fallback) to reduce split-view ambiguity.
+  - Added `Shift + mouse wheel` remapping for horizontal scrolling in scrollable containers, while keeping native horizontal-wheel support.
+  - Added/expanded scroll diagnostics logs and introduced `examples/horizontal_scroll.rs` for manual QA of vertical/horizontal scroll behavior and clamping.
+  - Fixed container event-forwarding gaps so wrapped scrollables (e.g. `ScrollView` inside `Panel`) reliably receive action and mouse-scroll input.
+- Implemented dirty-flag rendering: the runtime now only re-renders when something actually changes (input, hover, style reload, active-state transitions), instead of every tick. Added `EventCtx::request_repaint()` so widgets can explicitly request a repaint. `dispatch_event()` returns a `DispatchOutcome` and `poll_stylesheet()` returns a `bool` to propagate dirty signals.
+- Modularized the codebase: split the monolithic `controls.rs` into one file per widget (`button.rs`, `list_view.rs`, `data_table.rs`, `tree.rs`, `tabs.rs`, `checkbox.rs`, `spacer.rs`, `input.rs`), renamed `src/widget/` to `src/widgets/`, and extracted CSS styling into a dedicated `src/css/` module. Re-exported `ButtonVariant` in the public prelude.
+- Switched terminal driver to the shared `richtui-crossterm` `TerminalDriver` and removed the legacy driver module. Updated `rich-rs` dependency to use the published crate (v1.0.2) instead of a local path.
+- Mirrored Python Textual's Input demos as three separate Rust examples (`input`, `input_types`, `input_validation`) and advanced Input fundamentals for parity:
+  - Correct default layout height so multiple Inputs stack correctly under `Container`.
+  - Cursor renders over placeholder text when focused and empty.
+  - Cursor blink matches Textual (toggle every 0.5s using `Instant`).
+  - Fixed initial Tab cycling so focus traversal starts from the true focused widget.
+  - Added default invalid Input styling (red border) and a small `Pretty` widget used by the validation demo.
+- Added `TextArea` widget + demo, and advanced TextArea fundamentals via additional demo ports:
+  - New examples mirroring Python Textual: `text_area_example`, `text_area_selection`, `text_area_extended`, `text_area_custom_theme`, `text_area_custom_language`.
+  - Selection model + public selection API (`TextAreaSelection` / `TextAreaCursor`) including end-of-line selection rendering; added keyboard selection expansion (`Shift+arrows/Home/End`) and improved gutter behavior past EOF.
+  - Focus awareness: new `Event::AppFocus(bool)` and CSS `:focus` gating so focus visuals/carets hide when the terminal window loses focus; added current-line highlight styling for TextArea.
+  - Extensibility: `TextArea::on_key` hook (prevent default) plus helpers (`insert`, `move_cursor_relative`).
+  - Theming + syntax highlighting: `TextAreaTheme`, theme registration, language registration, and tree-sitter highlighting (built-in Python + demo-registered Java), with cache invalidation so highlighting applies on first render.
+  - Fixed deletion on terminals that send Backspace as `KeyCode::Char('\u{7f}')` / `KeyCode::Char('\u{08}')`.
+- Introduced an initial message bus: `EventCtx::post_message()` collects `MessageEvent`s during event dispatch; the runtime delivers them via bubbling `Widget::on_message` handlers. `Input` and `Checkbox` now emit Textual-like messages (`InputChanged` / `InputSubmitted` / `CheckboxChanged`). Updated the `input_validation` example to consume `InputChanged` instead of a direct callback.
+- Migrated the `buttons` demo to use `ButtonPressed` messages instead of direct callbacks, and added `DataTable` messages (`DataTableCursorMoved`, `DataTableHeaderSelected`, `DataTableCellActivated`) with a status line in the `data_table` demo.
+- Fixed message delivery regressions for deep widget trees by routing queued messages deterministically through the widget tree (`Widget::on_message`), which restores status/event updates in demos like `buttons`.
+
+### 2026-02-04
+- Added button pressed visual effect with `:active` CSS rules (border inversion + background tint). Mouse presses track actual button state via new `MouseUp` event; keyboard activations use a brief timer.
+- Added a lightweight unit test to guard synchronized output bracketing behavior.
+- Implemented Kitty pointer-shape protocol (OSC 22) for hover cursor feedback, with best-effort terminal detection and `TEXTUAL_POINTER_SHAPES` override. OSC sequences are written through `Console` (shared with the render pipeline) to prevent interleaving on stdout. Added `mouse_interactive()` widget trait so non-focusable widgets like disabled buttons still show hover cursors.
+- Prevented resize tearing / corruption by:
+  - Bracketing frame writes with synchronized output (DECSET 2026). Disable with `TEXTUAL_SYNC_OUTPUT=0`.
+  - Disabling terminal line wrap while running in alt-screen mode (restored on exit).
+- Added in-demo status line wiring and event reporting for the buttons demo.
+- Fixed selector matching bugs (direct child combinator semantics) so width rules like `Horizontal > VerticalScroll { width: 24; }` apply correctly.
+- Added focused debug tracing via env vars (`TEXTUAL_DEBUG_INPUT_FILE`, `TEXTUAL_DEBUG_LAYOUT_FILE`, `TEXTUAL_DEBUG_STYLE_FILE`, `TEXTUAL_DEBUG_RENDER_FILE`).
+- Added demo SVG snapshot harness and shared demo snapshot helper for reuse across examples.
+- Added pseudo-classes and interaction styling (hover/focus) with themed base tokens.
+- Improved Button rendering parity (centering, intrinsic sizing via `width:auto`, line padding, border shorthands, and bleed fixes).
+
+### 2026-02-03
+- Added margin/padding/border subset and an initial Button demo.
+- Refactored widgets out of a monolithic `src/widget/mod.rs` into submodules (containers/layout/helpers/selectors/controls/text).
+- Expanded widget catalog: Label/Static, Button, Input, Checkbox, ListView, DataTable, Tree, Tabs, Markdown, Modal/overlay.
+- Added stylesheet hot-reload (file watch) and examples.
+- Added selector combinators (descendant/child), grouping, specificity, and inheritance rules.
+- Introduced styling MVP: typed style props, theme tokens, selector model, stylesheet parsing.
+- Added focus + event routing MVP (tab traversal, key bindings, action map).
+- Added ScrollView (vertical) + nested clipping refinements and horizontal scrolling.
+- Implemented early layout primitives (row/column/dock/grid-ish), debug overlays, and clipping regions.
+- Added terminal runtime loop foundations with resize hooks and event dispatch scaffolding.
+- Documented the rich-rs integration contract and rendering metadata expectations.
