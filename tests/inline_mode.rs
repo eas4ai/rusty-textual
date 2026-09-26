@@ -692,42 +692,59 @@ fn inl_017_a_pushed_screen_keeps_its_border_inside_the_frame() {
 
 #[test]
 fn inl_017_a_scrolled_pushed_screen_keeps_its_border_inside_the_frame() {
-    // A pushed screen taller than the terminal scrolls inside its
+    // A pushed screen taller than the frame scrolls inside its
     // `Screen:inline` borders: after it has scrolled to its last line, the
-    // frame's first and last rows are still its top and bottom border.
-    let term = Term::spawn(
-        SHELL_THEN_EXEC,
-        &probe(),
-        &[("PROBE_PUSH", "screen")],
-        Answers::TERMINAL,
-    );
-    term.wait_for("probe status", has_text("keys:0"));
-    term.settle();
-    term.send(b"p");
-    term.wait_for("the pushed screen", has_text("pushed 1"));
-    let screen = term.settle();
-    let rows = painted_rows(&screen);
-    let (top, bottom) = (rows[0], rows[rows.len() - 1]);
-    let y = top.midpoint(bottom) + 1;
-    for _ in 0..80 {
-        term.send(format!("\x1b[<65;10;{y}M").as_bytes()); // wheel down
+    // frame's first and last rows are still its top and bottom border. The
+    // second case makes the frame shorter than the terminal, where the
+    // measuring pass lays the screen out taller than the frame. Its frame
+    // is the height rule plus the two border rows (`screen.py:1445-1450`).
+    let cases: [(&[(&str, &str)], u16, &str); 2] = [
+        (&[("PROBE_PUSH", "screen")], ROWS, "60 lines in a 30-row terminal"),
+        (
+            &[("PROBE_PUSH", "screen"), ("PROBE_SCREEN_HEIGHT", "10")],
+            12,
+            "60 lines under Screen:inline { height: 10 }",
+        ),
+    ];
+    for (env, height, what) in cases {
+        let term = Term::spawn(SHELL_THEN_EXEC, &probe(), env, Answers::TERMINAL);
+        term.wait_for("probe status", has_text("keys:0"));
+        term.settle();
+        term.send(b"p");
+        term.wait_for("the pushed screen", has_text("pushed 1"));
+        let screen = term.settle();
+        let rows = painted_rows(&screen);
+        let (top, bottom) = (rows[0], rows[rows.len() - 1]);
+        assert_eq!(
+            bottom - top + 1,
+            height,
+            "{what}: the frame is not {height} rows:\n{}",
+            dump(&screen)
+        );
+        let y = top.midpoint(bottom) + 1;
+        for _ in 0..80 {
+            term.send(format!("\x1b[<65;10;{y}M").as_bytes()); // wheel down
+        }
+        term.wait_for(
+            &format!("{what}: the pushed screen's last line"),
+            has_text("pushed-end"),
+        );
+        let screen = term.settle();
+        let text = lines(&screen);
+        let (_, cols) = screen.size();
+        let edge = |row: u16, glyph: char| {
+            text[usize::from(row)]
+                .chars()
+                .filter(|&c| c == glyph)
+                .count()
+                >= usize::from(cols - 2)
+        };
+        assert!(
+            edge(top, '\u{2594}') && edge(bottom, '\u{2581}'),
+            "{what}: the scrolled pushed screen's border is not on the frame's first and last rows:\n{}",
+            dump(&screen)
+        );
     }
-    term.wait_for("the pushed screen's last line", has_text("pushed-end"));
-    let screen = term.settle();
-    let text = lines(&screen);
-    let (_, cols) = screen.size();
-    let edge = |row: u16, glyph: char| {
-        text[usize::from(row)]
-            .chars()
-            .filter(|&c| c == glyph)
-            .count()
-            >= usize::from(cols - 2)
-    };
-    assert!(
-        edge(top, '\u{2594}') && edge(bottom, '\u{2581}'),
-        "the scrolled pushed screen's border is not on the frame's first and last rows:\n{}",
-        dump(&screen)
-    );
 }
 
 #[test]
