@@ -20,3 +20,4 @@ checkout) is the reference; its tests are not run by this project.
 | inline.md | INL | inline render mode |
 | terminal.md | TRM | the full-screen terminal behavior inline mode must not change |
 | screens.md | SCR | screens pushed on top of the app's own screen |
+| updates.md | UPD | an app changing its widgets while it runs |

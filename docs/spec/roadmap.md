@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: pushed-screens-do-not-scroll
+Current: widget-update-skips-repaint
 
 ## inline-render-mode
 
@@ -41,6 +41,21 @@ own screen: the mouse wheel and a scrollbar drag move its content as far
 as its last line, in full-screen and in inline mode, as Python's Screen
 and ModalScreen do. The inline height (INL-004), the app's own screen
 (INL-017) and full-screen output (TRM-003) do not change.
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, and the full test gate, strict clippy, and
+rustfmt pass.
+
+## widget-update-skips-repaint
+
+Requirements: UPD-001, INL-005, TRM-003
+
+Delivers: a widget an app changes from its own code through the App's
+widget access (`with_widget_mut` and the query forms built on it) is
+redrawn in the next frame even when its size stays the same, as Python
+redraws a widget whose content is updated, in full-screen and in inline
+mode. Inline frames still use relative cursor moves (INL-005), and
+full-screen output does not change (TRM-003).
 
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and
