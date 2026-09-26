@@ -125,22 +125,36 @@ fn capture(mut cmd: CommandBuilder, cwd: PathBuf, keys: &str) -> String {
         }
     });
 
-    // wait for initial stable
+    // Wait until the app has drawn text and the screen has settled. Every
+    // serialized row starts with `[`, a blank one too, so the text itself
+    // must be checked: two blank snapshots are not a drawn app.
     let mut prev = String::new();
     for _ in 0..40 {
         std::thread::sleep(Duration::from_millis(200));
-        let s = { serialize(&parser.lock().unwrap()) };
-        let txt: String = s.lines().filter(|l| l.starts_with('[')).collect();
-        if !txt.trim().is_empty() && s == prev {
+        let (s, drawn) = {
+            let parser = parser.lock().unwrap();
+            (
+                serialize(&parser),
+                !parser.screen().contents().trim().is_empty(),
+            )
+        };
+        if drawn && s == prev {
             break;
         }
         prev = s;
     }
-    // send keys, let them land, wait for re-stable
+    // Send the keys, wait for the screen to change, then for it to settle
+    // again, so a slow app is not captured before it handled them.
     if !keys.is_empty() {
+        let before = { serialize(&parser.lock().unwrap()) };
         writer.write_all(keys.as_bytes()).ok();
         writer.flush().ok();
-        std::thread::sleep(Duration::from_millis(400));
+        for _ in 0..50 {
+            std::thread::sleep(Duration::from_millis(100));
+            if serialize(&parser.lock().unwrap()) != before {
+                break;
+            }
+        }
         let mut p2 = String::new();
         for _ in 0..30 {
             std::thread::sleep(Duration::from_millis(200));
