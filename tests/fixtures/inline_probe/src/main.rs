@@ -7,6 +7,8 @@
 //! - `PROBE_LINES`: lines in the body (default 3).
 //! - `PROBE_SCREEN_HEIGHT`: when set, the height of a `Screen:inline` rule
 //!   (for example `10`), so the inline height is below the content height.
+//! - `PROBE_SCREEN_OVERFLOW`: when set, the `overflow-y` of a `Screen` rule
+//!   (for example `hidden`), for every screen, pushed or not.
 //! - `PROBE_BUTTON`: when set, a `Press` button follows the body.
 //! - `PROBE_EXIT_MESSAGE`: when set, `q` exits through `App::exit` with this
 //!   message (Python `App.exit(message=...)`).
@@ -53,6 +55,7 @@ struct Probe {
     lines: usize,
     padding: usize,
     screen_height: Option<String>,
+    screen_overflow: Option<String>,
     button: bool,
     exit_message: Option<String>,
     exit_result: Option<String>,
@@ -75,6 +78,7 @@ impl Probe {
             lines: number("PROBE_LINES", 3),
             padding: number("PROBE_PADDING", 1),
             screen_height: std::env::var("PROBE_SCREEN_HEIGHT").ok(),
+            screen_overflow: std::env::var("PROBE_SCREEN_OVERFLOW").ok(),
             button: std::env::var_os("PROBE_BUTTON").is_some(),
             exit_message: std::env::var("PROBE_EXIT_MESSAGE").ok(),
             exit_result: std::env::var("PROBE_EXIT_RESULT").ok(),
@@ -108,12 +112,14 @@ impl Probe {
 
 impl TextualApp for Probe {
     fn configure(&mut self, app: &mut App) -> textual::Result<()> {
-        match &self.screen_height {
-            Some(height) => {
-                app.load_stylesheet(&format!("{CSS}Screen:inline {{ height: {height}; }}\n"))
-            }
-            None => app.load_stylesheet(CSS),
+        let mut css = CSS.to_string();
+        if let Some(height) = &self.screen_height {
+            css.push_str(&format!("Screen:inline {{ height: {height}; }}\n"));
         }
+        if let Some(overflow) = &self.screen_overflow {
+            css.push_str(&format!("Screen {{ overflow-y: {overflow}; }}\n"));
+        }
+        app.load_stylesheet(&css);
         if self.exit_in_configure {
             app.exit(None, 0, None);
         }

@@ -753,6 +753,44 @@ fn inl_017_a_scrolled_pushed_screen_keeps_its_border_inside_the_frame() {
 }
 
 #[test]
+fn inl_017_a_pushed_screen_that_does_not_scroll_keeps_its_border_inside_the_frame() {
+    // Under `Screen { overflow-y: hidden }` a pushed screen taller than the
+    // terminal does not scroll, but its content is still clipped inside its
+    // `Screen:inline` border, as Python clips every container's children to
+    // the region inside its border (`_compositor.py:584-607`).
+    let term = Term::spawn(
+        SHELL_THEN_EXEC,
+        &probe(),
+        &[
+            ("PROBE_PUSH", "screen"),
+            ("PROBE_SCREEN_OVERFLOW", "hidden"),
+        ],
+        Answers::TERMINAL,
+    );
+    term.wait_for("probe status", has_text("keys:0"));
+    term.settle();
+    term.send(b"p");
+    term.wait_for("the pushed screen", has_text("pushed 1"));
+    let screen = term.settle();
+    let rows = painted_rows(&screen);
+    let (top, bottom) = (rows[0], rows[rows.len() - 1]);
+    let text = lines(&screen);
+    let (_, cols) = screen.size();
+    let edge = |row: u16, glyph: char| {
+        text[usize::from(row)]
+            .chars()
+            .filter(|&c| c == glyph)
+            .count()
+            >= usize::from(cols - 2)
+    };
+    assert!(
+        edge(top, '\u{2594}') && edge(bottom, '\u{2581}'),
+        "the unscrolled pushed screen's border is not on the frame's first and last rows:\n{}",
+        dump(&screen)
+    );
+}
+
+#[test]
 fn inl_017_the_inline_screen_scrolls_to_its_last_line() {
     // The body, then the status line, then the `inline-css` marker: the
     // marker is the last line, so it shows only once the screen has
