@@ -7750,7 +7750,7 @@ mod tests {
         type Seen = (
             bool,
             Visibility,
-            bool,
+            Vec<String>,
             crate::widgets::NodeState,
             Option<WidgetStyles>,
         );
@@ -7759,11 +7759,14 @@ mod tests {
             tree.walk_depth_first(root)
                 .into_iter()
                 .map(|id| {
+                    let node = tree.get(id).expect("node");
+                    let mut classes: Vec<String> = node.classes.iter().cloned().collect();
+                    classes.sort();
                     (
                         tree.is_displayed(id),
                         tree.visibility(id),
-                        tree.has_class(id, "picked"),
-                        tree.get(id).expect("node").state,
+                        classes,
+                        node.state,
                         tree.styles(id).cloned(),
                     )
                 })
@@ -7787,6 +7790,17 @@ mod tests {
 
         app.query_mut("#pushed").expect("query").add_class("picked");
         assert!(active(&app).has_class(pushed, "picked"), "add_class");
+        app.query_mut("#pushed")
+            .expect("query")
+            .toggle_classes(&["flipped"]);
+        assert!(active(&app).has_class(pushed, "flipped"), "toggle_classes");
+        app.query_mut("#pushed")
+            .expect("query")
+            .set_classes(&["picked", "listed"]);
+        assert!(
+            active(&app).has_class(pushed, "listed") && !active(&app).has_class(pushed, "flipped"),
+            "set_classes"
+        );
         app.query_mut("#pushed")
             .expect("query")
             .set_styles(|s| s.style.bold = Some(true));
@@ -7827,6 +7841,13 @@ mod tests {
         assert!(
             app.take_pending_query_refresh_nodes().contains(&pushed),
             "set_display repaints"
+        );
+        app.query_mut("#pushed")
+            .expect("query")
+            .set(None, None, None, Some(true));
+        assert!(
+            active(&app).get(pushed).expect("node").state.loading,
+            "set loading"
         );
         let _ = app.query_mut("#pushed").expect("query").remove();
         assert!(!active(&app).contains(pushed), "remove");
