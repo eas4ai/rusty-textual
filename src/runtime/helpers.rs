@@ -8,9 +8,11 @@ use crate::num::Cast;
 use crate::widget_tree::WidgetTree;
 use crate::widgets::{
     APP_ROOT_HSCROLLBAR_ID, APP_ROOT_SCROLLBAR_CORNER_ID, APP_ROOT_VSCROLLBAR_ID,
+    CONTAINER_HSCROLLBAR_ID, CONTAINER_SCROLLBAR_CORNER_ID, CONTAINER_VSCROLLBAR_ID,
     DATA_TABLE_HSCROLLBAR_ID, KEY_PANEL_VSCROLLBAR_ID, LOG_HSCROLLBAR_ID, LOG_SCROLLBAR_CORNER_ID,
-    LOG_VSCROLLBAR_ID, RICH_LOG_VSCROLLBAR_ID, SCROLL_VIEW_HSCROLLBAR_ID,
-    SCROLL_VIEW_SCROLLBAR_CORNER_ID, SCROLL_VIEW_VSCROLLBAR_ID, SYSTEM_TOOLTIP_STYLE_ID,
+    LOG_VSCROLLBAR_ID, OPTION_LIST_VSCROLLBAR_ID, RICH_LOG_VSCROLLBAR_ID,
+    SCROLL_VIEW_HSCROLLBAR_ID, SCROLL_VIEW_SCROLLBAR_CORNER_ID, SCROLL_VIEW_VSCROLLBAR_ID,
+    SYSTEM_TOOLTIP_STYLE_ID,
 };
 use crossterm::event::{KeyCode, KeyModifiers, MouseEventKind};
 use rich_rs::ConsoleOptions;
@@ -478,10 +480,15 @@ fn node_is_docked(tree: &WidgetTree, node_id: NodeId) -> bool {
     resolve_style_in_tree(tree, node_id).is_some_and(|style| style.dock.is_some())
 }
 
+/// Whether `node_id` is one of the scrollbar lanes a scroll host owns. A
+/// lane is drawn at its own place, not moved by its host's scroll, so render
+/// and hit testing both leave it out of the scrolled content. This is the
+/// one list both use.
 pub(crate) fn node_is_dedicated_scrollbar(tree: &WidgetTree, node_id: NodeId) -> bool {
     let Some(node) = tree.get(node_id) else {
         return false;
     };
+    // Read css_id from node record (canonical source of truth after RA-2 step 6).
     let css_id = node.css_id.as_deref();
     matches!(
         css_id,
@@ -492,10 +499,14 @@ pub(crate) fn node_is_dedicated_scrollbar(tree: &WidgetTree, node_id: NodeId) ->
                 | SCROLL_VIEW_VSCROLLBAR_ID
                 | SCROLL_VIEW_HSCROLLBAR_ID
                 | SCROLL_VIEW_SCROLLBAR_CORNER_ID
+                | CONTAINER_VSCROLLBAR_ID
+                | CONTAINER_HSCROLLBAR_ID
+                | CONTAINER_SCROLLBAR_CORNER_ID
                 | LOG_VSCROLLBAR_ID
                 | LOG_HSCROLLBAR_ID
                 | LOG_SCROLLBAR_CORNER_ID
                 | RICH_LOG_VSCROLLBAR_ID
+                | OPTION_LIST_VSCROLLBAR_ID
                 | KEY_PANEL_VSCROLLBAR_ID
                 | DATA_TABLE_HSCROLLBAR_ID
         )
@@ -878,8 +889,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn app_root_scrollbar_local_coords_stay_stable_when_root_is_scrolled() {
+    /// An `AppRoot` tree whose root is scrolled down 16 rows.
+    fn scrolled_app_root_tree() -> (WidgetTree, crate::node_id::NodeId) {
         let mut root = AppRoot::new();
         let extracted = root.compose();
 
@@ -888,13 +899,6 @@ mod tests {
         for child in extracted {
             tree.mount(root_id, child.into_widget());
         }
-
-        let vbar_id = tree
-            .children(root_id)
-            .iter()
-            .copied()
-            .find(|id| tree.css_id(*id) == Some(crate::widgets::APP_ROOT_VSCROLLBAR_ID))
-            .expect("app root vertical scrollbar child should exist");
 
         if let Some(root_node) = tree.get_mut(root_id) {
             root_node.layout_rect = Rect {
@@ -930,7 +934,12 @@ mod tests {
                 );
             }
         }
+        (tree, root_id)
+    }
 
+    /// The pointer mapping of the scrollbar lane `vbar_id`, placed in the
+    /// last two columns, for a pointer at column 113, row 8.
+    fn lane_local_coords(tree: &mut WidgetTree, vbar_id: crate::node_id::NodeId) -> (u16, u16) {
         if let Some(vbar) = tree.get_mut(vbar_id) {
             vbar.layout_rect = Rect {
                 x0: 112,
@@ -940,12 +949,37 @@ mod tests {
             };
             vbar.content_rect = vbar.layout_rect;
         }
+        tree_content_local_coords(tree, vbar_id, 113, 8)
+    }
 
-        let (lx, ly) = tree_content_local_coords(&tree, vbar_id, 113, 8);
+    #[test]
+    fn app_root_scrollbar_local_coords_stay_stable_when_root_is_scrolled() {
+        let (mut tree, root_id) = scrolled_app_root_tree();
+        let vbar_id = tree
+            .children(root_id)
+            .iter()
+            .copied()
+            .find(|id| tree.css_id(*id) == Some(crate::widgets::APP_ROOT_VSCROLLBAR_ID))
+            .expect("app root vertical scrollbar child should exist");
         assert_eq!(
-            (lx, ly),
+            lane_local_coords(&mut tree, vbar_id),
             (1, 8),
             "root scroll offset must not shift app-root scrollbar local pointer mapping"
+        );
+    }
+
+    #[test]
+    fn container_scrollbar_local_coords_stay_stable_when_root_is_scrolled() {
+        // A pushed screen's root scrolls with the container scrollbar lanes
+        // the layout pass mounts on it; its scroll must not shift them either.
+        let (mut tree, root_id) = scrolled_app_root_tree();
+        let mut vbar = crate::widgets::ScrollBar::new(true, 2);
+        vbar.seed.css_id = Some(crate::widgets::CONTAINER_VSCROLLBAR_ID.to_string());
+        let vbar_id = tree.mount(root_id, Box::new(vbar));
+        assert_eq!(
+            lane_local_coords(&mut tree, vbar_id),
+            (1, 8),
+            "root scroll offset must not shift a container scrollbar's local pointer mapping"
         );
     }
 
