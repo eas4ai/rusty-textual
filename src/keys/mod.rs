@@ -36,16 +36,19 @@
 //!
 //! # Kitty keyboard protocol
 //!
-//! The terminal driver supports the Kitty
-//! keyboard protocol (mode 1: `DISAMBIGUATE_ESCAPE_CODES`) via a tri-state
-//! [`KeyboardProtocol`](crate::driver::KeyboardProtocol) setting:
+//! The terminal driver supports the Kitty keyboard protocol via a tri-state
+//! [`KeyboardProtocol`](crate::driver::KeyboardProtocol) setting. When it is
+//! on, a full-screen app pushes flags 1, 8 and 16 (disambiguate escape
+//! codes, report all keys as escape codes, report associated text) and an
+//! inline app flag 1 only, as Python's Unix drivers do.
+//! `TEXTUAL_DISABLE_KITTY_KEY=1` keeps it off in every mode.
 //!
 //! - **Off** (default): legacy terminal input.  Tab and Ctrl+I are
 //!   indistinguishable at the crossterm level.
-//! - **Auto**: probe-first behavior. The driver attempts to enable keyboard
-//!   enhancements and falls back if unsupported. Override with
+//! - **Auto**: push the flags when stdin is a terminal; a terminal without
+//!   the protocol ignores them. Override with
 //!   `TEXTUAL_KEYBOARD_PROTOCOL=on|off`.
-//! - **On**: unconditionally push the enhancement flag.
+//! - **On**: unconditionally push the enhancement flags.
 //!
 //! When the protocol is active, crossterm reports distinct key codes for
 //! Tab vs Ctrl+I, Enter vs Ctrl+M, etc., so the alias table above becomes

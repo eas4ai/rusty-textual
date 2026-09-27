@@ -40,7 +40,8 @@ pub enum KeyboardProtocol {
     /// Do not enable keyboard enhancement (legacy mode).
     #[default]
     Off,
-    /// Auto-detect: enable on terminals known to support Kitty protocol.
+    /// Enable when stdin is a terminal (a terminal without the Kitty protocol
+    /// ignores the request); `TEXTUAL_KEYBOARD_PROTOCOL=on|off` overrides it.
     Auto,
     /// Force enable keyboard enhancement.
     On,
@@ -60,7 +61,9 @@ pub struct DriverOptions {
     pub enable_focus_change: bool,
     pub keyboard_protocol: KeyboardProtocol,
     /// Inline mode (Python `App.run(inline=True)`): stay on the main screen
-    /// and leave line wrap alone instead of entering the alternate screen.
+    /// and leave line wrap alone instead of entering the alternate screen,
+    /// and push only Kitty keyboard flag 1 instead of flags 1, 8 and 16, as
+    /// Python's inline driver does.
     pub inline: bool,
 }
 
