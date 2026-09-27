@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::css::{node_selector_meta, resolve_node_style, with_style_stack};
 use crate::driver::PointerShape;
 use crate::event::{
@@ -277,27 +279,75 @@ pub(crate) fn reset_focus_for_hidden_node(tree: &mut WidgetTree) -> bool {
 
     tree.set_focus_state(focused, false);
 
-    // Python `Screen._reset_focus`: "Move to a sibling if possible" — the
-    // first sibling (DOM order) that is shown and focusable. Siblings share
-    // the focused node's ancestors, so this can only succeed when those are
-    // still shown.
-    if ancestors_shown && let Some(parent) = tree.parent(focused) {
-        let siblings = tree.children(parent).to_vec();
-        for sibling in siblings {
-            if sibling == focused {
-                continue;
-            }
-            let focusable = tree
-                .get(sibling)
-                .is_some_and(|node| node.widget.focusable() && !node.state.disabled);
-            if focusable && node_self_shown(tree, sibling) {
-                tree.set_focus_state(sibling, true);
-                return true;
-            }
-        }
+    // Siblings share the focused node's ancestors, so the sibling branch can
+    // only succeed when those are still shown.
+    if ancestors_shown && let Some(sibling) = first_focusable_sibling(tree, focused, |_| false) {
+        tree.set_focus_state(sibling, true);
     }
 
     // No candidate: focus stays cleared (Python `set_focus(None)`).
+    true
+}
+
+/// Python `Screen._reset_focus`'s "Move to a sibling if possible": the first
+/// sibling of `node`, in DOM order, that is shown, focusable and not
+/// `avoided`.
+fn first_focusable_sibling(
+    tree: &WidgetTree,
+    node: NodeId,
+    avoided: impl Fn(NodeId) -> bool,
+) -> Option<NodeId> {
+    let parent = tree.parent(node)?;
+    tree.children(parent).iter().copied().find(|&sibling| {
+        sibling != node
+            && !avoided(sibling)
+            && tree
+                .get(sibling)
+                .is_some_and(|n| n.widget.focusable() && !n.state.disabled)
+            && node_self_shown(tree, sibling)
+    })
+}
+
+/// Move focus off `removing`, the nodes about to be removed.
+///
+/// Python parity: `App._prune` calls `Screen._reset_focus(focused,
+/// avoiding=pruning_nodes)` when the focused widget is among them
+/// (`app.py`, `screen.py`). Focus goes to the first widget of
+/// `reversed(chain[idx + 1:] + chain[:idx])` that is not being removed: the
+/// nearest one before it in the focus chain, else the last one after it.
+/// A focused widget outside the chain (hidden) moves to a sibling, as in
+/// [`reset_focus_for_hidden_node`]. With no candidate, nothing has focus.
+/// `origin` orders the chain as in [`collect_focus_chain_tree_sorted`].
+/// Returns `true` when the focus state changed.
+pub(crate) fn reset_focus_for_removal(
+    tree: &mut WidgetTree,
+    removing: &[NodeId],
+    origin: &dyn Fn(NodeId) -> Option<(u16, u16)>,
+) -> bool {
+    let Some(focused) = raw_focused_node_id(tree) else {
+        return false;
+    };
+    let removing: HashSet<NodeId> = removing.iter().copied().collect();
+    if !removing.contains(&focused) {
+        return false;
+    }
+    let chain = collect_focus_chain_tree_sorted(tree, Some(focused), origin);
+    let chosen = if chain.is_empty() {
+        None
+    } else if let Some(index) = chain.iter().position(|&id| id == focused) {
+        chain[index + 1..]
+            .iter()
+            .chain(&chain[..index])
+            .rev()
+            .copied()
+            .find(|id| !removing.contains(id))
+    } else {
+        first_focusable_sibling(tree, focused, |id| removing.contains(&id))
+    };
+    tree.set_focus_state(focused, false);
+    if let Some(chosen) = chosen {
+        tree.set_focus_state(chosen, true);
+    }
     true
 }
 
@@ -1323,6 +1373,83 @@ mod tests {
         assert_eq!(trapped, vec![inner_id]);
         let free = collect_focus_chain_tree_sorted(&tree, None, no_pos);
         assert_eq!(free, vec![inner_id, outer_id]);
+    }
+
+    /// Focuses `focused` in `tree`, moves focus off `removing` and returns
+    /// the node that has focus then.
+    fn focus_after_removal(
+        tree: &mut WidgetTree,
+        focused: crate::node_id::NodeId,
+        removing: &[crate::node_id::NodeId],
+    ) -> Option<crate::node_id::NodeId> {
+        if let Some(old) = raw_focused_node_id(tree) {
+            tree.set_focus_state(old, false);
+        }
+        tree.set_focus_state(focused, true);
+        reset_focus_for_removal(tree, removing, &|_| None);
+        raw_focused_node_id(tree)
+    }
+
+    #[test]
+    fn removal_moves_focus_to_the_nearest_earlier_widget_else_the_last() {
+        // Python `Screen._reset_focus`: the first of
+        // reversed(chain[idx + 1:] + chain[:idx]) not being removed.
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Label::new("root")));
+        let [a, b, c, d] =
+            ["a", "b", "c", "d"].map(|label| tree.mount(root_id, Box::new(Button::new(label))));
+
+        assert_eq!(
+            focus_after_removal(&mut tree, b, &[b]),
+            Some(a),
+            "the one before"
+        );
+        assert_eq!(
+            focus_after_removal(&mut tree, a, &[a]),
+            Some(d),
+            "else the last"
+        );
+        assert_eq!(
+            focus_after_removal(&mut tree, c, &[b, c]),
+            Some(a),
+            "skips an earlier one being removed"
+        );
+        assert_eq!(
+            focus_after_removal(&mut tree, a, &[a, d]),
+            Some(c),
+            "skips a later one being removed"
+        );
+        assert_eq!(
+            focus_after_removal(&mut tree, b, &[a, b, c, d]),
+            None,
+            "nothing left to focus"
+        );
+    }
+
+    #[test]
+    fn removing_a_container_moves_focus_off_its_focused_child() {
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Label::new("root")));
+        let before = tree.mount(root_id, Box::new(Button::new("before")));
+        let container = tree.mount(root_id, Box::new(crate::widgets::Container::new()));
+        let inner = tree.mount(container, Box::new(Button::new("inner")));
+        tree.mount(root_id, Box::new(Button::new("after")));
+        let removing = tree.walk_depth_first(container);
+        assert_eq!(
+            focus_after_removal(&mut tree, inner, &removing),
+            Some(before)
+        );
+    }
+
+    #[test]
+    fn removal_leaves_focus_alone_when_the_focused_widget_stays() {
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Label::new("root")));
+        let a = tree.mount(root_id, Box::new(Button::new("a")));
+        let b = tree.mount(root_id, Box::new(Button::new("b")));
+        tree.set_focus_state(a, true);
+        assert!(!reset_focus_for_removal(&mut tree, &[b], &|_| None));
+        assert_eq!(raw_focused_node_id(&tree), Some(a));
     }
 
     #[test]
