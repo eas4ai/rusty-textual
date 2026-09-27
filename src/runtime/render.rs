@@ -3307,13 +3307,6 @@ fn host_scrollbar_children(tree: &WidgetTree, parent: NodeId) -> ScrollbarHostCh
     children
 }
 
-fn set_runtime_display(tree: &mut WidgetTree, node_id: NodeId, show: bool) {
-    if let Some(node) = tree.get_mut(node_id) {
-        node.runtime_display = show;
-        node.display = node.css_display && node.runtime_display;
-    }
-}
-
 fn set_layout_rect(tree: &mut WidgetTree, node_id: NodeId, rect: crate::widget_tree::Rect) {
     if let Some(node) = tree.get_mut(node_id) {
         node.layout_rect = rect;
@@ -3607,13 +3600,13 @@ fn resolve_host_scroll_geometry(
             break;
         }
         if let Some(id) = scrollbar_children.vertical {
-            set_runtime_display(tree, id, false);
+            tree.set_runtime_display(id, false);
         }
         if let Some(id) = scrollbar_children.horizontal {
-            set_runtime_display(tree, id, false);
+            tree.set_runtime_display(id, false);
         }
         if let Some(id) = scrollbar_children.corner {
-            set_runtime_display(tree, id, false);
+            tree.set_runtime_display(id, false);
         }
         crate::layout::resolve_layout(
             tree,
@@ -3703,7 +3696,7 @@ fn place_vertical_scrollbar(
     // resolved lane width — otherwise the zero-rect bar would inherit
     // the host clip and paint its `thickness.max(1)` glyphs over content.
     let show = show && geometry.vertical_lane_width > 0;
-    set_runtime_display(tree, v_id, show && geometry.paint_vertical);
+    tree.set_runtime_display(v_id, show && geometry.paint_vertical);
     // The lane RECT is driven by lane RESERVATION
     // (`vertical_lane_width > 0`), NOT by `show`. Under
     // `scrollbar-gutter: stable` with no overflow the gutter is reserved
@@ -3757,7 +3750,7 @@ fn place_horizontal_scrollbar(
     // so a stable-gutter reserved lane keeps its rect even with no
     // overflow or hidden visibility.
     let show = show && geometry.horizontal_lane_height > 0;
-    set_runtime_display(tree, h_id, show && geometry.paint_horizontal);
+    tree.set_runtime_display(h_id, show && geometry.paint_horizontal);
     let rect = if geometry.horizontal_lane_height > 0 {
         crate::widget_tree::Rect {
             x0: content_rect.x0,
@@ -3800,7 +3793,7 @@ fn place_scrollbar_corner(
         && geometry.vertical_lane_width > 0
         && geometry.horizontal_lane_height > 0;
     let paint = geometry.paint_vertical && geometry.paint_horizontal;
-    set_runtime_display(tree, c_id, show && paint);
+    tree.set_runtime_display(c_id, show && paint);
     // Corner RECT is driven by lane reservation (both lanes reserved),
     // matching the vertical/horizontal lane-rect policy.
     let rect = if geometry.vertical_lane_width > 0 && geometry.horizontal_lane_height > 0 {
@@ -3895,13 +3888,13 @@ fn hide_host_scrollbar_children_for_flow_layout(tree: &mut WidgetTree) {
             continue;
         }
         if let Some(v_id) = children.vertical {
-            set_runtime_display(tree, v_id, false);
+            tree.set_runtime_display(v_id, false);
         }
         if let Some(h_id) = children.horizontal {
-            set_runtime_display(tree, h_id, false);
+            tree.set_runtime_display(h_id, false);
         }
         if let Some(c_id) = children.corner {
-            set_runtime_display(tree, c_id, false);
+            tree.set_runtime_display(c_id, false);
         }
     }
 }
