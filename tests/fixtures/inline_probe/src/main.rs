@@ -58,7 +58,7 @@
 //!   bindings of the app's own (`alt+` and `ctrl+alt+` keys) whose
 //!   descriptions are the items.
 //!
-//! Keys: `s` shrinks the body to one line, `e` adds five lines to it, `z`
+//! Keys: `s` shrinks the body to one line, `t` adds five lines to it, `z`
 //! tries `App::suspend`, `x` runs the suspend-process action, `p` pushes the
 //! `PROBE_PUSH` screen, `h`, `u`, `v` and `w` hide and show its text, `g`
 //! filters a query of it, `c` and `r` change and repaint the `PROBE_SHARED`
@@ -465,7 +465,7 @@ impl TextualApp for Probe {
                 let body = self.body();
                 let _ = app.with_query_one_mut_as::<Static, _>("#body", |s| s.update(body));
             }
-            "e" => {
+            "t" => {
                 self.lines += 5;
                 let body = self.body();
                 let _ = app.with_query_one_mut_as::<Static, _>("#body", |s| s.update(body));

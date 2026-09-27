@@ -396,7 +396,7 @@ fn inl_007_a_click_lands_after_a_taller_frame_scrolls_the_terminal() {
     let before = row_of(&term.settle(), "Press").expect("button row");
     // Five more body lines: the frame grows past the last row and the
     // terminal scrolls, so the app's origin moves up.
-    term.send(b"e");
+    term.send(b"t");
     term.wait_for("taller body", has_text("line 8"));
     let after = row_of(&term.settle(), "Press").expect("button row");
     assert_eq!(after, before, "the button should stay on the last rows");
