@@ -262,9 +262,11 @@ impl DomQuery {
         self.nodes.iter().copied()
     }
 
+    /// Keep only the nodes whose widget passes `predicate`, looked up in the
+    /// active screen's tree, where [`App::query`] matched them.
     #[must_use]
     pub fn results_where(self, app: &App, mut predicate: impl FnMut(&dyn Widget) -> bool) -> Self {
-        let Some(tree) = app.widget_tree.as_ref() else {
+        let Some(tree) = app.active_widget_tree() else {
             return Self::from_nodes(Vec::new());
         };
         let filtered = self
@@ -7830,6 +7832,21 @@ mod tests {
             base_before,
             "the app's own tree must not change"
         );
+    }
+
+    #[test]
+    fn query_results_where_tests_the_pushed_screens_nodes() {
+        let (app, pushed, _) = app_with_a_pushed_button();
+        let is_pushed_button = |widget: &dyn Widget| {
+            (widget as &dyn std::any::Any)
+                .downcast_ref::<Button>()
+                .is_some_and(|button| button.label() == "Pushed")
+        };
+        let kept = app
+            .query("Button")
+            .expect("query")
+            .results_where(&app, is_pushed_button);
+        assert_eq!(kept.into_ids(), vec![pushed]);
     }
 
     #[test]
