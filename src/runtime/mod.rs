@@ -189,7 +189,7 @@ fn suspend_process_default() -> io::Result<()> {
 
 /// Truthy env-flag check: `1`/`true`/`yes`/`on` (case-insensitive) enable it.
 fn env_flag(name: &str) -> bool {
-    std::env::var(name).ok().is_some_and(|value| {
+    std::env::var(name).is_ok_and(|value| {
         let value = value.trim().to_ascii_lowercase();
         matches!(value.as_str(), "1" | "true" | "yes" | "on")
     })
@@ -5217,7 +5217,9 @@ impl App {
     ///   before this call.
     /// - Any error from [`App::start`], for example [`Error::Terminal`] when
     ///   the terminal driver fails to start.
-    #[allow(clippy::unused_async)] // Public async API; the loop does not await yet.
+    // Public async API; the loop does not await yet. Clippy 1.98 also reports
+    // these inherent methods as `unused_async_trait_impl`.
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
     pub async fn run(&mut self) -> Result<()> {
         if !self.running {
             return Err(Error::RuntimeStopped);

@@ -110,18 +110,22 @@ impl TabPane {
         self
     }
 
+    #[must_use]
     pub fn title(&self) -> &str {
         self.title.as_str()
     }
 
+    #[must_use]
     pub fn pane_id(&self) -> Option<&str> {
         self.pane_id.as_deref()
     }
 
+    #[must_use]
     pub fn disabled(&self) -> bool {
         self.disabled
     }
 
+    #[must_use]
     pub fn hidden(&self) -> bool {
         self.hidden
     }

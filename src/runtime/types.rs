@@ -415,16 +415,14 @@ pub(crate) struct SegmentStreamStats {
 pub(crate) fn resize_trace_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
-        std::env::var("TEXTUAL_DEBUG_RESIZE_TRACE")
-            .ok()
-            .is_some_and(|value| {
-                let normalized = value.trim().to_ascii_lowercase();
-                !(normalized.is_empty()
-                    || normalized == "0"
-                    || normalized == "false"
-                    || normalized == "off"
-                    || normalized == "no")
-            })
+        std::env::var("TEXTUAL_DEBUG_RESIZE_TRACE").is_ok_and(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            !(normalized.is_empty()
+                || normalized == "0"
+                || normalized == "false"
+                || normalized == "off"
+                || normalized == "no")
+        })
     })
 }
 

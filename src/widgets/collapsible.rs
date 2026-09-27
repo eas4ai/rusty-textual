@@ -575,10 +575,7 @@ impl crate::widgets::Layout for Collapsible {
         let mut total = 1usize;
         if !self.collapsed {
             for child in &self.children {
-                match child.layout_height() {
-                    Some(height) => total = total.saturating_add(height.max(1)),
-                    None => return None,
-                }
+                total = total.saturating_add(child.layout_height()?.max(1));
             }
         }
         Some(total.max(1))

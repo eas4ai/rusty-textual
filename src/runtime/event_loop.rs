@@ -197,16 +197,14 @@ fn input_event_kind(event: &CrosstermEvent) -> &'static str {
 fn scrollbar_drag_trace_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
-        std::env::var("TEXTUAL_DEBUG_SCROLLBAR_DRAG_TRACE")
-            .ok()
-            .is_some_and(|value| {
-                let normalized = value.trim().to_ascii_lowercase();
-                !(normalized.is_empty()
-                    || normalized == "0"
-                    || normalized == "false"
-                    || normalized == "off"
-                    || normalized == "no")
-            })
+        std::env::var("TEXTUAL_DEBUG_SCROLLBAR_DRAG_TRACE").is_ok_and(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            !(normalized.is_empty()
+                || normalized == "0"
+                || normalized == "false"
+                || normalized == "off"
+                || normalized == "no")
+        })
     })
 }
 
@@ -720,8 +718,7 @@ fn hit_probe_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
         std::env::var("TEXTUAL_DEBUG_HIT_TEST_VERBOSE")
-            .ok()
-            .is_some_and(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+            .is_ok_and(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
     })
 }
 
@@ -2757,7 +2754,9 @@ impl App {
     /// - [`Error::Terminal`](crate::Error::Terminal) when a terminal operation
     ///   fails: starting or restoring the terminal, polling or reading input,
     ///   reading the terminal size, or writing a frame.
-    #[allow(clippy::unused_async)] // Public async API; the loop does not await yet.
+    // Public async API; the loop does not await yet. Clippy 1.98 also reports
+    // these inherent methods as `unused_async_trait_impl`.
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
     pub async fn run_with<F, R>(&mut self, mut render: F) -> crate::Result<()>
     where
         F: FnMut(&mut App, u64) -> R,
@@ -2827,7 +2826,9 @@ impl App {
     /// - [`Error::Terminal`](crate::Error::Terminal) when a terminal operation
     ///   fails: starting or restoring the terminal, polling or reading input,
     ///   reading the terminal size, or writing a frame.
-    #[allow(clippy::unused_async)] // Public async API; the loop does not await yet.
+    // Public async API; the loop does not await yet. Clippy 1.98 also reports
+    // these inherent methods as `unused_async_trait_impl`.
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
     pub async fn run_widget_tree(&mut self, root: &mut dyn Widget) -> crate::Result<()> {
         if !self.running {
             return Err(crate::Error::RuntimeStopped);
