@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: query-display-cannot-override-css
+Current: wheel-scroll-sensitivity
 
 ## inline-render-mode
 
@@ -139,6 +139,25 @@ the nodes whose loading state changed (UPD-004). Removing the focused
 widget moves focus as Python's `Screen._reset_focus` does (UPD-005). A
 query's `results_where` tests the pushed screen's nodes (SCR-002).
 Full-screen rendering is unchanged (TRM-003).
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, and the full test gate, strict clippy, and
+rustfmt pass.
+
+## wheel-scroll-sensitivity
+
+Requirements: SCL-001, SCL-002, SCR-001, INL-017, TRM-003
+
+Delivers: the mouse wheel and the scrollbars act as in Python for every
+widget that scrolls. A vertical wheel notch scrolls 2 lines at once,
+ctrl or shift turns it into 4 columns, and a horizontal notch scrolls 4
+columns; a widget that cannot use a notch passes it to its ancestors
+(SCL-001). Scrollbar track clicks page with an animation at 50 lines a
+second, thumb drags animate over 0.1 seconds, and horizontal notches
+animate too (SCL-002). Keyboard scrolling keeps its steps. Pushed
+screens (SCR-001) and inline screens (INL-017) still scroll to their
+last line, and full-screen apps keep matching the Python goldens
+(TRM-003).
 
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and
