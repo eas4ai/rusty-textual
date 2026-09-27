@@ -9,13 +9,15 @@
 //! `DomQueryMut::set_display(false)`, `v` with `set_visible(false)`. Another
 //! key shows it again the same way: `u` with `set_display(true)`, `w` with
 //! `set_visible(true)`. The text can only come back while the probe runs and
-//! the pushed screen is still on top. Each case has its own test. Run idle
+//! the pushed screen is still on top. `g` filters `App::query("Static")`
+//! with `DomQuery::results_where` for the pushed text and writes the count
+//! on the pushed screen (`where:N`). Each case has its own test. Run idle
 //! and single-threaded, like the other PTY tests.
 
 #[path = "support/pty.rs"]
 mod pty;
 
-use pty::{Answers, SHELL_THEN_EXEC, Term, has_text, lines, probe};
+use pty::{Answers, SHELL_THEN_EXEC, Term, dump, has_text, lines, probe};
 
 /// Pushes the probe's screen, presses `hide` and checks that its text is
 /// gone, then presses `show` and checks that its text is back.
@@ -79,4 +81,43 @@ fn scr_002_set_visible_hides_and_shows_a_pushed_screens_text_inline() {
 #[test]
 fn scr_002_set_visible_hides_and_shows_a_pushed_modal_screens_text_inline() {
     check_query_hides_and_shows_pushed_text("inline", "modal", b"v", b"w");
+}
+
+/// Pushes the probe's screen, presses `g`, and checks that the filtered
+/// query found the pushed screen's text: the count it writes is 1.
+fn check_results_where_tests_the_pushed_screens_nodes(mode: &str, push: &str) {
+    let env = [("PROBE_MODE", mode), ("PROBE_PUSH", push)];
+    let term = Term::spawn(SHELL_THEN_EXEC, &probe(), &env, Answers::TERMINAL);
+    term.wait_for("probe status", has_text("keys:0"));
+    term.settle();
+    term.send(b"p");
+    term.wait_for(&format!("{env:?}: the pushed screen"), has_text("pushed 1"));
+    term.settle();
+    term.send(b"g");
+    let screen = term.wait_for(&format!("{env:?}: the filtered count"), has_text("where:"));
+    assert!(
+        lines(&screen).iter().any(|line| line.contains("where:1")),
+        "{env:?}: results_where did not keep the pushed screen's text:\n{}",
+        dump(&screen)
+    );
+}
+
+#[test]
+fn scr_002_results_where_tests_a_pushed_screens_nodes_in_full_screen() {
+    check_results_where_tests_the_pushed_screens_nodes("full", "screen");
+}
+
+#[test]
+fn scr_002_results_where_tests_a_pushed_modal_screens_nodes_in_full_screen() {
+    check_results_where_tests_the_pushed_screens_nodes("full", "modal");
+}
+
+#[test]
+fn scr_002_results_where_tests_a_pushed_screens_nodes_inline() {
+    check_results_where_tests_the_pushed_screens_nodes("inline", "screen");
+}
+
+#[test]
+fn scr_002_results_where_tests_a_pushed_modal_screens_nodes_inline() {
+    check_results_where_tests_the_pushed_screens_nodes("inline", "modal");
 }
