@@ -7,8 +7,9 @@ toolchain, and strict clippy (`cargo clippy --all-targets -- -W
 clippy::pedantic`, never `-D warnings`) must report no warning there. Every
 distinct warning and error is printed; a place whose cargo run fails, or
 whose `rustc --version` is not the pinned one, fails the requirement too.
-Cargo runs in the environment from mechanism_env, which drops the variables
-that would swap the toolchain or its flags.
+Cargo runs in the environment from mechanism_env, which drops the
+environment variables that would swap the toolchain, its flags or clippy's
+configuration; cargo config files still apply.
 """
 
 import json
