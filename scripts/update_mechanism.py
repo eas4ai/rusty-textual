@@ -1,8 +1,8 @@
-"""Sudus `query-pty` mechanism: run the query-change checks and print one
+"""Sudus `update-pty` mechanism: run the widget-update checks and print one
 `sudus: <REQ>: pass|fail` line per requirement.
 
-Test names carry their requirement: `upd_003_...` checks UPD-003. The PTY
-tests live in tests/query_changes.rs. A requirement passes only when at
+Test names carry their requirement: `upd_001_...` checks UPD-001. The PTY
+tests live in tests/widget_updates.rs. A requirement passes only when at
 least one of its tests ran and none failed, so a missing test or a build
 failure fails it. Cargo runs in the environment from mechanism_env; the PTY
 tests also start each app with a cleared environment.
@@ -17,8 +17,8 @@ sys.dont_write_bytecode = True
 
 from mechanism_env import clean_env  # noqa: E402
 
-REQUIREMENTS = ["UPD-003", "UPD-004", "UPD-005"]
-COMMAND = ["cargo", "test", "--test", "query_changes", "--", "--test-threads=1"]
+REQUIREMENTS = ["UPD-001", "UPD-002"]
+COMMAND = ["cargo", "test", "--test", "widget_updates", "--", "--test-threads=1"]
 RESULT = re.compile(r"^test (\S+) \.\.\. (ok|FAILED|ignored)", re.MULTILINE)
 NAME = re.compile(r"(?:^|::)upd_(\d{3})_")
 
