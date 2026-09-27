@@ -634,17 +634,26 @@ impl<'a> DomQueryMut<'a> {
         };
 
         if let Some(loading) = loading {
+            let mut changed_nodes: Vec<NodeId> = Vec::new();
             if let Some(tree) = query.app.active_widget_tree_mut() {
                 for &id in &query.nodes {
-                    tree.set_loading(id, loading);
+                    if tree
+                        .get(id)
+                        .is_some_and(|node| node.state.loading != loading)
+                    {
+                        tree.set_loading(id, loading);
+                        changed_nodes.push(id);
+                    }
                 }
             }
             // Python `Widget._cover`/`_uncover` (the `loading` reactive's
-            // watcher) end with `self.refresh(layout=True)`: repaint the
-            // covered/uncovered nodes so the LoadingIndicator appears or the
-            // widget's own content returns without waiting for other activity.
-            let nodes = query.nodes.clone();
-            query.app.request_query_refresh(&nodes);
+            // watcher, run only when the value changes) end with
+            // `self.refresh(layout=True)`: repaint the covered/uncovered nodes
+            // so the LoadingIndicator appears or the widget's own content
+            // returns without waiting for other activity.
+            if !changed_nodes.is_empty() {
+                query.app.request_query_refresh(&changed_nodes);
+            }
             query
         } else {
             query
@@ -670,7 +679,11 @@ impl<'a> DomQueryMut<'a> {
     }
 
     pub fn refresh(self) -> Self {
-        self.app.request_query_refresh(&self.nodes);
+        // Python refreshes each matched node, so a query that matched
+        // nothing refreshes nothing; an empty request would clear the screen.
+        if !self.nodes.is_empty() {
+            self.app.request_query_refresh(&self.nodes);
+        }
         self
     }
 }
@@ -7411,6 +7424,51 @@ mod tests {
             app.take_pending_query_refresh_nodes().contains(&root),
             "remove repaints the parent"
         );
+    }
+
+    #[test]
+    fn dom_query_mut_on_no_match_asks_for_no_clear() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(AppRoot::new()));
+        tree.mount(root, Box::new(Button::new("kept")));
+        let mut app = App::new().expect("app should initialize");
+        app.widget_tree = Some(tree);
+
+        app.query_mut("#nothing").expect("query").refresh();
+        app.query_mut("#nothing")
+            .expect("query")
+            .set(None, None, None, Some(true));
+        assert!(!app.clear_on_next_render, "an empty query clears nothing");
+        assert!(
+            app.take_pending_query_refresh_nodes().is_empty(),
+            "an empty query repaints nothing"
+        );
+    }
+
+    #[test]
+    fn dom_query_mut_loading_repaints_only_when_it_changes() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(AppRoot::new()));
+        let button = tree.mount(root, Box::new(Button::new("busy")));
+        let mut app = App::new().expect("app should initialize");
+        app.widget_tree = Some(tree);
+        let _ = app.take_pending_query_refresh_nodes();
+
+        app.query_mut("Button")
+            .expect("query")
+            .set(None, None, None, Some(true));
+        assert!(
+            app.take_pending_query_refresh_nodes().contains(&button),
+            "setting loading repaints the node"
+        );
+        app.query_mut("Button")
+            .expect("query")
+            .set(None, None, None, Some(true));
+        assert!(
+            app.take_pending_query_refresh_nodes().is_empty(),
+            "an unchanged loading state repaints nothing"
+        );
+        assert!(!app.clear_on_next_render);
     }
 
     #[test]
