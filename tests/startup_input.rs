@@ -14,7 +14,7 @@
 #[path = "support/pty.rs"]
 mod pty;
 
-use pty::{Answers, SHELL_THEN_EXEC, Term, has_text, probe};
+use pty::{Answers, SHELL_THEN_EXEC, Term, dump, has_text, probe};
 
 /// `e`, `é` and F5 (`CSI 15 ~`).
 const KEYS: &str = "eé\x1b[15~";
@@ -27,15 +27,26 @@ const SILENT: Answers = Answers {
     ..Answers::TERMINAL
 };
 
+/// The status line's key count, followed by the rest of the line, so
+/// `keys:30` does not match `keys:3`.
+const THREE_KEYS: &str = "keys:3 ";
+
 /// Starts the probe, sends the keys at once, and waits for the probe to count
-/// all three.
+/// exactly three once the screen has settled: no key lost, and nothing else
+/// the startup exchange read counted as a key.
 fn check_keys_typed_at_launch_arrive(mode: &str, answers: Answers) {
     let env = [("PROBE_MODE", mode)];
     let term = Term::spawn(SHELL_THEN_EXEC, &probe(), &env, answers);
     term.send(KEYS.as_bytes());
     term.wait_for(
         &format!("{mode}: keys:3 on the status line"),
-        has_text("keys:3"),
+        has_text(THREE_KEYS),
+    );
+    let screen = term.settle();
+    assert!(
+        has_text(THREE_KEYS)(&screen),
+        "{mode}: the status line moved past keys:3:\n{}",
+        dump(&screen)
     );
 }
 
