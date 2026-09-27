@@ -225,6 +225,8 @@ pub(super) struct ComputedStyleKey {
     pub(super) ancestors: Vec<SelectorMeta>,
     pub(super) parent_style: Option<Style>,
     pub(super) inline_style: Option<Style>,
+    /// The node's own display rule from a query (`WidgetNode::inline_display`).
+    pub(super) inline_display: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]

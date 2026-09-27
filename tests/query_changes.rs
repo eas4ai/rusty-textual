@@ -5,11 +5,12 @@
 //! `scripts/query_mechanism.py`, which maps each `upd_NNN_` test to its
 //! requirement. Each test runs the probe app of `tests/fixtures/inline_probe`
 //! with `PROBE_QUERY` set in the pseudo terminal of `tests/support/pty.rs`.
-//! The probe then shows a `css-hidden` line its stylesheet hides, and three
+//! The probe then shows a `css-hidden` line its stylesheet hides, a
+//! `css-forced` line it hides with `!important`, and three
 //! buttons, `One`, `Two` and `Three`. The focused button draws its label in
 //! reverse video, as Python's `Button:focus` rule does.
 //!
-//! UPD-003: `d` shows the `css-hidden` line with `set_display(true)`.
+//! UPD-003: `d` shows both lines with `set_display(true)`.
 //!
 //! UPD-004: `l` sets `loading` and `f` asks for a repaint, each on a query
 //! that matches nothing; the terminal must not receive a screen clear.
@@ -44,29 +45,35 @@ fn spawn_query_probe(mode: &str, env: &[(&str, &str)]) -> Term {
     term
 }
 
-fn check_query_shows_a_css_hidden_line(mode: &str) {
+/// The lines the probe's stylesheet hides: with `display: none`, and with
+/// `display: none !important`.
+const CSS_HIDDEN: [&str; 2] = ["css-hidden", "css-forced"];
+
+fn check_query_shows_css_hidden_lines(mode: &str) {
     let term = spawn_query_probe(mode, &[]);
     let screen = term.screen();
     assert!(
-        row_of(&screen, "css-hidden").is_none(),
-        "{mode}: the stylesheet does not hide the css-hidden line:\n{}",
+        CSS_HIDDEN
+            .iter()
+            .all(|line| row_of(&screen, line).is_none()),
+        "{mode}: the stylesheet does not hide {CSS_HIDDEN:?}:\n{}",
         dump(&screen)
     );
     term.send(b"d");
     term.wait_for(
-        &format!("{mode}: css-hidden shown by set_display(true)"),
-        has_text("css-hidden"),
+        &format!("{mode}: {CSS_HIDDEN:?} shown by set_display(true)"),
+        |s| CSS_HIDDEN.iter().all(|line| row_of(s, line).is_some()),
     );
 }
 
 #[test]
 fn upd_003_set_display_shows_a_line_the_stylesheet_hides_in_full_screen() {
-    check_query_shows_a_css_hidden_line("full");
+    check_query_shows_css_hidden_lines("full");
 }
 
 #[test]
 fn upd_003_set_display_shows_a_line_the_stylesheet_hides_inline() {
-    check_query_shows_a_css_hidden_line("inline");
+    check_query_shows_css_hidden_lines("inline");
 }
 
 /// Presses `key`, a change on a query that matches nothing, then `e`, which

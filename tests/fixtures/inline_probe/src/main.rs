@@ -37,9 +37,10 @@
 //!   whose text starts with `pushed 1`, and writes the count on the pushed
 //!   screen as `where:N`.
 //! - `PROBE_QUERY`: when set, a `css-hidden` line the stylesheet hides with
-//!   `display: none` and three buttons, `One`, `Two` and `Three` (ids `one`,
+//!   `display: none`, a `css-forced` line it hides with `display: none
+//!   !important`, and three buttons, `One`, `Two` and `Three` (ids `one`,
 //!   `two` and `three`), follow the body. Through `App::query_mut`, `d`
-//!   shows the `css-hidden` line with `set_display(true)`, and `l` and `f`
+//!   shows both lines with `set_display(true)`, and `l` and `f`
 //!   set `loading` and ask for a repaint on a query that matches nothing.
 //!   Tab is not counted, so it moves focus.
 //! - `PROBE_REMOVE`: the id of the button that `k`, `n` and `m` remove
@@ -66,6 +67,7 @@ const CSS: &str = "
 #cssmark { display: none; }
 Screen:inline #cssmark { display: block; }
 #csshidden { display: none; }
+#cssforced { display: none !important; }
 HoverLine { height: 1; }
 SharedLine { height: 1; margin-top: 2; }
 ";
@@ -173,7 +175,8 @@ struct Probe {
     screen_overflow: Option<String>,
     screen_rules: Option<String>,
     extras: Extras,
-    /// `PROBE_QUERY`: the `css-hidden` line and the three buttons.
+    /// `PROBE_QUERY`: the `css-hidden` and `css-forced` lines and the three
+    /// buttons.
     query: bool,
     hover_path: String,
     exit_message: Option<String>,
@@ -316,7 +319,9 @@ impl TextualApp for Probe {
         }
         root = root.with_child(Static::new("inline-css").id("cssmark"));
         if self.query {
-            root = root.with_child(Static::new("css-hidden").id("csshidden"));
+            root = root
+                .with_child(Static::new("css-hidden").id("csshidden"))
+                .with_child(Static::new("css-forced").id("cssforced"));
             for (id, label) in QUERY_BUTTONS {
                 root = root.with_child(Button::new(label).id(id));
             }
@@ -385,7 +390,7 @@ impl TextualApp for Probe {
             "d" | "l" | "f" if self.query => {
                 let _ = match key {
                     "d" => app
-                        .query_mut("#csshidden")
+                        .query_mut("#csshidden, #cssforced")
                         .map(|query| query.set_display(true)),
                     "l" => app
                         .query_mut("#nothing")
