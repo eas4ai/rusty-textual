@@ -320,6 +320,34 @@ fn inl_007_a_silent_terminal_is_asked_twice_then_left_alone() {
 }
 
 #[test]
+fn inl_007_a_silent_terminal_is_still_asked_after_a_taller_frame() {
+    // The first query and its retry go unanswered. A taller frame after that
+    // can have moved the app, so it asks again.
+    let answers = Answers {
+        cursor_position: false,
+        ..Answers::TERMINAL
+    };
+    let term = Term::spawn(SHELL_THEN_EXEC, &probe(), &[], answers);
+    term.wait_for("status", has_text("keys:0"));
+    let queries = |term: &Term| term.raw().windows(4).filter(|w| w == b"\x1b[6n").count();
+    // The first query times out after 2 s, and the retry is due 1 s later
+    // with any frame: a key redraws the status line at the same height.
+    std::thread::sleep(Duration::from_millis(3500));
+    term.send(b"a");
+    term.wait_for("status redraw", has_text("keys:1"));
+    // The retry times out 2 s later.
+    std::thread::sleep(Duration::from_millis(2500));
+    assert_eq!(queries(&term), 2, "the first query and its retry");
+    term.send(b"t");
+    term.wait_for("taller body", has_text("line 8"));
+    let asked = Instant::now();
+    while queries(&term) < 3 && asked.elapsed() < Duration::from_secs(3) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(queries(&term), 3, "the taller frame asks too");
+}
+
+#[test]
 fn inl_007_mouse_recovers_after_a_slow_cursor_report() {
     // The first report comes after crossterm's 2 s timeout; it stays queued
     // and answers the next query, so the app learns its origin anyway.
