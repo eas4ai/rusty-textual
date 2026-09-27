@@ -9,7 +9,7 @@ use crate::compose::ComposeResult;
 use crate::css;
 use crate::debug::DebugLayout;
 use crate::debug::debug_input;
-use crate::event::{AnimationEase, AnimationLevel, AnimationRequest, AnimationValueEvent, Event};
+use crate::event::{AnimationValueEvent, Event};
 use crate::message::{MessageEvent, ScrollbarAxis, ScrollbarScrollTo};
 use crate::node_id::NodeId;
 use crate::num::Cast;
@@ -50,7 +50,6 @@ pub(crate) const APP_ROOT_HSCROLLBAR_ID: &str = "__app_root_hscrollbar";
 pub(crate) const APP_ROOT_SCROLLBAR_CORNER_ID: &str = "__app_root_scrollbar_corner";
 const APP_ROOT_OFFSET_X_ATTR: &str = "approot.offset_x";
 const APP_ROOT_OFFSET_Y_ATTR: &str = "approot.offset_y";
-const APP_ROOT_SCROLL_ANIMATION_DURATION: Duration = Duration::from_millis(100);
 
 fn scrollbar_clamp_offset_f32(offset: f32, content_len: usize, viewport_len: usize) -> f32 {
     if !offset.is_finite() {
@@ -246,10 +245,13 @@ impl AppRoot {
         }
     }
 
+    /// Ask for an animated scroll of `axis` to `to`, over `duration` or at
+    /// Python's scroll speed. Returns whether the offset will change.
     fn request_scroll_animation(
         &mut self,
         axis: ScrollbarAxis,
         to: f32,
+        duration: Option<Duration>,
         ctx: &mut crate::event::WidgetCtx,
     ) -> bool {
         let from = self.axis_offset(axis);
@@ -261,17 +263,13 @@ impl AppRoot {
             ScrollbarAxis::Horizontal => APP_ROOT_OFFSET_X_ATTR,
             ScrollbarAxis::Vertical => APP_ROOT_OFFSET_Y_ATTR,
         };
-        ctx.request_animation(
-            AnimationRequest::new(
-                self.node_id(),
-                attr,
-                from,
-                to,
-                APP_ROOT_SCROLL_ANIMATION_DURATION,
-            )
-            .with_ease(AnimationEase::OutCubic)
-            .with_level(AnimationLevel::Basic),
-        );
+        ctx.request_animation(crate::widgets::scrollbar::scroll_animation(
+            self.node_id(),
+            attr,
+            from,
+            to,
+            duration,
+        ));
         true
     }
 }
@@ -401,13 +399,13 @@ impl crate::widgets::Interactive for AppRoot {
             axis,
             offset,
             animate,
-            ..
+            scroll_duration,
         }) = msg.downcast_ref::<ScrollbarScrollTo>()
         else {
             return;
         };
         let changed = if *animate {
-            self.request_scroll_animation(*axis, *offset, ctx)
+            self.request_scroll_animation(*axis, *offset, *scroll_duration, ctx)
         } else {
             self.apply_scrollbar_offset(*axis, *offset)
         };
@@ -443,7 +441,14 @@ impl crate::widgets::Scrollable for AppRoot {
         let before_y = self.offset_y;
 
         // The deltas are lines and columns already; the scroll steps are
-        // for keys.
+        // for keys. A horizontal notch animates, as in Python.
+        if delta_x != 0 && crate::runtime::dispatch_ctx::wheel_notch_animates() {
+            let to = self.offset_x + delta_x.to_f32_lossy();
+            if self.request_scroll_animation(ScrollbarAxis::Horizontal, to, None, ctx) {
+                ctx.set_handled();
+            }
+            return;
+        }
         self.offset_y += delta_y.to_f32_lossy();
         self.offset_x += delta_x.to_f32_lossy();
         self.clamp_offsets();
@@ -1063,5 +1068,84 @@ mod focus_tests {
             "offset_y = {offset_y}"
         );
         assert_eq!(root.scroll_offset().1, 25);
+    }
+
+    /// An animated scroll of `axis` to `offset` that a scrollbar asks for.
+    fn scrollbar_scroll(axis: ScrollbarAxis, offset: f32) -> MessageEvent {
+        MessageEvent::new(
+            NodeId::default(),
+            ScrollbarScrollTo {
+                axis,
+                offset,
+                animate: true,
+                scroll_duration: None,
+            },
+        )
+        .with_control(NodeId::default())
+    }
+
+    #[test]
+    fn scl_002_the_app_screen_pages_at_python_speed_and_animates_a_horizontal_notch() {
+        let mut root = AppRoot::new();
+        root.on_layout(20, 10);
+        root.set_virtual_content_size(200, 200);
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            root.on_message(&scrollbar_scroll(ScrollbarAxis::Vertical, 24.0), &mut w);
+        }
+        let requests = ctx.take_animation_requests();
+        crate::widgets::scrollbar::assert_python_scroll(&requests[0], 24.0, None);
+
+        let mut ctx = EventCtx::default();
+        {
+            let _animates = crate::runtime::dispatch_ctx::set_wheel_animates(true);
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            crate::widgets::Scrollable::on_mouse_scroll(&mut root, 4, 0, &mut w);
+        }
+        assert!(ctx.handled());
+        let requests = ctx.take_animation_requests();
+        assert_eq!(requests[0].attribute, APP_ROOT_OFFSET_X_ATTR);
+        crate::widgets::scrollbar::assert_python_scroll(&requests[0], 4.0, None);
+        assert_eq!(
+            root.scroll_offset(),
+            (0, 0),
+            "the notch animates, it does not jump"
+        );
+    }
+
+    #[test]
+    fn scl_002_a_scroll_view_pages_at_python_speed_and_animates_a_horizontal_notch() {
+        let console = Console::new();
+        let mut options = console.options().clone();
+        options.size = (12, 5);
+        options.max_width = 12;
+        options.max_height = 5;
+        let text: Vec<String> = (0..30)
+            .map(|n| format!("line {n} {}", "x".repeat(40)))
+            .collect();
+        let mut scroll = ScrollView::new(crate::widgets::Static::new(text.join("\n"))).height(5);
+        let _ = Widget::render(&scroll, &console, &options);
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            scroll.on_message(&scrollbar_scroll(ScrollbarAxis::Vertical, 5.0), &mut w);
+        }
+        let requests = ctx.take_animation_requests();
+        assert_eq!(requests[0].attribute, ScrollView::OFFSET_Y_ATTR);
+        crate::widgets::scrollbar::assert_python_scroll(&requests[0], 5.0, None);
+
+        // Wider content than the view, as a line that does not wrap makes it.
+        scroll.content_width.store(100, Ordering::Relaxed);
+        scroll.viewport_width.store(12, Ordering::Relaxed);
+        let mut ctx = EventCtx::default();
+        {
+            let _animates = crate::runtime::dispatch_ctx::set_wheel_animates(true);
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            crate::widgets::Scrollable::on_mouse_scroll(&mut scroll, 4, 0, &mut w);
+        }
+        let requests = ctx.take_animation_requests();
+        assert_eq!(requests.len(), 1, "one animated horizontal scroll");
+        crate::widgets::scrollbar::assert_python_scroll(&requests[0], 4.0, None);
     }
 }

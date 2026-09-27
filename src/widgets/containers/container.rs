@@ -191,6 +191,11 @@ impl crate::widgets::Interactive for Container {
         if !self.is_scroll_host() {
             return;
         }
+        if self.scroll.apply_animation(self.node_id(), event) {
+            ctx.request_layout_invalidation();
+            ctx.set_handled();
+            return;
+        }
         let Event::Action(action) = event else {
             return;
         };
@@ -201,14 +206,22 @@ impl crate::widgets::Interactive for Container {
     }
 
     fn on_message(&mut self, msg: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
-        let Some(ScrollbarScrollTo { axis, offset, .. }) = msg.downcast_ref::<ScrollbarScrollTo>()
+        let Some(ScrollbarScrollTo {
+            axis,
+            offset,
+            animate,
+            scroll_duration,
+        }) = msg.downcast_ref::<ScrollbarScrollTo>()
         else {
             return;
         };
         if !self.is_scroll_host() {
             return;
         }
-        if self.scroll.scroll_to(*axis, *offset) {
+        if *animate {
+            self.scroll
+                .animate_to(self.node_id(), *axis, *offset, *scroll_duration, ctx);
+        } else if self.scroll.scroll_to(*axis, *offset) {
             ctx.request_layout_invalidation();
         }
         ctx.set_handled();
@@ -273,7 +286,7 @@ impl crate::widgets::Scrollable for Container {
         if !self.is_scroll_host() {
             return;
         }
-        if self.scroll.scroll_by(delta_x, delta_y) {
+        if self.scroll.wheel(self.node_id(), delta_x, delta_y, ctx) {
             ctx.request_layout_invalidation();
             ctx.set_handled();
         }

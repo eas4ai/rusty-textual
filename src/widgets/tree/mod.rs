@@ -36,10 +36,10 @@ pub struct Tree {
     pressed_activation_index: Option<usize>,
     viewport_height: usize,
     scroll_step: usize,
-    /// The cursor when a wheel notch last scrolled the tree. While the cursor
+    /// The cursor when a wheel notch or the scrollbar last scrolled the tree. While the cursor
     /// stays there, the view is not pulled back to it; moving the cursor
     /// brings it back into view, as in Python.
-    wheel_cursor: Option<WheelCursor>,
+    scrolled_cursor: Option<ScrolledCursor>,
     /// Whether the root node(s) are visible. Default: true.
     show_root: bool,
     /// Whether tree guide lines (│, ├, └) are drawn. Default: true.
@@ -77,7 +77,7 @@ impl Tree {
             pressed_activation_index: None,
             viewport_height: 1,
             scroll_step: 1,
-            wheel_cursor: None,
+            scrolled_cursor: None,
             show_root: true,
             show_guides: true,
             guide_depth: 4,
@@ -868,10 +868,10 @@ impl Tree {
 
     fn ensure_visible(&mut self) {
         self.clamp_offsets();
-        if self.wheel_cursor == Some(WheelCursor(self.cursor)) {
+        if self.scrolled_cursor == Some(ScrolledCursor(self.cursor)) {
             return;
         }
-        self.wheel_cursor = None;
+        self.scrolled_cursor = None;
         let nodes = self.visible_nodes();
         if nodes.is_empty() {
             return;
@@ -1665,9 +1665,9 @@ impl crate::widgets::Layout for Tree {
     }
 }
 
-/// The cursor node (or none) when a wheel notch scrolled the tree.
+/// The cursor node (or none) when a wheel notch or the scrollbar scrolled the tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct WheelCursor(Option<TreeNodeId>);
+struct ScrolledCursor(Option<TreeNodeId>);
 
 impl crate::widgets::Scrollable for Tree {
     fn on_mouse_scroll(&mut self, _delta_x: i32, delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
@@ -1680,7 +1680,7 @@ impl crate::widgets::Scrollable for Tree {
             ctx,
         );
         if self.offset != before {
-            self.wheel_cursor = Some(WheelCursor(self.cursor));
+            self.scrolled_cursor = Some(ScrolledCursor(self.cursor));
         }
     }
 }

@@ -378,6 +378,11 @@ impl Widget for ScreenHost {
     }
 
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
+        if self.scroll.apply_animation(self.node_id(), event) {
+            ctx.request_layout_invalidation();
+            ctx.set_handled();
+            return;
+        }
         if let Ok(mut screen) = self.screen.lock() {
             let mut screen_ctx = ScreenMessageCtx::new(ctx.event_ctx_mut(), &self.dismiss_slot);
             screen.on_event(event, &mut screen_ctx);
@@ -385,10 +390,18 @@ impl Widget for ScreenHost {
     }
 
     fn on_message(&mut self, message: &MessageEvent, ctx: &mut crate::event::WidgetCtx) {
-        if let Some(ScrollbarScrollTo { axis, offset, .. }) = message.downcast_ref()
+        if let Some(ScrollbarScrollTo {
+            axis,
+            offset,
+            animate,
+            scroll_duration,
+        }) = message.downcast_ref()
             && self.scroll.is_active()
         {
-            if self.scroll.scroll_to(*axis, *offset) {
+            if *animate {
+                self.scroll
+                    .animate_to(self.node_id(), *axis, *offset, *scroll_duration, ctx);
+            } else if self.scroll.scroll_to(*axis, *offset) {
                 ctx.request_layout_invalidation();
             }
             ctx.set_handled();
@@ -412,7 +425,7 @@ impl Widget for ScreenHost {
     }
 
     fn on_mouse_scroll(&mut self, delta_x: i32, delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
-        if self.scroll.is_active() && self.scroll.scroll_by(delta_x, delta_y) {
+        if self.scroll.is_active() && self.scroll.wheel(self.node_id(), delta_x, delta_y, ctx) {
             ctx.request_layout_invalidation();
             ctx.set_handled();
         }

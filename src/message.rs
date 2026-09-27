@@ -747,9 +747,9 @@ pub struct ScrollbarScrollTo {
     pub axis: ScrollbarAxis,
     pub offset: f32,
     pub animate: bool,
-    /// Optional explicit animation duration override.
-    ///
-    /// When `None`, scroll hosts use their CSS transition configuration.
+    /// How long the animated scroll takes. When `None`, the host animates at
+    /// Python's scroll speed, 50 lines or columns a second, as a track click
+    /// does; a thumb drag asks for 0.1 seconds.
     pub scroll_duration: Option<Duration>,
 }
 crate::impl_message!(ScrollbarScrollTo);

@@ -71,10 +71,10 @@ pub struct ListView {
     /// The width the items are shown in (from the last layout).
     viewport_width: usize,
     scroll_step: usize,
-    /// The highlighted item when a wheel notch last scrolled the list. While
+    /// The highlighted item when a wheel notch or the scrollbar last scrolled the list. While
     /// the highlight stays there, the view is not pulled back to it; moving
     /// the highlight brings it back into view, as in Python.
-    wheel_selected: Option<usize>,
+    scrolled_selected: Option<usize>,
     children_extracted: bool,
     /// `true` once an initial `Highlighted` should be posted at mount (Python's
     /// `_on_mount` sets `self.index`, which fires the `Highlighted` watcher).
@@ -113,7 +113,7 @@ impl ListView {
             viewport_height: 1,
             viewport_width: 1,
             scroll_step: 1,
-            wheel_selected: None,
+            scrolled_selected: None,
             children_extracted: false,
             pending_initial_highlight: false,
             seed: NodeSeed::default(),
@@ -373,10 +373,10 @@ impl ListView {
 
     fn ensure_visible(&mut self) {
         self.clamp_offsets();
-        if self.item_text.is_empty() || self.wheel_selected == Some(self.selected) {
+        if self.item_text.is_empty() || self.scrolled_selected == Some(self.selected) {
             return;
         }
-        self.wheel_selected = None;
+        self.scrolled_selected = None;
         let viewport = self.viewport_height.max(1);
         if self.selected < self.offset {
             self.offset = self.selected;
@@ -778,7 +778,7 @@ impl crate::widgets::Scrollable for ListView {
             ctx,
         );
         if self.offset != before {
-            self.wheel_selected = Some(self.selected);
+            self.scrolled_selected = Some(self.selected);
         }
     }
 

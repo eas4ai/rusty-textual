@@ -320,7 +320,8 @@ fn furthest(screen: &vt100::Screen, prefix: &str) -> Option<usize> {
     let numbers: Vec<usize> = lines(screen)
         .iter()
         .flat_map(|line| {
-            line.match_indices(prefix)
+            let mut numbers: Vec<usize> = line
+                .match_indices(prefix)
                 .filter_map(|(at, _)| {
                     let digits: String = line[at + prefix.len()..]
                         .chars()
@@ -328,7 +329,14 @@ fn furthest(screen: &vt100::Screen, prefix: &str) -> Option<usize> {
                         .collect();
                     digits.parse().ok()
                 })
-                .collect::<Vec<usize>>()
+                .collect();
+            // On a line of several labels (the `DataTable`'s header) the
+            // last one may be cut short by the widget's right edge (`c3` of
+            // `c30`).
+            if numbers.len() > 1 {
+                numbers.pop();
+            }
+            numbers
         })
         .collect();
     let in_order = numbers.windows(2).all(|pair| pair[1] == pair[0] + 1);

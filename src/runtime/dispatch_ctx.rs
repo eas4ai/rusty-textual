@@ -80,3 +80,36 @@ pub(crate) fn set_dispatch_tree(tree_id: u64) -> DispatchTreeGuard {
 pub(crate) fn dispatch_tree_id() -> Option<u64> {
     DISPATCH_TREE.with(std::cell::Cell::get)
 }
+
+thread_local! {
+    /// Whether the wheel notch being dispatched is a horizontal one, which
+    /// Python scrolls with an animation (`Widget._on_mouse_scroll_right` /
+    /// `_left`); a vertical notch, with or without ctrl or shift, scrolls at
+    /// once.
+    static WHEEL_ANIMATES: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Guard returned by [`set_wheel_animates`]. Restores the previous value when
+/// dropped (RAII).
+pub(crate) struct WheelAnimatesGuard {
+    previous: bool,
+}
+
+impl Drop for WheelAnimatesGuard {
+    fn drop(&mut self) {
+        WHEEL_ANIMATES.with(|cell| cell.set(self.previous));
+    }
+}
+
+/// Mark whether the wheel notch about to be dispatched scrolls with an
+/// animation, until the guard drops.
+#[must_use]
+pub(crate) fn set_wheel_animates(animates: bool) -> WheelAnimatesGuard {
+    let previous = WHEEL_ANIMATES.with(|cell| cell.replace(animates));
+    WheelAnimatesGuard { previous }
+}
+
+/// Whether the wheel notch being dispatched scrolls with an animation.
+pub(crate) fn wheel_notch_animates() -> bool {
+    WHEEL_ANIMATES.with(Cell::get)
+}

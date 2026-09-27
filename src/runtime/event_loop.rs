@@ -4409,6 +4409,12 @@ impl App {
             pending_invalidation,
             InvalidationScope::Global,
         );
+        // A horizontal notch scrolls with an animation, as in Python.
+        let _animates = crate::runtime::dispatch_ctx::set_wheel_animates(matches!(
+            mouse.kind,
+            crossterm::event::MouseEventKind::ScrollLeft
+                | crossterm::event::MouseEventKind::ScrollRight
+        ));
         let mut outcome = if let Some(target) = target {
             self.dispatch_mouse_scroll_to_target_auto(root, target, delta_x, delta_y)
         } else {

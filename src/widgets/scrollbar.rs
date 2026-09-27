@@ -1,13 +1,92 @@
 use rich_rs::{Segment, Segments};
 use textual_macros::widget;
 
-use crate::event::{Event, MouseDownEvent, MouseMoveEvent};
+use std::time::Duration;
+
+use crate::event::{
+    AnimationEase, AnimationLevel, AnimationRequest, AnimationValueEvent, Event, MouseDownEvent,
+    MouseMoveEvent,
+};
 use crate::message::ScrollbarScrollTo;
+use crate::node_id::NodeId;
 use crate::num::Cast;
 use crate::style::{Color, Overflow, ScrollbarGutter, ScrollbarVisibility, Style};
 use crate::widgets::{NodeSeed, Widget};
 
 pub use crate::message::ScrollbarAxis;
+
+/// Python's speed for a scroll that animates without a duration
+/// (`Widget._scroll_to`: `speed = 50`), in lines or columns a second.
+pub(crate) const SCROLL_SPEED: f32 = 50.0;
+
+/// How long the scroll a thumb drag asks for animates (Python
+/// `Widget._on_scroll_to`: `duration=0.1`).
+pub(crate) const DRAG_SCROLL_DURATION: Duration = Duration::from_millis(100);
+
+/// How long a scroll from `from` to `to` animates: `duration` when the
+/// scroll names one, else at [`SCROLL_SPEED`].
+pub(crate) fn scroll_duration(from: f32, to: f32, duration: Option<Duration>) -> Duration {
+    duration.unwrap_or_else(|| Duration::from_secs_f32((to - from).abs() / SCROLL_SPEED))
+}
+
+/// Checks that `request` scrolls `distance` lines or columns as Python does:
+/// over `duration`, else at [`SCROLL_SPEED`], with an out-cubic ease.
+#[cfg(test)]
+pub(crate) fn assert_python_scroll(
+    request: &AnimationRequest,
+    distance: f32,
+    duration: Option<Duration>,
+) {
+    let expected = duration.map_or(distance.abs() / SCROLL_SPEED, |d| d.as_secs_f32());
+    assert!(
+        (request.duration.as_secs_f32() - expected).abs() < 1e-3,
+        "duration {:?}, expected {expected}s",
+        request.duration
+    );
+    assert!(
+        ((request.end - request.start).abs() - distance.abs()).abs() < 1e-3,
+        "scrolls from {} to {}, expected {distance}",
+        request.start,
+        request.end
+    );
+    assert_eq!(request.ease, AnimationEase::OutCubic);
+    assert_eq!(request.level, AnimationLevel::Basic);
+}
+
+/// The value of a step of `node`'s `attribute` animation, when `event` is
+/// one.
+pub(crate) fn animation_step(event: &Event, node: NodeId, attribute: &str) -> Option<f32> {
+    match event {
+        Event::AnimationValue(AnimationValueEvent {
+            target,
+            attribute: animated,
+            value,
+            ..
+        }) if *target == node && animated == attribute => Some(*value),
+        _ => None,
+    }
+}
+
+/// An animated scroll of `attribute` on `node` from `from` to `to`, as
+/// Python animates one: for [`scroll_duration`], with an out-cubic ease
+/// (`DEFAULT_SCROLL_EASING`), at the `basic` animation level.
+pub(crate) fn scroll_animation(
+    node: NodeId,
+    attribute: &'static str,
+    from: f32,
+    to: f32,
+    duration: Option<Duration>,
+) -> AnimationRequest {
+    AnimationRequest::new(
+        node,
+        attribute,
+        from,
+        to,
+        scroll_duration(from, to, duration),
+    )
+    .with_ease(AnimationEase::OutCubic)
+    .with_level(AnimationLevel::Basic)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScrollTo {
@@ -849,7 +928,7 @@ impl ScrollBar {
                 axis: self.axis(),
                 offset: next_pos,
                 animate: true,
-                scroll_duration: None,
+                scroll_duration: Some(DRAG_SCROLL_DURATION),
             });
         }
     }
@@ -1687,5 +1766,74 @@ mod tests {
             line_breaks, 2,
             "horizontal scrollbar must stack `thickness` (3) rows (2 line breaks)"
         );
+    }
+
+    /// Sends `event` to `bar`; returns the scroll it asks its host for.
+    fn scroll_asked(bar: &mut ScrollBar, event: &Event) -> Option<ScrollbarScrollTo> {
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(
+                crate::node_id::NodeId::default(),
+                &mut ctx,
+            );
+            bar.on_event(event, &mut w);
+        }
+        ctx.take_messages()
+            .into_iter()
+            .find_map(|m| m.downcast_ref::<ScrollbarScrollTo>().copied())
+    }
+
+    /// A vertical bar over 60 lines shown 10 at a time.
+    fn bar_over_60_lines() -> ScrollBar {
+        let mut bar = ScrollBar::new(true, 2);
+        bar.set_window_virtual_size(60);
+        bar.set_window_size(10);
+        bar.on_layout(2, 10);
+        bar
+    }
+
+    #[test]
+    fn scl_002_a_track_click_asks_for_python_speed_and_a_drag_for_0_1_seconds() {
+        let mut bar = bar_over_60_lines();
+        let id = bar.node_id();
+        let press = |y| {
+            Event::MouseDown(MouseDownEvent {
+                target: id,
+                screen_x: 0,
+                screen_y: y,
+                x: 0,
+                y,
+            })
+        };
+        let page = scroll_asked(&mut bar, &press(8)).expect("a track click scrolls");
+        assert!(page.animate);
+        assert_eq!(page.scroll_duration, None, "a page runs at Python's speed");
+
+        let mut bar = bar_over_60_lines();
+        let _ = scroll_asked(&mut bar, &press(0));
+        let drag = scroll_asked(
+            &mut bar,
+            &Event::MouseMove(MouseMoveEvent {
+                target: id,
+                screen_x: 0,
+                screen_y: 1,
+                x: 0,
+                y: 1,
+            }),
+        )
+        .expect("a thumb drag scrolls");
+        assert!(drag.animate);
+        assert_eq!(drag.scroll_duration, Some(DRAG_SCROLL_DURATION));
+        assert_eq!(DRAG_SCROLL_DURATION, Duration::from_millis(100));
+    }
+
+    #[test]
+    fn scl_002_a_scroll_animates_at_50_lines_a_second_with_an_out_cubic_ease() {
+        let node = crate::node_id::NodeId::default();
+        let page = scroll_animation(node, "offset", 0.0, 28.0, None);
+        assert_python_scroll(&page, 28.0, None);
+        assert!((page.duration.as_secs_f32() - 0.56).abs() < 1e-3);
+        let drag = scroll_animation(node, "offset", 5.0, 3.0, Some(DRAG_SCROLL_DURATION));
+        assert_python_scroll(&drag, 2.0, Some(DRAG_SCROLL_DURATION));
     }
 }
