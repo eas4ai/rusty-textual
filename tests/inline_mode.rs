@@ -18,6 +18,7 @@ mod pty;
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use pty::Answers;
 use pty::{
@@ -339,6 +340,86 @@ fn inl_007_mouse_recovers_after_a_slow_cursor_report() {
     let (x, y) = (col + 2, row + 1);
     term.send(format!("\x1b[<0;{x};{y}M\x1b[<0;{x};{y}m").as_bytes());
     term.wait_for("click to register", has_text("clicked"));
+}
+
+#[test]
+fn inl_007_a_frame_that_keeps_its_height_does_not_wait_for_a_report() {
+    // Python asks after every frame and never waits for the reply; the port
+    // asks only when the origin can move. So with a slow terminal, a key that
+    // redraws the status line at the same height shows at once.
+    let delay = Duration::from_millis(1500);
+    let answers = Answers {
+        cursor_delay: delay,
+        ..Answers::TERMINAL
+    };
+    let term = Term::spawn(SHELL_THEN_EXEC, &probe(), &[], answers);
+    term.wait_for("status", has_text("keys:0"));
+    // The first frame's request is answered `delay` later.
+    std::thread::sleep(delay + Duration::from_millis(500));
+    for n in 1..=5 {
+        let want = format!("keys:{n}");
+        let sent = Instant::now();
+        term.send(b"a");
+        term.wait_for(&want, |s| s.contents().contains(&want));
+        let took = sent.elapsed();
+        assert!(
+            took < Duration::from_millis(750),
+            "key {n} took {took:?} to show with cursor reports {delay:?} late"
+        );
+    }
+}
+
+/// Starts the app on the terminal's last rows: the shell prints this many
+/// lines first.
+const SHELL_FILLS_THEN_EXEC: &str = "seq 1 26; exec \"$0\"";
+
+/// Click the probe's `Press` button where the screen shows it, and wait for
+/// the app to register the click.
+fn click_press(term: &Term) {
+    let screen = term.settle();
+    let row = row_of(&screen, "Press").expect("button row");
+    let col = lines(&screen)[row].find("Press").expect("button column");
+    let (x, y) = (col + 2, row + 1); // 1-based SGR coordinates inside the label
+    term.send(format!("\x1b[<0;{x};{y}M\x1b[<0;{x};{y}m").as_bytes());
+    term.wait_for("click to register", has_text("clicked"));
+}
+
+#[test]
+fn inl_007_a_click_lands_after_a_taller_frame_scrolls_the_terminal() {
+    let term = Term::spawn(
+        SHELL_FILLS_THEN_EXEC,
+        &probe(),
+        &[("PROBE_BUTTON", "1")],
+        Answers::TERMINAL,
+    );
+    term.wait_for("button", has_text("Press"));
+    let before = row_of(&term.settle(), "Press").expect("button row");
+    // Five more body lines: the frame grows past the last row and the
+    // terminal scrolls, so the app's origin moves up.
+    term.send(b"e");
+    term.wait_for("taller body", has_text("line 8"));
+    let after = row_of(&term.settle(), "Press").expect("button row");
+    assert_eq!(after, before, "the button should stay on the last rows");
+    click_press(&term);
+}
+
+#[test]
+fn inl_007_a_click_lands_after_a_resize_moves_the_app() {
+    let term = Term::spawn(
+        SHELL_FILLS_THEN_EXEC,
+        &probe(),
+        &[("PROBE_BUTTON", "1")],
+        Answers::TERMINAL,
+    );
+    term.wait_for("button", has_text("Press"));
+    let before = row_of(&term.settle(), "Press").expect("button row");
+    // The app sits on the last rows; a shorter terminal drops them, and the
+    // app redraws from the new last row, higher up.
+    term.resize(ROWS - 10);
+    term.wait_for("redraw", |s| {
+        row_of(s, "Press").is_some_and(|row| row < before)
+    });
+    click_press(&term);
 }
 
 #[test]

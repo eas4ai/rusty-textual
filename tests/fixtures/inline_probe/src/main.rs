@@ -58,15 +58,16 @@
 //!   bindings of the app's own (`alt+` and `ctrl+alt+` keys) whose
 //!   descriptions are the items.
 //!
-//! Keys: `s` shrinks the body to one line, `z` tries `App::suspend`, `x`
-//! runs the suspend-process action, `p` pushes the `PROBE_PUSH` screen, `h`,
-//! `u`, `v` and `w` hide and show its text, `g` filters a query of it, `c`
-//! and `r` change and repaint the `PROBE_SHARED` line, `d`, `l`, `f`, `k`,
-//! `n` and `m` make the `PROBE_QUERY` changes, `q` quits. The status line
-//! counts every other key that arrives (`keys:N`) and shows the last suspend
-//! result, `clicked` once the button has been pressed, and `hovered` once
-//! the pointer has moved over the hover line. The key chooses the path that
-//! writes the status line (see `Probe::show_status`).
+//! Keys: `s` shrinks the body to one line, `e` adds five lines to it, `z`
+//! tries `App::suspend`, `x` runs the suspend-process action, `p` pushes the
+//! `PROBE_PUSH` screen, `h`, `u`, `v` and `w` hide and show its text, `g`
+//! filters a query of it, `c` and `r` change and repaint the `PROBE_SHARED`
+//! line, `d`, `l`, `f`, `k`, `n` and `m` make the `PROBE_QUERY` changes, `q`
+//! quits. The status line counts every other key that arrives (`keys:N`) and
+//! shows the last suspend result, `clicked` once the button has been
+//! pressed, and `hovered` once the pointer has moved over the hover line.
+//! The key chooses the path that writes the status line (see
+//! `Probe::show_status`).
 
 use std::any::Any;
 use std::fmt::Write as _;
@@ -461,6 +462,11 @@ impl TextualApp for Probe {
         match key {
             "s" => {
                 self.lines = 1;
+                let body = self.body();
+                let _ = app.with_query_one_mut_as::<Static, _>("#body", |s| s.update(body));
+            }
+            "e" => {
+                self.lines += 5;
                 let body = self.body();
                 let _ = app.with_query_one_mut_as::<Static, _>("#body", |s| s.update(body));
             }
