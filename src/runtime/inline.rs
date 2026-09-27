@@ -5,9 +5,9 @@
 //! Each frame is the whole app, redrawn from its top-left cell (the origin)
 //! with relative cursor moves only, the way Python's `InlineUpdate` writes
 //! it (`_compositor.py`), so the shell content above the app stays put.
-//! After a frame the cursor is back at the origin, and the runtime asks the
-//! terminal where that is (a cursor position report) so mouse coordinates can
-//! be made relative to the app.
+//! After a frame the cursor is back at the origin, and when the origin can
+//! have moved the runtime asks the terminal where that is (a cursor position
+//! report) so mouse coordinates can be made relative to the app.
 
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
@@ -43,7 +43,7 @@ impl InlineState {
             origin: None,
             resized: false,
             started: false,
-            origin_query: OriginQuery::EveryFrame,
+            origin_query: OriginQuery::WhenMoved,
         }
     }
 }
@@ -51,13 +51,17 @@ impl InlineState {
 /// The wait before retrying an unanswered cursor position query.
 pub(crate) const ORIGIN_RETRY: Duration = Duration::from_secs(1);
 
-/// When the runtime asks the terminal where the origin is. Each unanswered
-/// query blocks for crossterm's 2 s timeout, so a terminal that does not
-/// answer is asked twice and then left alone.
+/// When the runtime asks the terminal where the origin is. crossterm hands
+/// the report only to a caller that waits for it, so the runtime asks only
+/// after a frame that can have moved the origin (INL-007; Python asks after
+/// every frame without waiting). Each unanswered query blocks for
+/// crossterm's 2 s timeout, so a terminal that does not answer is asked
+/// twice and then left alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OriginQuery {
-    /// After every frame: the last query was answered, or none was sent.
-    EveryFrame,
+    /// After a frame that can have moved the origin: the last query was
+    /// answered, or none was sent.
+    WhenMoved,
     /// The last query went unanswered: ask once more at this time. A reply
     /// that was only late is queued by then and answers at once.
     RetryAt(Instant),
@@ -67,10 +71,11 @@ pub(crate) enum OriginQuery {
 }
 
 impl OriginQuery {
-    /// Whether to send a query at `now`.
-    pub(crate) fn due(self, now: Instant) -> bool {
+    /// Whether to send a query at `now`, after a frame that `moved` the
+    /// origin or may have (see [`origin_can_move`]).
+    pub(crate) fn due(self, moved: bool, now: Instant) -> bool {
         match self {
-            Self::EveryFrame => true,
+            Self::WhenMoved => moved,
             Self::RetryAt(at) => now >= at,
             Self::Stopped => false,
         }
@@ -79,11 +84,20 @@ impl OriginQuery {
     /// The state after a query that returned at `now`, `answered` or not.
     pub(crate) fn after(self, answered: bool, now: Instant) -> Self {
         match (answered, self) {
-            (true, _) => Self::EveryFrame,
-            (false, Self::EveryFrame) => Self::RetryAt(now + ORIGIN_RETRY),
+            (true, _) => Self::WhenMoved,
+            (false, Self::WhenMoved) => Self::RetryAt(now + ORIGIN_RETRY),
             (false, Self::RetryAt(_) | Self::Stopped) => Self::Stopped,
         }
     }
+}
+
+/// Whether a frame of `rows` rows can have moved the origin: it is the first
+/// frame, it is taller than the `previous` one (a frame that runs past the
+/// terminal's last row scrolls the terminal), or it is the first frame after
+/// a resize. A frame of the same height or shorter leaves the origin where
+/// it was.
+pub(crate) fn origin_can_move(previous: Option<u16>, rows: usize, resized: bool) -> bool {
+    resized || previous.is_none_or(|previous| usize::from(previous) < rows)
 }
 
 /// Whether a request to run inline takes effect: Python picks its inline
@@ -195,19 +209,39 @@ mod tests {
     #[test]
     fn an_unanswered_origin_query_is_retried_once_then_stopped() {
         let now = Instant::now();
-        assert!(OriginQuery::EveryFrame.due(now));
-        let retry = OriginQuery::EveryFrame.after(false, now);
+        assert!(OriginQuery::WhenMoved.due(true, now));
+        let retry = OriginQuery::WhenMoved.after(false, now);
         assert_eq!(retry, OriginQuery::RetryAt(now + ORIGIN_RETRY));
-        assert!(!retry.due(now), "the retry waits");
-        assert!(retry.due(now + ORIGIN_RETRY));
+        assert!(!retry.due(true, now), "the retry waits");
+        assert!(
+            retry.due(false, now + ORIGIN_RETRY),
+            "the retry comes with any frame"
+        );
         assert_eq!(
             retry.after(true, now),
-            OriginQuery::EveryFrame,
+            OriginQuery::WhenMoved,
             "a late reply answers the retry"
         );
         let stopped = retry.after(false, now);
         assert_eq!(stopped, OriginQuery::Stopped);
-        assert!(!stopped.due(now + Duration::from_secs(3600)));
+        assert!(!stopped.due(true, now + Duration::from_secs(3600)));
+    }
+
+    #[test]
+    fn inl_007_only_a_frame_that_can_move_the_origin_asks_for_it() {
+        let now = Instant::now();
+        assert!(origin_can_move(None, 5, false), "the first frame");
+        assert!(origin_can_move(Some(5), 8, false), "a taller frame");
+        assert!(
+            origin_can_move(Some(5), 5, true),
+            "the first frame after a resize"
+        );
+        assert!(
+            !origin_can_move(Some(5), 5, false),
+            "a frame of the same height"
+        );
+        assert!(!origin_can_move(Some(5), 3, false), "a shorter frame");
+        assert!(!OriginQuery::WhenMoved.due(false, now));
     }
 
     #[test]

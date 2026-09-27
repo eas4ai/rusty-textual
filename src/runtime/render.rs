@@ -502,8 +502,9 @@ impl App {
 
     /// Write an inline frame (Python `InlineUpdate` and `App._display`): the
     /// whole frame from the origin, erasing below it when it got shorter,
-    /// then back to the origin; then ask the terminal where the origin is,
-    /// for mouse coordinates. A resize first erases the display.
+    /// then back to the origin; then, when the origin can have moved, ask
+    /// the terminal where it is, for mouse coordinates. A resize first erases
+    /// the display.
     fn present_inline_frame(
         &mut self,
         widget: &mut dyn Widget,
@@ -513,11 +514,13 @@ impl App {
         let rows = next.height;
         let mut resized = false;
         let mut clear = false;
+        let mut moved = false;
         if let Some(state) = &mut self.inline {
             resized = std::mem::take(&mut state.resized);
             clear = state
                 .previous_height
                 .is_some_and(|previous| usize::from(previous) > rows);
+            moved = super::inline::origin_can_move(state.previous_height, rows, resized);
             state.previous_height = Some(rows.to_u16_sat());
         }
         if !self.headless && rows > 0 {
@@ -528,7 +531,7 @@ impl App {
                 .print_segments(&next.row_segments(super::inline::ROW_BREAK))?;
             self.console
                 .write_str(&super::inline::frame_tail(rows, clear))?;
-            self.query_inline_origin();
+            self.query_inline_origin(moved);
         }
         self.resized_since_last_render = false;
         self.clear_on_next_render = false;
@@ -539,16 +542,16 @@ impl App {
         Ok(())
     }
 
-    /// Ask the terminal where the cursor, now at the app's origin, is
-    /// (Python asks after every frame). Each unanswered query blocks for
-    /// crossterm's 2 s timeout, so an unanswered query is retried once and,
-    /// if the retry goes unanswered too, the terminal is not asked again
-    /// (see [`OriginQuery`](super::inline::OriginQuery)).
-    fn query_inline_origin(&mut self) {
+    /// Ask the terminal where the cursor, now at the app's origin, is, after
+    /// a frame that `moved` the origin or may have (INL-007). Each unanswered
+    /// query blocks for crossterm's 2 s timeout, so an unanswered query is
+    /// retried once and, if the retry goes unanswered too, the terminal is
+    /// not asked again (see [`OriginQuery`](super::inline::OriginQuery)).
+    fn query_inline_origin(&mut self, moved: bool) {
         let Some(state) = &mut self.inline else {
             return;
         };
-        if !state.origin_query.due(std::time::Instant::now()) {
+        if !state.origin_query.due(moved, std::time::Instant::now()) {
             return;
         }
         let answer = crossterm::cursor::position();
