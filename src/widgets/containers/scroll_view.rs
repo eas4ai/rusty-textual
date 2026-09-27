@@ -11,7 +11,7 @@ use crate::event::{
 };
 use crate::message::{MessageEvent, ScrollbarAxis, ScrollbarScrollTo};
 use crate::num::Cast;
-use crate::style::{Overflow, ScrollbarGutter, ScrollbarVisibility, parse_color_like};
+use crate::style::{ScrollbarGutter, ScrollbarVisibility, parse_color_like};
 
 use crate::action::ParsedAction;
 use crate::node_id::NodeId;
@@ -1639,33 +1639,21 @@ impl crate::widgets::Layout for ScrollView {
 impl crate::widgets::Scrollable for ScrollView {
     #[allow(clippy::similar_names)] // Paired names for the two axes (dx/dy).
     fn on_mouse_scroll(&mut self, delta_x: i32, delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
-        // Horizontal-only scroll containers use wheel Y deltas to scroll X.
-        let mut resolved_dx = delta_x;
-        let mut resolved_dy = delta_y;
-        let overflow_x = self.seed.styles.style.overflow_x.unwrap_or(Overflow::Auto);
-        let overflow_y = self.seed.styles.style.overflow_y.unwrap_or(Overflow::Auto);
-        if resolved_dx == 0
-            && resolved_dy != 0
-            && matches!(overflow_y, Overflow::Hidden)
-            && !matches!(overflow_x, Overflow::Hidden)
-        {
-            resolved_dx = resolved_dy;
-            resolved_dy = 0;
-        }
-
         let before_x = self.offset_x;
         let before_y = self.offset_y;
 
-        if resolved_dy != 0 {
-            self.scroll_by(resolved_dy.saturating_mul(self.scroll_step.to_i32_sat()));
+        // The deltas are lines and columns already; the scroll steps are for
+        // keys. Python never turns a plain vertical notch horizontal.
+        if delta_y != 0 {
+            self.scroll_by(delta_y);
         }
-        if resolved_dx != 0 {
-            self.scroll_by_x(resolved_dx.saturating_mul(self.scroll_step_x.to_i32_sat()));
+        if delta_x != 0 {
+            self.scroll_by_x(delta_x);
         }
         debug_input(&format!(
             "[scrollview] mouse dx={} dy={} before=({}, {}) after=({}, {}) max=({}, {})",
-            resolved_dx,
-            resolved_dy,
+            delta_x,
+            delta_y,
             before_x,
             before_y,
             self.offset_x,

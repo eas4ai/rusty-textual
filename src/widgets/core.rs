@@ -715,7 +715,9 @@ pub trait Widget: Send + Sync + Any {
     fn clips_descendants_to_content(&self) -> bool {
         false
     }
-    /// Mouse wheel / touchpad scroll input.
+    /// Mouse wheel / touchpad scroll input: how far to scroll, in columns
+    /// and lines. One notch is 2 lines, or 4 columns horizontally (Python's
+    /// `App.scroll_sensitivity_y` and `scroll_sensitivity_x`).
     ///
     /// `delta_y > 0` scrolls down, `delta_y < 0` scrolls up.
     /// `delta_x > 0` scrolls right, `delta_x < 0` scrolls left.

@@ -442,16 +442,10 @@ impl crate::widgets::Scrollable for AppRoot {
         let before_x = self.offset_x;
         let before_y = self.offset_y;
 
-        if delta_y != 0 {
-            self.offset_y += delta_y
-                .saturating_mul(self.scroll_step_y.to_i32_sat())
-                .to_f32_lossy();
-        }
-        if delta_x != 0 {
-            self.offset_x += delta_x
-                .saturating_mul(self.scroll_step_x.to_i32_sat())
-                .to_f32_lossy();
-        }
+        // The deltas are lines and columns already; the scroll steps are
+        // for keys.
+        self.offset_y += delta_y.to_f32_lossy();
+        self.offset_x += delta_x.to_f32_lossy();
         self.clamp_offsets();
 
         if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {

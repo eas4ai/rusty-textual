@@ -865,13 +865,18 @@ impl crate::widgets::Scrollable for RichLog {
         if delta_y == 0 {
             return;
         }
+        // The delta is lines already; the scroll step is for keys. A notch
+        // that moves nothing goes on to the ancestors, as in Python. Lines
+        // written before the first layout can leave the offset past the end
+        // the view is drawn at, so scroll from where it is drawn.
+        self.clamp_offset();
         let before = self.offset_y;
-        self.scroll_by(delta_y.saturating_mul(self.scroll_step.to_i32_sat()));
+        self.scroll_by(delta_y);
         if self.offset_y != before {
             ctx.request_repaint();
             self.emit_scroll_changed_message(ctx);
+            ctx.set_handled();
         }
-        ctx.set_handled();
     }
 
     fn scroll_offset(&self) -> (usize, usize) {

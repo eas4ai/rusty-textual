@@ -141,6 +141,10 @@ pub struct OptionList {
     /// Most recent layout width (stored so Renderable item heights can be computed).
     layout_width: usize,
     scroll_step: usize,
+    /// The highlight when a wheel notch last scrolled the list. While the
+    /// highlight stays there, the view is not pulled back to it; moving the
+    /// highlight brings it back into view, as in Python.
+    wheel_highlight: Option<WheelHighlight>,
     scrollbar_extracted: bool,
     /// Per-option horizontal inset (Python's `.option-list--option { padding }`).
     /// `0` for a bare `OptionList`; the `Select` overlay sets it to `1`. Kept as
@@ -177,6 +181,7 @@ impl OptionList {
             viewport_height: 1,
             layout_width: 80,
             scroll_step: 1,
+            wheel_highlight: None,
             scrollbar_extracted: false,
             option_pad_left: 0,
             seed,
@@ -951,6 +956,10 @@ impl OptionList {
 
     fn ensure_visible(&mut self) {
         self.clamp_offsets();
+        if self.wheel_highlight == Some(WheelHighlight(self.cursor.highlighted())) {
+            return;
+        }
+        self.wheel_highlight = None;
         let Some(highlighted) = self.cursor.highlighted() else {
             return;
         };
@@ -1331,6 +1340,10 @@ impl crate::widgets::Layout for OptionList {
     }
 }
 
+/// The highlighted option (or none) when a wheel notch scrolled the list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WheelHighlight(Option<usize>);
+
 impl crate::widgets::Scrollable for OptionList {
     fn on_mouse_scroll(&mut self, _delta_x: i32, delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
         if self.disabled {
@@ -1339,10 +1352,14 @@ impl crate::widgets::Scrollable for OptionList {
         if delta_y == 0 {
             return;
         }
+        let before = self.offset;
         self.scroll_by_rows(
             delta_y.saturating_mul(self.scroll_step.to_i32_sat()) as isize,
             ctx,
         );
+        if self.offset != before {
+            self.wheel_highlight = Some(WheelHighlight(self.cursor.highlighted()));
+        }
     }
 
     fn scroll_offset(&self) -> (usize, usize) {
@@ -2498,5 +2515,34 @@ mod tests {
         }
         assert!(!ctx.handled());
         assert_eq!(list.offset_for_click(), 0);
+    }
+
+    /// Sends one wheel notch of `delta_y` lines to `widget`; returns whether
+    /// it was handled.
+    fn wheel(widget: &mut dyn crate::widgets::Widget, delta_y: i32) -> bool {
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            widget.on_mouse_scroll(0, delta_y, &mut w);
+        }
+        ctx.handled()
+    }
+
+    #[test]
+    fn scl_001_a_wheel_notch_scrolls_the_options_and_a_layout_keeps_them() {
+        let mut list =
+            OptionList::with_items((0..20).map(|i| OptionItem::new(format!("o{i}"))).collect());
+        list.on_layout(20, 5);
+        list.set_highlighted(0);
+        assert!(wheel(&mut list, 2));
+        assert_eq!(list.offset, 2);
+        list.on_layout(20, 5);
+        assert_eq!(
+            list.offset, 2,
+            "a layout keeps the view where the wheel left it"
+        );
+        // Moving the highlight brings it back into view.
+        list.set_highlighted(1);
+        assert_eq!(list.offset, 1);
     }
 }

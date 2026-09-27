@@ -464,7 +464,6 @@ impl MarkdownViewer {
         let shared_markup = Arc::new(RwLock::new(content.clone()));
         let shared_headings = Arc::new(RwLock::new(Self::parse_headings(&content)));
         let inner = VerticalScroll::new()
-            .scroll_step(2)
             .with_child(Markdown::with_shared_markup(shared_markup.clone()).with_can_focus(true))
             .with_child(MarkdownTableOfContents::with_shared_headings(
                 shared_headings.clone(),
