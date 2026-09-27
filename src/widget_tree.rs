@@ -149,12 +149,17 @@ pub struct WidgetNode {
     pub(crate) styles: WidgetStyles,
     /// Focus/hover/disabled/loading interaction state.
     pub(crate) state: NodeState,
-    /// Effective visibility toggle used by layout/render (`css_display && runtime_display`).
+    /// Effective visibility toggle used by layout/render: `runtime_display`
+    /// and the node's own display rule, or `css_display` when it has none.
     pub(crate) display: bool,
     /// Display state derived from CSS (`display:none`).
     pub(crate) css_display: bool,
     /// Display state controlled by runtime/widget logic (for example tab switching).
     pub(crate) runtime_display: bool,
+    /// The node's own display rule set by a query (`DomQueryMut::set_display`),
+    /// as Python's `display` setter writes the inline `display` rule. It wins
+    /// over `css_display`; `runtime_display` still applies.
+    pub(crate) inline_display: Option<bool>,
     /// CSS visibility state. When `Hidden`, the node still participates in
     /// layout but is not rendered (preserves space).
     pub(crate) visibility: Visibility,
@@ -195,6 +200,7 @@ impl WidgetNode {
             display: true,
             css_display: true,
             runtime_display: true,
+            inline_display: None,
             visibility: Visibility::Visible,
             runtime_visibility: None,
             mounted: false,
@@ -706,7 +712,7 @@ impl WidgetTree {
     // -- Display toggle (P1-10) ---------------------------------------------
 
     fn recompute_display(node: &mut WidgetNode) {
-        node.display = node.css_display && node.runtime_display;
+        node.display = node.runtime_display && node.inline_display.unwrap_or(node.css_display);
     }
 
     /// Set runtime-controlled display visibility for a node.
@@ -731,6 +737,16 @@ impl WidgetTree {
             }
         }
         false
+    }
+
+    /// Set the node's own display rule (Python `DOMNode.display = ...`, which
+    /// writes the inline `display` rule). It wins over the stylesheet's
+    /// `display`; the runtime display that widget logic sets still applies.
+    pub(crate) fn set_inline_display(&mut self, node: NodeId, visible: bool) {
+        if let Some(n) = self.arena.get_mut(node) {
+            n.inline_display = Some(visible);
+            Self::recompute_display(n);
+        }
     }
 
     /// Set CSS-controlled display visibility for a node.
@@ -1645,6 +1661,28 @@ mod tests {
         // CSS display:none still wins.
         tree.set_css_display(root, false);
         assert!(!tree.is_displayed(root));
+    }
+
+    #[test]
+    fn inline_display_wins_over_css_display_but_not_runtime_display() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(TestWidget::boxed("Root"));
+
+        tree.set_css_display(root, false);
+        tree.set_inline_display(root, true);
+        assert!(tree.is_displayed(root), "shown over display: none");
+        // The next CSS sync writes the stylesheet's value again.
+        tree.set_css_display(root, false);
+        assert!(tree.is_displayed(root), "kept through a CSS sync");
+
+        // Widget logic (a tab's pane, a scrollbar) still hides it.
+        tree.set_runtime_display(root, false);
+        assert!(!tree.is_displayed(root), "hidden by widget logic");
+        tree.set_runtime_display(root, true);
+
+        tree.set_css_display(root, true);
+        tree.set_inline_display(root, false);
+        assert!(!tree.is_displayed(root), "hidden over display: block");
     }
 
     #[test]

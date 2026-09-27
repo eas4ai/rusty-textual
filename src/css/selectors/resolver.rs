@@ -240,11 +240,17 @@ pub(crate) fn resolve_node_style(tree: &WidgetTree, node_id: NodeId, meta: &Sele
         .get(node_id)
         .expect("resolve_node_style called with absent node_id");
     // Inline style: node record wins over widget behavior contribution.
-    let node_inline = if node.styles.style == Style::default() {
+    let mut node_inline = if node.styles.style == Style::default() {
         node.widget.style()
     } else {
         Some(node.styles.style.clone())
     };
+    // The node's own display rule from a query, which Python's `display`
+    // setter writes into the inline style as `block` or `none`.
+    if let Some(shown) = node.inline_display {
+        node_inline.get_or_insert_with(Style::default).display =
+            Some(if shown { Display::Block } else { Display::None });
+    }
     let key = super::context::ComputedStyleKey {
         meta: meta.clone(),
         ancestors: SELECTOR_STACK.with(|stack| stack.borrow().clone()),

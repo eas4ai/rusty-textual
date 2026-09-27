@@ -556,12 +556,14 @@ impl<'a> DomQueryMut<'a> {
         self
     }
 
+    /// Set each node's own display rule, as Python's `display` setter writes
+    /// the inline `display` rule: it wins over the stylesheet's `display`.
     pub fn set_display(self, display: bool) -> Self {
         let mut changed_nodes: Vec<NodeId> = Vec::new();
         if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 let before = tree.is_displayed(id);
-                tree.set_runtime_display(id, display);
+                tree.set_inline_display(id, display);
                 if tree.is_displayed(id) != before {
                     changed_nodes.push(id);
                 }
@@ -7891,6 +7893,64 @@ mod tests {
             base_before,
             "the app's own tree must not change"
         );
+    }
+
+    #[test]
+    fn query_display_change_overrides_the_stylesheet_and_lasts() {
+        // Python's `display` setter writes the node's inline `display` rule,
+        // which wins over the stylesheet and lasts through a restyle.
+        struct DisplayApp;
+        impl crate::TextualApp for DisplayApp {
+            fn configure(&mut self, app: &mut App) -> Result<()> {
+                app.load_stylesheet("#hidden { display: none; }");
+                Ok(())
+            }
+
+            fn compose(&mut self) -> AppRoot {
+                AppRoot::new().with_child(crate::widgets::Static::new("hidden-text").id("hidden"))
+            }
+        }
+        fn shows(app: &App, needle: &str) -> bool {
+            app.frame
+                .as_plain_lines()
+                .iter()
+                .any(|line| line.contains(needle))
+        }
+
+        crate::run_test(DisplayApp, |pilot| {
+            pilot.pause()?;
+            assert!(
+                !shows(pilot.app(), "hidden-text"),
+                "the stylesheet hides it"
+            );
+            pilot
+                .app_mut()
+                .query_mut("#hidden")
+                .expect("query")
+                .set_display(true);
+            pilot.pause()?;
+            assert!(
+                shows(pilot.app(), "hidden-text"),
+                "shown over display: none"
+            );
+            // A class change restyles and lays the tree out again.
+            pilot
+                .app_mut()
+                .query_mut("#hidden")
+                .expect("query")
+                .add_class("again");
+            pilot.pause()?;
+            assert!(shows(pilot.app(), "hidden-text"), "shown after a restyle");
+            pilot
+                .app_mut()
+                .query_mut("#hidden")
+                .expect("query")
+                .set_display(false);
+            pilot.pause()?;
+            assert!(!shows(pilot.app(), "hidden-text"), "hidden again");
+            Ok(())
+        })
+        .expect("headless run_test must succeed");
     }
 
     #[test]
