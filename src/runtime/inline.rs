@@ -32,6 +32,8 @@ pub(crate) struct InlineState {
     pub(crate) started: bool,
     /// When to ask the terminal for the origin again.
     pub(crate) origin_query: OriginQuery,
+    /// Which cursor position reports answer the runtime's requests.
+    pub(crate) origin_marks: OriginMarks,
 }
 
 impl InlineState {
@@ -44,6 +46,7 @@ impl InlineState {
             resized: false,
             started: false,
             origin_query: OriginQuery::WhenMoved,
+            origin_marks: OriginMarks::default(),
         }
     }
 }
@@ -88,6 +91,55 @@ impl OriginQuery {
             (false, Self::WhenMoved) => Self::RetryAt(now + ORIGIN_RETRY),
             (false, Self::RetryAt(_) | Self::Stopped) => Self::Stopped,
         }
+    }
+}
+
+/// The first column a request marks. A legacy F3 key with modifiers
+/// (`CSI 1 ; m R`, m from 2 to 16) reads as a cursor position report in
+/// column m - 1 of the first row, so the marks start past those columns.
+const FIRST_MARK: u16 = 16;
+
+/// How many reports that answer none of the current requests one request
+/// skips before it counts as unanswered.
+pub(crate) const MAX_SKIPPED_REPORTS: usize = 16;
+
+/// Which cursor position reports answer the runtime's requests (INL-007).
+/// crossterm answers a request with the oldest report it holds, which can
+/// be the late reply to an earlier request or a key that reads as a report,
+/// so each request first moves the cursor from the origin to its own mark
+/// column. A report in the mark column of a request made since the origin
+/// last moved gives the origin's row; any other report is skipped.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct OriginMarks {
+    /// Requests made so far; picks the next mark.
+    sent: u32,
+    /// The marks of the requests made since the origin last moved.
+    current: Vec<u16>,
+}
+
+impl OriginMarks {
+    /// The mark for a request made after a frame that `moved` the origin or
+    /// may have, in a terminal `width` columns wide. `None` when the terminal
+    /// is too narrow for two different marks; then any report answers.
+    pub(crate) fn next(&mut self, moved: bool, width: u16) -> Option<u16> {
+        if moved {
+            self.current.clear();
+        }
+        let span = width.saturating_sub(FIRST_MARK);
+        if span < 2 {
+            return None;
+        }
+        let offset = u16::try_from(self.sent % u32::from(span)).unwrap_or_default();
+        self.sent = self.sent.wrapping_add(1);
+        let mark = FIRST_MARK + offset;
+        self.current.push(mark);
+        Some(mark)
+    }
+
+    /// Whether a report in `column` answers a request made since the origin
+    /// last moved.
+    pub(crate) fn answer(&self, column: u16) -> bool {
+        self.current.contains(&column)
     }
 }
 
@@ -225,6 +277,30 @@ mod tests {
         let stopped = retry.after(false, now);
         assert_eq!(stopped, OriginQuery::Stopped);
         assert!(!stopped.due(true, now + Duration::from_secs(3600)));
+    }
+
+    #[test]
+    fn inl_007_only_a_report_in_a_current_mark_answers() {
+        let mut marks = OriginMarks::default();
+        let first = marks.next(true, 80).expect("room for marks");
+        assert!(first >= FIRST_MARK && first < 80);
+        assert!(marks.answer(first));
+        for bogus in 1..FIRST_MARK {
+            assert!(
+                !marks.answer(bogus),
+                "F3 with modifiers reads as column {bogus}"
+            );
+        }
+        let retry = marks.next(false, 80).expect("room for marks");
+        assert_ne!(retry, first);
+        assert!(marks.answer(first) && marks.answer(retry), "no move since");
+        let after_move = marks.next(true, 80).expect("room for marks");
+        assert!(marks.answer(after_move));
+        assert!(
+            !marks.answer(first) && !marks.answer(retry),
+            "from before the move"
+        );
+        assert_eq!(marks.next(true, FIRST_MARK + 1), None, "too narrow");
     }
 
     #[test]
