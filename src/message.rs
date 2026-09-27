@@ -748,8 +748,10 @@ pub struct ScrollbarScrollTo {
     pub offset: f32,
     pub animate: bool,
     /// How long the animated scroll takes. When `None`, the host animates at
-    /// Python's scroll speed, 50 lines or columns a second, as a track click
-    /// does; a thumb drag asks for 0.1 seconds.
+    /// 50 lines or columns a second, Python's speed for a vertical track
+    /// click (SCL-002; Python pages horizontally over 0.3 seconds instead,
+    /// next-feature item horizontal-page-duration). A thumb drag asks for
+    /// 0.1 seconds.
     pub scroll_duration: Option<Duration>,
 }
 crate::impl_message!(ScrollbarScrollTo);

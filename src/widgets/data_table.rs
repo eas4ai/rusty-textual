@@ -273,6 +273,8 @@ pub struct DataTable {
     fixed_columns: usize,
     /// Cells the scrolling columns are scrolled left by (Python `scroll_x`).
     scroll_x: usize,
+    /// The running scroll animation of `scroll_x`.
+    anim_x: crate::widgets::scrollbar::ScrollAnimationState,
     /// The cursor `(row, column)` when a wheel notch or the scrollbar last scrolled the table.
     /// While the cursor stays there, the view is not pulled back to it; any
     /// cursor move brings it back into view, as in Python.
@@ -320,6 +322,7 @@ impl DataTable {
             fixed_rows: 0,
             fixed_columns: 0,
             scroll_x: 0,
+            anim_x: crate::widgets::scrollbar::ScrollAnimationState::default(),
             scrolled_cursor: None,
             next_row_key: 0,
             next_column_key: 0,
@@ -645,6 +648,9 @@ impl DataTable {
     /// fine-grained `*Highlighted` message when the coordinate changes
     /// (Python `watch_cursor_coordinate`).
     pub fn set_cursor(&mut self, row: usize, column: usize, ctx: &mut ReactiveCtx) {
+        // An explicit cursor move always brings the cursor into view (Python
+        // `move_cursor(scroll=True)`), even after a wheel scroll.
+        self.scrolled_cursor = None;
         let row_changed = self.apply_selected(row, ctx);
         let mut column_changed = false;
         if self.headers.is_empty() {
@@ -1217,9 +1223,18 @@ impl DataTable {
         })
     }
 
-    /// A horizontal page: the width the scrolling columns are shown in.
+    /// A hidden-cursor horizontal page, in whole columns, as before the
+    /// columns scrolled by cells: the scrolling columns from the one at
+    /// `scroll_x` to the last, less one.
     fn page_horizontal_step(&self, width: usize) -> usize {
-        self.scrollable_viewport_width(width)
+        let starts = self.scrollable_column_starts();
+        let first_shown = starts
+            .iter()
+            .filter(|&&start| start <= self.scroll_x)
+            .count()
+            .saturating_sub(1);
+        (starts.len() - first_shown.min(starts.len()))
+            .saturating_sub(1)
             .max(usize::from(width > 0))
     }
 
@@ -1769,7 +1784,7 @@ impl DataTable {
             let step = self
                 .page_horizontal_step(self.content_width as usize)
                 .to_i32_sat();
-            if self.scroll_horizontal_by(-step) {
+            if self.scroll_by_columns(-step) {
                 nav.handled = true;
                 ctx.request_repaint();
             }
@@ -1791,7 +1806,7 @@ impl DataTable {
             let step = self
                 .page_horizontal_step(self.content_width as usize)
                 .to_i32_sat();
-            if self.scroll_horizontal_by(step) {
+            if self.scroll_by_columns(step) {
                 nav.handled = true;
                 ctx.request_repaint();
             }
@@ -2199,6 +2214,7 @@ impl Default for DataTable {
             fixed_rows: 0,
             fixed_columns: 0,
             scroll_x: 0,
+            anim_x: crate::widgets::scrollbar::ScrollAnimationState::default(),
             scrolled_cursor: None,
             next_row_key: 0,
             next_column_key: 0,
@@ -2406,14 +2422,29 @@ impl crate::widgets::Interactive for DataTable {
             self.node_id(),
             DATA_TABLE_SCROLL_X_ATTR,
         ) {
-            let next = value
-                .max(0.0)
-                .round()
-                .to_usize_sat()
-                .min(self.max_scroll_x(self.content_width as usize));
-            if next != self.scroll_x {
-                self.scroll_x = next;
-                ctx.request_repaint();
+            let done = matches!(
+                event,
+                Event::AnimationValue(crate::event::AnimationValueEvent { done: true, .. })
+            );
+            match self.anim_x.step(self.scroll_x.to_f32_lossy(), value, done) {
+                crate::widgets::scrollbar::ScrollStep::Apply(value) => {
+                    let next = value
+                        .max(0.0)
+                        .round()
+                        .to_usize_sat()
+                        .min(self.max_scroll_x(self.content_width as usize));
+                    if next != self.scroll_x {
+                        self.scroll_x = next;
+                        ctx.request_repaint();
+                    }
+                }
+                crate::widgets::scrollbar::ScrollStep::Stop => {
+                    ctx.request_animation(crate::widgets::scrollbar::stop_scroll_animation(
+                        self.node_id(),
+                        DATA_TABLE_SCROLL_X_ATTR,
+                        self.scroll_x.to_f32_lossy(),
+                    ));
+                }
             }
             ctx.set_handled();
             return;
@@ -2477,6 +2508,8 @@ impl crate::widgets::Interactive for DataTable {
                 next.to_f32_lossy(),
                 payload.scroll_duration,
             ));
+            self.anim_x
+                .started(self.scroll_x.to_f32_lossy(), next.to_f32_lossy());
         } else if next != self.scroll_x {
             self.scroll_x = next;
             ctx.request_repaint();
@@ -2542,11 +2575,23 @@ impl crate::widgets::Scrollable for DataTable {
             self.scroll_by_lines(delta_y.to_isize_sat());
         }
         if delta_x != 0 && crate::runtime::dispatch_ctx::wheel_notch_animates() {
-            // A horizontal notch animates, as in Python.
+            // A horizontal notch animates, as in Python, from where a
+            // running animation is heading, so quick notches add up.
             let from = self.scroll_x;
-            let changed = self.scroll_horizontal_by(delta_x);
-            let to = std::mem::replace(&mut self.scroll_x, from);
-            if changed {
+            let base = self
+                .anim_x
+                .target(from.to_f32_lossy())
+                .max(0.0)
+                .round()
+                .to_usize_sat();
+            let max = self.max_scroll_x(self.content_width as usize);
+            let to = if delta_x.is_negative() {
+                base.saturating_sub(delta_x.unsigned_abs() as usize)
+            } else {
+                base.saturating_add(delta_x.to_usize_sat())
+            }
+            .min(max);
+            if to != base {
                 ctx.request_animation(crate::widgets::scrollbar::scroll_animation(
                     self.node_id(),
                     DATA_TABLE_SCROLL_X_ATTR,
@@ -2554,12 +2599,15 @@ impl crate::widgets::Scrollable for DataTable {
                     to.to_f32_lossy(),
                     None,
                 ));
+                self.anim_x.started(from.to_f32_lossy(), to.to_f32_lossy());
                 self.scrolled_cursor = Some((self.selected, self.cursor_column));
                 ctx.set_handled();
             }
             return;
         }
         if delta_x != 0 {
+            // From where a running animation is heading, as in Python.
+            self.scroll_x = self.anim_x.settle_lines(self.scroll_x);
             self.scroll_horizontal_by(delta_x);
         }
         if (self.offset, self.scroll_x) != before {
@@ -3488,6 +3536,28 @@ mod tests {
         // A click is mapped where the column is drawn now: `c01` at x 2..5.
         assert_eq!(table.column_at_x(2), Some(1));
         assert_eq!(table.column_at_x(7), Some(2));
+    }
+
+    #[test]
+    fn hidden_cursor_page_right_still_steps_whole_columns() {
+        // SCL-001 keeps keyboard steps: a page is the columns from the first
+        // shown to the last, less one, as before the cell offset.
+        let mut table = wide_table(2);
+        table.show_cursor = false;
+        table.cursor_type = CursorType::Row;
+        table.on_layout(20, 3);
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            let _ = table.nav_page_right(&mut w);
+        }
+        let starts = table.scrollable_column_starts();
+        assert!(
+            starts.contains(&table.scroll_x),
+            "scroll_x {} is not a column start",
+            table.scroll_x
+        );
+        assert!(table.scroll_x > 0);
     }
 
     #[test]

@@ -82,6 +82,8 @@ pub struct RichLog {
     lines: Vec<LogLine>,
     max_lines: Option<usize>,
     auto_scroll: bool,
+    /// The running scroll animation of the vertical offset.
+    anim: crate::widgets::scrollbar::ScrollAnimationState,
     wrap: bool,
     highlight: bool,
     markup: bool,
@@ -156,6 +158,7 @@ impl RichLog {
             lines: Vec::new(),
             max_lines: None,
             auto_scroll: true,
+            anim: crate::widgets::scrollbar::ScrollAnimationState::default(),
             wrap: false,
             highlight: false,
             markup: false,
@@ -818,17 +821,36 @@ impl crate::widgets::Interactive for RichLog {
             crate::widgets::Widget::node_id(self),
             RICH_LOG_OFFSET_Y_ATTR,
         ) {
-            let next = value.max(0.0).round().to_usize_sat();
-            if next != self.offset_y {
-                self.offset_y = next;
-                ctx.request_repaint();
-                self.emit_scroll_changed_message(ctx);
+            let done = matches!(
+                event,
+                Event::AnimationValue(crate::event::AnimationValueEvent { done: true, .. })
+            );
+            match self.anim.step(self.offset_y.to_f32_lossy(), value, done) {
+                crate::widgets::scrollbar::ScrollStep::Apply(value) => {
+                    let next = value.max(0.0).round().to_usize_sat();
+                    if next != self.offset_y {
+                        self.offset_y = next;
+                        ctx.request_repaint();
+                        self.emit_scroll_changed_message(ctx);
+                    }
+                }
+                crate::widgets::scrollbar::ScrollStep::Stop => {
+                    ctx.request_animation(crate::widgets::scrollbar::stop_scroll_animation(
+                        crate::widgets::Widget::node_id(self),
+                        RICH_LOG_OFFSET_Y_ATTR,
+                        self.offset_y.to_f32_lossy(),
+                    ));
+                }
             }
             ctx.set_handled();
             return;
         }
         if let Event::Action(action) = event {
             let before = self.offset_y;
+            if crate::widgets::scrollbar::is_scroll_action(*action) {
+                // A key scrolls from where a running animation is heading.
+                self.offset_y = self.anim.settle_lines(self.offset_y);
+            }
             match action {
                 Action::ScrollUp => self.scroll_by(-self.scroll_step.to_i32_sat()),
                 Action::ScrollDown => self.scroll_by(self.scroll_step.to_i32_sat()),
@@ -879,6 +901,8 @@ impl crate::widgets::Interactive for RichLog {
                     next.to_f32_lossy(),
                     payload.scroll_duration,
                 ));
+                self.anim
+                    .started(self.offset_y.to_f32_lossy(), next.to_f32_lossy());
             } else {
                 self.offset_y = next;
                 ctx.request_repaint();
@@ -900,6 +924,8 @@ impl crate::widgets::Scrollable for RichLog {
         // the view is drawn at, so scroll from where it is drawn.
         self.clamp_offset();
         let before = self.offset_y;
+        // From where a running animation is heading, as in Python.
+        self.offset_y = self.anim.settle_lines(self.offset_y);
         self.scroll_by(delta_y);
         if self.offset_y != before {
             ctx.request_repaint();
