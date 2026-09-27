@@ -36,7 +36,11 @@ until the API stabilizes.
 
 ### Changed
 
-- Strict clippy (`clippy::pedantic`) is on. 859 public functions and
+- The repository builds with Rust 1.98.0, pinned for this checkout in
+  `rust-toolchain.toml` (rustup installs it on the first build there); the
+  minimum supported Rust version stays 1.85. Strict clippy is clean with it
+  on Linux, macOS and Windows.
+- Strict clippy (`clippy::pedantic`) is on. 864 public functions and
   methods that only compute a value are now `#[must_use]`, so ignoring
   their result warns. `DomQueryMut`'s chainable operations (`add_class`,
   `set`, `focus`, `remove`, ...) are not `#[must_use]`: they act on the
