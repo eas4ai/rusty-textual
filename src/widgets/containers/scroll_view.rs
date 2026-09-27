@@ -1537,10 +1537,17 @@ impl crate::widgets::Interactive for ScrollView {
                 );
                 self.offset_y = next;
                 if *animate {
+                    // Python's timing for a scrollbar's scroll, not the CSS
+                    // transition the keys use.
+                    let duration = crate::widgets::scrollbar::scroll_duration(
+                        before.to_f32_lossy(),
+                        next.to_f32_lossy(),
+                        *scroll_duration,
+                    );
                     self.request_offset_y_animation_with_duration(
                         before,
                         self.offset_y,
-                        *scroll_duration,
+                        Some(duration),
                         ctx,
                     );
                 } else {
@@ -1557,10 +1564,17 @@ impl crate::widgets::Interactive for ScrollView {
                 );
                 self.offset_x = next;
                 if *animate {
+                    // Python's timing for a scrollbar's scroll, not the CSS
+                    // transition the keys use.
+                    let duration = crate::widgets::scrollbar::scroll_duration(
+                        before.to_f32_lossy(),
+                        next.to_f32_lossy(),
+                        *scroll_duration,
+                    );
                     self.request_offset_x_animation_with_duration(
                         before,
                         self.offset_x,
-                        *scroll_duration,
+                        Some(duration),
                         ctx,
                     );
                 } else {
@@ -1643,7 +1657,27 @@ impl crate::widgets::Scrollable for ScrollView {
         let before_y = self.offset_y;
 
         // The deltas are lines and columns already; the scroll steps are for
-        // keys. Python never turns a plain vertical notch horizontal.
+        // keys. Python never turns a plain vertical notch horizontal, and
+        // animates a horizontal one.
+        if delta_x != 0 && crate::runtime::dispatch_ctx::wheel_notch_animates() {
+            self.scroll_by_x(delta_x);
+            if self.offset_x != before_x {
+                let duration = crate::widgets::scrollbar::scroll_duration(
+                    before_x.to_f32_lossy(),
+                    self.offset_x.to_f32_lossy(),
+                    None,
+                );
+                let target = self.offset_x;
+                self.request_offset_x_animation_with_duration(
+                    before_x,
+                    target,
+                    Some(duration),
+                    ctx,
+                );
+                ctx.set_handled();
+            }
+            return;
+        }
         if delta_y != 0 {
             self.scroll_by(delta_y);
         }

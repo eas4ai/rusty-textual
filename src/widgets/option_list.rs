@@ -120,6 +120,9 @@ fn finalize_highlight_line(line: &[Segment], width: usize, fill: rich_rs::Style)
     out
 }
 
+/// The animated attribute of the scroll offset.
+const OPTION_LIST_OFFSET_ATTR: &str = "optionlist.offset";
+
 /// A scrollable, navigable list of selectable options.
 ///
 /// Supports separators between groups, disabled items, keyboard and mouse navigation,
@@ -141,10 +144,10 @@ pub struct OptionList {
     /// Most recent layout width (stored so Renderable item heights can be computed).
     layout_width: usize,
     scroll_step: usize,
-    /// The highlight when a wheel notch last scrolled the list. While the
+    /// The highlight when a wheel notch or the scrollbar last scrolled the list. While the
     /// highlight stays there, the view is not pulled back to it; moving the
     /// highlight brings it back into view, as in Python.
-    wheel_highlight: Option<WheelHighlight>,
+    scrolled_highlight: Option<ScrolledHighlight>,
     scrollbar_extracted: bool,
     /// Per-option horizontal inset (Python's `.option-list--option { padding }`).
     /// `0` for a bare `OptionList`; the `Select` overlay sets it to `1`. Kept as
@@ -181,7 +184,7 @@ impl OptionList {
             viewport_height: 1,
             layout_width: 80,
             scroll_step: 1,
-            wheel_highlight: None,
+            scrolled_highlight: None,
             scrollbar_extracted: false,
             option_pad_left: 0,
             seed,
@@ -956,10 +959,10 @@ impl OptionList {
 
     fn ensure_visible(&mut self) {
         self.clamp_offsets();
-        if self.wheel_highlight == Some(WheelHighlight(self.cursor.highlighted())) {
+        if self.scrolled_highlight == Some(ScrolledHighlight(self.cursor.highlighted())) {
             return;
         }
-        self.wheel_highlight = None;
+        self.scrolled_highlight = None;
         let Some(highlighted) = self.cursor.highlighted() else {
             return;
         };
@@ -1236,6 +1239,19 @@ impl crate::widgets::Interactive for OptionList {
     }
 
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
+        if let Some(value) = crate::widgets::scrollbar::animation_step(
+            event,
+            self.node_id(),
+            OPTION_LIST_OFFSET_ATTR,
+        ) {
+            let next = value.max(0.0).round().to_usize_sat().min(self.max_offset());
+            if next != self.offset {
+                self.offset = next;
+                ctx.request_repaint();
+            }
+            ctx.set_handled();
+            return;
+        }
         if self.disabled {
             return;
         }
@@ -1314,8 +1330,20 @@ impl crate::widgets::Interactive for OptionList {
             .to_usize_sat()
             .min(self.max_offset());
         if next != self.offset {
-            self.offset = next;
-            ctx.request_repaint();
+            // The scrollbar scrolls the view, not the highlight.
+            self.scrolled_highlight = Some(ScrolledHighlight(self.cursor.highlighted()));
+            if payload.animate {
+                ctx.request_animation(crate::widgets::scrollbar::scroll_animation(
+                    self.node_id(),
+                    OPTION_LIST_OFFSET_ATTR,
+                    self.offset.to_f32_lossy(),
+                    next.to_f32_lossy(),
+                    payload.scroll_duration,
+                ));
+            } else {
+                self.offset = next;
+                ctx.request_repaint();
+            }
         }
         ctx.set_handled();
     }
@@ -1340,9 +1368,9 @@ impl crate::widgets::Layout for OptionList {
     }
 }
 
-/// The highlighted option (or none) when a wheel notch scrolled the list.
+/// The highlighted option (or none) when a wheel notch or the scrollbar scrolled the list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct WheelHighlight(Option<usize>);
+struct ScrolledHighlight(Option<usize>);
 
 impl crate::widgets::Scrollable for OptionList {
     fn on_mouse_scroll(&mut self, _delta_x: i32, delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
@@ -1358,7 +1386,7 @@ impl crate::widgets::Scrollable for OptionList {
             ctx,
         );
         if self.offset != before {
-            self.wheel_highlight = Some(WheelHighlight(self.cursor.highlighted()));
+            self.scrolled_highlight = Some(ScrolledHighlight(self.cursor.highlighted()));
         }
     }
 
@@ -2544,5 +2572,50 @@ mod tests {
         // Moving the highlight brings it back into view.
         list.set_highlighted(1);
         assert_eq!(list.offset, 1);
+    }
+
+    #[test]
+    fn scl_002_an_option_list_pages_at_python_speed() {
+        let node = crate::node_id::NodeId::default();
+        let mut widget =
+            OptionList::with_items((0..20).map(|i| OptionItem::new(format!("o{i}"))).collect());
+        widget.on_layout(20, 5);
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            widget.on_message(
+                &MessageEvent::new(
+                    node,
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 10.0,
+                        animate: true,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut w,
+            );
+        }
+        let requests = ctx.take_animation_requests();
+        crate::widgets::scrollbar::assert_python_scroll(
+            &requests[0],
+            (10.0_f32 - 0.0_f32).abs(),
+            None,
+        );
+        assert_eq!(widget.offset, 0, "it animates, it does not jump");
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            widget.on_event(
+                &Event::AnimationValue(crate::event::AnimationValueEvent {
+                    target: node,
+                    attribute: OPTION_LIST_OFFSET_ATTR.to_string(),
+                    value: 4.0,
+                    done: false,
+                }),
+                &mut w,
+            );
+        }
+        assert_eq!(widget.offset, 4, "a step moves the view");
     }
 }

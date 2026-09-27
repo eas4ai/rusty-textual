@@ -246,6 +246,9 @@ impl ColumnKey {
     }
 }
 
+/// The animated attribute of the horizontal scroll.
+const DATA_TABLE_SCROLL_X_ATTR: &str = "datatable.scroll_x";
+
 #[derive(Debug, Clone)]
 #[widget(Focus, Interactive, Layout, Scrollable, StyleIdentity, Components)]
 // Independent flags; any combination is valid, so no enum fits.
@@ -270,10 +273,10 @@ pub struct DataTable {
     fixed_columns: usize,
     /// Cells the scrolling columns are scrolled left by (Python `scroll_x`).
     scroll_x: usize,
-    /// The cursor `(row, column)` when a wheel notch last scrolled the table.
+    /// The cursor `(row, column)` when a wheel notch or the scrollbar last scrolled the table.
     /// While the cursor stays there, the view is not pulled back to it; any
     /// cursor move brings it back into view, as in Python.
-    wheel_cursor: Option<(usize, usize)>,
+    scrolled_cursor: Option<(usize, usize)>,
     next_row_key: usize,
     next_column_key: usize,
     content_width: u16,
@@ -317,7 +320,7 @@ impl DataTable {
             fixed_rows: 0,
             fixed_columns: 0,
             scroll_x: 0,
-            wheel_cursor: None,
+            scrolled_cursor: None,
             next_row_key: 0,
             next_column_key: 0,
             content_width: 0,
@@ -869,7 +872,7 @@ impl DataTable {
         self.offset = 0;
         self.cursor_column = 0;
         self.scroll_x = 0;
-        self.wheel_cursor = None;
+        self.scrolled_cursor = None;
         self.hover_coordinate = None;
         self.recompute_column_widths();
     }
@@ -1067,9 +1070,9 @@ impl DataTable {
     }
 
     /// Whether the view follows the cursor: not while the cursor stays where
-    /// it was when a wheel notch last scrolled the table.
+    /// it was when a wheel notch or the scrollbar last scrolled the table.
     fn follows_cursor(&self) -> bool {
-        self.wheel_cursor != Some((self.selected, self.cursor_column))
+        self.scrolled_cursor != Some((self.selected, self.cursor_column))
     }
 
     fn ensure_cursor_column_visible(&mut self, width: usize) {
@@ -1077,7 +1080,7 @@ impl DataTable {
             self.clamp_scroll_x();
             return;
         }
-        self.wheel_cursor = None;
+        self.scrolled_cursor = None;
         if self.headers.is_empty() || self.cursor_column < self.fixed_column_count() {
             self.scroll_x = 0;
             return;
@@ -1390,7 +1393,7 @@ impl DataTable {
                 ScrollView::line_clamp_offset(self.offset, self.scrollable_row_count(), visible);
             return;
         }
-        self.wheel_cursor = None;
+        self.scrolled_cursor = None;
         let fixed_rows = self.fixed_data_rows();
         if self.selected < fixed_rows {
             self.offset = 0;
@@ -2196,7 +2199,7 @@ impl Default for DataTable {
             fixed_rows: 0,
             fixed_columns: 0,
             scroll_x: 0,
-            wheel_cursor: None,
+            scrolled_cursor: None,
             next_row_key: 0,
             next_column_key: 0,
             content_width: 0,
@@ -2398,6 +2401,23 @@ impl crate::widgets::Interactive for DataTable {
     }
 
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
+        if let Some(value) = crate::widgets::scrollbar::animation_step(
+            event,
+            self.node_id(),
+            DATA_TABLE_SCROLL_X_ATTR,
+        ) {
+            let next = value
+                .max(0.0)
+                .round()
+                .to_usize_sat()
+                .min(self.max_scroll_x(self.content_width as usize));
+            if next != self.scroll_x {
+                self.scroll_x = next;
+                ctx.request_repaint();
+            }
+            ctx.set_handled();
+            return;
+        }
         let visible_rows = self.visible_rows();
 
         // Handle mouse events regardless of focus state.
@@ -2446,6 +2466,18 @@ impl crate::widgets::Interactive for DataTable {
         let target_pixels = payload.offset.max(0.0).round().to_usize_sat();
         let next = target_pixels.min(state.max_pixel_offset);
         if next != self.scroll_x {
+            // The scrollbar scrolls the view, not the cursor.
+            self.scrolled_cursor = Some((self.selected, self.cursor_column));
+        }
+        if next != self.scroll_x && payload.animate {
+            ctx.request_animation(crate::widgets::scrollbar::scroll_animation(
+                self.node_id(),
+                DATA_TABLE_SCROLL_X_ATTR,
+                self.scroll_x.to_f32_lossy(),
+                next.to_f32_lossy(),
+                payload.scroll_duration,
+            ));
+        } else if next != self.scroll_x {
             self.scroll_x = next;
             ctx.request_repaint();
         }
@@ -2501,7 +2533,7 @@ impl crate::widgets::Layout for DataTable {
 impl crate::widgets::Scrollable for DataTable {
     fn on_mouse_scroll(&mut self, delta_x: i32, delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
         // Python scrolls the view by lines and cells and leaves the cursor
-        // where it is; `wheel_cursor` keeps the next layout from pulling the
+        // where it is; `scrolled_cursor` keeps the next layout from pulling the
         // view back to it.
         let visible_rows = self.visible_rows();
         let before = (self.effective_offset(visible_rows), self.scroll_x);
@@ -2509,11 +2541,29 @@ impl crate::widgets::Scrollable for DataTable {
         if delta_y != 0 {
             self.scroll_by_lines(delta_y.to_isize_sat());
         }
+        if delta_x != 0 && crate::runtime::dispatch_ctx::wheel_notch_animates() {
+            // A horizontal notch animates, as in Python.
+            let from = self.scroll_x;
+            let changed = self.scroll_horizontal_by(delta_x);
+            let to = std::mem::replace(&mut self.scroll_x, from);
+            if changed {
+                ctx.request_animation(crate::widgets::scrollbar::scroll_animation(
+                    self.node_id(),
+                    DATA_TABLE_SCROLL_X_ATTR,
+                    from.to_f32_lossy(),
+                    to.to_f32_lossy(),
+                    None,
+                ));
+                self.scrolled_cursor = Some((self.selected, self.cursor_column));
+                ctx.set_handled();
+            }
+            return;
+        }
         if delta_x != 0 {
             self.scroll_horizontal_by(delta_x);
         }
         if (self.offset, self.scroll_x) != before {
-            self.wheel_cursor = Some((self.selected, self.cursor_column));
+            self.scrolled_cursor = Some((self.selected, self.cursor_column));
             ctx.request_repaint();
             ctx.set_handled();
         }
@@ -4452,5 +4502,65 @@ mod tests {
 
         assert!(ctx.handled());
         assert!(table.scroll_x > 0);
+    }
+
+    #[test]
+    fn scl_002_a_data_table_pages_its_columns_at_python_speed() {
+        let node = crate::node_id::NodeId::default();
+        let mut widget = wide_table(2);
+        widget.on_layout(20, 3);
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            widget.on_message(
+                &MessageEvent::new(
+                    node,
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Horizontal,
+                        offset: 10.0,
+                        animate: true,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut w,
+            );
+        }
+        let requests = ctx.take_animation_requests();
+        crate::widgets::scrollbar::assert_python_scroll(
+            &requests[0],
+            (10.0_f32 - 0.0_f32).abs(),
+            None,
+        );
+        assert_eq!(widget.scroll_x, 0, "it animates, it does not jump");
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            widget.on_event(
+                &Event::AnimationValue(crate::event::AnimationValueEvent {
+                    target: node,
+                    attribute: DATA_TABLE_SCROLL_X_ATTR.to_string(),
+                    value: 4.0,
+                    done: false,
+                }),
+                &mut w,
+            );
+        }
+        assert_eq!(widget.scroll_x, 4, "a step moves the view");
+    }
+
+    #[test]
+    fn scl_002_a_horizontal_notch_animates_the_columns() {
+        let mut table = wide_table(2);
+        table.on_layout(20, 3);
+        let mut ctx = EventCtx::default();
+        {
+            let _animates = crate::runtime::dispatch_ctx::set_wheel_animates(true);
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            crate::widgets::Scrollable::on_mouse_scroll(&mut table, 4, 0, &mut w);
+        }
+        assert!(ctx.handled());
+        let requests = ctx.take_animation_requests();
+        crate::widgets::scrollbar::assert_python_scroll(&requests[0], 4.0, None);
+        assert_eq!(table.scroll_x, 0, "the notch animates, it does not jump");
     }
 }

@@ -71,6 +71,9 @@ impl LineCache {
     }
 }
 
+/// The animated attribute of the vertical scroll offset.
+const RICH_LOG_OFFSET_Y_ATTR: &str = "richlog.offset_y";
+
 #[derive(Debug)]
 #[widget(Focus, Interactive, Scrollable)]
 // Independent flags; any combination is valid, so no enum fits.
@@ -810,6 +813,20 @@ impl crate::widgets::Focus for RichLog {
 
 impl crate::widgets::Interactive for RichLog {
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
+        if let Some(value) = crate::widgets::scrollbar::animation_step(
+            event,
+            crate::widgets::Widget::node_id(self),
+            RICH_LOG_OFFSET_Y_ATTR,
+        ) {
+            let next = value.max(0.0).round().to_usize_sat();
+            if next != self.offset_y {
+                self.offset_y = next;
+                ctx.request_repaint();
+                self.emit_scroll_changed_message(ctx);
+            }
+            ctx.set_handled();
+            return;
+        }
         if let Event::Action(action) = event {
             let before = self.offset_y;
             match action {
@@ -851,10 +868,22 @@ impl crate::widgets::Interactive for RichLog {
             content_h,
             viewport_h,
         );
+        // Scroll from where the view is drawn (see `on_mouse_scroll`).
+        self.clamp_offset();
         if next != self.offset_y {
-            self.offset_y = next;
-            ctx.request_repaint();
-            self.emit_scroll_changed_message(ctx);
+            if payload.animate {
+                ctx.request_animation(crate::widgets::scrollbar::scroll_animation(
+                    crate::widgets::Widget::node_id(self),
+                    RICH_LOG_OFFSET_Y_ATTR,
+                    self.offset_y.to_f32_lossy(),
+                    next.to_f32_lossy(),
+                    payload.scroll_duration,
+                ));
+            } else {
+                self.offset_y = next;
+                ctx.request_repaint();
+                self.emit_scroll_changed_message(ctx);
+            }
         }
         ctx.set_handled();
     }
@@ -1197,5 +1226,55 @@ mod tests {
         }
         assert!(ctx.handled());
         assert_eq!(log.offset_y, 1);
+    }
+
+    #[test]
+    fn scl_002_a_rich_log_pages_at_python_speed() {
+        use std::sync::atomic::Ordering;
+        let node = crate::node_id::NodeId::default();
+        let mut widget = RichLog::new();
+        for n in 0..60 {
+            widget.write(format!("line {n}"));
+        }
+        widget.viewport_height.store(10, Ordering::Relaxed);
+        widget.content_height.store(60, Ordering::Relaxed);
+        widget.clamp_offset();
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            widget.on_message(
+                &MessageEvent::new(
+                    node,
+                    ScrollbarScrollTo {
+                        axis: ScrollbarAxis::Vertical,
+                        offset: 40.0,
+                        animate: true,
+                        scroll_duration: None,
+                    },
+                ),
+                &mut w,
+            );
+        }
+        let requests = ctx.take_animation_requests();
+        crate::widgets::scrollbar::assert_python_scroll(
+            &requests[0],
+            (40.0_f32 - 50.0_f32).abs(),
+            None,
+        );
+        assert_eq!(widget.offset_y, 50, "it animates, it does not jump");
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            widget.on_event(
+                &Event::AnimationValue(crate::event::AnimationValueEvent {
+                    target: node,
+                    attribute: super::RICH_LOG_OFFSET_Y_ATTR.to_string(),
+                    value: 45.0,
+                    done: false,
+                }),
+                &mut w,
+            );
+        }
+        assert_eq!(widget.offset_y, 45, "a step moves the view");
     }
 }

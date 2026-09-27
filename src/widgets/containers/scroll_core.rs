@@ -1,6 +1,9 @@
+use std::time::Duration;
+
 use super::scroll_view::ScrollView;
-use crate::event::Action;
+use crate::event::{Action, AnimationValueEvent, Event};
 use crate::message::ScrollbarAxis;
+use crate::node_id::NodeId;
 use crate::num::Cast;
 use crate::style::{Overflow, Style};
 use crate::widgets::scrollbar;
@@ -73,6 +76,10 @@ impl ScrollCore {
         ScrollView::line_scrollbar_styles()
     }
 }
+
+/// The animated attributes of a [`ScrollHost`]'s offsets.
+const SCROLL_HOST_OFFSET_X_ATTR: &str = "scrollhost.offset_x";
+const SCROLL_HOST_OFFSET_Y_ATTR: &str = "scrollhost.offset_y";
 
 /// Scroll state of a node that scrolls its own children: a plain
 /// `Container`, and the root of a pushed screen (Python `Screen` and
@@ -203,6 +210,87 @@ impl ScrollHost {
         offset_moved(before, (self.offset_x, self.offset_y))
     }
 
+    /// Ask for an animated scroll of one axis to `offset`, as a scrollbar
+    /// asks: over `duration`, else at Python's scroll speed. `node` is the
+    /// host's node, which receives the animation's steps (see
+    /// [`ScrollHost::apply_animation`]). Returns whether the offset will
+    /// change.
+    pub(crate) fn animate_to(
+        &self,
+        node: NodeId,
+        axis: ScrollbarAxis,
+        offset: f32,
+        duration: Option<Duration>,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> bool {
+        let (from, content, viewport, attribute) = match axis {
+            ScrollbarAxis::Horizontal => (
+                self.offset_x,
+                self.content_width,
+                self.viewport_width,
+                SCROLL_HOST_OFFSET_X_ATTR,
+            ),
+            ScrollbarAxis::Vertical => (
+                self.offset_y,
+                self.content_height,
+                self.viewport_height,
+                SCROLL_HOST_OFFSET_Y_ATTR,
+            ),
+        };
+        let to = clamp_offset_f32(offset, content, viewport);
+        if (to - from).abs() <= f32::EPSILON {
+            return false;
+        }
+        ctx.request_animation(scrollbar::scroll_animation(
+            node, attribute, from, to, duration,
+        ));
+        true
+    }
+
+    /// Apply a step of an animation [`ScrollHost::animate_to`] asked for.
+    /// Returns whether `event` was one for `node`.
+    pub(crate) fn apply_animation(&mut self, node: NodeId, event: &Event) -> bool {
+        let Event::AnimationValue(AnimationValueEvent {
+            target,
+            attribute,
+            value,
+            ..
+        }) = event
+        else {
+            return false;
+        };
+        if *target != node {
+            return false;
+        }
+        match attribute.as_str() {
+            SCROLL_HOST_OFFSET_X_ATTR => self.offset_x = *value,
+            SCROLL_HOST_OFFSET_Y_ATTR => self.offset_y = *value,
+            _ => return false,
+        }
+        self.clamp();
+        true
+    }
+
+    /// Scroll as a wheel notch of `delta_x` columns and `delta_y` lines
+    /// asks: a horizontal notch with an animation, as in Python, the rest at
+    /// once. Returns whether the offset moved or will move.
+    pub(crate) fn wheel(
+        &mut self,
+        node: NodeId,
+        delta_x: i32,
+        delta_y: i32,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> bool {
+        if delta_x != 0
+            && self.scrollable_x()
+            && crate::runtime::dispatch_ctx::wheel_notch_animates()
+        {
+            let to = self.offset_x + delta_x.to_f32_lossy();
+            return self.animate_to(node, ScrollbarAxis::Horizontal, to, None, ctx);
+        }
+        self.scroll_by(delta_x, delta_y)
+    }
+
     /// Scroll one axis to `offset`, as a scrollbar drag asks. Returns whether
     /// the offset moved.
     pub(crate) fn scroll_to(&mut self, axis: ScrollbarAxis, offset: f32) -> bool {
@@ -241,5 +329,66 @@ impl ScrollHost {
         }
         self.clamp();
         Some(offset_moved(before, (self.offset_x, self.offset_y)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::event::EventCtx;
+    use crate::widgets::scrollbar::assert_python_scroll;
+
+    /// A host over 100 columns and 60 lines, 10 by 10 at a time.
+    fn host() -> ScrollHost {
+        let mut host = ScrollHost::new();
+        let style = Style {
+            overflow: Some(Overflow::Auto),
+            ..Style::default()
+        };
+        host.layout(10, 10, &style);
+        host.set_content_size(100, 60);
+        host
+    }
+
+    #[test]
+    fn scl_002_a_scroll_host_animates_a_scrollbar_scroll_and_a_horizontal_notch() {
+        let node = NodeId::default();
+        let mut host = host();
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            assert!(host.animate_to(node, ScrollbarAxis::Vertical, 10.0, None, &mut w));
+        }
+        let requests = ctx.take_animation_requests();
+        assert_eq!(requests[0].attribute, SCROLL_HOST_OFFSET_Y_ATTR);
+        assert_python_scroll(&requests[0], 10.0, None);
+        assert_eq!(host.offset(), (0.0, 0.0), "it animates, it does not jump");
+        let step = Event::AnimationValue(AnimationValueEvent {
+            target: node,
+            attribute: SCROLL_HOST_OFFSET_Y_ATTR.to_string(),
+            value: 4.0,
+            done: false,
+        });
+        assert!(host.apply_animation(node, &step));
+        assert_eq!(host.offset(), (0.0, 4.0));
+
+        let mut ctx = EventCtx::default();
+        {
+            let _animates = crate::runtime::dispatch_ctx::set_wheel_animates(true);
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            assert!(host.wheel(node, 4, 0, &mut w));
+        }
+        let requests = ctx.take_animation_requests();
+        assert_eq!(requests[0].attribute, SCROLL_HOST_OFFSET_X_ATTR);
+        assert_python_scroll(&requests[0], 4.0, None);
+
+        // A vertical notch scrolls at once.
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            assert!(host.wheel(node, 0, 2, &mut w));
+        }
+        assert!(ctx.take_animation_requests().is_empty());
+        assert_eq!(host.offset(), (0.0, 6.0));
     }
 }
