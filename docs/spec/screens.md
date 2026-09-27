@@ -1,0 +1,38 @@
+Prefix: SCR
+
+# Screens
+
+The screens an app pushes on top of its own screen, such as the command
+palette, a modal dialog or a help screen. Python Textual lays out and
+scrolls every screen the same way; the requirements below state what a
+user sees, with citations into the Python 8.2.8 source.
+
+[SCR-001] A pushed screen whose content is taller than the screen MUST
+scroll as the app's own screen does: turning the mouse wheel over it, or
+dragging its vertical scrollbar, moves its content, and it scrolls as far
+as its last line. This holds in full-screen and in inline mode.
+Falsifier: A pushed screen with 60 lines of content in a 30-row terminal does not show its last line after the mouse wheel is turned down over it or its scrollbar thumb is dragged to the bottom, in full-screen or in inline mode.
+Mechanism: screen-pty
+Rationale: Python Screen and ModalScreen set overflow-y: auto (screen.py:174-188, 2164-2172), and Widget._on_mouse_scroll_down scrolls any widget that allows vertical scroll (widget.py:4777-4795); Screen binds no scroll keys (screen.py:269-273). Here the pushed screen's root (ScreenHost) has no scroll state.
+Status: Agreed 2026-09-25
+
+[SCR-002] While a screen is pushed, a change the app makes through a
+query, `App::query_mut(...)` then any `DomQueryMut` method, MUST act on the
+nodes the query matched on that screen, and a query's filter
+(`DomQuery::results_where`) MUST test those nodes. This holds in
+full-screen and in inline mode.
+Falsifier: With the probe's 60-line screen pushed, the app hides that screen's text through `App::query_mut(...)` then `set_display(false)` and the pushed screen still shows `pushed 1`, or the app filters a query of that screen's text with `results_where` and the count it writes on the pushed screen is not 1, in full-screen or in inline mode.
+Mechanism: screen-pty
+Rationale: Python's App has one child, the active screen (app.py:992-1005), so App.query and every change made through its result act on that screen's nodes; here the query matched in the active screen's tree, but most DomQueryMut methods and DomQuery::results_where looked the ids up in the app's own tree.
+Status: Agreed 2026-09-26
+
+[SCR-003] Each screen MUST fill the area the app draws in, the whole
+terminal in full-screen mode and the whole inline frame in inline mode,
+whatever its own width, height, min-width, min-height, max-width,
+max-height and margin rules say. Its border and padding stay inside that
+area. In inline mode its height rules still set the frame's height
+(INL-004). This holds at any terminal size.
+Falsifier: With `border: tall red` and any one of `width: 20; height: 10; margin: 2`, `max-width: 20; max-height: 10` or `min-width: 600; min-height: 200` in the probe's `Screen` rule, the screen's border does not run along the first and last columns of the terminal and the first and last rows of the area the app draws in, in full-screen or in inline mode, in a 100x30 or a 512x144 terminal (a 2560x1440 screen at 5x10 pixels per cell).
+Mechanism: screen-pty
+Rationale: Python places every screen on the compositor's whole region (_compositor.py:743-752) and shrinks it only by its border and padding (region.shrink(styles.gutter)); here the app's Screen is laid out as a child of the node that stands for the App and takes its own size and margin rules, while pushed screens, as tree roots, already fill the area.
+Status: Agreed 2026-09-26
