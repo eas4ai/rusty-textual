@@ -14,7 +14,7 @@
 // The live transports (Linux and Windows, `crate::driver::live`) and the
 // tests are the only users of the query half below; macOS and the other
 // Unix systems skip negotiation.
-#[cfg(any(test, target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", windows))]
 use std::time::Duration;
 
 /// Synchronized-output mode (DECSET 2026).
@@ -38,7 +38,7 @@ pub const INLINE_KITTY_FLAGS: u16 = 0b0000_0001;
 ///
 /// Automatic terminal replies are immediate; the budget covers remote links.
 /// Terminals that never answer cost exactly this, once, at startup.
-#[cfg(any(test, target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", windows))]
 pub const QUERY_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Outcome of startup negotiation.

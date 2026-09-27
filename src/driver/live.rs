@@ -26,7 +26,9 @@
 
 // The transports below (Linux, Windows and the tests) are the only users.
 #[cfg(any(test, target_os = "linux", windows))]
-use std::io::{self, Write};
+use std::io;
+#[cfg(any(target_os = "linux", windows))]
+use std::io::Write;
 #[cfg(any(test, target_os = "linux", windows))]
 use std::time::{Duration, Instant};
 
