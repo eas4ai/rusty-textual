@@ -492,6 +492,13 @@ impl<'a> DomQueryMut<'a> {
                 if before == after {
                     continue;
                 }
+                // Python keeps one inline `display` rule, so a display written
+                // here replaces the one `set_display` wrote.
+                if before.as_ref().map(|s| s.style.display)
+                    != after.as_ref().map(|s| s.style.display)
+                {
+                    tree.set_inline_display(id, None);
+                }
                 changed_nodes.push(id);
                 match (&before, &after) {
                     (Some(before), Some(after)) => {
@@ -563,7 +570,7 @@ impl<'a> DomQueryMut<'a> {
         if let Some(tree) = self.app.active_widget_tree_mut() {
             for &id in &self.nodes {
                 let before = tree.is_displayed(id);
-                tree.set_inline_display(id, display);
+                tree.set_inline_display(id, Some(display));
                 if tree.is_displayed(id) != before {
                     changed_nodes.push(id);
                 }
@@ -8078,6 +8085,53 @@ mod tests {
                 !shows(pilot.app(), "hidden-text") && !shows(pilot.app(), "forced-text"),
                 "hidden again"
             );
+            Ok(())
+        })
+        .expect("headless run_test must succeed");
+    }
+
+    #[test]
+    fn query_display_and_style_display_writes_the_last_one_wins() {
+        // Python's `display` setter and `styles.display` write one inline
+        // rule, so the last write decides.
+        struct DisplayApp;
+        impl crate::TextualApp for DisplayApp {
+            fn compose(&mut self) -> AppRoot {
+                AppRoot::new().with_child(crate::widgets::Static::new("styled-text").id("styled"))
+            }
+        }
+        fn shows(app: &App) -> bool {
+            app.frame
+                .as_plain_lines()
+                .iter()
+                .any(|line| line.contains("styled-text"))
+        }
+        fn set_style_display(pilot: &mut crate::Pilot<'_>, display: crate::style::Display) {
+            pilot
+                .app_mut()
+                .query_mut("#styled")
+                .expect("query")
+                .set_styles(|s| s.style.display = Some(display));
+        }
+
+        crate::run_test(DisplayApp, |pilot| {
+            pilot.pause()?;
+            assert!(shows(pilot.app()));
+            pilot
+                .app_mut()
+                .query_mut("#styled")
+                .expect("query")
+                .set_display(true);
+            set_style_display(pilot, crate::style::Display::None);
+            pilot.pause()?;
+            assert!(!shows(pilot.app()), "set_styles after set_display hides it");
+            pilot
+                .app_mut()
+                .query_mut("#styled")
+                .expect("query")
+                .set_display(true);
+            pilot.pause()?;
+            assert!(shows(pilot.app()), "set_display after set_styles shows it");
             Ok(())
         })
         .expect("headless run_test must succeed");

@@ -742,9 +742,10 @@ impl WidgetTree {
     /// Set the node's own display rule (Python `DOMNode.display = ...`, which
     /// writes the inline `display` rule). It wins over the stylesheet's
     /// `display`; the runtime display that widget logic sets still applies.
-    pub(crate) fn set_inline_display(&mut self, node: NodeId, visible: bool) {
+    /// `None` drops the rule, so the node's styles decide again.
+    pub(crate) fn set_inline_display(&mut self, node: NodeId, rule: Option<bool>) {
         if let Some(n) = self.arena.get_mut(node) {
-            n.inline_display = Some(visible);
+            n.inline_display = rule;
             Self::recompute_display(n);
         }
     }
@@ -1669,7 +1670,7 @@ mod tests {
         let root = tree.set_root(TestWidget::boxed("Root"));
 
         tree.set_css_display(root, false);
-        tree.set_inline_display(root, true);
+        tree.set_inline_display(root, Some(true));
         assert!(tree.is_displayed(root), "shown over display: none");
         // The next CSS sync writes the stylesheet's value again.
         tree.set_css_display(root, false);
@@ -1681,7 +1682,7 @@ mod tests {
         tree.set_runtime_display(root, true);
 
         tree.set_css_display(root, true);
-        tree.set_inline_display(root, false);
+        tree.set_inline_display(root, Some(false));
         assert!(!tree.is_displayed(root), "hidden over display: block");
     }
 
