@@ -268,7 +268,12 @@ pub struct DataTable {
     cursor_type: CursorType,
     fixed_rows: usize,
     fixed_columns: usize,
-    horizontal_offset: usize,
+    /// Cells the scrolling columns are scrolled left by (Python `scroll_x`).
+    scroll_x: usize,
+    /// The cursor `(row, column)` when a wheel notch last scrolled the table.
+    /// While the cursor stays there, the view is not pulled back to it; any
+    /// cursor move brings it back into view, as in Python.
+    wheel_cursor: Option<(usize, usize)>,
     next_row_key: usize,
     next_column_key: usize,
     content_width: u16,
@@ -311,7 +316,8 @@ impl DataTable {
             cursor_type: CursorType::Cell,
             fixed_rows: 0,
             fixed_columns: 0,
-            horizontal_offset: 0,
+            scroll_x: 0,
+            wheel_cursor: None,
             next_row_key: 0,
             next_column_key: 0,
             content_width: 0,
@@ -696,7 +702,7 @@ impl DataTable {
         if self.fixed_columns != count {
             let old = self.fixed_columns;
             self.fixed_columns = count;
-            self.clamp_horizontal_offset();
+            self.clamp_scroll_x();
             self.ensure_cursor_column_visible(self.content_width as usize);
             ctx.record_change(
                 "fixed_columns",
@@ -862,7 +868,8 @@ impl DataTable {
         self.selected = 0;
         self.offset = 0;
         self.cursor_column = 0;
-        self.horizontal_offset = 0;
+        self.scroll_x = 0;
+        self.wheel_cursor = None;
         self.hover_coordinate = None;
         self.recompute_column_widths();
     }
@@ -1039,116 +1046,87 @@ impl DataTable {
         } else if self.cursor_column >= self.headers.len() {
             self.cursor_column = self.headers.len().saturating_sub(1);
         }
-        self.clamp_horizontal_offset();
+        self.clamp_scroll_x();
     }
 
     fn fixed_column_count(&self) -> usize {
         self.fixed_columns.min(self.headers.len())
     }
 
-    fn scrollable_column_count(&self) -> usize {
-        self.headers.len().saturating_sub(self.fixed_column_count())
+    /// Keep the horizontal scroll inside the scrolling columns.
+    fn clamp_scroll_x(&mut self) {
+        self.scroll_x = self
+            .scroll_x
+            .min(self.max_scroll_x(self.content_width as usize));
     }
 
-    fn clamp_horizontal_offset(&mut self) {
-        let scrollable = self.scrollable_column_count();
-        self.horizontal_offset = if scrollable == 0 {
-            0
-        } else {
-            self.horizontal_offset.min(scrollable.saturating_sub(1))
-        };
-    }
-
-    fn rendered_column_indices_with_offset(&self, offset: usize) -> Vec<usize> {
-        let total = self.headers.len();
-        if total == 0 {
-            return Vec::new();
-        }
-        let fixed = self.fixed_column_count();
-        let mut columns: Vec<usize> = (0..fixed).collect();
-        if fixed < total {
-            let clamped_offset = offset.min(total - fixed - 1);
-            columns.extend((fixed + clamped_offset)..total);
-        }
-        columns
-    }
-
+    /// Every column index, in order: rows render them all and crop the
+    /// scrolling ones by `scroll_x`.
     fn rendered_column_indices(&self) -> Vec<usize> {
-        self.rendered_column_indices_with_offset(self.horizontal_offset)
+        (0..self.headers.len()).collect()
     }
 
-    fn column_is_visible_at_width(&self, column: usize, width: usize, offset: usize) -> bool {
-        if width == 0 {
-            return false;
-        }
-        // Columns start after the leading CELL_PADDING space.
-        let usable = width.saturating_sub(CELL_PADDING);
-        let columns = self.rendered_column_indices_with_offset(offset);
-        let mut pos = 0usize;
-        for (idx, col) in columns.iter().enumerate() {
-            if idx > 0 {
-                pos = pos.saturating_add(2);
-            }
-            let col_width = *self.column_widths.get(*col).unwrap_or(&0);
-            let start = pos;
-            let end = start.saturating_add(col_width);
-            if *col == column {
-                // Fully visible: column starts within usable space and ends within it.
-                return start < usable && end <= usable;
-            }
-            pos = end;
-        }
-        false
+    /// Whether the view follows the cursor: not while the cursor stays where
+    /// it was when a wheel notch last scrolled the table.
+    fn follows_cursor(&self) -> bool {
+        self.wheel_cursor != Some((self.selected, self.cursor_column))
     }
 
     fn ensure_cursor_column_visible(&mut self, width: usize) {
-        if self.headers.is_empty() {
-            self.horizontal_offset = 0;
+        if !self.follows_cursor() {
+            self.clamp_scroll_x();
             return;
         }
-        if self.cursor_column < self.fixed_column_count() {
-            self.horizontal_offset = 0;
+        self.wheel_cursor = None;
+        if self.headers.is_empty() || self.cursor_column < self.fixed_column_count() {
+            self.scroll_x = 0;
             return;
         }
-        let first_scrollable = self.fixed_column_count();
-        if !self.column_is_visible_at_width(first_scrollable, width, 0) {
-            // No horizontal viewport space remains after fixed columns; keep a stable offset.
-            self.horizontal_offset = 0;
+        let viewport = self.scrollable_viewport_width(width);
+        if viewport == 0 {
+            // No room is left after the fixed columns; keep a stable offset.
+            self.scroll_x = 0;
             return;
         }
-        let max_offset = self.scrollable_column_count().saturating_sub(1);
-        self.horizontal_offset = self.horizontal_offset.min(max_offset);
-        while self.horizontal_offset < max_offset
-            && !self.column_is_visible_at_width(self.cursor_column, width, self.horizontal_offset)
-        {
-            self.horizontal_offset += 1;
+        // Python `_scroll_cursor_into_view`: the least scroll that shows the
+        // cursor column, its start first when it is wider than the view.
+        let (start, end) = self.scrollable_column_span(self.cursor_column);
+        if start < self.scroll_x {
+            self.scroll_x = start;
+        } else if end > self.scroll_x + viewport {
+            self.scroll_x = end.saturating_sub(viewport).min(start);
         }
-        while self.horizontal_offset > 0
-            && self.column_is_visible_at_width(
-                self.cursor_column,
-                width,
-                self.horizontal_offset - 1,
-            )
-        {
-            self.horizontal_offset -= 1;
-        }
+        self.scroll_x = self.scroll_x.min(self.max_scroll_x(width));
     }
 
-    /// Map a content-local `x` to the rendered column under it, or `None` when
-    /// `x` falls past the last column's padded extent (Python #2909: the blank
-    /// area right of the final column is out of bounds, not the last cell).
-    fn column_at_x_in_rendered_columns(
-        &self,
-        x: usize,
-        rendered_columns: &[usize],
-    ) -> Option<usize> {
-        if rendered_columns.is_empty() {
+    /// The column under content-local `x` (after the row-label column), or
+    /// `None` past the last column (Python #2909: the blank area right of the
+    /// final column is out of bounds, not the last cell). The fixed columns
+    /// are mapped where they are drawn, the scrolling ones scrolled by
+    /// `scroll_x`.
+    fn column_at_x(&self, x: usize) -> Option<usize> {
+        let fixed = self.fixed_column_count();
+        let fixed_width = self.fixed_section_width();
+        let (columns, x) = if x < fixed_width {
+            ((0..fixed).collect::<Vec<_>>(), x)
+        } else {
+            (
+                (fixed..self.headers.len()).collect(),
+                x - fixed_width + self.scroll_x,
+            )
+        };
+        self.column_at_x_in_columns(x, &columns)
+    }
+
+    /// The column of `columns`, drawn side by side from `x = 0`, under `x`.
+    fn column_at_x_in_columns(&self, x: usize, columns: &[usize]) -> Option<usize> {
+        if columns.is_empty() {
             return None;
         }
         // Adjust for leading CELL_PADDING space.
         let x = x.saturating_sub(CELL_PADDING);
         let mut pos = 0usize;
-        for (idx, col) in rendered_columns.iter().enumerate() {
+        for (idx, col) in columns.iter().enumerate() {
             if idx > 0 {
                 pos = pos.saturating_add(2);
             }
@@ -1163,135 +1141,130 @@ impl DataTable {
         // (Python attaches the cell's meta to its padding), so it still counts
         // as the last cell; anything beyond it is out of bounds.
         if x < pos.saturating_add(CELL_PADDING) {
-            rendered_columns.last().copied()
+            columns.last().copied()
         } else {
             None
         }
     }
 
+    /// Rendered width of `column`: its content with a cell of padding on each
+    /// side (Python `Column.get_render_width`).
+    fn column_render_width(&self, column: usize) -> usize {
+        self.column_widths.get(column).copied().unwrap_or(0) + 2 * CELL_PADDING
+    }
+
+    /// Rendered width of the fixed columns.
     fn fixed_section_width(&self) -> usize {
-        let fixed = self.fixed_column_count();
-        if fixed == 0 {
-            return 0;
-        }
-        let mut width = 0usize;
-        for (idx, col) in (0..fixed).enumerate() {
-            if idx > 0 {
-                width = width.saturating_add(2);
-            }
-            width = width.saturating_add(*self.column_widths.get(col).unwrap_or(&0));
-        }
-        width
+        (0..self.fixed_column_count())
+            .map(|column| self.column_render_width(column))
+            .sum()
     }
 
+    /// Rendered width of the scrolling columns.
     fn scrollable_content_width(&self) -> usize {
-        let fixed = self.fixed_column_count();
-        let scrollable = self.headers.len().saturating_sub(fixed);
-        if scrollable == 0 {
-            return 0;
-        }
-        let mut width = 0usize;
-        for index in 0..scrollable {
-            if index > 0 {
-                width = width.saturating_add(2);
-            }
-            width = width.saturating_add(*self.column_widths.get(fixed + index).unwrap_or(&0));
-        }
-        width
+        (self.fixed_column_count()..self.headers.len())
+            .map(|column| self.column_render_width(column))
+            .sum()
     }
 
+    /// The width the scrolling columns are shown in: `width` less the row
+    /// labels and the fixed columns.
     fn scrollable_viewport_width(&self, width: usize) -> usize {
-        let fixed = self.fixed_column_count();
-        if fixed >= self.headers.len() {
-            return 0;
-        }
-        let fixed_width = self.fixed_section_width();
-        let inter_gap = if fixed > 0 { 2 } else { 0 };
-        width.saturating_sub(fixed_width.saturating_add(inter_gap))
+        width.saturating_sub(self.label_region_width() + self.fixed_section_width())
     }
 
-    fn horizontal_offset_pixels(&self) -> usize {
-        let fixed = self.fixed_column_count();
-        let scrollable = self.scrollable_column_count();
-        let offset = self.horizontal_offset.min(scrollable.saturating_sub(1));
-        let mut pixels = 0usize;
-        for idx in 0..offset {
-            pixels = pixels
-                .saturating_add(*self.column_widths.get(fixed + idx).unwrap_or(&0))
-                .saturating_add(2);
-        }
-        pixels
+    /// How far the scrolling columns can scroll, in cells.
+    fn max_scroll_x(&self, width: usize) -> usize {
+        self.scrollable_content_width()
+            .saturating_sub(self.scrollable_viewport_width(width))
     }
 
-    fn horizontal_offset_from_pixels(&self, pixels: usize) -> usize {
-        let fixed = self.fixed_column_count();
-        let scrollable = self.scrollable_column_count();
-        if scrollable == 0 {
-            return 0;
-        }
-        let max_offset = scrollable.saturating_sub(1);
-        let mut offset = 0usize;
-        let mut consumed = 0usize;
-        while offset < max_offset {
-            let step = self
-                .column_widths
-                .get(fixed + offset)
-                .copied()
-                .unwrap_or(0)
-                .saturating_add(2);
-            if consumed.saturating_add(step) > pixels {
-                break;
-            }
-            consumed = consumed.saturating_add(step);
-            offset += 1;
-        }
-        offset
+    /// Where scrolling column `column` starts and ends, in cells from the
+    /// first scrolling column.
+    fn scrollable_column_span(&self, column: usize) -> (usize, usize) {
+        let start: usize = (self.fixed_column_count()..column)
+            .map(|c| self.column_render_width(c))
+            .sum();
+        (start, start + self.column_render_width(column))
     }
 
+    /// Where each scrolling column starts, in cells: the positions the
+    /// hidden-cursor arrow keys step through.
+    fn scrollable_column_starts(&self) -> Vec<usize> {
+        (self.fixed_column_count()..self.headers.len())
+            .map(|column| self.scrollable_column_span(column).0)
+            .collect()
+    }
+
+    /// The horizontal scrollbar's geometry, as Python sizes the table: the
+    /// whole table width (row labels, fixed and scrolling columns) scrolled
+    /// by `scroll_x` in a view `width` wide.
     fn horizontal_scrollbar_state(&self, width: usize) -> Option<HorizontalScrollbarState> {
         if width == 0 {
             return None;
         }
-        let viewport_width = self.scrollable_viewport_width(width);
-        let content_width = self.scrollable_content_width();
-        if viewport_width == 0 || content_width <= viewport_width {
+        let max_pixel_offset = self.max_scroll_x(width);
+        if self.scrollable_viewport_width(width) == 0 || max_pixel_offset == 0 {
             return None;
         }
-        let max_pixel_offset = content_width.saturating_sub(viewport_width);
-        let pixel_offset = self.horizontal_offset_pixels().min(max_pixel_offset);
         Some(HorizontalScrollbarState {
-            content_width,
-            pixel_offset,
+            content_width: width + max_pixel_offset,
+            pixel_offset: self.scroll_x.min(max_pixel_offset),
             max_pixel_offset,
         })
     }
 
+    /// A horizontal page: the width the scrolling columns are shown in.
     fn page_horizontal_step(&self, width: usize) -> usize {
-        let visible = self
-            .rendered_column_indices_with_offset(self.horizontal_offset)
-            .len()
-            .saturating_sub(self.fixed_column_count());
-        visible.saturating_sub(1).max(usize::from(width > 0))
+        self.scrollable_viewport_width(width)
+            .max(usize::from(width > 0))
     }
 
-    fn scroll_horizontal_by_columns(&mut self, delta: i32) -> bool {
-        let scrollable = self.scrollable_column_count();
-        if scrollable == 0 {
-            self.horizontal_offset = 0;
-            return false;
-        }
-        let max_offset = scrollable.saturating_sub(1);
+    /// Scroll to the start of the `delta`-th scrolling column before (`delta <
+    /// 0`) or after the current scroll, as the hidden-cursor arrow keys do.
+    /// Returns whether the columns moved.
+    fn scroll_by_columns(&mut self, delta: i32) -> bool {
+        let max = self.max_scroll_x(self.content_width as usize);
+        let starts = self.scrollable_column_starts();
+        let steps = delta.unsigned_abs() as usize;
         let next = if delta.is_negative() {
-            self.horizontal_offset
-                .saturating_sub(delta.unsigned_abs() as usize)
+            starts
+                .iter()
+                .rev()
+                .filter(|&&start| start < self.scroll_x)
+                .nth(steps.saturating_sub(1))
+                .copied()
+                .unwrap_or(0)
         } else {
-            self.horizontal_offset.saturating_add(delta.to_usize_sat())
-        }
-        .min(max_offset);
-        if next == self.horizontal_offset {
+            starts
+                .iter()
+                .filter(|&&start| start > self.scroll_x)
+                .nth(steps.saturating_sub(1))
+                .copied()
+                .unwrap_or(max)
+                .min(max)
+        };
+        if next == self.scroll_x {
             return false;
         }
-        self.horizontal_offset = next;
+        self.scroll_x = next;
+        true
+    }
+
+    /// Scroll the scrolling columns by `delta` cells. Returns whether they
+    /// moved.
+    fn scroll_horizontal_by(&mut self, delta: i32) -> bool {
+        let max = self.max_scroll_x(self.content_width as usize);
+        let next = if delta.is_negative() {
+            self.scroll_x.saturating_sub(delta.unsigned_abs() as usize)
+        } else {
+            self.scroll_x.saturating_add(delta.to_usize_sat())
+        }
+        .min(max);
+        if next == self.scroll_x {
+            return false;
+        }
+        self.scroll_x = next;
         true
     }
 
@@ -1411,6 +1384,13 @@ impl DataTable {
             self.offset = 0;
             return;
         }
+        if !self.follows_cursor() {
+            let visible = self.scrollable_visible_rows(height);
+            self.offset =
+                ScrollView::line_clamp_offset(self.offset, self.scrollable_row_count(), visible);
+            return;
+        }
+        self.wheel_cursor = None;
         let fixed_rows = self.fixed_data_rows();
         if self.selected < fixed_rows {
             self.offset = 0;
@@ -1480,7 +1460,7 @@ impl DataTable {
             self.scrollable_row_count(),
             scrollable_visible,
         );
-        if self.selected < fixed_rows {
+        if self.selected < fixed_rows || !self.follows_cursor() {
             return offset;
         }
         let selected_scroll_index = self.selected.saturating_sub(fixed_rows);
@@ -1558,11 +1538,7 @@ impl DataTable {
             ctx.set_handled();
             return;
         }
-        let rendered_columns = self.rendered_column_indices();
-        let clicked_col = self.column_at_x_in_rendered_columns(
-            (mouse.x as usize).saturating_sub(label_region),
-            &rendered_columns,
-        );
+        let clicked_col = self.column_at_x((mouse.x as usize).saturating_sub(label_region));
         // Clicks past the last column are out of bounds and ignored,
         // except with a row cursor, where the click still selects the
         // row (Python `_on_click` out_of_bounds handling).
@@ -1768,7 +1744,7 @@ impl DataTable {
         };
         if nav.handled {
             nav
-        } else if self.scroll_horizontal_by_columns(delta) {
+        } else if self.scroll_by_columns(delta) {
             ctx.request_repaint();
             Nav::HANDLED
         } else {
@@ -1790,7 +1766,7 @@ impl DataTable {
             let step = self
                 .page_horizontal_step(self.content_width as usize)
                 .to_i32_sat();
-            if self.scroll_horizontal_by_columns(-step) {
+            if self.scroll_horizontal_by(-step) {
                 nav.handled = true;
                 ctx.request_repaint();
             }
@@ -1812,7 +1788,7 @@ impl DataTable {
             let step = self
                 .page_horizontal_step(self.content_width as usize)
                 .to_i32_sat();
-            if self.scroll_horizontal_by_columns(step) {
+            if self.scroll_horizontal_by(step) {
                 nav.handled = true;
                 ctx.request_repaint();
             }
@@ -1828,8 +1804,8 @@ impl DataTable {
         {
             self.cursor_column = 0;
             nav.cursor_changed = true;
-        } else if self.horizontal_offset != 0 {
-            self.horizontal_offset = 0;
+        } else if self.scroll_x != 0 {
+            self.scroll_x = 0;
             ctx.request_repaint();
         }
         nav
@@ -1847,9 +1823,9 @@ impl DataTable {
                 nav.cursor_changed = true;
             }
         } else {
-            let max_offset = self.scrollable_column_count().saturating_sub(1);
-            if self.horizontal_offset != max_offset {
-                self.horizontal_offset = max_offset;
+            let max_offset = self.max_scroll_x(self.content_width as usize);
+            if self.scroll_x != max_offset {
+                self.scroll_x = max_offset;
                 ctx.request_repaint();
             }
         }
@@ -1924,8 +1900,7 @@ impl DataTable {
                 self.cursor_column -= 1;
                 nav.cursor_changed = true;
             }
-        } else if self.horizontal_offset > 0 {
-            self.horizontal_offset -= 1;
+        } else if self.scroll_by_columns(-1) {
             ctx.request_repaint();
         }
         nav
@@ -1942,12 +1917,8 @@ impl DataTable {
                 self.cursor_column += 1;
                 nav.cursor_changed = true;
             }
-        } else {
-            let max_offset = self.scrollable_column_count().saturating_sub(1);
-            if self.horizontal_offset < max_offset {
-                self.horizontal_offset += 1;
-                ctx.request_repaint();
-            }
+        } else if self.scroll_by_columns(1) {
+            ctx.request_repaint();
         }
         nav
     }
@@ -2098,6 +2069,7 @@ impl DataTable {
             &header_cells,
             layout.column_widths,
             &layout.rendered_columns,
+            layout.scroll,
             layout.width,
             (layout.label_col_width > 0).then_some((
                 &empty_label,
@@ -2165,6 +2137,7 @@ impl DataTable {
                 row,
                 layout.column_widths,
                 &layout.rendered_columns,
+                layout.scroll,
                 layout.width,
                 (layout.label_col_width > 0).then_some((
                     row_label,
@@ -2222,7 +2195,8 @@ impl Default for DataTable {
             cursor_type: CursorType::Cell,
             fixed_rows: 0,
             fixed_columns: 0,
-            horizontal_offset: 0,
+            scroll_x: 0,
+            wheel_cursor: None,
             next_row_key: 0,
             next_column_key: 0,
             content_width: 0,
@@ -2391,7 +2365,6 @@ impl crate::widgets::Interactive for DataTable {
     }
 
     fn on_mouse_move(&mut self, x: u16, y: u16) -> bool {
-        let rendered_columns = self.rendered_column_indices();
         // The row-label prefix column is not a data column (Python meta
         // `column == -1`): treat it like the out-of-bounds fill below, and
         // offset the x used to map data columns.
@@ -2399,10 +2372,7 @@ impl crate::widgets::Interactive for DataTable {
         let col_idx = if label_region > 0 && (x as usize) < label_region {
             None
         } else {
-            self.column_at_x_in_rendered_columns(
-                (x as usize).saturating_sub(label_region),
-                &rendered_columns,
-            )
+            self.column_at_x((x as usize).saturating_sub(label_region))
         };
         let visible_rows = self.visible_rows();
         let next = if self.show_header && y == 0 {
@@ -2474,10 +2444,9 @@ impl crate::widgets::Interactive for DataTable {
             return;
         };
         let target_pixels = payload.offset.max(0.0).round().to_usize_sat();
-        let clamped_pixels = target_pixels.min(state.max_pixel_offset);
-        let next = self.horizontal_offset_from_pixels(clamped_pixels);
-        if next != self.horizontal_offset {
-            self.horizontal_offset = next;
+        let next = target_pixels.min(state.max_pixel_offset);
+        if next != self.scroll_x {
+            self.scroll_x = next;
             ctx.request_repaint();
         }
         ctx.set_handled();
@@ -2530,11 +2499,21 @@ impl crate::widgets::Layout for DataTable {
 }
 
 impl crate::widgets::Scrollable for DataTable {
-    fn on_mouse_scroll(&mut self, delta_x: i32, _delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
-        if delta_x == 0 {
-            return;
+    fn on_mouse_scroll(&mut self, delta_x: i32, delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
+        // Python scrolls the view by lines and cells and leaves the cursor
+        // where it is; `wheel_cursor` keeps the next layout from pulling the
+        // view back to it.
+        let visible_rows = self.visible_rows();
+        let before = (self.effective_offset(visible_rows), self.scroll_x);
+        self.offset = before.0;
+        if delta_y != 0 {
+            self.scroll_by_lines(delta_y.to_isize_sat());
         }
-        if self.scroll_horizontal_by_columns(delta_x) {
+        if delta_x != 0 {
+            self.scroll_horizontal_by(delta_x);
+        }
+        if (self.offset, self.scroll_x) != before {
+            self.wheel_cursor = Some((self.selected, self.cursor_column));
             ctx.request_repaint();
             ctx.set_handled();
         }
@@ -2633,6 +2612,10 @@ impl crate::widgets::Render for DataTable {
         let layout = RowLayout {
             column_widths: self.column_widths(),
             rendered_columns: self.rendered_column_indices(),
+            scroll: (
+                self.fixed_column_count(),
+                self.scroll_x.min(self.max_scroll_x(width)),
+            ),
             label_col_width: self.label_col_width(),
             width,
         };
@@ -2649,6 +2632,9 @@ impl crate::widgets::Render for DataTable {
 struct RowLayout<'a> {
     column_widths: &'a [usize],
     rendered_columns: Vec<usize>,
+    /// The fixed column count and the cells the scrolling columns are
+    /// scrolled left by.
+    scroll: (usize, usize),
     label_col_width: usize,
     width: usize,
 }
@@ -3059,6 +3045,9 @@ fn emit_row_per_cell(
     cells: &[Cell],
     column_widths: &[usize],
     rendered_columns: &[usize],
+    // The fixed column count, and the cells the columns after them are
+    // scrolled left by (Python `scroll_x`).
+    (fixed_columns, scroll_x): (usize, usize),
     total_width: usize,
     // Non-data row-label column rendered as a prefix: (content, width, visual).
     // `width == 0` means no label column (the common, unlabelled case).
@@ -3098,6 +3087,10 @@ fn emit_row_per_cell(
         push_cell_pad(label_visual, out);
         used += label_width + 2 * CELL_PADDING;
     }
+    // The fixed columns, then the scrolling columns cropped by `scroll_x`
+    // to the width left.
+    let mut scrolling = Segments::new();
+    let mut scrolling_width = 0usize;
     for col_idx in rendered_columns.iter().copied() {
         let col_w = column_widths.get(col_idx).copied().unwrap_or(0);
         let visual = style_for_col(col_idx);
@@ -3105,10 +3098,23 @@ fn emit_row_per_cell(
             Some(cell) => (&cell.content, cell.align),
             None => (&Content::empty(), TextAlign::Left),
         };
-        push_cell_pad(visual, out);
-        render_cell_segments(content, align, col_w, visual, out);
-        push_cell_pad(visual, out);
-        used += col_w + 2 * CELL_PADDING;
+        let (target, width) = if col_idx < fixed_columns {
+            (&mut *out, &mut used)
+        } else {
+            (&mut scrolling, &mut scrolling_width)
+        };
+        push_cell_pad(visual, target);
+        render_cell_segments(content, align, col_w, visual, target);
+        push_cell_pad(visual, target);
+        *width += col_w + 2 * CELL_PADDING;
+    }
+    let shown = scrolling_width
+        .saturating_sub(scroll_x)
+        .min(total_width.saturating_sub(used));
+    if shown > 0 {
+        let line: Vec<Segment> = scrolling.iter().cloned().collect();
+        out.extend(crate::widgets::crop_line_horizontal(&line, scroll_x, shown));
+        used += shown;
     }
     // Pad remainder to full width with the fill style.
     if used < total_width {
@@ -3365,6 +3371,92 @@ mod tests {
         assert_eq!(table.row_index_from_y(2, table.visible_rows()), Some(4));
     }
 
+    /// Sends one wheel notch of `(delta_x, delta_y)` to `table`; returns
+    /// whether it was handled.
+    fn wheel(table: &mut DataTable, delta_x: i32, delta_y: i32) -> bool {
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            crate::widgets::Scrollable::on_mouse_scroll(table, delta_x, delta_y, &mut w);
+        }
+        ctx.handled()
+    }
+
+    /// A table with the columns `c00` to `c11`, `rows` rows long.
+    fn wide_table(rows: usize) -> DataTable {
+        let headers: Vec<String> = (0..12).map(|n| format!("c{n:02}")).collect();
+        let rows = (0..rows)
+            .map(|r| {
+                (0..12)
+                    .map(|c| format!("{r:02}{c:01}")[..3].to_string())
+                    .collect()
+            })
+            .collect();
+        DataTable::new(headers, rows)
+    }
+
+    #[test]
+    fn scl_001_a_wheel_notch_scrolls_rows_and_a_layout_keeps_them() {
+        let mut table = wide_table(30);
+        table.on_layout(20, 6);
+        assert!(wheel(&mut table, 0, 2));
+        let visible = table.visible_rows();
+        assert_eq!(table.effective_offset(visible), 2, "two lines down");
+        table.on_layout(20, 6);
+        assert_eq!(
+            table.effective_offset(table.visible_rows()),
+            2,
+            "a layout keeps the view where the wheel left it"
+        );
+        // Moving the cursor brings it back into view.
+        table.selected = 1;
+        table.ensure_visible(table.visible_rows());
+        assert_eq!(table.effective_offset(table.visible_rows()), 1);
+    }
+
+    #[test]
+    fn scl_001_a_horizontal_notch_scrolls_the_columns_by_cells() {
+        let console = Console::new();
+        let mut options = console.options().clone();
+        options.size = (20, 3);
+        options.max_width = 20;
+        options.max_height = 3;
+        let mut table = wide_table(2);
+        table.on_layout(20, 3);
+        assert!(wheel(&mut table, 4, 0));
+        assert_eq!(table.scroll_x, 4, "four cells, not a whole column");
+        table.on_layout(20, 3);
+        assert_eq!(
+            table.scroll_x, 4,
+            "a layout keeps the view where the wheel left it"
+        );
+        // Each column is drawn as " cNN "; four cells in, the first one is
+        // gone but for its trailing padding.
+        let buf = crate::render::FrameBuffer::from_renderable(&console, &options, &table, None);
+        let header = &buf.as_plain_lines()[0];
+        assert!(header.starts_with("  c01  c02"), "header: {header:?}");
+        // A click is mapped where the column is drawn now: `c01` at x 2..5.
+        assert_eq!(table.column_at_x(2), Some(1));
+        assert_eq!(table.column_at_x(7), Some(2));
+    }
+
+    #[test]
+    fn scl_001_a_notch_the_table_cannot_use_is_left_to_its_ancestors() {
+        let mut table = wide_table(2);
+        table.on_layout(200, 6);
+        assert!(!wheel(&mut table, 0, 2), "every row already shows");
+        assert!(!wheel(&mut table, 4, 0), "every column already shows");
+    }
+
+    #[test]
+    fn scl_001_a_narrow_first_layout_leaves_the_columns_unscrolled() {
+        // Inline mode can lay the table out narrow before its real width.
+        let mut table = wide_table(2);
+        table.on_layout(1, 3);
+        table.on_layout(40, 3);
+        assert_eq!(table.scroll_x, 0);
+    }
+
     #[test]
     fn fixed_column_stays_visible_when_cursor_moves_to_far_columns() {
         let console = Console::new();
@@ -3447,7 +3539,7 @@ mod tests {
         table.set_fixed_columns(1, &mut rctx);
         table.on_layout(12, 3);
         table.set_cursor(0, 3, &mut rctx);
-        assert!(table.horizontal_offset > 0);
+        assert!(table.scroll_x > 0);
 
         let mut ctx = EventCtx::default();
         {
@@ -3468,7 +3560,7 @@ mod tests {
         }
 
         assert_eq!(table.cursor_column, 0);
-        assert_eq!(table.horizontal_offset, 0);
+        assert_eq!(table.scroll_x, 0);
     }
 
     #[test]
@@ -3482,7 +3574,7 @@ mod tests {
         table.on_layout(4, 3);
         table.set_cursor(0, 3, &mut rctx);
 
-        assert_eq!(table.horizontal_offset, 0);
+        assert_eq!(table.scroll_x, 0);
     }
 
     #[test]
@@ -3571,7 +3663,7 @@ mod tests {
         let _guard = set_dispatch_recipient(make_node_id(), focused_state());
         table.on_layout(12, 3);
         table.set_cursor(0, 3, &mut rctx);
-        let offset_at_end = table.horizontal_offset;
+        let offset_at_end = table.scroll_x;
         assert!(offset_at_end > 0);
 
         let mut ctx = EventCtx::default();
@@ -3584,7 +3676,7 @@ mod tests {
         }
         assert!(ctx.handled());
         assert_eq!(table.cursor_column, 0);
-        assert_eq!(table.horizontal_offset, 0);
+        assert_eq!(table.scroll_x, 0);
 
         let mut ctx = EventCtx::default();
         {
@@ -3596,7 +3688,7 @@ mod tests {
         }
         assert!(ctx.handled());
         assert_eq!(table.cursor_column, 3);
-        assert_eq!(table.horizontal_offset, offset_at_end);
+        assert_eq!(table.scroll_x, offset_at_end);
     }
 
     #[test]
@@ -3882,7 +3974,11 @@ mod tests {
             assert!(table.execute_action(&action, &mut __w));
         }
         assert_eq!(table.cursor_column, 0, "cursor column must not move");
-        assert_eq!(table.horizontal_offset, 1, "columns must scroll");
+        assert_eq!(
+            table.scroll_x,
+            table.scrollable_column_span(1).0,
+            "columns must scroll to the next column"
+        );
     }
 
     /// Python parity (`page_up` / `page_down`): the cursor moves a viewport
@@ -4136,7 +4232,7 @@ mod tests {
         );
         table.on_layout(12, 4);
         let _ = table.compose();
-        assert_eq!(table.horizontal_offset, 0);
+        assert_eq!(table.scroll_x, 0);
 
         let mut ctx = EventCtx::default();
         {
@@ -4159,7 +4255,7 @@ mod tests {
         }
 
         assert!(ctx.handled());
-        assert!(table.horizontal_offset > 0);
+        assert!(table.scroll_x > 0);
     }
 
     #[test]
@@ -4177,7 +4273,7 @@ mod tests {
         let mut rctx = ReactiveCtx::new(NodeId::default());
         table.set_cursor_type(CursorType::Row, &mut rctx);
         table.on_layout(12, 4);
-        assert_eq!(table.horizontal_offset, 0);
+        assert_eq!(table.scroll_x, 0);
 
         let mut ctx = EventCtx::default();
         {
@@ -4188,7 +4284,7 @@ mod tests {
             table.on_event(&Event::Action(Action::ScrollRight), &mut __w);
         }
         assert!(ctx.handled());
-        assert!(table.horizontal_offset > 0);
+        assert!(table.scroll_x > 0);
     }
 
     #[test]
@@ -4225,7 +4321,7 @@ mod tests {
             );
         }
         assert!(ctx.handled());
-        let after_first = table.horizontal_offset;
+        let after_first = table.scroll_x;
 
         let mut ctx2 = EventCtx::default();
         {
@@ -4248,8 +4344,8 @@ mod tests {
         }
         assert!(ctx2.handled());
         assert!(ctx2.repaint_requested());
-        assert!(table.horizontal_offset >= after_first);
-        assert!(table.horizontal_offset > 0);
+        assert!(table.scroll_x >= after_first);
+        assert!(table.scroll_x > 0);
     }
 
     #[test]
@@ -4355,6 +4451,6 @@ mod tests {
         }
 
         assert!(ctx.handled());
-        assert!(table.horizontal_offset > 0);
+        assert!(table.scroll_x > 0);
     }
 }

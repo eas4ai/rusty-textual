@@ -36,6 +36,10 @@ pub struct Tree {
     pressed_activation_index: Option<usize>,
     viewport_height: usize,
     scroll_step: usize,
+    /// The cursor when a wheel notch last scrolled the tree. While the cursor
+    /// stays there, the view is not pulled back to it; moving the cursor
+    /// brings it back into view, as in Python.
+    wheel_cursor: Option<WheelCursor>,
     /// Whether the root node(s) are visible. Default: true.
     show_root: bool,
     /// Whether tree guide lines (│, ├, └) are drawn. Default: true.
@@ -73,6 +77,7 @@ impl Tree {
             pressed_activation_index: None,
             viewport_height: 1,
             scroll_step: 1,
+            wheel_cursor: None,
             show_root: true,
             show_guides: true,
             guide_depth: 4,
@@ -863,6 +868,10 @@ impl Tree {
 
     fn ensure_visible(&mut self) {
         self.clamp_offsets();
+        if self.wheel_cursor == Some(WheelCursor(self.cursor)) {
+            return;
+        }
+        self.wheel_cursor = None;
         let nodes = self.visible_nodes();
         if nodes.is_empty() {
             return;
@@ -1656,15 +1665,23 @@ impl crate::widgets::Layout for Tree {
     }
 }
 
+/// The cursor node (or none) when a wheel notch scrolled the tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WheelCursor(Option<TreeNodeId>);
+
 impl crate::widgets::Scrollable for Tree {
     fn on_mouse_scroll(&mut self, _delta_x: i32, delta_y: i32, ctx: &mut crate::event::WidgetCtx) {
         if delta_y == 0 {
             return;
         }
+        let before = self.offset;
         self.scroll_offset(
             delta_y.saturating_mul(self.scroll_step.to_i32_sat()) as isize,
             ctx,
         );
+        if self.offset != before {
+            self.wheel_cursor = Some(WheelCursor(self.cursor));
+        }
     }
 }
 
@@ -2447,5 +2464,33 @@ mod tests {
             .find_map(|m| m.downcast_ref::<TreeNodeCollapsed>())
             .expect("TreeNodeCollapsed posted");
         assert_eq!(collapsed.node_id, root_id);
+    }
+
+    /// Sends one wheel notch of `delta_y` lines to `widget`; returns whether
+    /// it was handled.
+    fn wheel(widget: &mut dyn crate::widgets::Widget, delta_y: i32) -> bool {
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            widget.on_mouse_scroll(0, delta_y, &mut w);
+        }
+        ctx.handled()
+    }
+
+    #[test]
+    fn scl_001_a_wheel_notch_scrolls_the_tree_and_a_layout_keeps_it() {
+        let mut tree = Tree::new((0..20).map(|i| TreeNode::new(format!("n{i}"))).collect());
+        tree.on_layout(20, 5);
+        assert!(wheel(&mut tree, 2));
+        assert_eq!(tree.offset, 2);
+        tree.on_layout(20, 5);
+        assert_eq!(
+            tree.offset, 2,
+            "a layout keeps the view where the wheel left it"
+        );
+        // Moving the cursor brings it back into view.
+        let second = tree.root_ids()[1];
+        tree.move_cursor(Some(second));
+        assert_eq!(tree.offset, 1);
     }
 }

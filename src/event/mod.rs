@@ -49,6 +49,8 @@ pub struct MouseScrollEvent {
     /// Content-local coordinates (origin at widget content top-left of `target`, if any).
     pub x: u16,
     pub y: u16,
+    /// How far the notch scrolls, in columns and lines: 4 columns
+    /// horizontally or 2 lines vertically.
     pub delta_x: i32,
     pub delta_y: i32,
     pub modifiers: KeyModifiers,

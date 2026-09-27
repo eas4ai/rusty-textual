@@ -68,7 +68,13 @@ pub struct ListView {
     hovered_index: Option<usize>,
     pressed_index: Option<usize>,
     viewport_height: usize,
+    /// The width the items are shown in (from the last layout).
+    viewport_width: usize,
     scroll_step: usize,
+    /// The highlighted item when a wheel notch last scrolled the list. While
+    /// the highlight stays there, the view is not pulled back to it; moving
+    /// the highlight brings it back into view, as in Python.
+    wheel_selected: Option<usize>,
     children_extracted: bool,
     /// `true` once an initial `Highlighted` should be posted at mount (Python's
     /// `_on_mount` sets `self.index`, which fires the `Highlighted` watcher).
@@ -105,7 +111,9 @@ impl ListView {
             hovered_index: None,
             pressed_index: None,
             viewport_height: 1,
+            viewport_width: 1,
             scroll_step: 1,
+            wheel_selected: None,
             children_extracted: false,
             pending_initial_highlight: false,
             seed: NodeSeed::default(),
@@ -365,9 +373,10 @@ impl ListView {
 
     fn ensure_visible(&mut self) {
         self.clamp_offsets();
-        if self.item_text.is_empty() {
+        if self.item_text.is_empty() || self.wheel_selected == Some(self.selected) {
             return;
         }
+        self.wheel_selected = None;
         let viewport = self.viewport_height.max(1);
         if self.selected < self.offset {
             self.offset = self.selected;
@@ -458,7 +467,9 @@ impl ListView {
             self.viewport_height.max(1),
         );
         if self.offset != before {
-            ctx.request_repaint();
+            // The items are child widgets: lay them out again at the new
+            // offset, as Container does when it scrolls.
+            ctx.request_layout_invalidation();
             ctx.set_handled();
         }
     }
@@ -576,8 +587,9 @@ impl crate::widgets::Interactive for ListView {
         }
     }
 
-    fn on_layout(&mut self, _width: u16, height: u16) {
+    fn on_layout(&mut self, width: u16, height: u16) {
         self.viewport_height = usize::from(height).max(1);
+        self.viewport_width = usize::from(width).max(1);
         self.ensure_visible();
     }
 
@@ -760,10 +772,30 @@ impl crate::widgets::Scrollable for ListView {
         if delta_y == 0 {
             return;
         }
+        let before = self.offset;
         self.scroll_offset(
             delta_y.saturating_mul(self.scroll_step.to_i32_sat()) as isize,
             ctx,
         );
+        if self.offset != before {
+            self.wheel_selected = Some(self.selected);
+        }
+    }
+
+    // The items are child widgets the runtime lays out; it draws them
+    // shifted up by this offset, as a VerticalScroll scrolls its children.
+    fn scroll_offset(&self) -> (usize, usize) {
+        (0, self.offset)
+    }
+
+    fn scroll_offset_f32(&self) -> (f32, f32) {
+        (0.0, self.offset.to_f32_lossy())
+    }
+
+    // The runtime shifts children by the offset only inside a scroll
+    // viewport.
+    fn scroll_viewport_size(&self) -> Option<(usize, usize)> {
+        Some((self.viewport_width, self.viewport_height))
     }
 }
 
@@ -1258,5 +1290,37 @@ mod tests {
         assert_eq!(list.compose().len(), 1);
         // Idempotent: re-composing a drained list yields nothing.
         assert!(list.compose().is_empty());
+    }
+
+    /// Sends one wheel notch of `delta_y` lines to `widget`; returns whether
+    /// it was handled.
+    fn wheel(widget: &mut dyn crate::widgets::Widget, delta_y: i32) -> bool {
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            widget.on_mouse_scroll(0, delta_y, &mut w);
+        }
+        ctx.handled()
+    }
+
+    #[test]
+    fn scl_001_a_wheel_notch_scrolls_the_items_and_a_layout_keeps_them() {
+        let mut list = ListView::new((0..10).map(|i| format!("item-{i}")).collect());
+        list.on_layout(20, 3);
+        assert!(wheel(&mut list, 2));
+        assert_eq!(list.offset(), 2);
+        list.on_layout(20, 3);
+        assert_eq!(
+            list.offset(),
+            2,
+            "a layout keeps the view where the wheel left it"
+        );
+        // The runtime draws the item children shifted by the offset, inside
+        // the viewport.
+        assert_eq!(crate::widgets::Scrollable::scroll_offset(&list), (0, 2));
+        assert_eq!(
+            crate::widgets::Scrollable::scroll_viewport_size(&list),
+            Some((20, 3))
+        );
     }
 }

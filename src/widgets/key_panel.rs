@@ -491,8 +491,9 @@ impl crate::widgets::Scrollable for KeyPanel {
         if delta_y == 0 || !self.can_scroll() {
             return;
         }
+        // The delta is lines already; the scroll step is for keys.
         let before = self.offset_y;
-        self.scroll_by(delta_y.saturating_mul(self.scroll_step.to_i32_sat()));
+        self.scroll_by(delta_y);
         if self.offset_y != before {
             ctx.request_repaint();
             self.emit_scroll_changed_message(ctx);

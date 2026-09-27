@@ -188,19 +188,16 @@ impl ScrollHost {
         }
     }
 
-    /// Scroll by mouse wheel notches, on the axes that allow scrolling.
-    /// Returns whether the offset moved.
+    /// Scroll by `delta_x` columns and `delta_y` lines, as a mouse wheel
+    /// notch asks, on the axes that allow scrolling. Returns whether the
+    /// offset moved.
     pub(crate) fn scroll_by(&mut self, delta_x: i32, delta_y: i32) -> bool {
         let before = (self.offset_x, self.offset_y);
-        if delta_y != 0 && self.scrollable_y() {
-            self.offset_y += delta_y
-                .saturating_mul(self.step_y.to_i32_sat())
-                .to_f32_lossy();
+        if self.scrollable_y() {
+            self.offset_y += delta_y.to_f32_lossy();
         }
-        if delta_x != 0 && self.scrollable_x() {
-            self.offset_x += delta_x
-                .saturating_mul(self.step_x.to_i32_sat())
-                .to_f32_lossy();
+        if self.scrollable_x() {
+            self.offset_x += delta_x.to_f32_lossy();
         }
         self.clamp();
         offset_moved(before, (self.offset_x, self.offset_y))

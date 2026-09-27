@@ -227,7 +227,9 @@ pub trait Scrollable {
     fn scroll_virtual_content_size(&self) -> Option<(usize, usize)> {
         None
     }
-    /// Mouse wheel / touchpad scroll input.
+    /// Mouse wheel / touchpad scroll input: how far to scroll, in columns
+    /// and lines. One notch is 2 lines, or 4 columns horizontally (Python's
+    /// `App.scroll_sensitivity_y` and `scroll_sensitivity_x`).
     fn on_mouse_scroll(&mut self, _delta_x: i32, _delta_y: i32, _ctx: &mut WidgetCtx) {}
 }
 

@@ -29,22 +29,26 @@ pub(crate) fn apply_size(options: &mut ConsoleOptions, size: Size) {
     options.max_height = height;
 }
 
+/// Lines one vertical wheel notch scrolls (Python `App.scroll_sensitivity_y`).
+pub(crate) const WHEEL_LINES: i32 = 2;
+/// Columns one horizontal wheel notch scrolls, or a vertical one with ctrl or
+/// shift held (Python `App.scroll_sensitivity_x`).
+pub(crate) const WHEEL_COLUMNS: i32 = 4;
+
+/// How far one wheel notch scrolls, in columns and lines, as Python's
+/// `Widget._on_mouse_scroll_*` handlers do: ctrl or shift turns a vertical
+/// notch horizontal.
 pub(crate) fn mouse_scroll_deltas(kind: MouseEventKind, modifiers: KeyModifiers) -> (i32, i32) {
-    let (mut delta_x, mut delta_y) = match kind {
-        MouseEventKind::ScrollUp => (0, -1),
-        MouseEventKind::ScrollDown => (0, 1),
-        MouseEventKind::ScrollLeft => (-1, 0),
-        MouseEventKind::ScrollRight => (1, 0),
+    let sideways = modifiers.intersects(KeyModifiers::SHIFT | KeyModifiers::CONTROL);
+    match kind {
+        MouseEventKind::ScrollUp if sideways => (-WHEEL_COLUMNS, 0),
+        MouseEventKind::ScrollDown if sideways => (WHEEL_COLUMNS, 0),
+        MouseEventKind::ScrollUp => (0, -WHEEL_LINES),
+        MouseEventKind::ScrollDown => (0, WHEEL_LINES),
+        MouseEventKind::ScrollLeft => (-WHEEL_COLUMNS, 0),
+        MouseEventKind::ScrollRight => (WHEEL_COLUMNS, 0),
         _ => (0, 0),
-    };
-
-    // Common TUI convention: Shift + vertical wheel scrolls horizontally.
-    if modifiers.contains(KeyModifiers::SHIFT) && delta_x == 0 && delta_y != 0 {
-        delta_x = delta_y;
-        delta_y = 0;
     }
-
-    (delta_x, delta_y)
 }
 
 pub(crate) fn should_quit_key(key: &crossterm::event::KeyEvent, quit_keys: &[KeyBind]) -> bool {
@@ -873,26 +877,40 @@ mod tests {
     use crossterm::event::KeyEvent;
 
     #[test]
-    fn shift_wheel_maps_vertical_to_horizontal() {
+    fn scl_001_a_wheel_notch_scrolls_2_lines_or_4_columns() {
+        // Python `App.scroll_sensitivity_y` / `_x`, and ctrl or shift turning
+        // a vertical notch horizontal (`Widget._on_mouse_scroll_down/up`).
+        let none = KeyModifiers::empty();
         assert_eq!(
-            mouse_scroll_deltas(MouseEventKind::ScrollUp, KeyModifiers::SHIFT),
-            (-1, 0)
+            mouse_scroll_deltas(MouseEventKind::ScrollDown, none),
+            (0, 2)
+        );
+        assert_eq!(mouse_scroll_deltas(MouseEventKind::ScrollUp, none), (0, -2));
+        assert_eq!(
+            mouse_scroll_deltas(MouseEventKind::ScrollRight, none),
+            (4, 0)
         );
         assert_eq!(
-            mouse_scroll_deltas(MouseEventKind::ScrollDown, KeyModifiers::SHIFT),
-            (1, 0)
+            mouse_scroll_deltas(MouseEventKind::ScrollLeft, none),
+            (-4, 0)
         );
+        for sideways in [KeyModifiers::SHIFT, KeyModifiers::CONTROL] {
+            assert_eq!(
+                mouse_scroll_deltas(MouseEventKind::ScrollDown, sideways),
+                (4, 0)
+            );
+            assert_eq!(
+                mouse_scroll_deltas(MouseEventKind::ScrollUp, sideways),
+                (-4, 0)
+            );
+            assert_eq!(
+                mouse_scroll_deltas(MouseEventKind::ScrollRight, sideways),
+                (4, 0)
+            );
+        }
         assert_eq!(
-            mouse_scroll_deltas(MouseEventKind::ScrollLeft, KeyModifiers::SHIFT),
-            (-1, 0)
-        );
-        assert_eq!(
-            mouse_scroll_deltas(MouseEventKind::ScrollRight, KeyModifiers::SHIFT),
-            (1, 0)
-        );
-        assert_eq!(
-            mouse_scroll_deltas(MouseEventKind::ScrollDown, KeyModifiers::empty()),
-            (0, 1)
+            mouse_scroll_deltas(MouseEventKind::ScrollDown, KeyModifiers::ALT),
+            (0, 2)
         );
     }
 

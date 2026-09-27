@@ -747,13 +747,18 @@ impl crate::widgets::Scrollable for Log {
         if delta_y == 0 {
             return;
         }
+        // The delta is lines already; the scroll step is for keys. A notch
+        // that moves nothing goes on to the ancestors, as in Python. Lines
+        // written before the first layout can leave the offset past the end
+        // the view is drawn at, so scroll from where it is drawn.
+        self.clamp_offset();
         let before = self.offset_y;
-        self.scroll_by(delta_y.saturating_mul(self.scroll_step.to_i32_sat()));
+        self.scroll_by(delta_y);
         if self.offset_y != before {
             ctx.request_repaint();
             self.emit_scroll_changed_message(ctx);
+            ctx.set_handled();
         }
-        ctx.set_handled();
     }
 
     fn scroll_offset(&self) -> (usize, usize) {
@@ -1128,5 +1133,32 @@ mod tests {
 
         assert!(ctx.handled());
         assert_eq!(log.offset_y, 2);
+    }
+
+    #[test]
+    fn scl_001_a_log_at_its_end_leaves_a_notch_to_its_ancestors() {
+        // Lines written before the first layout leave the offset past the
+        // end the view is drawn at (the viewport height is still 1).
+        let mut log = Log::new();
+        for n in 0..20 {
+            log.write_line(format!("line {n}"));
+        }
+        log.viewport_height
+            .store(5, std::sync::atomic::Ordering::Relaxed);
+        log.content_height
+            .store(20, std::sync::atomic::Ordering::Relaxed);
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            log.on_mouse_scroll(0, 2, &mut w);
+        }
+        assert!(!ctx.handled(), "the log is at its end");
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(NodeId::default(), &mut ctx);
+            log.on_mouse_scroll(0, -2, &mut w);
+        }
+        assert!(ctx.handled());
+        assert_eq!(log.offset_y, 13, "two lines up from the end, 15");
     }
 }
