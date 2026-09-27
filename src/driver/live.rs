@@ -24,7 +24,10 @@
 //! devices, and a query whose reply cannot be read safely must not be sent.
 //! Windows keeps the crossterm-based wait.
 
+// The transports below (Linux, Windows and the tests) are the only users.
+#[cfg(any(test, target_os = "linux", windows))]
 use std::io::{self, Write};
+#[cfg(any(test, target_os = "linux", windows))]
 use std::time::{Duration, Instant};
 
 use super::negotiate;

@@ -11,11 +11,17 @@
 //! `crate::driver::live` (poll-bounded, thread-free — a timed-out query must
 //! never leave a reader behind to steal later input bytes).
 
+// The live transports (Linux and Windows, `crate::driver::live`) and the
+// tests are the only users of the query half below; macOS and the other
+// Unix systems skip negotiation.
+#[cfg(any(test, target_os = "linux", windows))]
 use std::time::Duration;
 
 /// Synchronized-output mode (DECSET 2026).
+#[cfg(any(test, target_os = "linux", windows))]
 pub const SYNC_MODE: u16 = 2026;
 /// In-band window-resize reports (DECSET 2048).
+#[cfg(any(test, target_os = "linux", windows))]
 pub const IN_BAND_RESIZE_MODE: u16 = 2048;
 
 /// Kitty progressive-enhancement flags we push (Python parity):
@@ -32,6 +38,7 @@ pub const INLINE_KITTY_FLAGS: u16 = 0b0000_0001;
 ///
 /// Automatic terminal replies are immediate; the budget covers remote links.
 /// Terminals that never answer cost exactly this, once, at startup.
+#[cfg(any(test, target_os = "linux", windows))]
 pub const QUERY_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Outcome of startup negotiation.
@@ -46,6 +53,7 @@ pub struct NegotiatedModes {
 }
 
 /// DECRQM query bytes for `mode`: `CSI ? <mode> $ p`.
+#[cfg(any(test, target_os = "linux", windows))]
 pub fn decrqm_query(mode: u16) -> Vec<u8> {
     format!("\x1b[?{mode}$p").into_bytes()
 }
@@ -56,6 +64,7 @@ pub fn decrqm_query(mode: u16) -> Vec<u8> {
 /// 0 = not recognized, 1 = set, 2 = reset, 3/4 = permanently set/reset), or
 /// `None` when the bytes carry no recognizable reply for `mode` — including
 /// Apple Terminal's stray `p`, which is why Python special-cases it.
+#[cfg(any(test, target_os = "linux", windows))]
 pub fn parse_decrqm_reply(bytes: &[u8], mode: u16) -> Option<bool> {
     let text = std::str::from_utf8(bytes).ok()?;
     let marker = format!("?{mode};");
@@ -77,6 +86,7 @@ pub fn parse_decrqm_reply(bytes: &[u8], mode: u16) -> Option<bool> {
 /// Python sends unless `TERM_PROGRAM == "Apple_Terminal"` (which answers a
 /// stray `p` and doesn't support SYNC anyway); we additionally require a tty
 /// stdin so piped runs never emit queries into a file.
+#[cfg(any(test, target_os = "linux", windows))]
 pub fn sync_query_allowed(is_stdin_tty: bool, term_program: &str) -> bool {
     is_stdin_tty && term_program != "Apple_Terminal"
 }
@@ -85,6 +95,7 @@ pub fn sync_query_allowed(is_stdin_tty: bool, term_program: &str) -> bool {
 ///
 /// Python sends unconditionally; we require a tty for the same piped-output
 /// reason (deliberate, documented deviation).
+#[cfg(any(test, target_os = "linux", windows))]
 pub fn in_band_resize_query_allowed(is_stdin_tty: bool) -> bool {
     is_stdin_tty
 }
@@ -119,6 +130,7 @@ pub fn resolve_kitty_support(
 ///
 /// `transact(mode)` sends the DECRQM query for `mode` and returns the raw
 /// reply bytes, or `None` on timeout/skip.
+#[cfg(any(test, target_os = "linux", windows))]
 pub fn negotiate_with(
     is_stdin_tty: bool,
     term_program: &str,
