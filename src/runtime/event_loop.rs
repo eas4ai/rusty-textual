@@ -1937,12 +1937,12 @@ pub(crate) enum InvalidationScope {
 fn copy_to_system_clipboard(text: &str) -> bool {
     #[cfg(target_os = "macos")]
     {
-        return run_copy_command("pbcopy", &[], text);
+        run_copy_command("pbcopy", &[], text)
     }
 
     #[cfg(target_os = "windows")]
     {
-        return run_copy_command(
+        run_copy_command(
             "powershell",
             &[
                 "-NoProfile",
@@ -1950,7 +1950,7 @@ fn copy_to_system_clipboard(text: &str) -> bool {
                 "Set-Clipboard -Value ([Console]::In.ReadToEnd())",
             ],
             text,
-        ) || run_copy_command("cmd", &["/C", "clip"], text);
+        ) || run_copy_command("cmd", &["/C", "clip"], text)
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -1970,16 +1970,16 @@ fn copy_to_system_clipboard(text: &str) -> bool {
 fn paste_from_system_clipboard() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
-        return run_paste_command("pbpaste", &[]);
+        run_paste_command("pbpaste", &[])
     }
 
     #[cfg(target_os = "windows")]
     {
-        return run_paste_command(
+        run_paste_command(
             "powershell",
             &["-NoProfile", "-Command", "Get-Clipboard -Raw"],
         )
-        .or_else(|| run_paste_command("powershell", &["-NoProfile", "-Command", "Get-Clipboard"]));
+        .or_else(|| run_paste_command("powershell", &["-NoProfile", "-Command", "Get-Clipboard"]))
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
