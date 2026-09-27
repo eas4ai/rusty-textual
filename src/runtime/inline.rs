@@ -145,8 +145,10 @@ pub(crate) fn exit_sequence(keep_frame: bool, height: u16, padding: usize) -> St
 /// Translate a terminal cell to app coordinates, or `None` when it lies
 /// above or left of the app's origin.
 pub(crate) fn app_relative(cell: (u16, u16), origin: Option<(u16, u16)>) -> Option<(u16, u16)> {
-    let _ = origin;
-    Some(cell)
+    let Some((ox, oy)) = origin else {
+        return Some(cell);
+    };
+    Some((cell.0.checked_sub(ox)?, cell.1.checked_sub(oy)?))
 }
 
 #[cfg(test)]
