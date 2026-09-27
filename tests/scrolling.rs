@@ -313,9 +313,11 @@ fn scl_001_a_log_at_its_end_passes_a_notch_to_the_screen_inline() {
 // -- SCL-002: track clicks animate -----------------------------------------
 
 /// The furthest `prefix N` (`item`, `line`, `pushed` or the `DataTable`'s
-/// `c` column labels) the screen shows, largest `N` first.
+/// `c` column labels) the screen shows, when the numbers it shows run in
+/// reading order without a gap, as a whole frame shows them; `None` for a
+/// frame the terminal has only partly drawn, whose numbers break the run.
 fn furthest(screen: &vt100::Screen, prefix: &str) -> Option<usize> {
-    lines(screen)
+    let numbers: Vec<usize> = lines(screen)
         .iter()
         .flat_map(|line| {
             line.match_indices(prefix)
@@ -328,12 +330,15 @@ fn furthest(screen: &vt100::Screen, prefix: &str) -> Option<usize> {
                 })
                 .collect::<Vec<usize>>()
         })
-        .max()
+        .collect();
+    let in_order = numbers.windows(2).all(|pair| pair[1] == pair[0] + 1);
+    in_order.then(|| numbers.last().copied()).flatten()
 }
 
-/// Where the frames after `start` in `raw` end: after each synchronized
-/// frame (full-screen mode) and at the end of each read from the terminal
-/// (inline mode draws without synchronized output).
+/// Where the frames after `start` in `raw` may end: after each
+/// synchronized frame (full-screen mode) and at the end of each read from
+/// the terminal (inline mode draws without synchronized output). A read can
+/// end inside a frame; [`furthest`] skips such a partly drawn screen.
 fn frame_ends(raw: &[u8], read_ends: &[usize], start: usize) -> Vec<usize> {
     let mut ends: Vec<usize> = raw[start..]
         .windows(FRAME_END.len())
