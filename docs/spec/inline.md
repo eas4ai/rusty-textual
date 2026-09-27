@@ -60,13 +60,15 @@ Rationale: Python screen.py:1193-1216 and _compositor.py:137-162 (clear when the
 Status: Agreed 2026-09-25
 
 [INL-007] Mouse event coordinates MUST be relative to the app's top-left
-cell. The app MUST learn its origin from the cursor position report it
-requests after each frame, and a cursor position report MUST NOT reach the
-app as a key.
-Falsifier: With the app's origin below the terminal's first row, a click on a widget activates another widget or none, or a cursor position report arrives as a key event.
+cell. The app MUST learn its origin from the cursor position reports it
+requests after its first frame, after a frame taller than the one before,
+after the first frame that follows a resize, and once more after a request
+that went unanswered; other frames MUST NOT wait for a report. A cursor
+position report MUST NOT reach the app as a key.
+Falsifier: With the app's origin below the terminal's first row, after a taller frame has scrolled the terminal, or after a resize has moved the app, a click on a widget activates another widget or none; a cursor position report arrives as a key event; or, with the terminal's reports delayed by 1.5 s and the first report arrived, any of five key presses that each redraw the probe's status line without changing its height, each sent once the previous change shows, takes 0.75 s or more to show its change.
 Mechanism: inline-pty
-Rationale: Python driver.py:86-95, linux_inline_driver.py:154-163 and _xterm_parser.py:286-294.
-Status: Agreed 2026-09-25
+Rationale: Python learns the origin from reports (driver.py:86-95, linux_inline_driver.py:154-163) that it requests after every frame without waiting (_compositor.py:161) and never turns into keys (_xterm_parser.py:286-294); crossterm hands a report only to a caller that waits for it (cursor::position), so the port asks only when the origin can move, a recorded divergence.
+Status: Agreed 2026-09-27
 
 [INL-008] On exit the app MUST erase its rows and its padding lines and
 leave the cursor on the row where the padding began, so the shell prompt

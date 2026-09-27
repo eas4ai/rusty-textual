@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: inline-kitty-keyboard-flags
+Current: inline-async-origin-query
 
 ## inline-render-mode
 
@@ -172,6 +172,23 @@ protocol only to disambiguate escape codes (flag 1), as Python's inline
 driver does, and pops the flag on exit; with TEXTUAL_DISABLE_KITTY_KEY=1
 it pushes no flags, and full-screen apps keep flags 1, 8 and 16
 (INL-018). The terminal is restored on exit as before (INL-010).
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, and the full test gate, strict clippy, and
+rustfmt pass.
+
+## inline-async-origin-query
+
+Requirements: INL-007, INL-011
+
+Delivers: an inline app asks the terminal where its origin is only when
+the origin can move: after its first frame, after a frame taller than
+the one before, after the first frame that follows a resize, and once
+more after an unanswered request. A frame that keeps its height no
+longer waits a terminal round trip, so animations, typing and redraws
+stay fast over slow links, and clicks still land after the app grows or
+the terminal is resized (INL-007). A resize still erases the display and
+redraws at the new height (INL-011).
 
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and
