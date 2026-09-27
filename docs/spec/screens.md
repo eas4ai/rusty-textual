@@ -18,11 +18,12 @@ Status: Agreed 2026-09-25
 
 [SCR-002] While a screen is pushed, a change the app makes through a
 query, `App::query_mut(...)` then any `DomQueryMut` method, MUST act on the
-nodes the query matched on that screen. This holds in full-screen and in
-inline mode.
-Falsifier: With the probe's 60-line screen pushed, the app hides that screen's text through `App::query_mut(...)` then `set_display(false)`, and the pushed screen still shows `pushed 1`, in full-screen or in inline mode.
+nodes the query matched on that screen, and a query's filter
+(`DomQuery::results_where`) MUST test those nodes. This holds in
+full-screen and in inline mode.
+Falsifier: With the probe's 60-line screen pushed, the app hides that screen's text through `App::query_mut(...)` then `set_display(false)` and the pushed screen still shows `pushed 1`, or the app filters a query of that screen's text with `results_where` and the count it writes on the pushed screen is not 1, in full-screen or in inline mode.
 Mechanism: screen-pty
-Rationale: Python's App has one child, the active screen (app.py:992-1005), so App.query and every change made through its result act on that screen's nodes; here the query matched in the active screen's tree, but most DomQueryMut methods looked the ids up in the app's own tree.
+Rationale: Python's App has one child, the active screen (app.py:992-1005), so App.query and every change made through its result act on that screen's nodes; here the query matched in the active screen's tree, but most DomQueryMut methods and DomQuery::results_where looked the ids up in the app's own tree.
 Status: Agreed 2026-09-26
 
 [SCR-003] Each screen MUST fill the area the app draws in, the whole

@@ -26,3 +26,34 @@ Falsifier: In full-screen mode, the probe's shared-count line changes without a 
 Mechanism: update-pty
 Rationale: Python writes every repainted region from the current render and never compares it with an earlier frame (_compositor.py:166-230 and 1096-1187); here a region-scoped full-screen frame stored every composed cell as written, including cells outside its regions.
 Status: Agreed 2026-09-26
+
+[UPD-003] A query's display change (`App::query_mut(...)` then
+`DomQueryMut::set_display`, or `DomQueryMut::set` with a display value)
+MUST act as Python's `display` setter, which writes the node's own
+`display` rule: a node shown this way appears even where the stylesheet
+says `display: none`, and a node hidden this way is hidden whatever the
+stylesheet says. This holds in full-screen and in inline mode.
+Falsifier: The probe shows a line its stylesheet hides with `display: none`, through `App::query_mut(...)` then `set_display(true)`, and the line does not appear, in full-screen or in inline mode.
+Mechanism: query-pty
+Rationale: Python's DOMNode.display setter writes styles.display, the node's inline rule, which wins over the stylesheet (dom.py:917-934); here a node was shown only when both the stylesheet and the query's change allowed it.
+Status: Agreed 2026-09-26
+
+[UPD-004] In full-screen mode, a change the app makes through a query that
+matched no node (`App::query_mut(...)` then any `DomQueryMut` method) MUST
+NOT clear and redraw the whole screen.
+Falsifier: In full-screen mode, after the app sets `loading` through `DomQueryMut::set`, or asks for a repaint with `DomQueryMut::refresh`, on a query that matches nothing, the terminal receives a screen clear (`CSI 2 J`).
+Mechanism: query-pty
+Rationale: Python's DOMQuery applies each change to each matched node (query.py), so a query that matched nothing changes nothing; here an empty repaint request was read as a request to clear the screen (request_query_refresh sets clear_on_next_render).
+Status: Agreed 2026-09-26
+
+[UPD-005] When the app removes the focused widget (`App::remove`,
+`App::remove_node`, or `App::query_mut(...)` then `DomQueryMut::remove`),
+focus MUST move as Python's `Screen._reset_focus` moves it: to the nearest
+focusable widget before it in the focus chain that is not being removed;
+when there is none before it, to the last such widget in the chain; when
+none is left, nothing has focus. This holds in full-screen and in inline
+mode.
+Falsifier: With three buttons in the probe, removing the focused second button does not focus the first, or removing the focused first button does not focus the third, through any of the three paths, in full-screen or in inline mode.
+Mechanism: query-pty
+Rationale: Python's App._prune calls Screen._reset_focus with the pruned nodes to avoid (app.py:4370-4392, screen.py:1020-1071), which takes the first of reversed(chain[idx+1:] + chain[:idx]) not being removed; here App::remove_node cleared focus and left nothing focused.
+Status: Agreed 2026-09-26

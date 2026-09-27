@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: interactive-parity-waits-on-timing
+Current: query-display-cannot-override-css
 
 ## inline-render-mode
 
@@ -121,6 +121,24 @@ harness sends its keys only once the app has drawn, so button_focus no
 longer fails when the machine is busy (TRM-003). The driver still starts
 and exits the terminal as before (TRM-001), and a cursor position report
 still never reaches the app as a key (INL-007).
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, and the full test gate, strict clippy, and
+rustfmt pass.
+
+## query-display-cannot-override-css
+
+Requirements: SCR-002, UPD-003, UPD-004, UPD-005, TRM-003
+
+Delivers: queries act as Python's do. A query's display change writes the
+node's own display rule, so showing a node overrides a stylesheet's
+`display: none`, while a widget's own hiding (a tab's pane, a scrollbar,
+the tooltip) stays as it is (UPD-003). A query that matched nothing no
+longer clears and redraws the screen, and setting `loading` repaints only
+the nodes whose loading state changed (UPD-004). Removing the focused
+widget moves focus as Python's `Screen._reset_focus` does (UPD-005). A
+query's `results_where` tests the pushed screen's nodes (SCR-002).
+Full-screen rendering is unchanged (TRM-003).
 
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and
