@@ -1,9 +1,10 @@
-"""Sudus `query-pty` mechanism: run the query-change checks and print one
+"""Sudus `screen-pty` mechanism: run the screen checks and print one
 `sudus: <REQ>: pass|fail` line per requirement.
 
-Test names carry their requirement: `upd_003_...` checks UPD-003. The PTY
-tests live in tests/query_changes.rs. A requirement passes only when at
-least one of its tests ran and none failed, so a missing test or a build
+Test names carry their requirement: `scr_001_...` checks SCR-001. The PTY
+tests live in tests/screen_scroll.rs (SCR-001), tests/screen_queries.rs
+(SCR-002) and tests/screen_size.rs (SCR-003). A requirement passes only when
+at least one of its tests ran and none failed, so a missing test or a build
 failure fails it. Cargo runs in the environment from mechanism_env; the PTY
 tests also start each app with a cleared environment.
 """
@@ -17,10 +18,23 @@ sys.dont_write_bytecode = True
 
 from mechanism_env import clean_env  # noqa: E402
 
-REQUIREMENTS = ["UPD-003", "UPD-004", "UPD-005"]
-COMMAND = ["cargo", "test", "--test", "query_changes", "--", "--test-threads=1"]
+REQUIREMENTS = ["SCR-001", "SCR-002", "SCR-003"]
+# --no-fail-fast: a failing target must not keep the others from running.
+COMMAND = [
+    "cargo",
+    "test",
+    "--no-fail-fast",
+    "--test",
+    "screen_scroll",
+    "--test",
+    "screen_queries",
+    "--test",
+    "screen_size",
+    "--",
+    "--test-threads=1",
+]
 RESULT = re.compile(r"^test (\S+) \.\.\. (ok|FAILED|ignored)", re.MULTILINE)
-NAME = re.compile(r"(?:^|::)upd_(\d{3})_")
+NAME = re.compile(r"(?:^|::)scr_(\d{3})_")
 
 
 def main() -> int:
@@ -33,7 +47,7 @@ def main() -> int:
     for name, status in RESULT.findall(output):
         match = NAME.search(name)
         if match:
-            outcomes.setdefault(f"UPD-{match.group(1)}", []).append(status)
+            outcomes.setdefault(f"SCR-{match.group(1)}", []).append(status)
     failed = False
     for req in REQUIREMENTS:
         statuses = outcomes[req]
