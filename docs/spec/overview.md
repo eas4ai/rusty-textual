@@ -22,3 +22,4 @@ checkout) is the reference; its tests are not run by this project.
 | screens.md | SCR | screens pushed on top of the app's own screen |
 | updates.md | UPD | an app changing its widgets while it runs |
 | scrolling.md | SCL | the mouse wheel and scrollbars of every scrolling widget |
+| build.md | BLD | the pinned toolchain and the zero-warning bar |

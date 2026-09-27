@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: inline-async-origin-query
+Current: cross-platform-strict-clippy
 
 ## inline-render-mode
 
@@ -193,3 +193,20 @@ redraws at the new height (INL-011).
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and
 rustfmt pass.
+
+## cross-platform-strict-clippy
+
+Requirements: BLD-001, INL-001, INL-002, INL-003, INL-004, INL-005, INL-006, INL-007, INL-008, INL-009, INL-010, INL-011, INL-012, INL-013, INL-014, INL-015, INL-016, INL-017, INL-018, SCL-001, SCL-002, SCR-001, SCR-002, SCR-003, TRM-001, TRM-002, TRM-003, TRM-004, UPD-001, UPD-002, UPD-003, UPD-004, UPD-005
+
+Delivers: the repository pins Rust 1.98.0 for itself, with clippy and
+rustfmt, and strict clippy reports no warnings with it in the root crate,
+textual-macros, the docs/examples workspace and the inline probe: the lints
+newer than 1.95 are cleared, the five getters get `#[must_use]`, and the
+Windows-only code is cleaned (BLD-001). Every other requirement with a
+mechanism is checked again with the new toolchain.
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, the full test gate and rustfmt pass, and
+strict clippy on the Windows host, over ssh, reports no warnings for the
+root crate's library and examples, and for its tests where they build
+on Windows.
