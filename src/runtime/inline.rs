@@ -32,6 +32,8 @@ pub(crate) struct InlineState {
     pub(crate) started: bool,
     /// When to ask the terminal for the origin again.
     pub(crate) origin_query: OriginQuery,
+    /// Which cursor position reports answer the runtime's requests.
+    pub(crate) origin_marks: OriginMarks,
 }
 
 impl InlineState {
@@ -44,6 +46,7 @@ impl InlineState {
             resized: false,
             started: false,
             origin_query: OriginQuery::WhenMoved,
+            origin_marks: OriginMarks::default(),
         }
     }
 }
@@ -52,42 +55,85 @@ impl InlineState {
 pub(crate) const ORIGIN_RETRY: Duration = Duration::from_secs(1);
 
 /// When the runtime asks the terminal where the origin is. crossterm hands
-/// the report only to a caller that waits for it, so the runtime asks only
-/// after a frame that can have moved the origin (INL-007; Python asks after
-/// every frame without waiting). Each unanswered query blocks for
-/// crossterm's 2 s timeout, so a terminal that does not answer is asked
-/// twice and then left alone.
+/// the report only to a caller that waits for it, so the runtime asks after
+/// every frame that can have moved the origin and at no other frame
+/// (INL-007; Python asks after every frame without waiting). Each
+/// unanswered query blocks for crossterm's 2 s timeout, so a query that goes
+/// unanswered is retried once, and a retry that goes unanswered is not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OriginQuery {
-    /// After a frame that can have moved the origin: the last query was
-    /// answered, or none was sent.
+    /// Ask after a frame that can have moved the origin: the last query was
+    /// answered, none was sent, or the retry went unanswered too.
     WhenMoved,
-    /// The last query went unanswered: ask once more at this time. A reply
-    /// that was only late is queued by then and answers at once.
+    /// The last query went unanswered: ask once more with the first frame at
+    /// or after this time, or sooner with a frame that can have moved the
+    /// origin. A reply that was only late is queued by then and answers at
+    /// once.
     RetryAt(Instant),
-    /// The retry went unanswered too: the terminal does not report the
-    /// cursor position, so it is not asked again this run.
-    Stopped,
 }
 
 impl OriginQuery {
     /// Whether to send a query at `now`, after a frame that `moved` the
     /// origin or may have (see [`origin_can_move`]).
     pub(crate) fn due(self, moved: bool, now: Instant) -> bool {
-        match self {
-            Self::WhenMoved => moved,
-            Self::RetryAt(at) => now >= at,
-            Self::Stopped => false,
-        }
+        moved || matches!(self, Self::RetryAt(at) if now >= at)
     }
 
     /// The state after a query that returned at `now`, `answered` or not.
     pub(crate) fn after(self, answered: bool, now: Instant) -> Self {
         match (answered, self) {
-            (true, _) => Self::WhenMoved,
             (false, Self::WhenMoved) => Self::RetryAt(now + ORIGIN_RETRY),
-            (false, Self::RetryAt(_) | Self::Stopped) => Self::Stopped,
+            (true, _) | (false, Self::RetryAt(_)) => Self::WhenMoved,
         }
+    }
+}
+
+/// The first column a request marks. A legacy F3 key with modifiers
+/// (`CSI 1 ; m R`, m from 2 to 16) reads as a cursor position report in
+/// column m - 1 of the first row, so the marks start past those columns.
+const FIRST_MARK: u16 = 16;
+
+/// How many reports that answer none of the current requests one request
+/// skips before it counts as unanswered.
+pub(crate) const MAX_SKIPPED_REPORTS: usize = 16;
+
+/// Which cursor position reports answer the runtime's requests (INL-007).
+/// crossterm answers a request with the oldest report it holds, which can
+/// be the late reply to an earlier request or a key that reads as a report,
+/// so each request first moves the cursor from the origin to its own mark
+/// column. A report in the mark column of a request made since the origin
+/// last moved gives the origin's row; any other report is skipped.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct OriginMarks {
+    /// Requests made so far; picks the next mark.
+    sent: u32,
+    /// The marks of the requests made since the origin last moved.
+    current: Vec<u16>,
+}
+
+impl OriginMarks {
+    /// The mark for a request made after a frame that `moved` the origin or
+    /// may have, in a terminal `width` columns wide. `None` when the terminal
+    /// is too narrow for two different marks; then any report answers.
+    pub(crate) fn next(&mut self, moved: bool, width: u16) -> Option<u16> {
+        if moved {
+            self.current.clear();
+        }
+        let span = width.saturating_sub(FIRST_MARK);
+        if span < 2 {
+            return None;
+        }
+        let offset = u16::try_from(self.sent % u32::from(span)).unwrap_or_default();
+        self.sent = self.sent.wrapping_add(1);
+        let mark = FIRST_MARK + offset;
+        self.current.push(mark);
+        Some(mark)
+    }
+
+    /// Whether a report in `column` answers a request made since the origin
+    /// last moved.
+    pub(crate) fn answer(&self, column: u16) -> bool {
+        self.current.contains(&column)
     }
 }
 
@@ -207,12 +253,11 @@ mod tests {
     }
 
     #[test]
-    fn an_unanswered_origin_query_is_retried_once_then_stopped() {
+    fn inl_007_an_unanswered_origin_query_is_retried_once() {
         let now = Instant::now();
-        assert!(OriginQuery::WhenMoved.due(true, now));
         let retry = OriginQuery::WhenMoved.after(false, now);
         assert_eq!(retry, OriginQuery::RetryAt(now + ORIGIN_RETRY));
-        assert!(!retry.due(true, now), "the retry waits");
+        assert!(!retry.due(false, now), "the retry waits");
         assert!(
             retry.due(false, now + ORIGIN_RETRY),
             "the retry comes with any frame"
@@ -222,9 +267,54 @@ mod tests {
             OriginQuery::WhenMoved,
             "a late reply answers the retry"
         );
-        let stopped = retry.after(false, now);
-        assert_eq!(stopped, OriginQuery::Stopped);
-        assert!(!stopped.due(true, now + Duration::from_secs(3600)));
+        let retried = retry.after(false, now);
+        assert_eq!(
+            retried,
+            OriginQuery::WhenMoved,
+            "an unanswered retry is not retried"
+        );
+        assert!(!retried.due(false, now + Duration::from_secs(3600)));
+    }
+
+    #[test]
+    fn inl_007_a_frame_that_can_move_the_origin_always_asks() {
+        let now = Instant::now();
+        assert!(OriginQuery::WhenMoved.due(true, now));
+        assert!(
+            OriginQuery::RetryAt(now + ORIGIN_RETRY).due(true, now),
+            "a pending retry does not hold back a frame that can move the origin"
+        );
+        let retried = OriginQuery::WhenMoved.after(false, now).after(false, now);
+        assert!(retried.due(true, now), "nor does an unanswered retry");
+        assert_eq!(
+            retried.after(false, now),
+            OriginQuery::RetryAt(now + ORIGIN_RETRY),
+            "that query, unanswered, is retried once too"
+        );
+    }
+
+    #[test]
+    fn inl_007_only_a_report_in_a_current_mark_answers() {
+        let mut marks = OriginMarks::default();
+        let first = marks.next(true, 80).expect("room for marks");
+        assert!((FIRST_MARK..80).contains(&first));
+        assert!(marks.answer(first));
+        for bogus in 1..FIRST_MARK {
+            assert!(
+                !marks.answer(bogus),
+                "F3 with modifiers reads as column {bogus}"
+            );
+        }
+        let retry = marks.next(false, 80).expect("room for marks");
+        assert_ne!(retry, first);
+        assert!(marks.answer(first) && marks.answer(retry), "no move since");
+        let after_move = marks.next(true, 80).expect("room for marks");
+        assert!(marks.answer(after_move));
+        assert!(
+            !marks.answer(first) && !marks.answer(retry),
+            "from before the move"
+        );
+        assert_eq!(marks.next(true, FIRST_MARK + 1), None, "too narrow");
     }
 
     #[test]

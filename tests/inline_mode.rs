@@ -320,6 +320,34 @@ fn inl_007_a_silent_terminal_is_asked_twice_then_left_alone() {
 }
 
 #[test]
+fn inl_007_a_silent_terminal_is_still_asked_after_a_taller_frame() {
+    // The first query and its retry go unanswered. A taller frame after that
+    // can have moved the app, so it asks again.
+    let answers = Answers {
+        cursor_position: false,
+        ..Answers::TERMINAL
+    };
+    let term = Term::spawn(SHELL_THEN_EXEC, &probe(), &[], answers);
+    term.wait_for("status", has_text("keys:0"));
+    let queries = |term: &Term| term.raw().windows(4).filter(|w| w == b"\x1b[6n").count();
+    // The first query times out after 2 s, and the retry is due 1 s later
+    // with any frame: a key redraws the status line at the same height.
+    std::thread::sleep(Duration::from_millis(3500));
+    term.send(b"a");
+    term.wait_for("status redraw", has_text("keys:1"));
+    // The retry times out 2 s later.
+    std::thread::sleep(Duration::from_millis(2500));
+    assert_eq!(queries(&term), 2, "the first query and its retry");
+    term.send(b"t");
+    term.wait_for("taller body", has_text("line 8"));
+    let asked = Instant::now();
+    while queries(&term) < 3 && asked.elapsed() < Duration::from_secs(3) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(queries(&term), 3, "the taller frame asks too");
+}
+
+#[test]
 fn inl_007_mouse_recovers_after_a_slow_cursor_report() {
     // The first report comes after crossterm's 2 s timeout; it stays queued
     // and answers the next query, so the app learns its origin anyway.
@@ -329,11 +357,12 @@ fn inl_007_mouse_recovers_after_a_slow_cursor_report() {
     };
     let term = Term::spawn(SHELL_THEN_EXEC, &probe(), &[("PROBE_BUTTON", "1")], answers);
     term.wait_for("button", has_text("Press"));
-    // Past the late reply and the retry wait, draw another frame.
-    // A resize always redraws (a key would go to the focused button).
+    // Past the late reply and the retry wait, draw another frame of the same
+    // height: an unbound key reaches the app past the focused button. The
+    // late reply answers that retry, since the app has not moved since.
     std::thread::sleep(std::time::Duration::from_secs(4));
-    term.resize(ROWS - 1);
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    term.send(b"a");
+    term.wait_for("status redraw", has_text("keys:1"));
     let screen = term.settle();
     let row = row_of(&screen, "Press").expect("button row");
     let col = lines(&screen)[row].find("Press").expect("button column");
@@ -400,6 +429,25 @@ fn inl_007_a_click_lands_after_a_taller_frame_scrolls_the_terminal() {
     term.wait_for("taller body", has_text("line 8"));
     let after = row_of(&term.settle(), "Press").expect("button row");
     assert_eq!(after, before, "the button should stay on the last rows");
+    click_press(&term);
+}
+
+#[test]
+fn inl_007_a_stray_report_does_not_stand_for_the_origin() {
+    // A legacy F3 with modifiers (`CSI 1 ; m R`) reads as a cursor position
+    // report and waits in crossterm's queue. The request after the taller
+    // frame must still take the terminal's reply to it, not the stray one.
+    let term = Term::spawn(
+        SHELL_FILLS_THEN_EXEC,
+        &probe(),
+        &[("PROBE_BUTTON", "1")],
+        Answers::TERMINAL,
+    );
+    term.wait_for("button", has_text("Press"));
+    term.settle();
+    term.send(b"\x1b[1;2R\x1b[1;5R");
+    term.send(b"t");
+    term.wait_for("taller body", has_text("line 8"));
     click_press(&term);
 }
 

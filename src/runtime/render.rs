@@ -531,7 +531,7 @@ impl App {
                 .print_segments(&next.row_segments(super::inline::ROW_BREAK))?;
             self.console
                 .write_str(&super::inline::frame_tail(rows, clear))?;
-            self.query_inline_origin(moved);
+            self.query_inline_origin(moved)?;
         }
         self.resized_since_last_render = false;
         self.clear_on_next_render = false;
@@ -545,26 +545,40 @@ impl App {
     /// Ask the terminal where the cursor, now at the app's origin, is, after
     /// a frame that `moved` the origin or may have (INL-007). Each unanswered
     /// query blocks for crossterm's 2 s timeout, so an unanswered query is
-    /// retried once and, if the retry goes unanswered too, the terminal is
-    /// not asked again (see [`OriginQuery`](super::inline::OriginQuery)).
-    fn query_inline_origin(&mut self, moved: bool) {
+    /// retried once (see [`OriginQuery`](super::inline::OriginQuery)). The
+    /// cursor visits the request's mark column while it asks, so a report
+    /// that answers an older request is skipped (see
+    /// [`OriginMarks`](super::inline::OriginMarks)).
+    fn query_inline_origin(&mut self, moved: bool) -> crate::Result<()> {
         let Some(state) = &mut self.inline else {
-            return;
+            return Ok(());
         };
         if !state.origin_query.due(moved, std::time::Instant::now()) {
-            return;
+            return Ok(());
         }
-        let answer = crossterm::cursor::position();
+        let mark = state.origin_marks.next(moved, state.terminal.0);
+        let marks = state.origin_marks.clone();
+        if let Some(mark) = mark {
+            self.console.write_str(&format!("\x1b[{mark}C"))?;
+        }
+        let row = read_origin_row(|column| mark.is_none() || marks.answer(column));
+        if mark.is_some() {
+            self.console.write_str("\r")?;
+        }
+        let Some(state) = &mut self.inline else {
+            return Ok(());
+        };
         state.origin_query = state
             .origin_query
-            .after(answer.is_ok(), std::time::Instant::now());
-        match answer {
-            Ok(origin) => state.origin = Some(origin),
-            Err(error) => debug_render(&format!(
-                "[inline] no cursor position report ({error}); next: {:?}",
+            .after(row.is_some(), std::time::Instant::now());
+        match row {
+            Some(row) => state.origin = Some((0, row)),
+            None => debug_render(&format!(
+                "[inline] no cursor position report; next: {:?}",
                 state.origin_query
             )),
         }
+        Ok(())
     }
 
     /// Render one composited layer (the app root or a screen) into `next`.
@@ -837,6 +851,27 @@ impl App {
         })?;
         Ok(())
     }
+}
+
+/// The origin's row from the first cursor position report whose column
+/// `answers` the current request, skipping up to
+/// [`MAX_SKIPPED_REPORTS`](super::inline::MAX_SKIPPED_REPORTS) others. Each
+/// read asks again from the same cursor position. `None` when crossterm
+/// times out or too many reports answer nothing.
+fn read_origin_row(answers: impl Fn(u16) -> bool) -> Option<u16> {
+    for _ in 0..=super::inline::MAX_SKIPPED_REPORTS {
+        match crossterm::cursor::position() {
+            Ok((column, row)) if answers(column) => return Some(row),
+            Ok((column, row)) => debug_render(&format!(
+                "[inline] skipped a cursor position report at {column},{row}"
+            )),
+            Err(error) => {
+                debug_render(&format!("[inline] no cursor position report ({error})"));
+                return None;
+            }
+        }
+    }
+    None
 }
 
 pub(crate) fn console_write_with_optional_sync<W: std::io::Write>(
