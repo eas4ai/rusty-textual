@@ -195,11 +195,18 @@ fn reply(query: Query, answers: Answers, parser: &vt100::Parser) -> Option<Vec<u
     }
 }
 
+/// Everything the program wrote, and where each read of it ended.
+#[derive(Default)]
+struct Output {
+    bytes: Vec<u8>,
+    read_ends: Vec<usize>,
+}
+
 /// Feed pty output to the parser and queue replies to terminal queries.
 fn pump(
     mut reader: Box<dyn Read + Send>,
     parser: &Mutex<vt100::Parser>,
-    raw: &Mutex<Vec<u8>>,
+    raw: &Mutex<Output>,
     answers: Answers,
     replies: &Sender<(Instant, Vec<u8>)>,
 ) {
@@ -209,7 +216,12 @@ fn pump(
         if n == 0 {
             break;
         }
-        raw.lock().unwrap().extend_from_slice(&buf[..n]);
+        {
+            let mut output = raw.lock().unwrap();
+            output.bytes.extend_from_slice(&buf[..n]);
+            let end = output.bytes.len();
+            output.read_ends.push(end);
+        }
         pending.extend_from_slice(&buf[..n]);
         while let Some((end, query)) = find_query(&pending) {
             let mut parser = parser.lock().unwrap();
@@ -234,7 +246,7 @@ fn pump(
 /// A binary running in a pseudo terminal, seen through a vt100 parser.
 pub struct Term {
     parser: Arc<Mutex<vt100::Parser>>,
-    raw: Arc<Mutex<Vec<u8>>>,
+    raw: Arc<Mutex<Output>>,
     writer: SharedWriter,
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn Child + Send + Sync>,
@@ -293,7 +305,7 @@ impl Term {
         let writer: SharedWriter =
             Arc::new(Mutex::new(pty.master.take_writer().expect("pty writer")));
         let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0)));
-        let raw = Arc::new(Mutex::new(Vec::new()));
+        let raw = Arc::new(Mutex::new(Output::default()));
         let (replies, due) = channel::<(Instant, Vec<u8>)>();
         let reply_writer = Arc::clone(&writer);
         std::thread::spawn(move || {
@@ -325,7 +337,13 @@ impl Term {
 
     /// Everything the program has written so far.
     pub fn raw(&self) -> Vec<u8> {
-        self.raw.lock().unwrap().clone()
+        self.raw.lock().unwrap().bytes.clone()
+    }
+
+    /// The offsets in [`Term::raw`] where each read from the terminal ended:
+    /// a program's write usually arrives in one read.
+    pub fn read_ends(&self) -> Vec<usize> {
+        self.raw.lock().unwrap().read_ends.clone()
     }
 
     /// The last bytes the program wrote, escaped, for failure messages.

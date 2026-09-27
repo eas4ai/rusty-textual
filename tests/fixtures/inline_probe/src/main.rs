@@ -46,6 +46,17 @@
 //! - `PROBE_REMOVE`: the id of the button that `k`, `n` and `m` remove
 //!   through `App::remove`, `App::remove_node` and `DomQueryMut::remove`
 //!   (unset: `two`).
+//! - `PROBE_SCROLL`: a scrolling widget, 10 rows tall, comes before the
+//!   body: `container`, `vertical-scroll`, `horizontal-scroll`, `log`,
+//!   `rich-log`, `option-list`, `selection-list`, `list-view`, `tree`,
+//!   `data-table` or `key-panel`. It holds `PROBE_SCROLL_LINES` lines
+//!   (default 60), `item 1` to `item N`. In `container` and
+//!   `horizontal-scroll` each line also runs on past the terminal's width
+//!   with 4-column tokens (`c000c001...`); `data-table` has a `name` column
+//!   holding the items and 30 more columns (`c01` to `c30`). `key-panel`
+//!   is the `KeyPanel`, split to the right, listing `PROBE_SCROLL_LINES`
+//!   bindings of the app's own (`alt+` and `ctrl+alt+` keys) whose
+//!   descriptions are the items.
 //!
 //! Keys: `s` shrinks the body to one line, `z` tries `App::suspend`, `x`
 //! runs the suspend-process action, `p` pushes the `PROBE_PUSH` screen, `h`,
@@ -69,10 +80,88 @@ Screen:inline #cssmark { display: block; }
 #csshidden { display: none; }
 #cssforced { display: none !important; }
 HoverLine { height: 1; }
+Container, VerticalScroll, HorizontalScroll, Log, RichLog, OptionList,
+SelectionList, ListView, Tree, DataTable { height: 10; width: 1fr; }
+Container { overflow: auto auto; }
+.wide { width: 420; }
 SharedLine { height: 1; margin-top: 2; }
 ";
 
 const PUSHED_LINES: usize = 60;
+
+/// Line `n` of the `PROBE_SCROLL` widget.
+fn item(n: usize) -> String {
+    format!("item {n}")
+}
+
+/// The `PROBE_SCROLL` widget's text for `container` and
+/// `horizontal-scroll`: each item line runs on with 4-column tokens.
+fn wide_items(lines: usize) -> String {
+    let tokens = (0..100).fold(String::new(), |mut tokens, n| {
+        let _ = write!(tokens, "c{n:03}");
+        tokens
+    });
+    (1..=lines)
+        .map(|n| format!("{} {tokens}", item(n)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Adds the `PROBE_SCROLL` widget named `kind`, holding `lines` lines, to
+/// `root`.
+fn with_scroller(root: AppRoot, kind: &str, lines: usize) -> AppRoot {
+    let items = || (1..=lines).map(item);
+    match kind {
+        "container" => root
+            .with_child(Container::new().with_child(Static::new(wide_items(lines)).class("wide"))),
+        "vertical-scroll" => root.with_child(
+            VerticalScroll::new().with_child(Static::new(items().collect::<Vec<_>>().join("\n"))),
+        ),
+        "horizontal-scroll" => root.with_child(
+            HorizontalScroll::new().with_child(Static::new(wide_items(lines)).class("wide")),
+        ),
+        "log" => {
+            let mut log = Log::new();
+            for line in items() {
+                log.write_line(line);
+            }
+            root.with_child(log)
+        }
+        "rich-log" => {
+            let mut log = RichLog::new();
+            for line in items() {
+                log.write(line);
+            }
+            root.with_child(log)
+        }
+        "option-list" => root.with_child(OptionList::with_items(
+            items().map(OptionItem::new).collect(),
+        )),
+        "selection-list" => root.with_child(SelectionListString::with_selections(
+            items()
+                .map(|line| Selection::new(line.clone(), line))
+                .collect(),
+        )),
+        "list-view" => root.with_child(ListView::new(items().collect())),
+        "tree" => root.with_child(Tree::new(items().map(TreeNode::new).collect())),
+        "data-table" => {
+            let headers = std::iter::once("name".to_string())
+                .chain((1..=30).map(|n| format!("c{n:02}")))
+                .collect();
+            let rows = items()
+                .map(|line| {
+                    std::iter::once(line)
+                        .chain((1..=30).map(|n| format!("v{n:02}")))
+                        .collect()
+                })
+                .collect();
+            root.with_child(DataTable::new(headers, rows))
+        }
+        // It lists the app's bindings (see `Probe::bindings`).
+        "key-panel" => root.with_child(KeyPanel::new()),
+        _ => root,
+    }
+}
 
 /// Posted when the pointer moves over the `PROBE_HOVER` line.
 #[derive(Debug, Clone)]
@@ -185,6 +274,8 @@ struct Probe {
     push: Option<String>,
     /// The `PROBE_REMOVE` button's selector.
     remove: String,
+    /// `PROBE_SCROLL` and `PROBE_SCROLL_LINES`.
+    scroll: Option<(String, usize)>,
     other_keys: usize,
     suspend: &'static str,
     /// Marks shown after the counts, in the order they first happened:
@@ -217,6 +308,9 @@ impl Probe {
             exit_result: std::env::var("PROBE_EXIT_RESULT").ok(),
             exit_in_configure: std::env::var_os("PROBE_EXIT_IN_CONFIGURE").is_some(),
             push: std::env::var("PROBE_PUSH").ok(),
+            scroll: std::env::var("PROBE_SCROLL")
+                .ok()
+                .map(|kind| (kind, number("PROBE_SCROLL_LINES", 60))),
             remove: format!(
                 "#{}",
                 std::env::var("PROBE_REMOVE").unwrap_or_else(|_| "two".to_string())
@@ -287,7 +381,29 @@ impl Probe {
     }
 }
 
+/// The keys of the `key-panel` bindings: `alt+` and `ctrl+alt+` letters
+/// and digits, none of which the probe or the checks press.
+fn panel_keys() -> impl Iterator<Item = String> {
+    let chars: Vec<char> = ('a'..='z').chain('0'..='9').collect();
+    ["alt", "ctrl+alt"].into_iter().flat_map(move |prefix| {
+        chars
+            .clone()
+            .into_iter()
+            .map(move |c| format!("{prefix}+{c}"))
+    })
+}
+
 impl TextualApp for Probe {
+    fn bindings(&self) -> Vec<BindingDecl> {
+        match &self.scroll {
+            Some((kind, lines)) if kind == "key-panel" => panel_keys()
+                .zip(1..=*lines)
+                .map(|(key, n)| BindingDecl::new(&key, "bell", &item(n)))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     fn configure(&mut self, app: &mut App) -> textual::Result<()> {
         let mut css = CSS.to_string();
         if let Some(height) = &self.screen_height {
@@ -310,6 +426,9 @@ impl TextualApp for Probe {
         let mut root = AppRoot::new();
         if self.extras.hover {
             root = root.with_child(HoverLine(Static::new("hover here")));
+        }
+        if let Some((kind, lines)) = &self.scroll {
+            root = with_scroller(root, kind, *lines);
         }
         root = root
             .with_child(Static::new(self.body()).id("body"))
