@@ -4,6 +4,9 @@ The checks must give the same answer whatever the caller's shell holds, so
 the variables that change what the tests check, or where cargo puts the
 binaries they run, are removed or pinned:
 
+- `RUSTUP_TOOLCHAIN`, `RUSTC`, `RUSTC_WRAPPER`, `RUSTFLAGS`,
+  `CARGO_ENCODED_RUSTFLAGS`: swap the toolchain the repository pins
+  (BLD-001) or the flags it compiles with, which can hide warnings.
 - `CARGO_TARGET_DIR`, `CARGO_BUILD_TARGET_DIR`: the parity tests run docs
   example binaries from docs/examples/target; a redirected build would
   leave stale ones there. (The docs build also passes `--target-dir`, which
@@ -23,6 +26,11 @@ binaries they run, are removed or pinned:
 import os
 
 REMOVED = {
+    "RUSTUP_TOOLCHAIN",
+    "RUSTC",
+    "RUSTC_WRAPPER",
+    "RUSTFLAGS",
+    "CARGO_ENCODED_RUSTFLAGS",
     "CARGO_TARGET_DIR",
     "CARGO_BUILD_TARGET_DIR",
     "REPORT_ONLY",
