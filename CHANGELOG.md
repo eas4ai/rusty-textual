@@ -55,6 +55,17 @@ until the API stabilizes.
   truncating it. For example, a width above 65,535 cells now becomes
   65,535, and a negative extent becomes 0. Values inside the range are
   unchanged.
+- **Breaking for custom scroll widgets:** `Widget::on_mouse_scroll` (and
+  `Scrollable::on_mouse_scroll`) now receives how far to scroll, in
+  columns and lines, not one unit per wheel notch: a vertical notch is 2
+  lines, a horizontal notch, or a vertical one with ctrl or shift held, 4
+  columns (Python's `App.scroll_sensitivity_y` and `_x`). A widget that
+  multiplied the old deltas by its own step scrolls 2 or 4 times further.
+  `MouseScrollEvent::delta_x`/`delta_y` carry the same amounts.
+- `ScrollbarScrollTo::scroll_duration: None` now means an animation at 50
+  lines or columns a second with an out-cubic ease, where it meant the
+  host's CSS transition.
+- MarkdownViewer's up and down keys scroll 1 line, as in Python, not 2.
 
 ### Fixed
 
@@ -149,6 +160,22 @@ until the API stabilizes.
   none is left. Before, nothing had focus afterwards.
 - `DomQuery::results_where` now tests the pushed screen's widgets while a
   screen is pushed, as the other query methods already did.
+- The mouse wheel scrolls as in Python everywhere: 2 lines per notch on
+  the app's screen, pushed screens, containers, the ScrollView family,
+  Log, RichLog, OptionList, SelectionList, ListView, Tree, DataTable and
+  KeyPanel (most scrolled 1 line), and ctrl, like shift, turns a notch
+  into 4 columns. A widget at its end passes the notch to its ancestors
+  (Log and RichLog kept it). DataTable scrolls its rows with the wheel and
+  its columns by cells, not whole columns, and no longer starts scrolled
+  to the far right in inline mode. ListView's items now move when it
+  scrolls. A wheel or scrollbar scroll leaves a list's or table's cursor
+  where it is, and the next layout no longer pulls the view back to it.
+- Scrollbar track clicks and thumb drags animate on every scrollbar the
+  port draws, as in Python: a page at 50 lines a second (the app's screen
+  took a fixed 100 ms, others jumped), a drag over 0.1 seconds. A
+  horizontal page also runs at 50 columns a second, where Python takes
+  0.3 seconds. Horizontal wheel notches animate too. A notch or key during a scroll animation scrolls
+  from where the animation was heading, and quick notches add up.
 
 ## [1.1.0] - 2026-07-16
 

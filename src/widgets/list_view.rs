@@ -224,6 +224,8 @@ impl ListView {
         self.disabled.get(index).copied().unwrap_or(false)
     }
 
+    /// Builder: multiply how far a mouse wheel notch scrolls the list
+    /// (default 1: a notch scrolls 2 items, as in Python for one-row items).
     #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);

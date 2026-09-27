@@ -144,6 +144,8 @@ pub struct OptionList {
     /// Most recent layout width (stored so Renderable item heights can be computed).
     layout_width: usize,
     scroll_step: usize,
+    /// The running scroll animation of the offset.
+    anim: crate::widgets::scrollbar::ScrollAnimationState,
     /// The highlight when a wheel notch or the scrollbar last scrolled the list. While the
     /// highlight stays there, the view is not pulled back to it; moving the
     /// highlight brings it back into view, as in Python.
@@ -184,6 +186,7 @@ impl OptionList {
             viewport_height: 1,
             layout_width: 80,
             scroll_step: 1,
+            anim: crate::widgets::scrollbar::ScrollAnimationState::default(),
             scrolled_highlight: None,
             scrollbar_extracted: false,
             option_pad_left: 0,
@@ -237,7 +240,8 @@ impl OptionList {
         Ok(map)
     }
 
-    /// Builder: set the scroll step (number of rows per scroll tick).
+    /// Builder: multiply how far a mouse wheel notch scrolls the list
+    /// (default 1: a notch scrolls 2 rows, as in Python).
     #[must_use]
     pub fn scroll_step(mut self, step: usize) -> Self {
         self.scroll_step = step.max(1);
@@ -1244,10 +1248,25 @@ impl crate::widgets::Interactive for OptionList {
             self.node_id(),
             OPTION_LIST_OFFSET_ATTR,
         ) {
-            let next = value.max(0.0).round().to_usize_sat().min(self.max_offset());
-            if next != self.offset {
-                self.offset = next;
-                ctx.request_repaint();
+            let done = matches!(
+                event,
+                Event::AnimationValue(crate::event::AnimationValueEvent { done: true, .. })
+            );
+            match self.anim.step(self.offset.to_f32_lossy(), value, done) {
+                crate::widgets::scrollbar::ScrollStep::Apply(value) => {
+                    let next = value.max(0.0).round().to_usize_sat().min(self.max_offset());
+                    if next != self.offset {
+                        self.offset = next;
+                        ctx.request_repaint();
+                    }
+                }
+                crate::widgets::scrollbar::ScrollStep::Stop => {
+                    ctx.request_animation(crate::widgets::scrollbar::stop_scroll_animation(
+                        self.node_id(),
+                        OPTION_LIST_OFFSET_ATTR,
+                        self.offset.to_f32_lossy(),
+                    ));
+                }
             }
             ctx.set_handled();
             return;
@@ -1340,6 +1359,8 @@ impl crate::widgets::Interactive for OptionList {
                     next.to_f32_lossy(),
                     payload.scroll_duration,
                 ));
+                self.anim
+                    .started(self.offset.to_f32_lossy(), next.to_f32_lossy());
             } else {
                 self.offset = next;
                 ctx.request_repaint();
@@ -1381,6 +1402,8 @@ impl crate::widgets::Scrollable for OptionList {
             return;
         }
         let before = self.offset;
+        // From where a running animation is heading, as in Python.
+        self.offset = self.anim.settle_lines(self.offset);
         self.scroll_by_rows(
             delta_y.saturating_mul(self.scroll_step.to_i32_sat()) as isize,
             ctx,

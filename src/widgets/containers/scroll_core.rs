@@ -6,7 +6,7 @@ use crate::message::ScrollbarAxis;
 use crate::node_id::NodeId;
 use crate::num::Cast;
 use crate::style::{Overflow, Style};
-use crate::widgets::scrollbar;
+use crate::widgets::scrollbar::{self, ScrollAnimationState, ScrollStep};
 
 /// Whether a scroll changed the `(x, y)` offset. Exact on purpose: any
 /// change, however small, must trigger a repaint.
@@ -94,6 +94,9 @@ const SCROLL_HOST_OFFSET_Y_ATTR: &str = "scrollhost.offset_y";
 pub(crate) struct ScrollHost {
     offset_x: f32,
     offset_y: f32,
+    /// The running scroll animations, per axis.
+    anim_x: ScrollAnimationState,
+    anim_y: ScrollAnimationState,
     step_x: usize,
     step_y: usize,
     content_width: usize,
@@ -125,6 +128,8 @@ impl ScrollHost {
         Self {
             offset_x: 0.0,
             offset_y: 0.0,
+            anim_x: ScrollAnimationState::default(),
+            anim_y: ScrollAnimationState::default(),
             step_x: 2,
             step_y: 1,
             content_width: 0,
@@ -197,14 +202,17 @@ impl ScrollHost {
 
     /// Scroll by `delta_x` columns and `delta_y` lines, as a mouse wheel
     /// notch asks, on the axes that allow scrolling. Returns whether the
-    /// offset moved.
+    /// offset moved. A running animation on an axis is finished first: the
+    /// notch scrolls from where it was heading, as in Python.
     pub(crate) fn scroll_by(&mut self, delta_x: i32, delta_y: i32) -> bool {
         let before = (self.offset_x, self.offset_y);
-        if self.scrollable_y() {
-            self.offset_y += delta_y.to_f32_lossy();
+        if delta_y != 0 && self.scrollable_y() {
+            self.offset_y = self.anim_y.target(self.offset_y) + delta_y.to_f32_lossy();
+            self.anim_y.interrupted();
         }
-        if self.scrollable_x() {
-            self.offset_x += delta_x.to_f32_lossy();
+        if delta_x != 0 && self.scrollable_x() {
+            self.offset_x = self.anim_x.target(self.offset_x) + delta_x.to_f32_lossy();
+            self.anim_x.interrupted();
         }
         self.clamp();
         offset_moved(before, (self.offset_x, self.offset_y))
@@ -216,7 +224,7 @@ impl ScrollHost {
     /// [`ScrollHost::apply_animation`]). Returns whether the offset will
     /// change.
     pub(crate) fn animate_to(
-        &self,
+        &mut self,
         node: NodeId,
         axis: ScrollbarAxis,
         offset: f32,
@@ -244,17 +252,27 @@ impl ScrollHost {
         ctx.request_animation(scrollbar::scroll_animation(
             node, attribute, from, to, duration,
         ));
+        match axis {
+            ScrollbarAxis::Horizontal => self.anim_x.started(from, to),
+            ScrollbarAxis::Vertical => self.anim_y.started(from, to),
+        }
         true
     }
 
-    /// Apply a step of an animation [`ScrollHost::animate_to`] asked for.
+    /// Apply a step of an animation [`ScrollHost::animate_to`] asked for, or
+    /// stop the animation when another scroll moved the offset since.
     /// Returns whether `event` was one for `node`.
-    pub(crate) fn apply_animation(&mut self, node: NodeId, event: &Event) -> bool {
+    pub(crate) fn apply_animation(
+        &mut self,
+        node: NodeId,
+        event: &Event,
+        ctx: &mut crate::event::WidgetCtx,
+    ) -> bool {
         let Event::AnimationValue(AnimationValueEvent {
             target,
             attribute,
             value,
-            ..
+            done,
         }) = event
         else {
             return false;
@@ -262,10 +280,24 @@ impl ScrollHost {
         if *target != node {
             return false;
         }
-        match attribute.as_str() {
-            SCROLL_HOST_OFFSET_X_ATTR => self.offset_x = *value,
-            SCROLL_HOST_OFFSET_Y_ATTR => self.offset_y = *value,
+        let (offset, anim, attribute) = match attribute.as_str() {
+            SCROLL_HOST_OFFSET_X_ATTR => (
+                &mut self.offset_x,
+                &mut self.anim_x,
+                SCROLL_HOST_OFFSET_X_ATTR,
+            ),
+            SCROLL_HOST_OFFSET_Y_ATTR => (
+                &mut self.offset_y,
+                &mut self.anim_y,
+                SCROLL_HOST_OFFSET_Y_ATTR,
+            ),
             _ => return false,
+        };
+        match anim.step(*offset, *value, *done) {
+            ScrollStep::Apply(value) => *offset = value,
+            ScrollStep::Stop => {
+                ctx.request_animation(scrollbar::stop_scroll_animation(node, attribute, *offset));
+            }
         }
         self.clamp();
         true
@@ -285,7 +317,8 @@ impl ScrollHost {
             && self.scrollable_x()
             && crate::runtime::dispatch_ctx::wheel_notch_animates()
         {
-            let to = self.offset_x + delta_x.to_f32_lossy();
+            // From where a running animation is heading, so quick notches add up.
+            let to = self.anim_x.target(self.offset_x) + delta_x.to_f32_lossy();
             return self.animate_to(node, ScrollbarAxis::Horizontal, to, None, ctx);
         }
         self.scroll_by(delta_x, delta_y)
@@ -296,8 +329,14 @@ impl ScrollHost {
     pub(crate) fn scroll_to(&mut self, axis: ScrollbarAxis, offset: f32) -> bool {
         let before = (self.offset_x, self.offset_y);
         match axis {
-            ScrollbarAxis::Horizontal => self.offset_x = offset,
-            ScrollbarAxis::Vertical => self.offset_y = offset,
+            ScrollbarAxis::Horizontal => {
+                self.offset_x = offset;
+                self.anim_x.interrupted();
+            }
+            ScrollbarAxis::Vertical => {
+                self.offset_y = offset;
+                self.anim_y.interrupted();
+            }
         }
         self.clamp();
         offset_moved(before, (self.offset_x, self.offset_y))
@@ -307,6 +346,13 @@ impl ScrollHost {
     /// `None` when `action` is not a scroll action.
     pub(crate) fn scroll_action(&mut self, action: Action) -> Option<bool> {
         let before = (self.offset_x, self.offset_y);
+        if scrollbar::is_scroll_action(action) {
+            // A key scrolls from where a running animation is heading.
+            self.offset_x = self.anim_x.target(self.offset_x);
+            self.offset_y = self.anim_y.target(self.offset_y);
+            self.anim_x.interrupted();
+            self.anim_y.interrupted();
+        }
         let (step_x, step_y) = (self.step_x.to_f32_lossy(), self.step_y.to_f32_lossy());
         let page_x = self.viewport_width.max(1).to_f32_lossy();
         let page_y = self.viewport_height.max(1).to_f32_lossy();
@@ -369,7 +415,11 @@ mod tests {
             value: 4.0,
             done: false,
         });
-        assert!(host.apply_animation(node, &step));
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            assert!(host.apply_animation(node, &step, &mut w));
+        }
         assert_eq!(host.offset(), (0.0, 4.0));
 
         let mut ctx = EventCtx::default();
@@ -382,13 +432,75 @@ mod tests {
         assert_eq!(requests[0].attribute, SCROLL_HOST_OFFSET_X_ATTR);
         assert_python_scroll(&requests[0], 4.0, None);
 
-        // A vertical notch scrolls at once.
+        // A vertical notch scrolls at once, from where the running page was
+        // heading (10).
         let mut ctx = EventCtx::default();
         {
             let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
             assert!(host.wheel(node, 0, 2, &mut w));
         }
         assert!(ctx.take_animation_requests().is_empty());
-        assert_eq!(host.offset(), (0.0, 6.0));
+        assert_eq!(host.offset(), (0.0, 12.0));
+    }
+
+    /// A step of `host`'s vertical animation to `value`; returns the
+    /// animation requests it made.
+    fn step_y(host: &mut ScrollHost, value: f32) -> Vec<crate::event::AnimationRequest> {
+        let node = NodeId::default();
+        let step = Event::AnimationValue(AnimationValueEvent {
+            target: node,
+            attribute: SCROLL_HOST_OFFSET_Y_ATTR.to_string(),
+            value,
+            done: false,
+        });
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            assert!(host.apply_animation(node, &step, &mut w));
+        }
+        ctx.take_animation_requests()
+    }
+
+    #[test]
+    fn scl_001_a_notch_during_a_page_scrolls_2_lines_past_it() {
+        // Python stops the running animation at its end, then scrolls from
+        // `scroll_target_y` (`Widget._scroll_to`, `_scroll_down_for_pointer`).
+        let node = NodeId::default();
+        let mut host = host();
+        let mut ctx = EventCtx::default();
+        {
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            assert!(host.animate_to(node, ScrollbarAxis::Vertical, 10.0, None, &mut w));
+            assert!(step_y(&mut host, 3.0).is_empty());
+            assert!(host.wheel(node, 0, 2, &mut w), "the notch is used");
+        }
+        assert_eq!(host.offset(), (0.0, 12.0), "2 lines past the page");
+        // The page's next step finds the offset moved and stops it there.
+        let stop = step_y(&mut host, 5.0);
+        assert_eq!(host.offset(), (0.0, 12.0));
+        assert_eq!(stop.len(), 1);
+        assert!(stop[0].duration.is_zero());
+        assert!((stop[0].end - 12.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn scl_001_quick_horizontal_notches_add_up() {
+        // Python aims each notch at `scroll_target_x + 4`.
+        let node = NodeId::default();
+        let mut host = host();
+        let mut ctx = EventCtx::default();
+        {
+            let _animates = crate::runtime::dispatch_ctx::set_wheel_animates(true);
+            let mut w = crate::event::WidgetCtx::__from_dispatch(node, &mut ctx);
+            assert!(host.wheel(node, 4, 0, &mut w));
+            assert!(host.wheel(node, 4, 0, &mut w));
+        }
+        let requests = ctx.take_animation_requests();
+        assert_eq!(requests.len(), 2);
+        assert!(
+            (requests[1].end - 8.0).abs() < f32::EPSILON,
+            "end {}",
+            requests[1].end
+        );
     }
 }

@@ -191,7 +191,7 @@ impl crate::widgets::Interactive for Container {
         if !self.is_scroll_host() {
             return;
         }
-        if self.scroll.apply_animation(self.node_id(), event) {
+        if self.scroll.apply_animation(self.node_id(), event, ctx) {
             ctx.request_layout_invalidation();
             ctx.set_handled();
             return;

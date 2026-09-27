@@ -378,7 +378,7 @@ impl Widget for ScreenHost {
     }
 
     fn on_event(&mut self, event: &Event, ctx: &mut crate::event::WidgetCtx) {
-        if self.scroll.apply_animation(self.node_id(), event) {
+        if self.scroll.apply_animation(self.node_id(), event, ctx) {
             ctx.request_layout_invalidation();
             ctx.set_handled();
             return;

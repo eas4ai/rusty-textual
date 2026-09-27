@@ -29,6 +29,106 @@ pub(crate) fn scroll_duration(from: f32, to: f32, duration: Option<Duration>) ->
     duration.unwrap_or_else(|| Duration::from_secs_f32((to - from).abs() / SCROLL_SPEED))
 }
 
+/// Whether `action` is one of the scroll key actions.
+pub(crate) fn is_scroll_action(action: crate::event::Action) -> bool {
+    matches!(
+        action,
+        crate::event::Action::ScrollHome
+            | crate::event::Action::ScrollEnd
+            | crate::event::Action::ScrollUp
+            | crate::event::Action::ScrollDown
+            | crate::event::Action::ScrollPageUp
+            | crate::event::Action::ScrollPageDown
+            | crate::event::Action::ScrollLeft
+            | crate::event::Action::ScrollRight
+            | crate::event::Action::ScrollPageLeft
+            | crate::event::Action::ScrollPageRight
+    )
+}
+
+/// A host's scroll animation on one axis: where it is heading and the last
+/// value it set. Python keeps `scroll_target_x/y` and stops a running scroll
+/// animation before any other scroll (`Widget._scroll_to`:
+/// `force_stop_animation`). Here a wheel notch or key starts from
+/// [`ScrollAnimationState::target`], and the animation's next step, finding
+/// the offset moved by that scroll, stops.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub(crate) struct ScrollAnimationState {
+    end: Option<f32>,
+    last: Option<f32>,
+}
+
+/// What a host does with a step of its scroll animation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ScrollStep {
+    /// Move the offset to this value.
+    Apply(f32),
+    /// Another scroll moved the offset since the last step: leave it, and
+    /// stop the animation (see [`stop_scroll_animation`]).
+    Stop,
+}
+
+impl ScrollAnimationState {
+    /// Where the axis is heading: the running animation's end, else `offset`.
+    pub(crate) fn target(&self, offset: f32) -> f32 {
+        self.end.unwrap_or(offset)
+    }
+
+    /// Record an animation from `from` to `to` that the host asked for.
+    pub(crate) fn started(&mut self, from: f32, to: f32) {
+        self.end = Some(to);
+        self.last = Some(from);
+    }
+
+    /// Record a scroll that did not animate: the running animation, if any,
+    /// no longer has a target, and stops at its next step.
+    pub(crate) fn interrupted(&mut self) {
+        self.end = None;
+    }
+
+    /// Before a scroll that does not animate, on whole lines or cells: the
+    /// offset to scroll from (see [`Self::target`]); the running animation
+    /// stops at its next step.
+    pub(crate) fn settle_lines(&mut self, offset: usize) -> usize {
+        let from = self
+            .target(offset.to_f32_lossy())
+            .max(0.0)
+            .round()
+            .to_usize_sat();
+        self.interrupted();
+        from
+    }
+
+    /// A step to `value` while the offset is `offset`. `done` is the
+    /// animation's last step.
+    pub(crate) fn step(&mut self, offset: f32, value: f32, done: bool) -> ScrollStep {
+        // Rounded offsets (whole lines) can differ from the step by half a
+        // line.
+        let moved = self.last.is_none_or(|last| (last - offset).abs() > 0.51);
+        if moved {
+            self.end = None;
+            self.last = Some(offset);
+            return ScrollStep::Stop;
+        }
+        if done {
+            *self = Self::default();
+        } else {
+            self.last = Some(value);
+        }
+        ScrollStep::Apply(value)
+    }
+}
+
+/// Stop `node`'s `attribute` scroll animation where the offset is now,
+/// `at`: a zero-length animation replaces it and ends there.
+pub(crate) fn stop_scroll_animation(
+    node: NodeId,
+    attribute: &'static str,
+    at: f32,
+) -> AnimationRequest {
+    AnimationRequest::new(node, attribute, at, at, Duration::ZERO)
+}
+
 /// Checks that `request` scrolls `distance` lines or columns as Python does:
 /// over `duration`, else at [`SCROLL_SPEED`], with an out-cubic ease.
 #[cfg(test)]

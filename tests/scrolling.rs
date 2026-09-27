@@ -23,6 +23,8 @@
 //! Each case has its own test, so a failing run shows every case that fails.
 //! Run idle and single-threaded, like the other PTY tests.
 
+use std::fmt::Write as _;
+
 #[path = "support/pty.rs"]
 mod pty;
 
@@ -277,6 +279,101 @@ horizontal_notch_tests! {
     scl_001_ctrl_wheel_scrolls_a_data_table_4_columns_inline: "inline", "data-table", WHEEL_DOWN + CTRL;
     scl_001_wheel_right_scrolls_a_data_table_4_columns_in_full_screen: "full", "data-table", WHEEL_RIGHT;
     scl_001_wheel_right_scrolls_a_data_table_4_columns_inline: "inline", "data-table", WHEEL_RIGHT;
+}
+
+// -- SCL-001: notches during a scroll animation -----------------------------
+
+/// The first `item N` a screen shows, smallest `N` first.
+fn first_item(screen: &vt100::Screen) -> Option<usize> {
+    lines(screen)
+        .iter()
+        .filter_map(|line| {
+            let at = line.find("item ")?;
+            let digits: String = line[at + 5..]
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect();
+            digits.parse().ok()
+        })
+        .min()
+}
+
+/// Starts the probe with a Container and clicks its scrollbar track below
+/// the thumb; with `notch`, a wheel-down notch goes in the same write, while
+/// the page animates. Returns the first item shown once the screen settles.
+fn page_container(mode: &str, notch: bool) -> usize {
+    let term = spawn(mode, &[("PROBE_SCROLL", "container")], "keys:0");
+    let screen = term.screen();
+    let (row, _) = position(&screen, "item 8", mode);
+    let track = (row, from_right(1));
+    let mut bytes = format!(
+        "\x1b[<0;{};{}M\x1b[<0;{};{}m",
+        track.1 + 1,
+        row + 1,
+        track.1 + 1,
+        row + 1
+    );
+    if notch {
+        let _ = write!(bytes, "\x1b[<{WHEEL_DOWN};3;{}M", row + 1);
+    }
+    term.send(bytes.as_bytes());
+    wait_briefly(&term, |s| first_item(s) != Some(1));
+    first_item(&term.settle()).expect("items on screen")
+}
+
+/// A wheel notch during a track-click page scrolls 2 lines past the page,
+/// as Python stops the page at its end first.
+fn check_notch_during_a_page(mode: &str) {
+    let paged = page_container(mode, false);
+    assert!(paged > 1, "{mode}: the track click did not page");
+    let with_notch = page_container(mode, true);
+    assert_eq!(
+        with_notch,
+        paged + 2,
+        "{mode}: a notch during the page to item {paged} ended on item {with_notch}"
+    );
+}
+
+#[test]
+fn scl_001_a_notch_during_a_page_scrolls_2_lines_past_it_in_full_screen() {
+    check_notch_during_a_page("full");
+}
+
+#[test]
+fn scl_001_a_notch_during_a_page_scrolls_2_lines_past_it_inline() {
+    check_notch_during_a_page("inline");
+}
+
+/// Two wheel-right notches in one write scroll 8 columns: the second adds to
+/// where the first one's animation is heading.
+fn check_quick_horizontal_notches(mode: &str) {
+    let term = spawn(mode, &[("PROBE_SCROLL", "container")], "keys:0");
+    let screen = term.screen();
+    let (row, _) = position(&screen, "item 3", mode);
+    let before = position(&screen, "c010", mode);
+    let notch = format!("\x1b[<{WHEEL_RIGHT};3;{}M", row + 1);
+    term.send(format!("{notch}{notch}").as_bytes());
+    wait_briefly(&term, |s| {
+        find(s, "c010").is_some_and(|at| at.1 + 8 <= before.1)
+    });
+    let after = position(&term.settle(), "c010", mode);
+    assert_eq!(
+        before.1 - after.1,
+        8,
+        "{mode}: two quick wheel-right notches moved c010 from column {} to {}",
+        before.1,
+        after.1
+    );
+}
+
+#[test]
+fn scl_001_two_quick_horizontal_notches_scroll_8_columns_in_full_screen() {
+    check_quick_horizontal_notches("full");
+}
+
+#[test]
+fn scl_001_two_quick_horizontal_notches_scroll_8_columns_inline() {
+    check_quick_horizontal_notches("inline");
 }
 
 // -- SCL-001: a notch a widget cannot use -----------------------------------

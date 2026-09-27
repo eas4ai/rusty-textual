@@ -704,6 +704,9 @@ impl Tree {
             return;
         }
         self.cursor = Some(nodes[node_index].id);
+        // An explicit cursor move always brings the node into view (Python
+        // `move_cursor` calls `scroll_to_node`).
+        self.scrolled_cursor = None;
         self.ensure_visible();
         self.emit_selected(ctx, &nodes);
         self.emit_highlighted(ctx, &nodes);
@@ -725,6 +728,9 @@ impl Tree {
             Some(id) if self.nodes.contains_key(id) => self.cursor = Some(id),
             _ => self.cursor = self.visible_nodes().first().map(|n| n.id),
         }
+        // An explicit cursor move always brings the node into view (Python
+        // `move_cursor` calls `scroll_to_node`).
+        self.scrolled_cursor = None;
         self.ensure_visible();
     }
 
@@ -744,6 +750,9 @@ impl Tree {
             return Err(TreeError::UnknownNode(id));
         }
         self.cursor = Some(id);
+        // An explicit cursor move always brings the node into view (Python
+        // `move_cursor` calls `scroll_to_node`).
+        self.scrolled_cursor = None;
         self.ensure_visible();
         let nodes = self.visible_nodes();
         self.emit_selected(ctx, &nodes);
@@ -2490,6 +2499,11 @@ mod tests {
         );
         // Moving the cursor brings it back into view.
         let second = tree.root_ids()[1];
+        tree.move_cursor(Some(second));
+        assert_eq!(tree.offset, 1);
+        // So does an explicit move to the node the cursor is already on.
+        assert!(wheel(&mut tree, 2));
+        assert_eq!(tree.offset, 3);
         tree.move_cursor(Some(second));
         assert_eq!(tree.offset, 1);
     }

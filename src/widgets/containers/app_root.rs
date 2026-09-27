@@ -24,6 +24,9 @@ pub struct AppRoot {
     seed: NodeSeed,
     offset_x: f32,
     offset_y: f32,
+    /// The running scroll animations, per axis.
+    anim_x: crate::widgets::scrollbar::ScrollAnimationState,
+    anim_y: crate::widgets::scrollbar::ScrollAnimationState,
     scroll_step_x: usize,
     scroll_step_y: usize,
     content_width: AtomicUsize,
@@ -87,6 +90,8 @@ impl AppRoot {
             seed: NodeSeed::default(),
             offset_x: 0.0,
             offset_y: 0.0,
+            anim_x: crate::widgets::scrollbar::ScrollAnimationState::default(),
+            anim_y: crate::widgets::scrollbar::ScrollAnimationState::default(),
             scroll_step_x: 2,
             scroll_step_y: 1,
             content_width: AtomicUsize::new(0),
@@ -216,8 +221,14 @@ impl AppRoot {
     fn apply_scrollbar_offset(&mut self, axis: ScrollbarAxis, offset: f32) -> bool {
         let (before_x, before_y) = (self.offset_x, self.offset_y);
         match axis {
-            ScrollbarAxis::Horizontal => self.offset_x = offset,
-            ScrollbarAxis::Vertical => self.offset_y = offset,
+            ScrollbarAxis::Horizontal => {
+                self.offset_x = offset;
+                self.anim_x.interrupted();
+            }
+            ScrollbarAxis::Vertical => {
+                self.offset_y = offset;
+                self.anim_y.interrupted();
+            }
         }
         self.clamp_offsets();
         super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y))
@@ -242,6 +253,38 @@ impl AppRoot {
         match axis {
             ScrollbarAxis::Horizontal => self.offset_x,
             ScrollbarAxis::Vertical => self.offset_y,
+        }
+    }
+
+    /// Apply a step of a scroll animation this root asked for, or stop the
+    /// animation when another scroll moved the offset since.
+    fn apply_animation_step(
+        &mut self,
+        axis: ScrollbarAxis,
+        value: f32,
+        done: bool,
+        ctx: &mut crate::event::WidgetCtx,
+    ) {
+        use crate::widgets::scrollbar::ScrollStep;
+        let (offset, anim, attribute) = match axis {
+            ScrollbarAxis::Horizontal => (self.offset_x, &mut self.anim_x, APP_ROOT_OFFSET_X_ATTR),
+            ScrollbarAxis::Vertical => (self.offset_y, &mut self.anim_y, APP_ROOT_OFFSET_Y_ATTR),
+        };
+        match anim.step(offset, value, done) {
+            ScrollStep::Apply(value) => {
+                let next = self.clamped_axis_offset(axis, value);
+                let current = self.axis_offset(axis);
+                if (next - current).abs() > f32::EPSILON {
+                    match axis {
+                        ScrollbarAxis::Horizontal => self.offset_x = next,
+                        ScrollbarAxis::Vertical => self.offset_y = next,
+                    }
+                    ctx.request_layout_invalidation();
+                }
+            }
+            ScrollStep::Stop => ctx.request_animation(
+                crate::widgets::scrollbar::stop_scroll_animation(self.node_id(), attribute, offset),
+            ),
         }
     }
 
@@ -270,6 +313,10 @@ impl AppRoot {
             to,
             duration,
         ));
+        match axis {
+            ScrollbarAxis::Horizontal => self.anim_x.started(from, to),
+            ScrollbarAxis::Vertical => self.anim_y.started(from, to),
+        }
         true
     }
 }
@@ -320,33 +367,30 @@ impl crate::widgets::Interactive for AppRoot {
             done,
         }) = event
         {
-            if *target == self.node_id() {
-                if attribute == APP_ROOT_OFFSET_Y_ATTR {
-                    let next = self.clamped_axis_offset(ScrollbarAxis::Vertical, *value);
-                    if (next - self.offset_y).abs() > f32::EPSILON {
-                        self.offset_y = next;
-                        ctx.request_layout_invalidation();
-                    }
-                    let _ = done;
-                    ctx.set_handled();
-                    return;
-                }
-                if attribute == APP_ROOT_OFFSET_X_ATTR {
-                    let next = self.clamped_axis_offset(ScrollbarAxis::Horizontal, *value);
-                    if (next - self.offset_x).abs() > f32::EPSILON {
-                        self.offset_x = next;
-                        ctx.request_layout_invalidation();
-                    }
-                    let _ = done;
-                    ctx.set_handled();
-                    return;
-                }
+            let axis = match attribute.as_str() {
+                APP_ROOT_OFFSET_Y_ATTR => Some(ScrollbarAxis::Vertical),
+                APP_ROOT_OFFSET_X_ATTR => Some(ScrollbarAxis::Horizontal),
+                _ => None,
+            };
+            if let Some(axis) = axis
+                && *target == self.node_id()
+            {
+                self.apply_animation_step(axis, *value, *done, ctx);
+                ctx.set_handled();
+                return;
             }
         }
 
         let Event::Action(action) = event else {
             return;
         };
+        if crate::widgets::scrollbar::is_scroll_action(*action) {
+            // A key scrolls from where a running animation is heading.
+            self.offset_x = self.anim_x.target(self.offset_x);
+            self.offset_y = self.anim_y.target(self.offset_y);
+            self.anim_x.interrupted();
+            self.anim_y.interrupted();
+        }
 
         let before_x = self.offset_x;
         let before_y = self.offset_y;
@@ -442,15 +486,23 @@ impl crate::widgets::Scrollable for AppRoot {
 
         // The deltas are lines and columns already; the scroll steps are
         // for keys. A horizontal notch animates, as in Python.
+        // Each notch scrolls from where a running animation is heading, so
+        // it is not lost, and quick horizontal notches add up.
         if delta_x != 0 && crate::runtime::dispatch_ctx::wheel_notch_animates() {
-            let to = self.offset_x + delta_x.to_f32_lossy();
+            let to = self.anim_x.target(self.offset_x) + delta_x.to_f32_lossy();
             if self.request_scroll_animation(ScrollbarAxis::Horizontal, to, None, ctx) {
                 ctx.set_handled();
             }
             return;
         }
-        self.offset_y += delta_y.to_f32_lossy();
-        self.offset_x += delta_x.to_f32_lossy();
+        if delta_y != 0 {
+            self.offset_y = self.anim_y.target(self.offset_y) + delta_y.to_f32_lossy();
+            self.anim_y.interrupted();
+        }
+        if delta_x != 0 {
+            self.offset_x = self.anim_x.target(self.offset_x) + delta_x.to_f32_lossy();
+            self.anim_x.interrupted();
+        }
         self.clamp_offsets();
 
         if super::scroll_core::offset_moved((before_x, before_y), (self.offset_x, self.offset_y)) {
