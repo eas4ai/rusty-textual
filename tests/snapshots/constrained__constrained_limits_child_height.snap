@@ -1,0 +1,17 @@
+---
+source: tests/constrained.rs
+expression: buf.debug_dump()
+---
+lines:
+0: "one         "
+1: "two         "
+2: "            "
+3: "            "
+4: "            "
+meta:
+(0,0): StyleMeta { link: None, link_id: None, meta: Some({"textual:no_text_style": Bool(true), "textual:widget_id": Int(4294967301)}) }
+(1,0): StyleMeta { link: None, link_id: None, meta: Some({"textual:no_text_style": Bool(true), "textual:widget_id": Int(4294967301)}) }
+(2,0): StyleMeta { link: None, link_id: None, meta: Some({"textual:no_text_style": Bool(true), "textual:widget_id": Int(4294967301)}) }
+(0,1): StyleMeta { link: None, link_id: None, meta: Some({"textual:no_text_style": Bool(true), "textual:widget_id": Int(4294967303)}) }
+(1,1): StyleMeta { link: None, link_id: None, meta: Some({"textual:no_text_style": Bool(true), "textual:widget_id": Int(4294967303)}) }
+(2,1): StyleMeta { link: None, link_id: None, meta: Some({"textual:no_text_style": Bool(true), "textual:widget_id": Int(4294967303)}) }
