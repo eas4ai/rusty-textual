@@ -1,0 +1,21 @@
+use rich_rs::Console;
+use rusty_textual::prelude::*;
+use rusty_textual::runtime::{build_widget_tree_from_root, render_tree_to_frame_with_stylesheet};
+
+#[test]
+fn stylesheet_applies_type_and_id_styles() {
+    let console = Console::new();
+    let mut label = Container::new().with_child(Label::new("hi").id("hero"));
+
+    let mut sheet = StyleSheet::new();
+    sheet.add_type("Label", Style::new().bold(true));
+    sheet.add_id("hero", Style::new().underline(true));
+
+    let mut tree = build_widget_tree_from_root(&mut label).expect("tree should exist");
+    let buf = render_tree_to_frame_with_stylesheet(&mut tree, &mut label, &console, 6, 1, sheet);
+
+    let cell = buf.get(0, 0);
+    let style = cell.style.expect("style to be set");
+    assert_eq!(style.bold, Some(true));
+    assert_eq!(style.underline, Some(true));
+}
