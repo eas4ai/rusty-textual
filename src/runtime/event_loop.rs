@@ -2776,9 +2776,7 @@ impl App {
         let mut typed_ahead: VecDeque<CrosstermEvent> = VecDeque::new();
 
         loop {
-            if typed_ahead.is_empty() {
-                typed_ahead.extend(self.driver.take_typed_ahead());
-            }
+            typed_ahead.extend(self.driver.take_typed_ahead());
             let timeout = tick_rate.saturating_sub(last_tick.elapsed());
             let input = if let Some(typed) = typed_ahead.pop_front() {
                 Some(typed)
@@ -3138,9 +3136,7 @@ impl App {
         let poll_started = Instant::now();
         // The driver keeps the keys typed while it last started; take them
         // after it starts or restarts (a resume after a suspend).
-        if lp.typed_ahead.is_empty() {
-            lp.typed_ahead.extend(self.driver.take_typed_ahead());
-        }
+        lp.typed_ahead.extend(self.driver.take_typed_ahead());
         let input_event = if let Some(pending) = lp.pending_input_event.take() {
             Some(pending)
         } else if let Some(typed) = lp.typed_ahead.pop_front() {
@@ -4697,7 +4693,9 @@ impl App {
         // If more input is already queued after an immediate render, keep
         // draining input first to avoid visible backlog.
         // Keys typed while the terminal started go first, so no later input
-        // is read ahead of them.
+        // is read ahead of them, including keys a resume in this pass just
+        // left with the driver.
+        lp.typed_ahead.extend(self.driver.take_typed_ahead());
         if rendered_immediately_for_input
             && lp.typed_ahead.is_empty()
             && event::poll(Duration::ZERO)?
