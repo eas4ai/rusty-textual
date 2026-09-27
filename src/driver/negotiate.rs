@@ -22,6 +22,10 @@ pub const IN_BAND_RESIZE_MODE: u16 = 2048;
 /// `DISAMBIGUATE (1) | REPORT_ALL_KEYS (8) | REPORT_ASSOCIATED_TEXT (16)`.
 pub const KITTY_FLAGS: u16 = 0b0001_1001;
 
+/// Kitty flags pushed in inline mode: `DISAMBIGUATE (1)` only, as Python's
+/// `LinuxInlineDriver` writes `CSI > 1 u` (INL-018).
+pub const INLINE_KITTY_FLAGS: u16 = 0b0000_0001;
+
 /// Upper bound for one query reply.
 ///
 /// Automatic terminal replies are immediate; the budget covers remote links.
@@ -142,6 +146,11 @@ mod tests {
         assert_eq!(KITTY_FLAGS, 1 | 8 | 16);
         // Exact bytes the platform drivers push (`CSI > 25 u`).
         assert_eq!(format!("\x1b[>{KITTY_FLAGS}u"), "\x1b[>25u");
+    }
+
+    #[test]
+    fn inl_018_inline_kitty_flags_match_python_1() {
+        assert_eq!(format!("\x1b[>{INLINE_KITTY_FLAGS}u"), "\x1b[>1u");
     }
 
     #[test]
