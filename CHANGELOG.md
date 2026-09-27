@@ -119,8 +119,7 @@ until the API stabilizes.
   `remove`) act on that screen's nodes instead of the app's own tree.
 - Query changes to display, visibility and disabled state, and query
   removals, now lay out and redraw at once. A visibility change set through
-  a query lasts through later layout passes. A query removal also drops
-  focus from the removed widgets.
+  a query lasts through later layout passes.
 - The app's own screen now fills the whole terminal in full-screen mode,
   and the whole inline frame in inline mode, whatever its width, height,
   min/max size, margin, dock, position, split or offset rules say, as in
@@ -133,6 +132,23 @@ until the API stabilizes.
   sequences, kitty keys, bracketed paste), whether or not the terminal
   answers. A `c` typed at launch no longer ends that wait early and leaves
   the terminal's replies to garble later input.
+- `DomQueryMut::set_display` (and `DomQueryMut::set` with a display value)
+  now sets the node's own display rule, as Python's `display` setter does:
+  `set_display(true)` shows a node its stylesheet hides with
+  `display: none`, even `!important`, and the rule lasts through restyles.
+  A widget's own hiding (a tab's hidden pane, a scrollbar, the tooltip)
+  still applies, and a query's hide now lasts through a later tab
+  selection. A later `set_styles` display write replaces the rule.
+- A query that matched nothing no longer clears and redraws the whole
+  screen when it asks for a repaint (`DomQueryMut::refresh`) or sets
+  `loading`. Setting `loading` to the value it already has no longer
+  repaints the widget.
+- Removing the focused widget with `App::remove`, `App::remove_node` or
+  `DomQueryMut::remove` now moves focus as Python does: to the nearest
+  focusable widget before it, else the last one, and to nothing only when
+  none is left. Before, nothing had focus afterwards.
+- `DomQuery::results_where` now tests the pushed screen's widgets while a
+  screen is pushed, as the other query methods already did.
 
 ## [1.1.0] - 2026-07-16
 
