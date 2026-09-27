@@ -32,16 +32,29 @@
 //!   (Python `App.push_screen`). Through `App::query_mut("#pushed-body")`,
 //!   `h` hides them with `set_display(false)` and `u` shows them again with
 //!   `set_display(true)`; `v` hides them with `set_visible(false)` and `w`
-//!   shows them again with `set_visible(true)`.
+//!   shows them again with `set_visible(true)`. `g` filters
+//!   `App::query("Static")` with `DomQuery::results_where` for the widget
+//!   whose text starts with `pushed 1`, and writes the count on the pushed
+//!   screen as `where:N`.
+//! - `PROBE_QUERY`: when set, a `css-hidden` line the stylesheet hides with
+//!   `display: none` and three buttons, `One`, `Two` and `Three` (ids `one`,
+//!   `two` and `three`), follow the body. Through `App::query_mut`, `d`
+//!   shows the `css-hidden` line with `set_display(true)`, and `l` and `f`
+//!   set `loading` and ask for a repaint on a query that matches nothing.
+//!   Tab is not counted, so it moves focus.
+//! - `PROBE_REMOVE`: the id of the button that `k`, `n` and `m` remove
+//!   through `App::remove`, `App::remove_node` and `DomQueryMut::remove`
+//!   (unset: `two`).
 //!
 //! Keys: `s` shrinks the body to one line, `z` tries `App::suspend`, `x`
 //! runs the suspend-process action, `p` pushes the `PROBE_PUSH` screen, `h`,
-//! `u`, `v` and `w` hide and show its text, `c`
-//! and `r` change and repaint the `PROBE_SHARED` line, `q` quits. The status
-//! line counts every other key that arrives (`keys:N`) and shows the last
-//! suspend result, `clicked` once the button has been pressed, and `hovered`
-//! once the pointer has moved over the hover line. The key chooses the path
-//! that writes the status line (see `Probe::show_status`).
+//! `u`, `v` and `w` hide and show its text, `g` filters a query of it, `c`
+//! and `r` change and repaint the `PROBE_SHARED` line, `d`, `l`, `f`, `k`,
+//! `n` and `m` make the `PROBE_QUERY` changes, `q` quits. The status line
+//! counts every other key that arrives (`keys:N`) and shows the last suspend
+//! result, `clicked` once the button has been pressed, and `hovered` once
+//! the pointer has moved over the hover line. The key chooses the path that
+//! writes the status line (see `Probe::show_status`).
 
 use std::any::Any;
 use std::fmt::Write as _;
@@ -52,6 +65,7 @@ use textual::prelude::*;
 const CSS: &str = "
 #cssmark { display: none; }
 Screen:inline #cssmark { display: block; }
+#csshidden { display: none; }
 HoverLine { height: 1; }
 SharedLine { height: 1; margin-top: 2; }
 ";
@@ -142,6 +156,16 @@ struct Extras {
     shared: bool,
 }
 
+/// The `PROBE_QUERY` buttons, as (id, label), in the order they are shown.
+const QUERY_BUTTONS: [(&str, &str); 3] = [("one", "One"), ("two", "Two"), ("three", "Three")];
+
+/// Whether `widget` is the `Static` that shows the pushed screen's text.
+fn is_pushed_text(widget: &dyn Widget) -> bool {
+    (widget as &dyn Any)
+        .downcast_ref::<Static>()
+        .is_some_and(|label| label.text().starts_with("pushed 1\n"))
+}
+
 struct Probe {
     lines: usize,
     padding: usize,
@@ -149,11 +173,15 @@ struct Probe {
     screen_overflow: Option<String>,
     screen_rules: Option<String>,
     extras: Extras,
+    /// `PROBE_QUERY`: the `css-hidden` line and the three buttons.
+    query: bool,
     hover_path: String,
     exit_message: Option<String>,
     exit_result: Option<String>,
     exit_in_configure: bool,
     push: Option<String>,
+    /// The `PROBE_REMOVE` button's selector.
+    remove: String,
     other_keys: usize,
     suspend: &'static str,
     /// Marks shown after the counts, in the order they first happened:
@@ -180,11 +208,16 @@ impl Probe {
                 hover: std::env::var_os("PROBE_HOVER").is_some(),
                 shared: std::env::var_os("PROBE_SHARED").is_some(),
             },
+            query: std::env::var_os("PROBE_QUERY").is_some(),
             hover_path: std::env::var("PROBE_HOVER_PATH").unwrap_or_default(),
             exit_message: std::env::var("PROBE_EXIT_MESSAGE").ok(),
             exit_result: std::env::var("PROBE_EXIT_RESULT").ok(),
             exit_in_configure: std::env::var_os("PROBE_EXIT_IN_CONFIGURE").is_some(),
             push: std::env::var("PROBE_PUSH").ok(),
+            remove: format!(
+                "#{}",
+                std::env::var("PROBE_REMOVE").unwrap_or_else(|_| "two".to_string())
+            ),
             other_keys: 0,
             suspend: "none",
             marks: Vec::new(),
@@ -281,7 +314,13 @@ impl TextualApp for Probe {
         if self.extras.shared {
             root = root.with_child(SharedLine);
         }
-        let root = root.with_child(Static::new("inline-css").id("cssmark"));
+        root = root.with_child(Static::new("inline-css").id("cssmark"));
+        if self.query {
+            root = root.with_child(Static::new("css-hidden").id("csshidden"));
+            for (id, label) in QUERY_BUTTONS {
+                root = root.with_child(Button::new(label).id(id));
+            }
+        }
         if self.extras.button {
             root.with_child(Button::new("Press").id("press"))
         } else {
@@ -328,6 +367,43 @@ impl TextualApp for Probe {
                     "v" => query.set_visible(false),
                     _ => query.set_visible(true),
                 });
+                ctx.set_handled();
+                return;
+            }
+            "g" if self.push.is_some() => {
+                let count = app
+                    .query("Static")
+                    .map_or(0, |query| query.results_where(app, is_pushed_text).len());
+                let _ = app.query_mut("#pushed-body").map(|query| {
+                    query.update(|w| set_static(w, format!("where:{count}")));
+                });
+                ctx.set_handled();
+                return;
+            }
+            // Left unhandled, so the app's binding moves focus.
+            "tab" if self.query => return,
+            "d" | "l" | "f" if self.query => {
+                let _ = match key {
+                    "d" => app
+                        .query_mut("#csshidden")
+                        .map(|query| query.set_display(true)),
+                    "l" => app
+                        .query_mut("#nothing")
+                        .map(|query| query.set(None, None, None, Some(true))),
+                    _ => app.query_mut("#nothing").map(DomQueryMut::refresh),
+                };
+                ctx.set_handled();
+                return;
+            }
+            "k" | "n" | "m" if self.query => {
+                let selector = &self.remove;
+                let _ = match key {
+                    "k" => app.remove(selector),
+                    "n" => app
+                        .query_one(selector)
+                        .and_then(|node| app.remove_node(node)),
+                    _ => app.query_mut(selector).map(DomQueryMut::remove),
+                };
                 ctx.set_handled();
                 return;
             }
