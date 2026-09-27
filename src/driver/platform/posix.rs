@@ -74,17 +74,19 @@ impl PlatformDriver for PosixPlatformDriver {
         }
 
         let keyboard_enhanced = if enable_keyboard {
-            // Full flag set, Python parity (DISAMBIGUATE | REPORT_ALL_KEYS |
-            // REPORT_ASSOCIATED_TEXT = 25). Emitted raw: crossterm omits flag
-            // 16, and non-supporting terminals ignore the sequence
-            // (progressive enhancement). Pop on stop mirrors Python.
-            write!(
-                std::io::stdout(),
-                "\x1b[>{}u",
+            // Python parity: the full-screen driver pushes the full flag set
+            // (DISAMBIGUATE | REPORT_ALL_KEYS | REPORT_ASSOCIATED_TEXT = 25),
+            // the inline driver DISAMBIGUATE (1) only (INL-018). Emitted raw:
+            // crossterm omits flag 16, and non-supporting terminals ignore the
+            // sequence (progressive enhancement). Pop on stop mirrors Python.
+            let flags = if options.inline {
+                crate::driver::negotiate::INLINE_KITTY_FLAGS
+            } else {
                 crate::driver::negotiate::KITTY_FLAGS
-            )
-            .and_then(|()| std::io::stdout().flush())
-            .is_ok()
+            };
+            write!(std::io::stdout(), "\x1b[>{flags}u")
+                .and_then(|()| std::io::stdout().flush())
+                .is_ok()
         } else {
             false
         };
