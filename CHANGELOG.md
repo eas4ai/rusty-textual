@@ -15,8 +15,12 @@ until the API stabilizes.
   alternate screen. The app is as tall as its screen's `Screen:inline` rules
   make it (content plus the default top and bottom borders), redrawn with
   relative cursor moves so the shell output above it stays; mouse
-  coordinates are relative to the app. A terminal that speaks the kitty
-  keyboard protocol is asked only to disambiguate escape codes (`CSI > 1 u`),
+  coordinates are relative to the app. The app asks the terminal where it
+  is only after a frame that can move it (the first frame, a taller frame,
+  the frame after a resize), where Python asks after every frame without
+  waiting, so a frame of the same height never waits for the terminal.
+  A terminal that speaks the kitty keyboard protocol is asked only to
+  disambiguate escape codes (`CSI > 1 u`),
   as Python's inline driver asks, not for the full-screen flags 1, 8 and 16;
   `TEXTUAL_DISABLE_KITTY_KEY=1` keeps the protocol off, which Python's
   inline driver ignores. On exit the app is erased, or with
