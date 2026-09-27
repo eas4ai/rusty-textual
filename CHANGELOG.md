@@ -126,6 +126,13 @@ until the API stabilizes.
   min/max size, margin, dock, position, split or offset rules say, as in
   Python. Before, `Screen { height: 10 }` left the rest of a full-screen
   terminal blank.
+- On Linux, keys typed while an app starts are no longer lost. The driver
+  read them while waiting for the terminal's startup replies and dropped
+  them; it now delivers them to the app first, read as they would be when
+  typed later (text, control keys, Esc and Alt forms, arrows and other key
+  sequences, kitty keys, bracketed paste), whether or not the terminal
+  answers. A `c` typed at launch no longer ends that wait early and leaves
+  the terminal's replies to garble later input.
 
 ## [1.1.0] - 2026-07-16
 
