@@ -717,8 +717,9 @@ pub(crate) fn apply_display_visibility_to_tree(tree: &mut WidgetTree) {
             (meta, resolved, child_ids)
         };
 
-        // Apply CSS display state. Runtime-controlled display (for example
-        // tab switching) is merged in WidgetTree as `effective = css && runtime`.
+        // Apply the resolved display, which includes the node's own display
+        // rule from a query. WidgetTree::recompute_display merges it with the
+        // runtime-controlled display (for example tab switching).
         let display_bool = !matches!(resolved.display, Some(Display::None));
         tree.set_css_display(node_id, display_bool);
 

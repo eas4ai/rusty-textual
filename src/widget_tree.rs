@@ -152,7 +152,8 @@ pub struct WidgetNode {
     /// Effective visibility toggle used by layout/render: `runtime_display`
     /// and the node's own display rule, or `css_display` when it has none.
     pub(crate) display: bool,
-    /// Display state derived from CSS (`display:none`).
+    /// Display state from the resolved style (`display:none`): the
+    /// stylesheet, the node's inline style and its query display rule.
     pub(crate) css_display: bool,
     /// Display state controlled by runtime/widget logic (for example tab switching).
     pub(crate) runtime_display: bool,

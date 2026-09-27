@@ -226,8 +226,7 @@ pub(crate) fn raw_focused_node_id(tree: &WidgetTree) -> Option<NodeId> {
 }
 
 /// Whether a node's OWN flags allow it to be shown: effective `display`
-/// (css && runtime, as merged by `WidgetTree::recompute_display`) and
-/// `visibility: visible`.
+/// (as merged by `WidgetTree::recompute_display`) and `visibility: visible`.
 fn node_self_shown(tree: &WidgetTree, node_id: NodeId) -> bool {
     tree.get(node_id)
         .is_some_and(|node| node.display && node.visibility == crate::style::Visibility::Visible)
