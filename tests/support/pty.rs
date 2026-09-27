@@ -414,6 +414,19 @@ impl Term {
 
     /// Wait for the shell to exit and all output to be read.
     pub fn finish(mut self) -> vt100::Screen {
+        self.wait_exit();
+        self.screen()
+    }
+
+    /// Wait for the shell to exit, then return everything the program wrote,
+    /// including what it wrote on its way out.
+    pub fn finish_raw(mut self) -> Vec<u8> {
+        self.wait_exit();
+        self.raw()
+    }
+
+    /// Wait for the shell to exit and all output to be read.
+    fn wait_exit(&mut self) {
         let start = Instant::now();
         while self.child.try_wait().expect("try_wait").is_none() {
             assert!(
@@ -427,7 +440,6 @@ impl Term {
         if let Some(reader) = self.reader.take() {
             let _ = reader.join();
         }
-        self.screen()
     }
 }
 
