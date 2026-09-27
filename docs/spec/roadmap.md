@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: wheel-scroll-sensitivity
+Current: inline-kitty-keyboard-flags
 
 ## inline-render-mode
 
@@ -158,6 +158,20 @@ animate too (SCL-002). Keyboard scrolling keeps its steps. Pushed
 screens (SCR-001) and inline screens (INL-017) still scroll to their
 last line, and full-screen apps keep matching the Python goldens
 (TRM-003).
+
+Done when: every listed requirement's mechanism is current and passes,
+each mechanism is reviewed, and the full test gate, strict clippy, and
+rustfmt pass.
+
+## inline-kitty-keyboard-flags
+
+Requirements: INL-018, INL-010
+
+Delivers: an inline app asks a terminal that speaks the kitty keyboard
+protocol only to disambiguate escape codes (flag 1), as Python's inline
+driver does, and pops the flag on exit; with TEXTUAL_DISABLE_KITTY_KEY=1
+it pushes no flags, and full-screen apps keep flags 1, 8 and 16
+(INL-018). The terminal is restored on exit as before (INL-010).
 
 Done when: every listed requirement's mechanism is current and passes,
 each mechanism is reviewed, and the full test gate, strict clippy, and

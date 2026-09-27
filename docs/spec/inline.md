@@ -145,3 +145,12 @@ Falsifier: An inline app whose content is taller than the terminal (the inline p
 Mechanism: inline-pty
 Rationale: Python screen.py:1316-1320 lays the screen out at size.with_height(app._get_inline_height()) and _compositor.py:743-752 places it on that whole region, so the height rule only sets the inline height (INL-004); full-screen apps with a bordered, overflowing Screen already keep their border and scrollbar here.
 Status: Agreed 2026-09-25
+
+[INL-018] The app MUST push kitty keyboard protocol flag 1 (disambiguate
+escape codes) and no other flag, and MUST pop it on exit. With
+`TEXTUAL_DISABLE_KITTY_KEY=1` it MUST push no flags. A full-screen app MUST
+keep pushing flags 1, 8 and 16 (`CSI > 25 u`).
+Falsifier: With the keyboard protocol left to auto-detect and a terminal on stdin, an inline app writes no kitty push or one other than CSI > 1 u, or exits without popping it (CSI < u or CSI < 1 u); with TEXTUAL_DISABLE_KITTY_KEY=1 an inline app writes a kitty push; or a full-screen app writes a push other than CSI > 25 u.
+Mechanism: inline-pty
+Rationale: Python linux_inline_driver.py:211 and 313 push flag 1 and pop it, and linux_driver.py:285-292 pushes 1|8|16 unless TEXTUAL_DISABLE_KITTY_KEY is set; Python's inline driver ignores that switch while its key parser honors it (_xterm_parser.py:423-425), so the port honors it in inline mode too, a recorded divergence.
+Status: Agreed 2026-09-27
