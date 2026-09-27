@@ -661,10 +661,22 @@ impl<'a> DomQueryMut<'a> {
     }
 
     /// Remove each matched node and its subtree through
-    /// [`App::remove_node`], which drops focus from the subtree and lays out
-    /// and repaints the former parent.
+    /// [`App::remove_node`], which lays out and repaints the former parent.
+    /// Focus first moves off every removed node at once, as Python's
+    /// `App._prune` does for a query's nodes.
     pub fn remove(self) -> AwaitRemove {
         let generation = self.app.lifecycle_drain_generation();
+        let removing: Vec<NodeId> = self
+            .app
+            .active_widget_tree()
+            .map(|tree| {
+                self.nodes
+                    .iter()
+                    .flat_map(|&id| tree.walk_depth_first(id))
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.app.reset_focus_for_removal(&removing);
         let mut removed = Vec::new();
         for &id in &self.nodes {
             // A node inside an earlier match's subtree is already gone.
@@ -2187,9 +2199,9 @@ impl App {
 
     /// Remove a specific node (and its subtree) by `NodeId`.
     ///
-    /// Clears focus from any removed node, tears down the subtree (emitting
-    /// `Unmount` lifecycle events drained by the event loop), and requests a
-    /// relayout + repaint of the former parent.
+    /// Moves focus off the subtree as Python's `App._prune` does, tears down
+    /// the subtree (emitting `Unmount` lifecycle events drained by the event
+    /// loop), and requests a relayout + repaint of the former parent.
     ///
     /// The returned [`AwaitRemove`] completes once the event loop has drained
     /// this removal's unmount work (PR-14).
@@ -2200,20 +2212,19 @@ impl App {
     /// - [`QueryError::Unmounted`] if `node_id` is not in the active tree.
     pub fn remove_node(&mut self, node_id: NodeId) -> std::result::Result<AwaitRemove, QueryError> {
         let generation = self.lifecycle_drain_generation();
-        let (parent, removed) = {
-            let tree = self.active_widget_tree_mut().ok_or(QueryError::NoMatch)?;
+        let removed: Vec<NodeId> = {
+            let tree = self.active_widget_tree().ok_or(QueryError::NoMatch)?;
             if !tree.contains(node_id) {
                 return Err(QueryError::Unmounted);
             }
+            tree.walk_depth_first(node_id)
+        };
+        self.reset_focus_for_removal(&removed);
+        let parent = {
+            let tree = self.active_widget_tree_mut().ok_or(QueryError::NoMatch)?;
             let parent = tree.parent(node_id);
-            let removed: Vec<NodeId> = tree.walk_depth_first(node_id);
-            // Drop focus from the subtree before removal so the loop's
-            // focus-transition pass re-derives a valid focus target.
-            for id in &removed {
-                tree.set_focus_state(*id, false);
-            }
             tree.remove(node_id);
-            (parent, removed)
+            parent
         };
         if let Some(parent) = parent {
             self.after_structural_mutation(parent);
@@ -2224,6 +2235,18 @@ impl App {
             removed,
             drain_generation: generation,
         })
+    }
+
+    /// Move focus off `removing`, the nodes about to be removed, as Python's
+    /// `App._prune` does through `Screen._reset_focus` (see
+    /// [`helpers::reset_focus_for_removal`]).
+    fn reset_focus_for_removal(&mut self, removing: &[NodeId]) {
+        let bounds = self.hit_test.bounds.clone();
+        if let Some(tree) = self.active_widget_tree_mut() {
+            helpers::reset_focus_for_removal(tree, removing, &|id| {
+                bounds.get(&id).map(|r| (r.y0, r.x0))
+            });
+        }
     }
 
     /// Shared post-mount/remove bookkeeping: force a clear + relayout/repaint
@@ -7397,6 +7420,48 @@ mod tests {
         let tree = app.widget_tree.as_ref().expect("tree exists");
         assert!(!tree.contains(first));
         assert!(!tree.contains(second));
+    }
+
+    /// An app with buttons `a` to `d` in its own tree, and their ids.
+    fn app_with_four_buttons() -> (App, [NodeId; 4]) {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(AppRoot::new()));
+        let buttons = ["a", "b", "c", "d"]
+            .map(|label| tree.mount(root, Box::new(Button::new(label).id(label))));
+        let mut app = App::new().expect("app should initialize");
+        app.widget_tree = Some(tree);
+        (app, buttons)
+    }
+
+    fn focused(app: &App) -> Option<NodeId> {
+        app.active_widget_tree()
+            .and_then(routing::focused_node_id_tree)
+    }
+
+    #[test]
+    fn removing_the_focused_widget_moves_focus_like_python() {
+        // Python `App._prune` -> `Screen._reset_focus`: the nearest earlier
+        // focusable widget, else the chain's last one.
+        let (mut app, [a, b, c, d]) = app_with_four_buttons();
+        assert!(app.set_focus_node(b));
+        app.remove_node(b).expect("remove_node");
+        assert_eq!(focused(&app), Some(a), "remove_node: the one before");
+        app.remove("#a").expect("remove");
+        assert_eq!(focused(&app), Some(d), "App::remove: else the last");
+        let _ = app.query_mut("#d").expect("query").remove();
+        assert_eq!(focused(&app), Some(c), "DomQueryMut::remove");
+    }
+
+    #[test]
+    fn query_remove_moves_focus_past_every_match() {
+        // Python prunes a query's nodes together, so focus skips every one
+        // of them.
+        let (mut app, [a, b, c, _]) = app_with_four_buttons();
+        app.query_mut("#b, #c").expect("query").add_class("gone");
+        assert!(app.set_focus_node(c));
+        let _ = app.query_mut(".gone").expect("query").remove();
+        assert_eq!(focused(&app), Some(a));
+        assert!(!active_tree(&app).contains(b));
     }
 
     #[test]
