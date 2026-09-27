@@ -9,15 +9,20 @@
 //! reports, and mouse and focus reports are dropped: they are not keys
 //! (INL-007).
 //!
-//! The mapping follows crossterm 0.28's Unix parser: text, control keys,
-//! Esc and Alt+key, the `CSI` and `SS3` key sequences with their
-//! modifiers, `CSI u` keys (the kitty keyboard protocol) and bracketed
-//! paste. Two differences: `\n` is Enter, because the terminal turns Enter
-//! into `\n` in the bytes typed before the driver enters raw mode (ICRNL),
-//! and kitty's keys in the private use area (keypad, media and lone
-//! modifier keys) are dropped.
+//! Each key becomes the event crossterm 0.28's Unix parser makes of the
+//! same bytes in raw mode when they arrive as separate keys: text, control
+//! keys (`\n` is Ctrl+J, as in Python), Esc and Alt+key, the `CSI` and
+//! `SS3` key sequences with their modifiers, the Linux console's F1 to F5,
+//! `CSI u` keys (the kitty keyboard protocol, its keypad, media, lock and
+//! modifier keys too) and bracketed paste. All the bytes arrive here in one
+//! buffer, so an ESC always starts a new sequence, as in Python's parser: an
+//! Esc typed just before another sequence stays a lone Esc. A malformed
+//! sequence is dropped up to its final byte.
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MediaKeyCode,
+    ModifierKeyCode,
+};
 
 const ESC: u8 = 0x1b;
 
@@ -48,7 +53,7 @@ fn next_event(bytes: &[u8]) -> (Option<Event>, usize) {
 fn plain_key(bytes: &[u8]) -> (Option<KeyEvent>, usize) {
     let key = |code, modifiers| Some(KeyEvent::new(code, modifiers));
     match bytes[0] {
-        b'\r' | b'\n' => (key(KeyCode::Enter, KeyModifiers::NONE), 1),
+        b'\r' => (key(KeyCode::Enter, KeyModifiers::NONE), 1),
         b'\t' => (key(KeyCode::Tab, KeyModifiers::NONE), 1),
         0x7f => (key(KeyCode::Backspace, KeyModifiers::NONE), 1),
         0 => (key(KeyCode::Char(' '), KeyModifiers::CONTROL), 1),
@@ -97,10 +102,11 @@ fn utf8_char(bytes: &[u8]) -> Option<(char, usize)> {
 /// A sequence that starts with ESC: a lone Esc, Alt+key, `CSI` or `SS3`.
 fn escape(bytes: &[u8]) -> (Option<Event>, usize) {
     match bytes.get(1) {
-        None => (Some(Event::Key(KeyCode::Esc.into())), 1),
+        // A lone Esc, at the end or before an ESC, which starts a new
+        // sequence (Python's parser).
+        None | Some(&ESC) => (Some(Event::Key(KeyCode::Esc.into())), 1),
         Some(b'[') => csi(bytes),
         Some(b'O') => ss3(bytes),
-        Some(&ESC) => (Some(Event::Key(KeyCode::Esc.into())), 2),
         Some(_) => {
             let (key, used) = plain_key(&bytes[1..]);
             let alt = key.map(|mut key| {
@@ -132,9 +138,19 @@ fn ss3(bytes: &[u8]) -> (Option<Event>, usize) {
 
 /// `ESC [ <parameters> <intermediates> <final>`.
 fn csi(bytes: &[u8]) -> (Option<Event>, usize) {
-    if bytes.get(2) == Some(&b'M') {
+    match bytes.get(2) {
         // An X10 mouse report: three bytes follow the M.
-        return (None, bytes.len().min(6));
+        Some(b'M') => return (None, bytes.len().min(6)),
+        // The Linux console's F1 to F5: `ESC [ [ A` to `ESC [ [ E`.
+        Some(b'[') => {
+            return match bytes.get(3) {
+                Some(&last @ b'A'..=b'E') => {
+                    (Some(Event::Key(KeyCode::F(1 + last - b'A').into())), 4)
+                }
+                _ => (None, malformed_end(bytes, 3)),
+            };
+        }
+        _ => {}
     }
     let body = &bytes[2..];
     let params_len = body
@@ -146,21 +162,35 @@ fn csi(bytes: &[u8]) -> (Option<Event>, usize) {
         .take_while(|b| (0x20..=0x2f).contains(*b))
         .count();
     let seen = 2 + params_len + inter_len;
-    let Some(&last) = bytes.get(seen) else {
-        // Cut off by the end of the input: drop it.
-        return (None, bytes.len());
-    };
-    if !(0x40..=0x7e).contains(&last) {
-        // Not a final byte: drop what came before it.
-        return (None, seen);
+    match bytes.get(seen) {
+        Some(&last) if (0x40..=0x7e).contains(&last) => {
+            let used = seen + 1;
+            // Parameter bytes are ASCII, so this never fails.
+            let params = std::str::from_utf8(&body[..params_len]).unwrap_or_default();
+            if params == "200" && last == b'~' {
+                return paste(bytes, used);
+            }
+            (csi_key(params, inter_len > 0, last).map(Event::Key), used)
+        }
+        // Malformed (a negative mouse coordinate, say) or cut off.
+        _ => (None, malformed_end(bytes, seen)),
     }
-    let used = seen + 1;
-    // Parameter bytes are ASCII, so this never fails.
-    let params = std::str::from_utf8(&body[..params_len]).unwrap_or_default();
-    if params == "200" && last == b'~' {
-        return paste(bytes, used);
-    }
-    (csi_key(params, inter_len > 0, last).map(Event::Key), used)
+}
+
+/// Where a malformed sequence ends when its parsing stopped at `from`:
+/// after its final byte, before an ESC that starts the next sequence, or
+/// at the end of the input.
+fn malformed_end(bytes: &[u8], from: usize) -> usize {
+    bytes
+        .iter()
+        .enumerate()
+        .skip(from)
+        .find_map(|(at, &b)| match b {
+            ESC => Some(at),
+            0x40..=0x7e => Some(at + 1),
+            _ => None,
+        })
+        .unwrap_or(bytes.len())
 }
 
 /// The key a `CSI` sequence stands for, if it is a key.
@@ -172,7 +202,7 @@ fn csi_key(params: &str, intermediate: bool, last: u8) -> Option<KeyEvent> {
     }
     let mut fields = params.split(';');
     let first = fields.next().unwrap_or_default();
-    let (modifiers, kind) = modifiers_and_kind(fields.next());
+    let field = modifier_field(fields.next());
     let code = match last {
         b'A' => KeyCode::Up,
         b'B' => KeyCode::Down,
@@ -184,12 +214,19 @@ fn csi_key(params: &str, intermediate: bool, last: u8) -> Option<KeyEvent> {
         b'Q' => KeyCode::F(2),
         b'S' => KeyCode::F(4),
         b'Z' => return Some(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
-        b'~' => numbered_key(first)?,
-        b'u' => return csi_u_key(first, modifiers, kind),
+        b'~' => {
+            return Some(KeyEvent::new_with_kind_and_state(
+                numbered_key(first)?,
+                field.modifiers,
+                field.kind,
+                field.state,
+            ));
+        }
+        b'u' => return csi_u_key(first, field),
         // Cursor position (R), focus (I, O), mouse (M, m) and the rest.
         _ => return None,
     };
-    Some(KeyEvent::new_with_kind(code, modifiers, kind))
+    Some(KeyEvent::new_with_kind(code, field.modifiers, field.kind))
 }
 
 /// `CSI <n> ~` keys.
@@ -212,22 +249,139 @@ fn numbered_key(first: &str) -> Option<KeyCode> {
 }
 
 /// `CSI <codepoint> ; <modifiers> u` keys.
-fn csi_u_key(first: &str, modifiers: KeyModifiers, kind: KeyEventKind) -> Option<KeyEvent> {
+fn csi_u_key(first: &str, field: ModifierField) -> Option<KeyEvent> {
     let codepoint: u32 = first.split(':').next()?.parse().ok()?;
-    let code = match char::from_u32(codepoint)? {
-        '\x1b' => KeyCode::Esc,
-        '\r' | '\n' => KeyCode::Enter,
-        '\t' if modifiers.contains(KeyModifiers::SHIFT) => KeyCode::BackTab,
-        '\t' => KeyCode::Tab,
-        '\x7f' => KeyCode::Backspace,
-        '\u{e000}'..='\u{f8ff}' => return None,
-        c => KeyCode::Char(c),
+    let ModifierField {
+        mut modifiers,
+        kind,
+        mut state,
+    } = field;
+    let code = if let Some((code, key_state)) = kitty_functional_key(codepoint) {
+        state |= key_state;
+        code
+    } else {
+        match char::from_u32(codepoint)? {
+            '\x1b' => KeyCode::Esc,
+            '\r' => KeyCode::Enter,
+            '\t' if modifiers.contains(KeyModifiers::SHIFT) => KeyCode::BackTab,
+            '\t' => KeyCode::Tab,
+            '\x7f' => KeyCode::Backspace,
+            c => KeyCode::Char(c),
+        }
     };
-    Some(KeyEvent::new_with_kind(code, modifiers, kind))
+    // A lone modifier key sets its own modifier, as in crossterm.
+    if let KeyCode::Modifier(key) = code {
+        modifiers |= match key {
+            ModifierKeyCode::LeftShift | ModifierKeyCode::RightShift => KeyModifiers::SHIFT,
+            ModifierKeyCode::LeftControl | ModifierKeyCode::RightControl => KeyModifiers::CONTROL,
+            ModifierKeyCode::LeftAlt | ModifierKeyCode::RightAlt => KeyModifiers::ALT,
+            ModifierKeyCode::LeftSuper | ModifierKeyCode::RightSuper => KeyModifiers::SUPER,
+            ModifierKeyCode::LeftHyper | ModifierKeyCode::RightHyper => KeyModifiers::HYPER,
+            ModifierKeyCode::LeftMeta | ModifierKeyCode::RightMeta => KeyModifiers::META,
+            _ => KeyModifiers::NONE,
+        };
+    }
+    Some(KeyEvent::new_with_kind_and_state(
+        code, modifiers, kind, state,
+    ))
 }
 
-/// The modifiers and event kind of a `<mask>[:<kind>]` field.
-fn modifiers_and_kind(field: Option<&str>) -> (KeyModifiers, KeyEventKind) {
+/// The kitty keyboard protocol's keys in the private use area, as
+/// crossterm's `translate_functional_key_code` maps them: keypad keys
+/// (with the keypad state), lock keys, F13 to F35, media keys and lone
+/// modifier keys.
+fn kitty_functional_key(codepoint: u32) -> Option<(KeyCode, KeyEventState)> {
+    const KEYPAD: [KeyCode; 29] = [
+        KeyCode::Char('0'),
+        KeyCode::Char('1'),
+        KeyCode::Char('2'),
+        KeyCode::Char('3'),
+        KeyCode::Char('4'),
+        KeyCode::Char('5'),
+        KeyCode::Char('6'),
+        KeyCode::Char('7'),
+        KeyCode::Char('8'),
+        KeyCode::Char('9'),
+        KeyCode::Char('.'),
+        KeyCode::Char('/'),
+        KeyCode::Char('*'),
+        KeyCode::Char('-'),
+        KeyCode::Char('+'),
+        KeyCode::Enter,
+        KeyCode::Char('='),
+        KeyCode::Char(','),
+        KeyCode::Left,
+        KeyCode::Right,
+        KeyCode::Up,
+        KeyCode::Down,
+        KeyCode::PageUp,
+        KeyCode::PageDown,
+        KeyCode::Home,
+        KeyCode::End,
+        KeyCode::Insert,
+        KeyCode::Delete,
+        KeyCode::KeypadBegin,
+    ];
+    const MEDIA: [MediaKeyCode; 13] = [
+        MediaKeyCode::Play,
+        MediaKeyCode::Pause,
+        MediaKeyCode::PlayPause,
+        MediaKeyCode::Reverse,
+        MediaKeyCode::Stop,
+        MediaKeyCode::FastForward,
+        MediaKeyCode::Rewind,
+        MediaKeyCode::TrackNext,
+        MediaKeyCode::TrackPrevious,
+        MediaKeyCode::Record,
+        MediaKeyCode::LowerVolume,
+        MediaKeyCode::RaiseVolume,
+        MediaKeyCode::MuteVolume,
+    ];
+    const MODIFIERS: [ModifierKeyCode; 14] = [
+        ModifierKeyCode::LeftShift,
+        ModifierKeyCode::LeftControl,
+        ModifierKeyCode::LeftAlt,
+        ModifierKeyCode::LeftSuper,
+        ModifierKeyCode::LeftHyper,
+        ModifierKeyCode::LeftMeta,
+        ModifierKeyCode::RightShift,
+        ModifierKeyCode::RightControl,
+        ModifierKeyCode::RightAlt,
+        ModifierKeyCode::RightSuper,
+        ModifierKeyCode::RightHyper,
+        ModifierKeyCode::RightMeta,
+        ModifierKeyCode::IsoLevel3Shift,
+        ModifierKeyCode::IsoLevel5Shift,
+    ];
+    let offset = |base: u32| usize::try_from(codepoint - base).ok();
+    let code = match codepoint {
+        57399..=57427 => return Some((KEYPAD[offset(57399)?], KeyEventState::KEYPAD)),
+        57358 => KeyCode::CapsLock,
+        57359 => KeyCode::ScrollLock,
+        57360 => KeyCode::NumLock,
+        57361 => KeyCode::PrintScreen,
+        57362 => KeyCode::Pause,
+        57363 => KeyCode::Menu,
+        57376..=57398 => KeyCode::F(13 + u8::try_from(codepoint - 57376).ok()?),
+        57428..=57440 => KeyCode::Media(MEDIA[offset(57428)?]),
+        57441..=57454 => KeyCode::Modifier(MODIFIERS[offset(57441)?]),
+        _ => return None,
+    };
+    Some((code, KeyEventState::empty()))
+}
+
+/// The parts of a `<mask>[:<kind>]` modifier field.
+#[derive(Clone, Copy)]
+struct ModifierField {
+    modifiers: KeyModifiers,
+    kind: KeyEventKind,
+    /// Caps Lock and Num Lock, bits 64 and 128 of the mask.
+    state: KeyEventState,
+}
+
+/// Parse a `<mask>[:<kind>]` modifier field; an absent field is no
+/// modifier on a key press.
+fn modifier_field(field: Option<&str>) -> ModifierField {
     let mut parts = field.unwrap_or_default().split(':');
     let mask: u8 = parts.next().and_then(|m| m.parse().ok()).unwrap_or(1);
     let kind = match parts.next().and_then(|k| k.parse::<u8>().ok()) {
@@ -247,7 +401,18 @@ fn modifiers_and_kind(field: Option<&str>) -> (KeyModifiers, KeyEventKind) {
     .into_iter()
     .filter(|&(bit, _)| bits & bit != 0)
     .fold(KeyModifiers::NONE, |all, (_, modifier)| all | modifier);
-    (modifiers, kind)
+    let mut state = KeyEventState::empty();
+    if bits & 64 != 0 {
+        state |= KeyEventState::CAPS_LOCK;
+    }
+    if bits & 128 != 0 {
+        state |= KeyEventState::NUM_LOCK;
+    }
+    ModifierField {
+        modifiers,
+        kind,
+        state,
+    }
 }
 
 /// Bracketed paste: the text up to `ESC [ 201 ~`, or to the end of the
@@ -294,7 +459,7 @@ mod tests {
             parse(b"\r\n\t\x7f\x05\x00\x1c"),
             vec![
                 plain(KeyCode::Enter),
-                plain(KeyCode::Enter),
+                key(KeyCode::Char('j'), KeyModifiers::CONTROL),
                 plain(KeyCode::Tab),
                 plain(KeyCode::Backspace),
                 key(KeyCode::Char('e'), KeyModifiers::CONTROL),
@@ -307,10 +472,27 @@ mod tests {
     #[test]
     fn escape_alone_twice_or_before_a_key() {
         assert_eq!(parse(b"\x1b"), vec![plain(KeyCode::Esc)]);
-        assert_eq!(parse(b"\x1b\x1b"), vec![plain(KeyCode::Esc)]);
+        assert_eq!(
+            parse(b"\x1b\x1b"),
+            vec![plain(KeyCode::Esc), plain(KeyCode::Esc)]
+        );
         assert_eq!(
             parse(b"\x1ba"),
             vec![key(KeyCode::Char('a'), KeyModifiers::ALT)]
+        );
+    }
+
+    #[test]
+    fn an_escape_before_a_sequence_leaves_the_sequence_whole() {
+        // Esc then Up, and Esc just before the terminal's replies: the next
+        // ESC starts a new sequence, as in Python's parser.
+        assert_eq!(
+            parse(b"\x1b\x1b[A"),
+            vec![plain(KeyCode::Esc), plain(KeyCode::Up)]
+        );
+        assert_eq!(
+            parse(b"\x1b\x1b[?2026;2$y\x1b\x1b[?62;22c"),
+            vec![plain(KeyCode::Esc), plain(KeyCode::Esc)]
         );
     }
 
@@ -333,7 +515,7 @@ mod tests {
     #[test]
     fn csi_u_keys_follow_the_kitty_protocol() {
         assert_eq!(
-            parse(b"\x1b[97;5u\x1b[13u\x1b[9;2u\x1b[57441u"),
+            parse(b"\x1b[97;5u\x1b[13u\x1b[9;2u"),
             vec![
                 key(KeyCode::Char('a'), KeyModifiers::CONTROL),
                 plain(KeyCode::Enter),
@@ -348,6 +530,57 @@ mod tests {
                 KeyEventKind::Release,
             ))]
         );
+    }
+
+    #[test]
+    fn kitty_functional_keys_are_mapped_as_crossterm_maps_them() {
+        let with_state = |code, modifiers, state| {
+            Event::Key(KeyEvent::new_with_kind_and_state(
+                code,
+                modifiers,
+                KeyEventKind::Press,
+                state,
+            ))
+        };
+        assert_eq!(
+            parse(b"\x1b[57399u\x1b[57414u\x1b[57376u\x1b[57428u\x1b[57441u\x1b[97;65u"),
+            vec![
+                with_state(
+                    KeyCode::Char('0'),
+                    KeyModifiers::NONE,
+                    KeyEventState::KEYPAD
+                ),
+                with_state(KeyCode::Enter, KeyModifiers::NONE, KeyEventState::KEYPAD),
+                plain(KeyCode::F(13)),
+                plain(KeyCode::Media(MediaKeyCode::Play)),
+                key(
+                    KeyCode::Modifier(ModifierKeyCode::LeftShift),
+                    KeyModifiers::SHIFT
+                ),
+                with_state(
+                    KeyCode::Char('a'),
+                    KeyModifiers::NONE,
+                    KeyEventState::CAPS_LOCK
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn linux_console_function_keys() {
+        assert_eq!(
+            parse(b"\x1b[[A\x1b[[E"),
+            vec![plain(KeyCode::F(1)), plain(KeyCode::F(5))]
+        );
+    }
+
+    #[test]
+    fn a_malformed_sequence_is_dropped_up_to_its_final_byte() {
+        // An SGR mouse report with a negative coordinate (Ghostty; Python
+        // `_xterm_parser.py` works around it): nothing of it is a key.
+        assert_eq!(parse(b"\x1b[<0;-1;5Me"), vec![plain(KeyCode::Char('e'))]);
+        // A sequence broken by the next ESC restarts there.
+        assert_eq!(parse(b"\x1b[1;\x1b[A"), vec![plain(KeyCode::Up)]);
     }
 
     #[test]
