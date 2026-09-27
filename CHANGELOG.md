@@ -15,7 +15,11 @@ until the API stabilizes.
   alternate screen. The app is as tall as its screen's `Screen:inline` rules
   make it (content plus the default top and bottom borders), redrawn with
   relative cursor moves so the shell output above it stays; mouse
-  coordinates are relative to the app. On exit the app is erased, or with
+  coordinates are relative to the app. A terminal that speaks the kitty
+  keyboard protocol is asked only to disambiguate escape codes (`CSI > 1 u`),
+  as Python's inline driver asks, not for the full-screen flags 1, 8 and 16;
+  `TEXTUAL_DISABLE_KITTY_KEY=1` keeps the protocol off, which Python's
+  inline driver ignores. On exit the app is erased, or with
   `inline_no_clear` its last frame stays. `TextualApp::inline_padding`
   (Python `INLINE_PADDING`, default 1) sets the blank lines above it, and
   `App::is_inline` reports the mode. Unix only: on Windows the app runs
