@@ -860,6 +860,58 @@ fn inl_017_a_screen_taller_than_the_terminal_keeps_its_border_and_scrolls() {
     );
 }
 
+/// The harness turns the keyboard protocol off for every other test; this
+/// leaves it to auto-detection, as in a real terminal (stdin is the PTY).
+const AUTO_KEYBOARD: (&str, &str) = ("TEXTUAL_KEYBOARD_PROTOCOL", "auto");
+
+/// The flags of each kitty keyboard sequence `CSI <mark> flags u` in `raw`,
+/// in order: `>` pushes flags and `<` pops them (an empty string is the
+/// sequence without a number).
+fn kitty_sequences(raw: &[u8], mark: u8) -> Vec<String> {
+    let intro = [0x1b, b'[', mark];
+    let mut found = Vec::new();
+    let mut rest = raw;
+    while let Some(at) = rest.windows(intro.len()).position(|w| w == intro) {
+        let after = &rest[at + intro.len()..];
+        let digits = after.iter().take_while(|b| b.is_ascii_digit()).count();
+        if after.get(digits) == Some(&b'u') {
+            found.push(String::from_utf8_lossy(&after[..digits]).into_owned());
+        }
+        rest = &after[digits..];
+    }
+    found
+}
+
+/// Run the probe with `env` until it quits, and return what it wrote.
+fn probe_output(env: &[(&str, &str)]) -> Vec<u8> {
+    let term = Term::spawn(SHELL_THEN_EXEC, &probe(), env, Answers::TERMINAL);
+    term.wait_for("probe body", has_text("line 1"));
+    term.settle();
+    term.send(b"q");
+    term.finish_raw()
+}
+
+#[test]
+fn inl_018_inline_pushes_kitty_flag_1_and_pops_it() {
+    // Python's inline driver asks only to disambiguate escape codes.
+    let raw = probe_output(&[AUTO_KEYBOARD]);
+    assert_eq!(kitty_sequences(&raw, b'>'), ["1"], "kitty pushes");
+    assert_eq!(kitty_sequences(&raw, b'<').len(), 1, "kitty pops");
+}
+
+#[test]
+fn inl_018_inline_honors_disable_kitty_key() {
+    let raw = probe_output(&[AUTO_KEYBOARD, ("TEXTUAL_DISABLE_KITTY_KEY", "1")]);
+    let pushes = kitty_sequences(&raw, b'>');
+    assert!(pushes.is_empty(), "kitty pushes: {pushes:?}");
+}
+
+#[test]
+fn inl_018_full_screen_keeps_kitty_flags_1_8_and_16() {
+    let raw = probe_output(&[AUTO_KEYBOARD, ("PROBE_MODE", "full")]);
+    assert_eq!(kitty_sequences(&raw, b'>'), ["25"], "kitty pushes");
+}
+
 #[test]
 fn trm_001_full_screen_uses_and_restores_the_alternate_screen() {
     let term = Term::spawn(SHELL_AROUND, &calculator(), &[], Answers::TERMINAL);
