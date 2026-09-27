@@ -135,13 +135,9 @@ fn paint_surface_bg(
     let mut style_changed = false;
     // In composition terms, terminal-default background should behave as transparent
     // so children can inherit parent/widget surfaces.
-    let explicit_bg = s.bgcolor.and_then(|bg| {
-        if matches!(bg, rich_rs::SimpleColor::Default) {
-            None
-        } else {
-            Some(bg)
-        }
-    });
+    let explicit_bg = s
+        .bgcolor
+        .filter(|bg| !matches!(bg, rich_rs::SimpleColor::Default));
     let mut under_bg = explicit_bg
         .map(crate::style::color_from_simple)
         .or(parent_bg)

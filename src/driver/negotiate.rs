@@ -23,7 +23,9 @@ pub const IN_BAND_RESIZE_MODE: u16 = 2048;
 pub const KITTY_FLAGS: u16 = 0b0001_1001;
 
 /// Kitty flags pushed in inline mode: `DISAMBIGUATE (1)` only, as Python's
-/// `LinuxInlineDriver` writes `CSI > 1 u` (INL-018).
+/// `LinuxInlineDriver` writes `CSI > 1 u` (INL-018). Only the POSIX driver
+/// runs inline; on Windows an inline request runs full-screen (INL-015).
+#[cfg(not(target_os = "windows"))]
 pub const INLINE_KITTY_FLAGS: u16 = 0b0000_0001;
 
 /// Upper bound for one query reply.
@@ -149,6 +151,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn inl_018_inline_kitty_flags_match_python_1() {
         assert_eq!(format!("\x1b[>{INLINE_KITTY_FLAGS}u"), "\x1b[>1u");
     }

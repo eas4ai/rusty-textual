@@ -147,6 +147,7 @@ impl Container {
     }
 
     /// Read-only access to the container's children.
+    #[must_use]
     pub fn children(&self) -> &[Box<dyn Widget>] {
         &self.children
     }

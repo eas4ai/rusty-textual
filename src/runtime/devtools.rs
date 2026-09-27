@@ -86,7 +86,7 @@ pub(crate) struct DevtoolsRuntime {
 
 impl DevtoolsRuntime {
     pub(crate) fn from_env() -> io::Result<Option<Self>> {
-        let enabled = std::env::var(ENV_ENABLE).ok().is_some_and(|value| {
+        let enabled = std::env::var(ENV_ENABLE).is_ok_and(|value| {
             let value = value.trim().to_ascii_lowercase();
             matches!(value.as_str(), "1" | "true" | "yes" | "on")
         }) || std::env::var(ENV_BIND).is_ok();

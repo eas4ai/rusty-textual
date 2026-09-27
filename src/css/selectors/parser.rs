@@ -2762,7 +2762,7 @@ mod tests {
     #[test]
     fn parse_border_shorthand_important() {
         let style = parse_style_body("border: solid red !important;");
-        assert!(style.border_top != crate::style::BorderEdge::Unset);
+        assert_ne!(style.border_top, crate::style::BorderEdge::Unset);
         assert!(style.importance.get(StyleProperty::BorderTop));
         assert!(style.importance.get(StyleProperty::BorderRight));
         assert!(style.importance.get(StyleProperty::BorderBottom));

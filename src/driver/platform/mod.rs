@@ -43,7 +43,7 @@ pub(crate) trait PlatformDriver {
 pub(crate) fn make_platform_driver() -> Box<dyn PlatformDriver> {
     #[cfg(target_os = "windows")]
     {
-        return Box::new(windows::WindowsPlatformDriver);
+        Box::new(windows::WindowsPlatformDriver)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -55,7 +55,7 @@ pub(crate) fn make_platform_driver() -> Box<dyn PlatformDriver> {
 pub(crate) fn detect_pointer_shapes_enabled() -> bool {
     #[cfg(target_os = "windows")]
     {
-        return windows::detect_pointer_shapes_enabled();
+        windows::detect_pointer_shapes_enabled()
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -67,7 +67,7 @@ pub(crate) fn detect_pointer_shapes_enabled() -> bool {
 pub(crate) fn capability_profile() -> CapabilityProfile {
     #[cfg(target_os = "windows")]
     {
-        return windows::capability_profile();
+        windows::capability_profile()
     }
 
     #[cfg(not(target_os = "windows"))]

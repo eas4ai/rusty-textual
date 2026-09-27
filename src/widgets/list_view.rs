@@ -743,10 +743,7 @@ impl crate::widgets::Layout for ListView {
         if !self.pending_items.is_empty() {
             let mut total = 0usize;
             for item in &self.pending_items {
-                match crate::widgets::Widget::layout_height(item) {
-                    Some(h) => total = total.saturating_add(h.max(1)),
-                    None => return None,
-                }
+                total = total.saturating_add(crate::widgets::Widget::layout_height(item)?.max(1));
             }
             return Some(total.max(1));
         }
