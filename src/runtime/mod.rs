@@ -2248,6 +2248,15 @@ impl App {
     /// `App._prune` does through `Screen._reset_focus` (see
     /// [`helpers::reset_focus_for_removal`]).
     fn reset_focus_for_removal(&mut self, removing: &[NodeId]) {
+        // Most removals do not hold the focus: skip the bounds copy for them.
+        let removes_focus = self.active_widget_tree().is_some_and(|tree| {
+            removing
+                .iter()
+                .any(|&id| tree.get(id).is_some_and(|node| node.state.focused))
+        });
+        if !removes_focus {
+            return;
+        }
         let bounds = self.hit_test.bounds.clone();
         if let Some(tree) = self.active_widget_tree_mut() {
             helpers::reset_focus_for_removal(tree, removing, &|id| {

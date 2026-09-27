@@ -324,13 +324,16 @@ pub(crate) fn reset_focus_for_removal(
     removing: &[NodeId],
     origin: &dyn Fn(NodeId) -> Option<(u16, u16)>,
 ) -> bool {
-    let Some(focused) = raw_focused_node_id(tree) else {
+    // Only the removed nodes can hold the focus this resets, so look there
+    // instead of walking the whole tree.
+    let Some(focused) = removing
+        .iter()
+        .copied()
+        .find(|&id| tree.get(id).is_some_and(|node| node.state.focused))
+    else {
         return false;
     };
     let removing: HashSet<NodeId> = removing.iter().copied().collect();
-    if !removing.contains(&focused) {
-        return false;
-    }
     let chain = collect_focus_chain_tree_sorted(tree, Some(focused), origin);
     let chosen = if chain.is_empty() {
         None
